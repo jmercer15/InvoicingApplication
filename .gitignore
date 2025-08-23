@@ -203,3 +203,12 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Large data files
+*.geojson
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.sqlite3
