@@ -268,12 +268,10 @@ struct InvoiceBuilderView: View {
     }
     
     private func exportToImage() {
-        // TODO: Implement image export
-        // This would export the current document as a PNG/JPG
+        PDFExporter.exportToImage(document: document)
     }
-    
+
     private func printDocument() {
-        // TODO: Implement print functionality
-        // This would open the print dialog for the document
+        PDFExporter.printDocument(document: document)
     }
 }

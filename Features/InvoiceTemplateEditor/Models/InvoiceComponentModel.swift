@@ -88,7 +88,7 @@ enum SectionLayout: String, CaseIterable, Codable {
     }
 }
 
-struct ComponentStyle: Codable {
+struct ComponentStyle: Codable, Hashable {
     // Typography
     var fontSize: CGFloat = 14
     var fontWeight: String = "regular" // regular, medium, semibold, bold
@@ -97,7 +97,7 @@ struct ComponentStyle: Codable {
     var textAlignment: TextAlignment = .leading
     var lineSpacing: CGFloat = 1.0
     var letterSpacing: CGFloat = 0.0
-    
+
     // Background & Border
     var backgroundColor: String = "FFFFFF" // Hex color without #
     var backgroundOpacity: CGFloat = 1.0
@@ -105,11 +105,11 @@ struct ComponentStyle: Codable {
     var borderColor: String = "CCCCCC"
     var borderStyle: BorderStyle = .solid
     var cornerRadius: CGFloat = 0
-    
+
     // Layout & Spacing
     var padding: CGFloat = 0
     var margin: CGFloat = 0
-    
+
     // Shadow
     var shadowEnabled: Bool = false
     var shadowColor: String = "000000"
@@ -117,10 +117,10 @@ struct ComponentStyle: Codable {
     var shadowRadius: CGFloat = 4
     var shadowOffsetX: CGFloat = 0
     var shadowOffsetY: CGFloat = 2
-    
+
     // Text-specific
     var placeholderText: String = ""
-    
+
     // Shape-specific
     var starPoints: Int = 5
     var starSmoothness: CGFloat = 0.38
@@ -128,11 +128,11 @@ struct ComponentStyle: Codable {
     var lineThickness: CGFloat = 2
     var lineStartDecorator: LineDecorator = .none
     var lineEndDecorator: LineDecorator = .none
-    
+
     // Image-specific
     var imageData: Data?
     var imageContentMode: ImageContentMode = .fit
-    
+
     // Table-specific
     var tableHeaderColor: String = "E5E7EB"
     var tableRowColor: String = "FFFFFF"
@@ -140,28 +140,282 @@ struct ComponentStyle: Codable {
     var tableTextColor: String = "111827"
     var showTableHeader: Bool = true
     var useAlternatingRows: Bool = false
-    
+
     // Section-specific
     var sectionLayout: SectionLayout = .vertical
     var gridColumns: Int = 2
     var contentSpacing: CGFloat = 0
     var contentPadding: CGFloat = 12
-    
-    // Computed properties for SwiftUI
+
+    // MARK: - Computed Properties for SwiftUI
+
     var backgroundColorSwiftUI: Color {
-        Color(hex: backgroundColor)
+        Color(hex: backgroundColor).opacity(backgroundOpacity)
     }
-    
+
     var borderColorSwiftUI: Color {
         Color(hex: borderColor)
     }
-    
+
     var textColorSwiftUI: Color {
         Color(hex: textColor)
     }
-    
+
     var shadowColorSwiftUI: Color {
-        Color(hex: shadowColor)
+        Color(hex: shadowColor).opacity(shadowOpacity)
+    }
+
+    var tableHeaderColorSwiftUI: Color {
+        Color(hex: tableHeaderColor)
+    }
+
+    var tableRowColorSwiftUI: Color {
+        Color(hex: tableRowColor)
+    }
+
+    var tableRowAltColorSwiftUI: Color {
+        Color(hex: tableRowAltColor)
+    }
+
+    var tableTextColorSwiftUI: Color {
+        Color(hex: tableTextColor)
+    }
+
+    // MARK: - Professional Style Presets
+
+    static var professionalInvoice: ComponentStyle {
+        var style = ComponentStyle()
+        style.fontFamily = "system"
+        style.textColor = "1F2937"
+        style.backgroundColor = "FFFFFF"
+        style.borderColor = "E5E7EB"
+        style.cornerRadius = 6
+        style.shadowEnabled = true
+        style.shadowColor = "000000"
+        style.shadowOpacity = 0.1
+        style.shadowRadius = 8
+        style.shadowOffsetY = 2
+        return style
+    }
+
+    static var modernHeader: ComponentStyle {
+        var style = ComponentStyle()
+        style.fontSize = 24
+        style.fontWeight = "bold"
+        style.fontFamily = "system"
+        style.textColor = "1F2937"
+        style.textAlignment = .center
+        style.backgroundColor = "FFFFFF"
+        style.borderWidth = 0
+        return style
+    }
+
+    static var cleanTable: ComponentStyle {
+        var style = ComponentStyle()
+        style.fontSize = 11
+        style.fontWeight = "regular"
+        style.fontFamily = "system"
+        style.textColor = "374151"
+        style.backgroundColor = "FFFFFF"
+        style.borderColor = "E5E7EB"
+        style.borderWidth = 1
+        style.tableHeaderColor = "F9FAFB"
+        style.tableRowColor = "FFFFFF"
+        style.tableRowAltColor = "F9FAFB"
+        style.tableTextColor = "374151"
+        style.showTableHeader = true
+        style.useAlternatingRows = true
+        return style
+    }
+
+    static var subtleSection: ComponentStyle {
+        var style = ComponentStyle()
+        style.fontSize = 12
+        style.fontWeight = "medium"
+        style.fontFamily = "system"
+        style.textColor = "6B7280"
+        style.backgroundColor = "F9FAFB"
+        style.borderColor = "E5E7EB"
+        style.borderWidth = 1
+        style.borderStyle = .solid
+        style.cornerRadius = 8
+        style.padding = 12
+        style.shadowEnabled = false
+        return style
+    }
+
+    // MARK: - Validation
+
+    func validate() -> [StyleValidationError] {
+        var errors: [StyleValidationError] = []
+
+        // Font size validation
+        if fontSize < 6 || fontSize > 72 {
+            errors.append(.invalidFontSize(fontSize))
+        }
+
+        // Color validation
+        if !isValidHexColor(textColor) {
+            errors.append(.invalidColor(textColor, "text"))
+        }
+        if !isValidHexColor(backgroundColor) {
+            errors.append(.invalidColor(backgroundColor, "background"))
+        }
+        if !isValidHexColor(borderColor) {
+            errors.append(.invalidColor(borderColor, "border"))
+        }
+
+        // Opacity validation
+        if backgroundOpacity < 0 || backgroundOpacity > 1 {
+            errors.append(.invalidOpacity(backgroundOpacity, "background"))
+        }
+        if shadowOpacity < 0 || shadowOpacity > 1 {
+            errors.append(.invalidOpacity(shadowOpacity, "shadow"))
+        }
+
+        // Size validation
+        if borderWidth < 0 || borderWidth > 20 {
+            errors.append(.invalidBorderWidth(borderWidth))
+        }
+        if cornerRadius < 0 || cornerRadius > 50 {
+            errors.append(.invalidCornerRadius(cornerRadius))
+        }
+
+        // Shadow validation
+        if shadowRadius < 0 || shadowRadius > 50 {
+            errors.append(.invalidShadowRadius(shadowRadius))
+        }
+
+        return errors
+    }
+
+    private func isValidHexColor(_ hex: String) -> Bool {
+        let hexRegex = "^[0-9A-Fa-f]{6}$"
+        return NSPredicate(format: "SELF MATCHES %@", hexRegex).evaluate(with: hex)
+    }
+
+    // MARK: - Utility Methods
+
+    func withFontSize(_ size: CGFloat) -> ComponentStyle {
+        var style = self
+        style.fontSize = size
+        return style
+    }
+
+    func withFontWeight(_ weight: String) -> ComponentStyle {
+        var style = self
+        style.fontWeight = weight
+        return style
+    }
+
+    func withTextColor(_ color: String) -> ComponentStyle {
+        var style = self
+        style.textColor = color
+        return style
+    }
+
+    func withBackgroundColor(_ color: String) -> ComponentStyle {
+        var style = self
+        style.backgroundColor = color
+        return style
+    }
+
+    func withBorder(_ width: CGFloat, color: String) -> ComponentStyle {
+        var style = self
+        style.borderWidth = width
+        style.borderColor = color
+        return style
+    }
+
+    func withCornerRadius(_ radius: CGFloat) -> ComponentStyle {
+        var style = self
+        style.cornerRadius = radius
+        return style
+    }
+
+    func withShadow(enabled: Bool = true, color: String = "000000", radius: CGFloat = 4, opacity: CGFloat = 0.3) -> ComponentStyle {
+        var style = self
+        style.shadowEnabled = enabled
+        style.shadowColor = color
+        style.shadowRadius = radius
+        style.shadowOpacity = opacity
+        return style
+    }
+
+    // MARK: - Hashable Conformance
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(fontSize)
+        hasher.combine(fontWeight)
+        hasher.combine(fontFamily)
+        hasher.combine(textColor)
+        hasher.combine(textAlignment)
+        hasher.combine(lineSpacing)
+        hasher.combine(letterSpacing)
+        hasher.combine(backgroundColor)
+        hasher.combine(backgroundOpacity)
+        hasher.combine(borderWidth)
+        hasher.combine(borderColor)
+        hasher.combine(borderStyle)
+        hasher.combine(cornerRadius)
+        hasher.combine(padding)
+        hasher.combine(margin)
+        hasher.combine(shadowEnabled)
+        hasher.combine(shadowColor)
+        hasher.combine(shadowOpacity)
+        hasher.combine(shadowRadius)
+        hasher.combine(shadowOffsetX)
+        hasher.combine(shadowOffsetY)
+        hasher.combine(placeholderText)
+        hasher.combine(starPoints)
+        hasher.combine(starSmoothness)
+        hasher.combine(triangleDirection)
+        hasher.combine(lineThickness)
+        hasher.combine(lineStartDecorator)
+        hasher.combine(lineEndDecorator)
+        hasher.combine(imageContentMode)
+        hasher.combine(tableHeaderColor)
+        hasher.combine(tableRowColor)
+        hasher.combine(tableRowAltColor)
+        hasher.combine(tableTextColor)
+        hasher.combine(showTableHeader)
+        hasher.combine(useAlternatingRows)
+        hasher.combine(sectionLayout)
+        hasher.combine(gridColumns)
+        hasher.combine(contentSpacing)
+        hasher.combine(contentPadding)
+    }
+
+    static func == (lhs: ComponentStyle, rhs: ComponentStyle) -> Bool {
+        return lhs.hashValue == rhs.hashValue
+    }
+}
+
+// MARK: - Validation Error
+
+enum StyleValidationError: LocalizedError {
+    case invalidFontSize(CGFloat)
+    case invalidColor(String, String)
+    case invalidOpacity(CGFloat, String)
+    case invalidBorderWidth(CGFloat)
+    case invalidCornerRadius(CGFloat)
+    case invalidShadowRadius(CGFloat)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFontSize(let size):
+            return "Font size \(size)pt is not valid (must be between 6-72pt)"
+        case .invalidColor(let color, let type):
+            return "Invalid \(type) color: \(color) (must be 6-digit hex)"
+        case .invalidOpacity(let opacity, let type):
+            return "Invalid \(type) opacity: \(opacity) (must be between 0-1)"
+        case .invalidBorderWidth(let width):
+            return "Border width \(width)pt is not valid (must be between 0-20pt)"
+        case .invalidCornerRadius(let radius):
+            return "Corner radius \(radius)pt is not valid (must be between 0-50pt)"
+        case .invalidShadowRadius(let radius):
+            return "Shadow radius \(radius)pt is not valid (must be between 0-50pt)"
+        }
     }
 }
 
@@ -450,156 +704,232 @@ struct InvoiceComponent: Identifiable, Codable, Transferable {
 
 extension ComponentStyle {
     static func defaultStyle(for type: InvoiceComponentType) -> ComponentStyle {
-        var style = ComponentStyle()
-        
         switch type {
         case .companyName:
-            style.fontSize = 18
-            style.fontWeight = "bold"
-            style.textAlignment = .leading
-            style.borderWidth = 0
+            return modernHeader
+                .withFontSize(20)
+                .withTextColor("1F2937")
+                .withFontWeight("bold")
+                .withTextAlignment(.leading)
+                .withBorder(0, color: "000000")
+
         case .companyLogo:
-            style.backgroundColor = "F5F5F5"
-            style.borderWidth = 0
-            style.imageContentMode = .fit
-        case .companyABN:
-            style.fontSize = 11
-            style.fontWeight = "regular"
-            style.textAlignment = .leading
-            style.borderWidth = 0
-        case .companyEmail:
-            style.fontSize = 11
-            style.fontWeight = "regular"
-            style.textAlignment = .leading
-            style.borderWidth = 0
+            return ComponentStyle()
+                .withBackgroundColor("F9FAFB")
+                .withBorder(1, color: "E5E7EB")
+                .withCornerRadius(8)
+                .withImageContentMode(.fit)
+
+        case .companyABN, .companyEmail:
+            return ComponentStyle()
+                .withFontSize(10)
+                .withFontWeight("regular")
+                .withTextColor("6B7280")
+                .withTextAlignment(.leading)
+                .withBorder(0, color: "000000")
+
         case .invoiceNumberAndDates:
-            style.fontSize = 12
-            style.fontWeight = "medium"
-            style.backgroundColor = "F8F9FA"
-            style.borderWidth = 1
-            style.borderColor = "DEE2E6"
-            style.cornerRadius = 4
-            style.padding = 8
-            style.sectionLayout = .horizontal
-            style.contentSpacing = 0
-            style.contentPadding = 6
-        case .billTo:
-            style.fontSize = 11
-            style.fontWeight = "medium"
-            style.backgroundColor = "F8F9FA"
-            style.borderWidth = 1
-            style.borderColor = "DEE2E6"
-            style.cornerRadius = 4
-            style.padding = 6
-            style.sectionLayout = .vertical
-            style.contentSpacing = 0
-            style.contentPadding = 6
-        case .participant:
-            style.fontSize = 11
-            style.fontWeight = "medium"
-            style.backgroundColor = "F8F9FA"
-            style.borderWidth = 1
-            style.borderColor = "DEE2E6"
-            style.cornerRadius = 4
-            style.padding = 6
-            style.sectionLayout = .vertical
-            style.contentSpacing = 0
-            style.contentPadding = 6
+            return subtleSection
+                .withFontSize(11)
+                .withFontWeight("medium")
+                .withTextColor("374151")
+                .withSectionLayout(.horizontal)
+                .withContentSpacing(12)
+                .withContentPadding(10)
+
+        case .billTo, .participant:
+            return subtleSection
+                .withFontSize(10)
+                .withFontWeight("medium")
+                .withTextColor("374151")
+                .withSectionLayout(.vertical)
+                .withContentSpacing(4)
+                .withContentPadding(8)
+
         case .servicesTable:
-            style.backgroundColor = "FFFFFF" // Table has its own row colors
-            style.borderWidth = 1
-            style.borderColor = "D1D5DB"
-            style.tableHeaderColor = "E5E7EB"
-            style.tableRowColor = "FFFFFF"
-            style.tableRowAltColor = "F9FAFB"
-            style.tableTextColor = "111827"
-            style.showTableHeader = true
-            style.useAlternatingRows = false
-            style.sectionLayout = .grid
-            style.gridColumns = 5
-            style.contentSpacing = 0
-            style.contentPadding = 8
+            return cleanTable
+                .withFontSize(10)
+                .withFontWeight("regular")
+                .withTextColor("374151")
+                .withSectionLayout(.grid)
+                .withGridColumns(5)
+                .withContentSpacing(0)
+                .withContentPadding(8)
+
         case .totals:
-            style.fontSize = 11
-            style.fontWeight = "medium"
-            style.backgroundColor = "F8F9FA"
-            style.borderWidth = 1
-            style.borderColor = "DEE2E6"
-            style.cornerRadius = 4
-            style.padding = 6
-            style.sectionLayout = .grid
-            style.gridColumns = 2
-            style.contentSpacing = 0
-            style.contentPadding = 6
+            return subtleSection
+                .withFontSize(10)
+                .withFontWeight("semibold")
+                .withTextColor("1F2937")
+                .withBackgroundColor("F3F4F6")
+                .withSectionLayout(.grid)
+                .withGridColumns(2)
+                .withContentSpacing(8)
+                .withContentPadding(10)
+
         case .paymentDetails:
-            style.fontSize = 11
-            style.fontWeight = "medium"
-            style.backgroundColor = "F8F9FA"
-            style.borderWidth = 1
-            style.borderColor = "DEE2E6"
-            style.cornerRadius = 4
-            style.padding = 6
-            style.sectionLayout = .vertical
-            style.contentSpacing = 0
-            style.contentPadding = 6
+            return subtleSection
+                .withFontSize(10)
+                .withFontWeight("medium")
+                .withTextColor("374151")
+                .withSectionLayout(.vertical)
+                .withContentSpacing(4)
+                .withContentPadding(8)
+
         case .paymentTerms:
-            style.fontSize = 9
-            style.fontWeight = "regular"
-            style.textAlignment = .leading
-            style.borderWidth = 0
+            return ComponentStyle()
+                .withFontSize(9)
+                .withFontWeight("regular")
+                .withTextColor("6B7280")
+                .withTextAlignment(.leading)
+                .withBorder(0, color: "000000")
+
         case .invoiceTitle:
-            style.fontSize = 16
-            style.fontWeight = "bold"
-            style.textAlignment = .center
-            style.placeholderText = "TAX INVOICE"
-            style.borderWidth = 0
+            return modernHeader
+                .withFontSize(22)
+                .withTextColor("1F2937")
+                .withTextAlignment(.center)
+                .withPlaceholderText("TAX INVOICE")
+                .withBorder(0, color: "000000")
+
         case .notes:
-            style.fontSize = 9
-            style.fontWeight = "regular"
-            style.borderWidth = 0
+            return ComponentStyle()
+                .withFontSize(9)
+                .withFontWeight("regular")
+                .withTextColor("6B7280")
+                .withTextAlignment(.leading)
+                .withBorder(0, color: "000000")
+                .withPlaceholderText("Notes or additional information...")
+
         case .textBox:
-            style.fontSize = 11
-            style.fontWeight = "regular"
-            style.placeholderText = "Text"
-            style.padding = 6
-            style.backgroundOpacity = 0.03
-            style.textColor = "111111"
-            style.borderWidth = 0
+            return ComponentStyle()
+                .withFontSize(11)
+                .withFontWeight("regular")
+                .withTextColor("374151")
+                .withPlaceholderText("Enter text here...")
+                .withPadding(8)
+                .withBackgroundColor("FFFFFF")
+                .withBackgroundOpacity(0.05)
+                .withBorder(0, color: "000000")
+                .withCornerRadius(4)
+
         case .rectangleShape:
-            style.backgroundColor = "F3F4F6"
-            style.backgroundOpacity = 1.0
-            style.borderWidth = 0
-            style.cornerRadius = 6
+            return ComponentStyle()
+                .withBackgroundColor("E5E7EB")
+                .withBackgroundOpacity(1.0)
+                .withBorder(1, color: "D1D5DB")
+                .withCornerRadius(8)
+                .withShadow(enabled: true, color: "000000", radius: 4, opacity: 0.1)
+
         case .ellipseShape:
-            style.backgroundColor = "F3F4F6"
-            style.backgroundOpacity = 1.0
-            style.borderWidth = 0
+            return ComponentStyle()
+                .withBackgroundColor("E5E7EB")
+                .withBackgroundOpacity(1.0)
+                .withBorder(1, color: "D1D5DB")
+                .withShadow(enabled: true, color: "000000", radius: 4, opacity: 0.1)
+
         case .lineShape:
-            // For lines, use borderColor for the line color and lineThickness for the width.
-            // Background is irrelevant, and border is the line itself.
-            style.backgroundColor = "000000"
-            style.backgroundOpacity = 0.0 // No background fill
-            style.borderWidth = 0 // No separate border
-            style.borderColor = "333333"
-            style.padding = 0
-            style.lineThickness = 2
-            style.lineStartDecorator = .none
-            style.lineEndDecorator = .none
+            return ComponentStyle()
+                .withBackgroundColor("000000")
+                .withBackgroundOpacity(0.0)
+                .withBorder(0, color: "374151")
+                .withPadding(0)
+                .withLineThickness(2)
+                .withLineStartDecorator(.none)
+                .withLineEndDecorator(.none)
+
         case .triangleShape:
-            style.backgroundColor = "F3F4F6"
-            style.borderWidth = 0
-            style.triangleDirection = .up
+            return ComponentStyle()
+                .withBackgroundColor("E5E7EB")
+                .withBackgroundOpacity(1.0)
+                .withBorder(1, color: "D1D5DB")
+                .withTriangleDirection(.up)
+                .withShadow(enabled: true, color: "000000", radius: 4, opacity: 0.1)
+
         case .starShape:
-            style.backgroundColor = "F3F4F6"
-            style.borderWidth = 0
-            style.starPoints = 5
-            style.starSmoothness = 0.38
+            return ComponentStyle()
+                .withBackgroundColor("E5E7EB")
+                .withBackgroundOpacity(1.0)
+                .withBorder(1, color: "D1D5DB")
+                .withStarPoints(5)
+                .withStarSmoothness(0.38)
+                .withShadow(enabled: true, color: "000000", radius: 4, opacity: 0.1)
+
         case .imagePlaceholder:
-            style.backgroundColor = "F3F4F6"
-            style.borderWidth = 0
-            style.imageContentMode = .fit
+            return ComponentStyle()
+                .withBackgroundColor("F9FAFB")
+                .withBorder(2, color: "E5E7EB")
+                .withCornerRadius(8)
+                .withImageContentMode(.fit)
+                .withShadow(enabled: true, color: "000000", radius: 4, opacity: 0.05)
         }
-        
+    }
+
+    // MARK: - Helper Methods for Chainable Style Creation
+
+    private func withPlaceholderText(_ text: String) -> ComponentStyle {
+        var style = self
+        style.placeholderText = text
+        return style
+    }
+
+    private func withTextAlignment(_ alignment: TextAlignment) -> ComponentStyle {
+        var style = self
+        style.textAlignment = alignment
+        return style
+    }
+
+    private func withImageContentMode(_ mode: ImageContentMode) -> ComponentStyle {
+        var style = self
+        style.imageContentMode = mode
+        return style
+    }
+
+    private func withSectionLayout(_ layout: SectionLayout) -> ComponentStyle {
+        var style = self
+        style.sectionLayout = layout
+        return style
+    }
+
+    private func withGridColumns(_ columns: Int) -> ComponentStyle {
+        var style = self
+        style.gridColumns = columns
+        return style
+    }
+
+    private func withLineThickness(_ thickness: CGFloat) -> ComponentStyle {
+        var style = self
+        style.lineThickness = thickness
+        return style
+    }
+
+    private func withLineStartDecorator(_ decorator: LineDecorator) -> ComponentStyle {
+        var style = self
+        style.lineStartDecorator = decorator
+        return style
+    }
+
+    private func withLineEndDecorator(_ decorator: LineDecorator) -> ComponentStyle {
+        var style = self
+        style.lineEndDecorator = decorator
+        return style
+    }
+
+    private func withTriangleDirection(_ direction: TriangleDirection) -> ComponentStyle {
+        var style = self
+        style.triangleDirection = direction
+        return style
+    }
+
+    private func withStarPoints(_ points: Int) -> ComponentStyle {
+        var style = self
+        style.starPoints = points
+        return style
+    }
+
+    private func withStarSmoothness(_ smoothness: CGFloat) -> ComponentStyle {
+        var style = self
+        style.starSmoothness = smoothness
         return style
     }
 }
