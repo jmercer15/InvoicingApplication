@@ -1,0 +1,9 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+InvoicingApplication.xcodeproj
+.vscode
+.fleet
+Application_Infrastructure_pagebreaks_fixed.docx
+Application_Infrastructure_pagebreaks_fixed.txt
+NDIS_Codebase_Analysis.txt
+NDIS_Service_Management_Code_Summary.txt
+Codebase Visualizations

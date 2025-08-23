@@ -1,0 +1,48 @@
+# SwiftUI Architecture Patterns
+
+## View Structure
+
+- Use `@StateObject` for ViewModels that manage complex state
+- Use `@Published` properties for reactive UI updates
+- Separate data models from view logic using dedicated service classes
+- Prefer `@Binding` for child-to-parent communication over complex callback chains
+
+## Data Flow
+
+- ViewModels should handle business logic and data transformation
+- Services should handle external integrations (EventKit, geocoding, etc.)
+- Use `SessionFormModel` for form data handling to separate concerns
+- Always validate data before applying to entities
+
+## Form Handling
+
+- Use `SessionFormModel` for session form data to separate validation from persistence
+- Implement proper validation before any data application
+- Use `SessionModificationService` for consistent entity creation/modification
+- Avoid creating temporary entities for operations like geocoding
+
+## Entity Management
+
+- Use `SessionFactory` for consistent session creation across the app
+- Always validate before saving to SwiftData
+- Handle recurring sessions with proper dialog options (this only, this and future, all)
+- Use proper error handling with specific error types
+
+## UI Components
+
+- Use glass morphism styling with `Color.black.opacity(0.3)` base and `Color.white.opacity(0.05)` hover
+- Implement consistent hover effects with `.easeInOut(duration: 0.2)` animations
+- Use `CustomHSplitView` instead of `NavigationSplitView` for split views
+- Apply consistent border styling with accent colors
+
+## Address Handling
+
+- Use `AddressSearchField` component for address input
+- Avoid creating temporary `AddressEntity` instances for geocoding
+- Use direct `CLGeocoder` calls for address geocoding without persistence
+- Only create `AddressEntity` instances during actual session save operations
+  description:
+  globs:
+  alwaysApply: false
+
+---

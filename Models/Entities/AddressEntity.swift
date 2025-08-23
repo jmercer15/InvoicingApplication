@@ -1,0 +1,153 @@
+//
+//  AddressEntity.swift
+//  InvoicingApplication
+//
+//  Created by Jesse Mercer on 21/7/2025.
+//
+//
+
+import Foundation
+import SwiftData
+
+/// Validation status for address entities
+enum AddressValidationStatus: String, Codable, CaseIterable {
+    case unvalidated = "unvalidated"
+    case pending = "pending"
+    case valid = "valid"
+    case failed = "failed"
+    
+    var displayName: String {
+        switch self {
+        case .unvalidated: return "Not Validated"
+        case .pending: return "Validating..."
+        case .valid: return "Valid"
+        case .failed: return "Validation Failed"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .unvalidated: return "questionmark.circle"
+        case .pending: return "clock"
+        case .valid: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+    
+    var color: String {
+        switch self {
+        case .unvalidated: return "gray"
+        case .pending: return "blue"
+        case .valid: return "green"
+        case .failed: return "red"
+        }
+    }
+}
+
+@Model public class AddressEntity {
+    public var id: UUID
+    var country: String = ""
+    var postcode: String = ""
+    var state: String = ""
+    var streetName: String = ""
+    var streetNumber: String = ""
+    var suburb: String = ""
+    var unitNumber: String = ""
+    var poBox: String = ""
+    var fullAddressText: String = ""
+    var latitude: Double = 0.0
+    var longitude: Double = 0.0
+    
+    // Validation tracking
+    var validationStatus: String = AddressValidationStatus.unvalidated.rawValue
+    var lastValidationAttempt: Date?
+    var validationError: String?
+    
+    var fullFormattedAddress: String {
+        // Compose a formatted address string from available fields
+        var components: [String] = []
+        
+        // Handle PO Box
+        if !poBox.isEmpty {
+            components.append("PO Box \(poBox)")
+        } else {
+            // Handle street address components
+            var streetComponents: [String] = []
+            
+            if !unitNumber.isEmpty {
+                streetComponents.append("Unit \(unitNumber)")
+            }
+            
+            // Combine street number and name without comma
+            var streetAddress = ""
+            if !streetNumber.isEmpty {
+                streetAddress += streetNumber
+            }
+            if !streetName.isEmpty {
+                if !streetAddress.isEmpty {
+                    streetAddress += " "
+                }
+                streetAddress += streetName
+            }
+            
+            if !streetAddress.isEmpty {
+                streetComponents.append(streetAddress)
+            }
+            
+            if !streetComponents.isEmpty {
+                components.append(streetComponents.joined(separator: ", "))
+            }
+        }
+        
+        // Add locality components
+        if !suburb.isEmpty {
+            components.append(suburb)
+        }
+        if !state.isEmpty {
+            components.append(state)
+        }
+        if !postcode.isEmpty {
+            components.append(postcode)
+        }
+        if !country.isEmpty {
+            components.append(country)
+        }
+        
+        return components.joined(separator: ", ")
+    }
+    
+    // Compatibility property for existing code
+    var formattedAddress: String {
+        return fullFormattedAddress
+    }
+    
+    // Computed property for validation status
+    var validationStatusEnum: AddressValidationStatus {
+        get {
+            return AddressValidationStatus(rawValue: validationStatus) ?? .unvalidated
+        }
+        set {
+            validationStatus = newValue.rawValue
+        }
+    }
+    
+    // Helper to check if address is valid for geocoding
+    var isValidForGeocoding: Bool {
+        return !fullFormattedAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    // Helper to check if coordinates are valid
+    var hasValidCoordinates: Bool {
+        return latitude != 0.0 && longitude != 0.0
+    }
+    
+    @Relationship(deleteRule: .nullify, inverse: \BusinessEntity.address) var business: BusinessEntity?
+    @Relationship(deleteRule: .nullify, inverse: \ClientEntity.address) var client: ClientEntity?
+    @Relationship(deleteRule: .nullify, inverse: \PayeeEntity.address) var payee: PayeeEntity?
+    @Relationship(deleteRule: .nullify, inverse: \PlanManagerEntity.address) var planManager: PlanManagerEntity?
+    @Relationship(deleteRule: .cascade, inverse: \SessionEntity.address) var session: SessionEntity?
+    
+    public init() {
+        self.id = UUID()
+    }
+}
