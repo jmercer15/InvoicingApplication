@@ -403,6 +403,9 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                             let span = max(tableItem.columnSpan, 1)
                             let cellWidth = widthForColumns(startIndex: cellIndex, span: span, columnWidths: columnWidths)
                             
+                            // Filter rowData to only DocumentTableItem items for safe casting
+                            let safeRowData = rowData.compactMap { $0 as? DocumentTableItem }
+                            
                             ZStack {
                                 // Cell content
                                 cellContent(tableItem)
@@ -410,7 +413,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                                     .gridCellColumns(tableItem.columnSpan)
 
                                 // Vertical borders for this cell
-                                verticalBorderForCell(tableItem, rowIndex: rowIndex, cellIndex: cellIndex, rowData: rowData as! [DocumentTableItem])
+                                verticalBorderForCell(tableItem, rowIndex: rowIndex, cellIndex: cellIndex, rowData: safeRowData)
                                     .frame(width: cellWidth)
                             }
                         }

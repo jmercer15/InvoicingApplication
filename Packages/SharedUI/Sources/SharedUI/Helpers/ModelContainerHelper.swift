@@ -40,7 +40,7 @@ public struct ModelContainerHelper {
     
     /// Creates a ModelContainer with all required entities (non-throwing version)
     /// - Returns: A configured ModelContainer instance, or nil if creation fails
-    static func createModelContainerSafely() -> ModelContainer? {
+    public static func createModelContainerSafely() -> ModelContainer? {
         return try? ModelContainer(for: ClientEntity.self, BusinessEntity.self, AddressEntity.self, InvoiceEntity.self, InvoiceItemEntity.self, ClientServiceEntity.self, PayeeEntity.self, PlanManagerEntity.self, SessionEntity.self, TravelChargeEntity.self, TravelChargeAuditLog.self, TravelChargeReviewItem.self, CreditHistoryEntryEntity.self, NDISItemEntity.self, RegionalPriceEntity.self)
     }
 }
