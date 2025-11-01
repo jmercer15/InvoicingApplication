@@ -22,8 +22,12 @@ public struct BillingHubView: View {
 
 
     public init() {
+        // Use safe container creation to handle errors gracefully
+        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+            fatalError("Failed to create ModelContainer for BillingHubView")
+        }
         _viewModel = StateObject(wrappedValue: BillingHubViewModel(
-            modelContext: ModelContext(try! ModelContainerHelper.createModelContainer())
+            modelContext: ModelContext(container)
         ))
     }
 
@@ -280,7 +284,7 @@ private struct FilterPill: View {
 
 // Supporting Views - Moved to separate files: KanbanHeaders.swift, KanbanViews.swift, EditingPanel.swift, StatusIndicator.swift
 
-#Preview("Billing Hub – Full View") {
+#Preview("Billing Hub ? Full View") {
     BillingHubView_Preview()
 }
 
