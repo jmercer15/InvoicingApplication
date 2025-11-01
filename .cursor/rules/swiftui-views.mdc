@@ -1,0 +1,278 @@
+---
+description: SwiftUI view patterns and best practices for view structure and state management
+globs:
+  - "**/*View*.swift"
+  - "**/Feature.*/**/Views/**/*.swift"
+  - "**/SharedUI/**/Views/**/*.swift"
+alwaysApply: false
+---
+
+# SwiftUI Views
+
+## Overview
+
+SwiftUI views follow MVVM architecture with ViewModels handling business logic. Views are lightweight and focus on presentation.
+
+## Core Principles
+
+- Views are `struct` conforming to `View`
+- Use `@StateObject` for ViewModels
+- Use `@Environment(\.modelContext)` for SwiftData
+- Dependencies injected via initializer
+- Views are thin, logic in ViewModels
+
+## View Structure
+
+### Basic Pattern
+
+```swift
+// ✅ Correct: View with ViewModel
+// Packages/Feature.BillingHub/Sources/Feature_BillingHub/Views/BillingHubView.swift
+public struct BillingHubView: View {
+    @Environment(\.modelContext) private var modelContext
+    @StateObject private var viewModel: BillingHubViewModel
+
+    @State private var isEditingPanelVisible = false
+    @State private var selectedCard: KanbanCardData?
+    @FocusState private var isSearchFocused: Bool
+
+    public init(viewModel: BillingHubViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    public var body: some View {
+        // View content
+    }
+}
+```
+
+**Key Points**:
+
+- View is a `struct` (not class)
+- Conforms to `View` protocol
+- ViewModel via `@StateObject`
+- SwiftData context via `@Environment(\.modelContext)`
+- Local UI state via `@State`
+- Focus state via `@FocusState`
+
+### Initialization Patterns
+
+```swift
+// ✅ Correct: Public initializer for dependency injection
+public struct BillingHubView: View {
+    @StateObject private var viewModel: BillingHubViewModel
+
+    public init(viewModel: BillingHubViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    // Internal initializer for previews/testing
+    init(viewModel: BillingHubViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+}
+```
+
+## ViewModel Integration
+
+### Pattern
+
+ViewModels are injected via `@StateObject`:
+
+```swift
+// ✅ Correct: ViewModel injection
+@StateObject private var viewModel: BillingHubViewModel
+
+public init(viewModel: BillingHubViewModel) {
+    _viewModel = StateObject(wrappedValue: viewModel)
+}
+```
+
+**ViewModel Requirements**:
+
+- Must be `@MainActor ObservableObject`
+- Created in `AppAssembly` factory methods
+- Injected via initializer
+- Accessed via properties: `viewModel.property`
+- Bindings via `$`: `$viewModel.isEditing`
+
+### Accessing ViewModel State
+
+```swift
+// ✅ Correct: Accessing ViewModel properties
+Text(viewModel.searchText)
+Toggle("Enable", isOn: $viewModel.isEnabled)
+Button("Action") {
+    viewModel.performAction()
+}
+```
+
+## Dependency Injection
+
+### AppAssembly Factory Methods
+
+ViewModels are created in `AppAssembly`:
+
+```swift
+// ✅ Correct: ViewModel factory in AppAssembly
+// InvoicingApplication/App/Composition/AppAssembly.swift
+func makeBillingHubViewModel() -> BillingHubViewModel {
+    BillingHubViewModel(modelContext: modelContext)
+}
+
+func makeClientsViewModel() -> ClientsViewModel {
+    ClientsViewModel(clientsRepository: clientsRepository)
+}
+```
+
+### View Creation
+
+Views receive ViewModels via initializer:
+
+```swift
+// ✅ Correct: View with injected ViewModel
+let viewModel = appAssembly.makeBillingHubViewModel()
+BillingHubView(viewModel: viewModel)
+```
+
+## State Management
+
+### Published Properties
+
+ViewModels use `@Published` for reactive state:
+
+```swift
+// ✅ Correct: Published properties in ViewModel
+@MainActor
+public final class BillingHubViewModel: ObservableObject {
+    @Published var searchText: String = ""
+    @Published var selectedClientID: UUID?
+    @Published var sessionsByStatus: [SessionStatus: [Session]] = [:]
+}
+```
+
+### Local View State
+
+Use `@State` for local UI state:
+
+```swift
+// ✅ Correct: Local view state
+@State private var isEditingPanelVisible = false
+@State private var selectedCard: KanbanCardData?
+@FocusState private var isSearchFocused: Bool
+```
+
+**When to Use Each**:
+
+- `@Published` in ViewModel: State that affects business logic or multiple views
+- `@State` in View: Local UI state (e.g., sheet visibility, animation state)
+- `@FocusState`: Focus management for text fields
+- `@Environment`: SwiftData context, app-wide settings
+
+## SwiftData Integration
+
+### ModelContext Access
+
+```swift
+// ✅ Correct: ModelContext via environment
+@Environment(\.modelContext) private var modelContext
+```
+
+**Usage**:
+
+- Only access directly for simple operations
+- Prefer repository pattern for data operations
+- ViewModels receive context via dependency injection
+
+## View Composition
+
+### Break Down Complex Views
+
+```swift
+// ✅ Correct: Composed view structure
+public var body: some View {
+    ZStack {
+        BillingHubBackground()
+        KanbanBoardView(
+            viewModel: viewModel,
+            selectedCard: $selectedCard,
+            isEditingPanelVisible: $isEditingPanelVisible
+        )
+        .overlay(
+            Group {
+                if isEditingPanelVisible, let card = selectedCard {
+                    EditingPanel(card: card, isVisible: $isEditingPanelVisible)
+                }
+            },
+            alignment: .bottom
+        )
+    }
+    .toolbar {
+        toolbarContent()
+    }
+}
+
+// Private helper views
+private extension BillingHubView {
+    @ToolbarContentBuilder
+    func toolbarContent() -> some ToolbarContent {
+        // Toolbar items
+    }
+}
+```
+
+**Guidelines**:
+
+- Extract complex subviews into separate views
+- Use private extensions for helper views
+- Use `@ViewBuilder` for conditional views
+
+## Preview Support
+
+### Preview Initializer
+
+```swift
+// ✅ Correct: Preview with test data
+#Preview("Billing Hub") {
+    let viewModel = BillingHubViewModel(modelContext: previewContext)
+    BillingHubView(viewModel: viewModel)
+}
+```
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: View creating its own ViewModel
+struct BillingHubView: View {
+    @StateObject private var viewModel = BillingHubViewModel(...) // Should be injected
+}
+
+// ❌ Wrong: View accessing ModelContext directly for complex operations
+@Environment(\.modelContext) private var modelContext
+// Then using modelContext.fetch(...) directly - should use repository
+
+// ❌ Wrong: Business logic in View
+struct BillingHubView: View {
+    var body: some View {
+        Button("Save") {
+            // Complex business logic here - should be in ViewModel
+        }
+    }
+}
+
+// ❌ Wrong: View as class
+class BillingHubView: View {  // Should be struct
+}
+```
+
+## Related Rules
+
+- `viewmodels.mdc` - ViewModel patterns
+- `architecture.mdc` - Dependency injection patterns
+- `color-system.mdc` - Color usage in views
+
+## File References
+
+- `Packages/Feature.BillingHub/Sources/Feature_BillingHub/Views/BillingHubView.swift` - Complete view example
+- `InvoicingApplication/Core/App/ContentView.swift` - View composition example
+- `InvoicingApplication/App/Composition/AppAssembly.swift` - ViewModel factory methods

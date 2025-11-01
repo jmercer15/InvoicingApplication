@@ -1,0 +1,267 @@
+---
+alwaysApply: true
+---
+
+# SwiftData Core Patterns
+
+## Overview
+
+SwiftData is used for data persistence throughout the application. This rule covers fundamental patterns for entity definition, relationships, queries, and context management.
+
+## Core Principles
+
+- All entities use `@Model` macro
+- UUID primary keys are required
+- Relationships use appropriate delete rules
+- Queries use `FetchDescriptor` with `#Predicate`
+- Never use computed properties in predicates
+
+## Entity Definition
+
+### Basic Structure
+
+```swift
+// ✅ Correct: Entity definition
+// Packages/Data/Sources/Data/Persistence/ClientEntity.swift
+@Model public class ClientEntity {
+    #Index<ClientEntity>([\.fullName], [\.email], [\.phone])
+
+    @Attribute(.unique) public var ndisNumber: String
+    public var id: UUID
+    public var fullName: String
+    public var status: ClientStatus
+
+    @Relationship(deleteRule: .cascade)
+    public var clientServices: [ClientServiceEntity] = []
+
+    @Relationship(deleteRule: .nullify)
+    public var address: AddressEntity?
+
+    public init(id: UUID, ndisNumber: String, fullName: String, status: ClientStatus) {
+        self.id = id
+        self.ndisNumber = ndisNumber
+        self.fullName = fullName
+        self.status = status
+    }
+}
+```
+
+**Key Points**:
+
+- Use `@Model` macro (not `@Model` class decorator)
+- Always include `id: UUID` as primary key
+- Use `public` visibility for entities
+- Use `#Index` macro for frequently queried properties
+- Use `@Attribute(.unique)` for unique constraints
+
+## Relationship Patterns
+
+### Delete Rules
+
+Choose delete rules based on relationship semantics:
+
+```swift
+// ✅ Correct: Cascade for owned children
+@Relationship(deleteRule: .cascade)
+public var clientServices: [ClientServiceEntity] = []
+// ClientServices have no meaning without Client
+
+// ✅ Correct: Nullify for shared/optional relationships
+@Relationship(deleteRule: .nullify)
+public var address: AddressEntity?
+// Address can exist independently and be reused
+
+// ✅ Correct: Nullify for financial data (audit trail)
+@Relationship(deleteRule: .nullify)
+public var invoices: [InvoiceEntity] = []
+// Invoices must be preserved for legal/financial records
+```
+
+**Delete Rule Guidelines**:
+
+- **`.cascade`**: Owned children that shouldn't exist without parent (e.g., `clientServices`)
+- **`.nullify`**: Shared resources, optional relationships, or data that must be preserved (e.g., `address`, `invoices`, `planManager`)
+- **Financial data**: Usually `.nullify` to preserve audit trails
+- Reference: `Packages/Data/Sources/Data/Mapping/Relationship_Delete_Rules_Audit.md`
+
+### Inverse Relationships
+
+Specify inverse relationships for bidirectional relationships:
+
+```swift
+// ✅ Correct: Bidirectional relationship with inverse
+@Relationship(deleteRule: .nullify, inverse: \ClientEntity.sessions)
+public var client: ClientEntity?
+```
+
+## Index Configuration
+
+Use `#Index` macro for frequently queried properties:
+
+```swift
+// ✅ Correct: Index configuration
+@Model public class ClientEntity {
+    #Index<ClientEntity>([\.fullName], [\.email], [\.phone], [\.isMinor], [\.hasNdisPlan])
+    // ...
+}
+```
+
+**Indexing Guidelines**:
+
+- Index foreign keys
+- Index status/enum fields used in queries
+- Index date fields used for filtering
+- Index fields used in `sortBy` frequently
+- Reference: `Packages/Data/Sources/Data/Optimization/RecommendedIndexingStrategy.md`
+
+## Query Patterns
+
+### FetchDescriptor with Predicate
+
+Always use `FetchDescriptor` with `#Predicate`:
+
+```swift
+// ✅ Correct: Query with predicate
+public func fetch(by id: UUID) async throws -> Client? {
+    let predicate = #Predicate<ClientEntity> { $0.id == id }
+    let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+    guard let entity = try modelContext.fetch(descriptor).first else {
+        return nil
+    }
+    return Client(from: entity)
+}
+
+// ✅ Correct: Convert UUID string before predicate
+public func fetch(by idString: String) async throws -> Client? {
+    guard let uuid = UUID(uuidString: idString) else { return nil }
+    let predicate = #Predicate<ClientEntity> { $0.id == uuid }
+    let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+    // ...
+}
+```
+
+**Critical Rule**: Never use computed properties in predicates
+
+```swift
+// ❌ Wrong: Computed property in predicate
+FetchDescriptor<ClientEntity>(predicate: #Predicate {
+    $0.id.uuidString == idString  // Won't compile/work
+})
+
+// ❌ Wrong: Method calls in predicate
+FetchDescriptor<ClientEntity>(predicate: #Predicate {
+    $0.fullName.lowercased().contains(searchText)  // Won't work
+})
+```
+
+### Sorting
+
+Use `SortDescriptor` for ordering:
+
+```swift
+// ✅ Correct: Query with sorting
+let descriptor = FetchDescriptor<ClientEntity>(
+    sortBy: [SortDescriptor(\.fullName, order: .forward)]
+)
+```
+
+### Complex Queries
+
+For complex filtering, build predicates step by step:
+
+```swift
+// ✅ Correct: Complex predicate
+let predicate = #Predicate<ClientEntity> { client in
+    client.status.rawValue == "Active" &&
+    (client.fullName.contains(searchText) || client.email?.contains(searchText) ?? false)
+}
+let descriptor = FetchDescriptor<ClientEntity>(
+    predicate: predicate,
+    sortBy: [SortDescriptor(\.fullName, order: .forward)]
+)
+```
+
+## Context Management
+
+### Context Injection
+
+Always inject `ModelContext` via initializer:
+
+```swift
+// ✅ Correct: Context injection
+public final class ClientsRepositorySwiftData: ClientsRepository {
+    private let modelContext: ModelContext
+
+    public init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+}
+```
+
+### Save Operations
+
+Always handle save errors:
+
+```swift
+// ✅ Correct: Save with error handling
+public func create(_ client: Client) async throws -> Client {
+    let entity = ClientEntity(...)
+    modelContext.insert(entity)
+    do {
+        try modelContext.save()
+    } catch {
+        modelContext.rollback()
+        throw error
+    }
+    return Client(from: entity)
+}
+```
+
+**Key Points**:
+
+- Always wrap `save()` in do-catch
+- Call `rollback()` on save failure
+- Re-throw error after rollback
+- Never access `ModelContext` from background threads
+
+### Thread Safety
+
+- `ModelContext` is not thread-safe
+- Always access from main thread or use `@MainActor`
+- Repository classes use `@unchecked Sendable` with careful context management
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: No primary key
+@Model public class ClientEntity {
+    public var name: String  // Missing id: UUID
+}
+
+// ❌ Wrong: Computed property in predicate
+FetchDescriptor<ClientEntity>(predicate: #Predicate {
+    $0.id.uuidString == idString
+})
+
+// ❌ Wrong: No error handling on save
+modelContext.insert(entity)
+try modelContext.save()  // No rollback on failure
+
+// ❌ Wrong: Creating context inside repository
+class ClientsRepositorySwiftData {
+    let context = ModelContext(...)  // Should be injected
+}
+```
+
+## Related Rules
+
+- `swiftdata-entities.mdc` - Detailed entity patterns
+- `repository-pattern.mdc` - Repository query patterns
+- `domain-entity-mapping.mdc` - Entity to domain conversion
+
+## File References
+
+- `Packages/Data/Sources/Data/Persistence/ClientEntity.swift` - Entity example
+- `Packages/Data/Sources/Data/Mapping/Relationship_Delete_Rules_Audit.md` - Delete rules guidelines
+- `Packages/Data/Sources/Data/Repositories/ClientsRepositorySwiftData.swift` - Query examples
+- `Packages/Data/Sources/Data/Optimization/RecommendedIndexingStrategy.md` - Indexing guidelines

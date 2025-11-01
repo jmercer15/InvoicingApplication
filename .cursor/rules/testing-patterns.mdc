@@ -1,0 +1,244 @@
+---
+description: Testing patterns for unit, integration, and round-trip tests
+alwaysApply: false
+---
+
+# Testing Patterns
+
+## Overview
+
+Testing strategy includes unit tests for business logic, integration tests for repositories, and round-trip tests for mappings.
+
+## Core Principles
+
+- Unit tests for business logic (use cases, ViewModels)
+- Integration tests for repositories with test ModelContainer
+- Round-trip tests for entity-domain mappings
+- Mock repositories for unit tests
+- Test factories for test data
+
+## Test Organization
+
+### Unit Tests
+
+```swift
+// ✅ Correct: Unit test structure
+// Packages/Core/Tests/CoreTests/FetchSessionsTests.swift
+import XCTest
+@testable import Core
+
+final class FetchSessionsTests: XCTestCase {
+    func testFetchSessions_Success() async throws {
+        // Arrange
+        let mockRepository = MockSessionsRepository()
+        let useCase = FetchSessions(repository: mockRepository)
+        
+        // Act
+        let sessions = try await useCase.execute()
+        
+        // Assert
+        XCTAssertEqual(sessions.count, 2)
+    }
+}
+```
+
+**Unit Test Focus**:
+- Business logic in use cases
+- ViewModel state management
+- Domain model behavior
+- Validation logic
+
+### Integration Tests
+
+```swift
+// ✅ Correct: Integration test with test container
+// Packages/Data/Tests/DataTests/ClientsRepositoryTests.swift
+import XCTest
+import SwiftData
+@testable import Data
+
+final class ClientsRepositorySwiftDataTests: XCTestCase {
+    var modelContainer: ModelContainer!
+    var modelContext: ModelContext!
+    var repository: ClientsRepositorySwiftData!
+    
+    override func setUp() {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        modelContainer = try! ModelContainer(
+            for: ClientEntity.self,
+            configurations: config
+        )
+        modelContext = ModelContext(modelContainer)
+        repository = ClientsRepositorySwiftData(modelContext: modelContext)
+    }
+    
+    func testCreateClient() async throws {
+        let client = Client(id: UUID(), ndisNumber: "410000010", fullName: "Test Client", status: "Active")
+        let created = try await repository.create(client)
+        
+        XCTAssertEqual(created.fullName, "Test Client")
+    }
+}
+```
+
+**Integration Test Focus**:
+- Repository operations
+- Entity persistence
+- Query operations
+- Relationship handling
+
+### Round-Trip Tests
+
+```swift
+// ✅ Correct: Round-trip mapping test
+// Packages/Data/Tests/DataTests/Mapping/ClientMappingTests.swift
+func testRoundTripMapping() {
+    // Create entity
+    let entity = ClientEntity(id: UUID(), ndisNumber: "410000010", fullName: "Test", status: .active)
+    
+    // Entity to Domain
+    let domainModel = Client(from: entity)
+    
+    // Domain to Entity
+    let newEntity = ClientEntity(id: domainModel.id, ndisNumber: domainModel.ndisNumber, fullName: domainModel.fullName, status: .active)
+    newEntity.update(from: domainModel)
+    
+    // Verify round-trip
+    XCTAssertEqual(entity.id, newEntity.id)
+    XCTAssertEqual(entity.fullName, newEntity.fullName)
+}
+```
+
+**Round-Trip Test Focus**:
+- Entity → Domain → Entity preserves data
+- All properties correctly mapped
+- Optional handling works correctly
+- Relationship mappings preserved
+
+## Mock Patterns
+
+### Mock Repository
+
+```swift
+// ✅ Correct: Mock repository for unit tests
+class MockSessionsRepository: SessionsRepository {
+    var fetchAllCalled = false
+    var sessionsToReturn: [Session] = []
+    
+    func fetchAll() async throws -> [Session] {
+        fetchAllCalled = true
+        return sessionsToReturn
+    }
+}
+```
+
+### Test Data Factories
+
+```swift
+// ✅ Correct: Test data factory
+extension Client {
+    static func testClient(
+        id: UUID = UUID(),
+        ndisNumber: String = "410000010",
+        fullName: String = "Test Client"
+    ) -> Client {
+        Client(
+            id: id,
+            ndisNumber: ndisNumber,
+            fullName: fullName,
+            status: "Active"
+        )
+    }
+}
+```
+
+## Test Data
+
+### In-Memory Container
+
+```swift
+// ✅ Correct: In-memory test container
+let config = ModelConfiguration(isStoredInMemoryOnly: true)
+let container = try ModelContainer(
+    for: ClientEntity.self,
+    configurations: config
+)
+```
+
+### Test Entity Creation
+
+```swift
+// ✅ Correct: Test entity helpers
+extension ClientEntity {
+    static func testEntity(
+        id: UUID = UUID(),
+        fullName: String = "Test Client"
+    ) -> ClientEntity {
+        ClientEntity(
+            id: id,
+            ndisNumber: "410000010",
+            fullName: fullName,
+            status: .active
+        )
+    }
+}
+```
+
+## Edge Case Testing
+
+### Nil Handling
+
+```swift
+// ✅ Correct: Testing nil handling
+func testMappingWithNilValues() {
+    let entity = ClientEntity(...)
+    entity.email = nil
+    entity.phone = nil
+    
+    let domainModel = Client(from: entity)
+    
+    XCTAssertNil(domainModel.email)
+    XCTAssertNil(domainModel.phone)
+}
+```
+
+### Error Scenarios
+
+```swift
+// ✅ Correct: Testing error scenarios
+func testRepositoryError() async {
+    let mockRepository = MockRepository()
+    mockRepository.shouldThrowError = true
+    
+    let useCase = FetchSessions(repository: mockRepository)
+    
+    do {
+        _ = try await useCase.execute()
+        XCTFail("Should have thrown error")
+    } catch {
+        XCTAssertTrue(error is RepositoryError)
+    }
+}
+```
+
+## Performance Testing
+
+### Large Dataset Tests
+
+```swift
+// ✅ Correct: Performance test
+func testMappingPerformance() {
+    let entities = (0..<1000).map { _ in ClientEntity.testEntity() }
+    
+    measure {
+        let domainModels = entities.map { Client(from: $0) }
+        XCTAssertEqual(domainModels.count, entities.count)
+    }
+}
+```
+
+## Related Rules
+
+- `domain-entity-mapping.mdc` - Mapping patterns to test
+- `repository-pattern.mdc` - Repository patterns to test
+- `use-cases.mdc` - Use case patterns to test

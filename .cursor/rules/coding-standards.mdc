@@ -1,0 +1,247 @@
+---
+alwaysApply: true
+---
+
+# Coding Standards
+
+## Overview
+
+General Swift coding conventions and best practices for maintaining consistency across the codebase.
+
+## Naming Conventions
+
+### Types and Files
+
+```swift
+// ✅ Correct: PascalCase for types
+public struct Client { }
+public class ClientEntity { }
+public protocol ClientsRepository { }
+public enum ClientStatus { }
+```
+
+**Conventions**:
+- Types: PascalCase (`ClientEntity`, `CalendarViewModel`)
+- Files: Match type name exactly (`ClientEntity.swift`)
+- One type per file (except extensions in same file)
+
+### Properties and Variables
+
+```swift
+// ✅ Correct: camelCase for properties
+public var fullName: String
+private var isActive: Bool
+let clientId: UUID
+```
+
+**Conventions**:
+- Properties: camelCase (`fullName`, `isActive`, `clientId`)
+- Boolean properties: Prefix with `is`, `has`, `can`, `should` (`isActive`, `hasNdisPlan`)
+- Constants: camelCase (not SCREAMING_CASE)
+
+### Methods and Functions
+
+```swift
+// ✅ Correct: camelCase for methods
+func fetchAll() async throws -> [Client]
+func updateStatus(_ status: ClientStatus) async throws
+private func validateEmail(_ email: String) -> Bool
+```
+
+## Access Control
+
+### Public APIs
+
+```swift
+// ✅ Correct: Public for cross-package APIs
+public protocol ClientsRepository: Sendable {
+    func fetchAll() async throws -> [Client]
+}
+
+public struct Client: Identifiable {
+    public let id: UUID
+    public let fullName: String
+}
+```
+
+**Guidelines**:
+- Use `public` for APIs used across packages
+- Use `internal` (default) for package-internal code
+- Use `private` or `fileprivate` for implementation details
+
+### Package Boundaries
+
+- Core package: Public domain models and repository interfaces
+- Data package: Public entities and repository implementations
+- Feature packages: Public Views and ViewModels
+
+## Documentation
+
+### Public APIs
+
+```swift
+// ✅ Correct: Document public APIs
+/// Repository for client data operations
+public protocol ClientsRepository: Sendable {
+    /// Fetch all clients
+    /// - Returns: Array of all clients
+    func fetchAll() async throws -> [Client]
+    
+    /// Fetch client by ID
+    /// - Parameter id: Client UUID
+    /// - Returns: Client if found, nil otherwise
+    func fetch(by id: UUID) async throws -> Client?
+}
+```
+
+**Guidelines**:
+- Document all public APIs with `///` comments
+- Use Swift DocC format
+- Describe parameters and return values
+- Document complex business logic
+
+### Code Organization
+
+```swift
+// ✅ Correct: Use MARK comments for organization
+@MainActor
+public final class CalendarViewModel: ObservableObject {
+    // MARK: - Dependencies
+    private let modelContext: ModelContext
+    private let eventKitService: EventKitSyncService
+    
+    // MARK: - Published Properties
+    @Published var selectedDate: Date = Date()
+    @Published var calendarViewType: CalendarViewType = .week
+    
+    // MARK: - Initialization
+    public init(...) { }
+    
+    // MARK: - Public Methods
+    public func loadData() { }
+    
+    // MARK: - Private Methods
+    private func setupBindings() { }
+}
+```
+
+## Error Handling
+
+### Error Types
+
+```swift
+// ✅ Correct: Specific error types
+enum RepositoryError: Error {
+    case entityNotFound
+    case invalidData(String)
+    case saveFailed(Error)
+}
+
+enum ValidationError: Error {
+    case invalidEmail
+    case missingRequiredField(String)
+}
+```
+
+**Guidelines**:
+- Use specific error types, not generic `Error`
+- Conform to `Error` protocol
+- Include associated values for context
+- Use `async throws` for repository methods
+
+### Error Propagation
+
+```swift
+// ✅ Correct: Error handling patterns
+public func update(_ client: Client) async throws -> Client {
+    guard let entity = try await fetchEntity(by: client.id) else {
+        throw RepositoryError.entityNotFound
+    }
+    entity.update(from: client)
+    do {
+        try modelContext.save()
+    } catch {
+        modelContext.rollback()
+        throw RepositoryError.saveFailed(error)
+    }
+    return Client(from: entity)
+}
+```
+
+## Swift Conventions
+
+### Immutability
+
+```swift
+// ✅ Correct: Prefer let over var
+let clientId: UUID
+let fullName: String
+
+// Only use var when mutation is required
+var isEditing: Bool = false
+```
+
+### Guard Statements
+
+```swift
+// ✅ Correct: Guard for early returns
+guard let entity = try await fetchEntity(by: id) else {
+    throw RepositoryError.entityNotFound
+}
+// Use entity here
+```
+
+### Optional Chaining and Nil Coalescing
+
+```swift
+// ✅ Correct: Optional handling
+let email = client.email ?? ""
+let address = entity.address.map { Address(from: $0) }
+let status = entity.status.rawValue
+```
+
+### Type Inference
+
+```swift
+// ✅ Correct: Use type inference when clear
+let clients = try await repository.fetchAll()
+let clientId = UUID()
+
+// Explicit types for clarity when needed
+let descriptor: FetchDescriptor<ClientEntity> = FetchDescriptor(...)
+```
+
+## Code Formatting
+
+### Spacing and Indentation
+
+- Use 4 spaces for indentation (not tabs)
+- One blank line between type definitions
+- One blank line before `// MARK:` comments
+- No trailing whitespace
+
+### Line Length
+
+- Prefer lines under 120 characters
+- Break long lines at logical points
+- Align continuation lines appropriately
+
+### Import Organization
+
+```swift
+// ✅ Correct: Import organization
+import Foundation
+import SwiftUI
+import SwiftData
+
+// Then package imports
+import Core
+import Data
+import SharedUI
+```
+
+## Related Rules
+
+- `architecture.mdc` - Architectural patterns
+- `swiftui-views.mdc` - View-specific patterns
+- `viewmodels.mdc` - ViewModel patterns

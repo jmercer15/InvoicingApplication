@@ -1,0 +1,323 @@
+---
+description: Repository pattern implementation guidelines for data access abstraction
+globs:
+  - "**/*Repository*.swift"
+  - "**/Ports/**/*.swift"
+  - "**/Repositories/**/*.swift"
+alwaysApply: false
+---
+
+# Repository Pattern
+
+## Overview
+
+The repository pattern provides an abstraction layer between domain logic and data persistence. Repository interfaces are defined in Core, implementations in Data.
+
+## Core Principles
+
+- Repository interfaces in `Core/Ports/` as protocols
+- Repository implementations in `Data/Repositories/` as classes
+- All methods `async throws`
+- Always return domain models, never entities
+- Inject ModelContext via initializer
+
+## Interface Definition (Core/Ports)
+
+### Protocol Structure
+
+```swift
+// ✅ Correct: Repository interface
+// Packages/Core/Sources/Core/Ports/ClientsRepository.swift
+public protocol ClientsRepository: Sendable {
+    /// Fetch all clients
+    func fetchAll() async throws -> [Client]
+    
+    /// Fetch active clients only
+    func fetchActive() async throws -> [Client]
+    
+    /// Fetch a single client by ID
+    func fetch(by id: UUID) async throws -> Client?
+    
+    /// Fetch client by NDIS number
+    func fetch(by ndisNumber: String) async throws -> Client?
+    
+    /// Create a new client
+    func create(_ client: Client) async throws -> Client
+    
+    /// Update an existing client
+    func update(_ client: Client) async throws -> Client
+    
+    /// Delete a client
+    func delete(id: UUID) async throws
+    
+    /// Archive a client
+    func archive(id: UUID) async throws
+    
+    /// Search clients by query
+    func search(query: String) async throws -> [Client]
+}
+```
+
+**Key Points**:
+- Protocol named `{Model}Repository`
+- Conforms to `Sendable` for thread safety
+- All methods are `async throws`
+- Returns domain models (`Client`), not entities (`ClientEntity`)
+- Document all methods with comments
+
+## Implementation (Data/Repositories)
+
+### Class Structure
+
+```swift
+// ✅ Correct: Repository implementation
+// Packages/Data/Sources/Data/Repositories/ClientsRepositorySwiftData.swift
+import Foundation
+import SwiftData
+import Core
+
+public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sendable {
+    private let modelContext: ModelContext
+    
+    public init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+    
+    // Implement all protocol methods...
+}
+```
+
+**Key Points**:
+- Class named `{Model}RepositorySwiftData`
+- Conforms to repository protocol
+- Uses `@unchecked Sendable` with careful context management
+- Stores `ModelContext` as private `let`
+- Context injected via initializer
+
+### Fetch Operations
+
+```swift
+// ✅ Correct: Fetch all
+public func fetchAll() async throws -> [Client] {
+    let descriptor = FetchDescriptor<ClientEntity>(
+        sortBy: [SortDescriptor(\.fullName, order: .forward)]
+    )
+    let entities = try modelContext.fetch(descriptor)
+    return entities.map { Client(from: $0) }
+}
+
+// ✅ Correct: Fetch by ID
+public func fetch(by id: UUID) async throws -> Client? {
+    let predicate = #Predicate<ClientEntity> { $0.id == id }
+    let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+    guard let entity = try modelContext.fetch(descriptor).first else {
+        return nil
+    }
+    return Client(from: entity)
+}
+
+// ✅ Correct: Fetch with predicate
+public func fetchActive() async throws -> [Client] {
+    let predicate = #Predicate<ClientEntity> { client in
+        client.status.rawValue == "Active"
+    }
+    let descriptor = FetchDescriptor<ClientEntity>(
+        predicate: predicate,
+        sortBy: [SortDescriptor(\.fullName, order: .forward)]
+    )
+    let entities = try modelContext.fetch(descriptor)
+    return entities.map { Client(from: $0) }
+}
+```
+
+**Patterns**:
+- Use `FetchDescriptor` with `#Predicate`
+- Always map entities to domain models: `entities.map { DomainModel(from: $0) }`
+- Use `SortDescriptor` for ordering
+- Return `nil` for single-item fetches when not found
+
+### Create Operations
+
+```swift
+// ✅ Correct: Create with mapping
+public func create(_ client: Client) async throws -> Client {
+    let entity = ClientEntity(
+        id: client.id,
+        ndisNumber: client.ndisNumber,
+        fullName: client.fullName,
+        status: ClientStatus(rawValue: client.status) ?? .active
+    )
+    entity.update(from: client)
+    modelContext.insert(entity)
+    do {
+        try modelContext.save()
+    } catch {
+        modelContext.rollback()
+        throw RepositoryError.saveFailed(error)
+    }
+    return Client(from: entity)
+}
+```
+
+**Patterns**:
+- Create entity with required properties
+- Call `entity.update(from:)` for full mapping
+- Insert into context: `modelContext.insert(entity)`
+- Save with error handling and rollback
+- Return domain model created from entity
+
+### Update Operations
+
+```swift
+// ✅ Correct: Update with error handling
+public func update(_ client: Client) async throws -> Client {
+    guard let entity = try await fetchEntity(by: client.id) else {
+        throw RepositoryError.entityNotFound
+    }
+    entity.update(from: client)
+    do {
+        try modelContext.save()
+    } catch {
+        modelContext.rollback()
+        throw RepositoryError.saveFailed(error)
+    }
+    return Client(from: entity)
+}
+
+// Helper method for internal entity fetching
+private func fetchEntity(by id: UUID) async throws -> ClientEntity? {
+    let predicate = #Predicate<ClientEntity> { $0.id == id }
+    let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+    return try modelContext.fetch(descriptor).first
+}
+```
+
+**Patterns**:
+- Fetch existing entity first
+- Throw error if entity not found
+- Call `entity.update(from:)` for mapping
+- Save with error handling
+- Return updated domain model
+
+### Delete Operations
+
+```swift
+// ✅ Correct: Delete with error handling
+public func delete(id: UUID) async throws {
+    guard let entity = try await fetchEntity(by: id) else {
+        throw RepositoryError.entityNotFound
+    }
+    modelContext.delete(entity)
+    do {
+        try modelContext.save()
+    } catch {
+        modelContext.rollback()
+        throw RepositoryError.saveFailed(error)
+    }
+}
+```
+
+**Patterns**:
+- Fetch entity first
+- Throw error if not found
+- Delete from context: `modelContext.delete(entity)`
+- Save with error handling
+
+## Query Patterns
+
+### Simple Queries
+
+```swift
+// ✅ Correct: Simple fetch with sorting
+let descriptor = FetchDescriptor<ClientEntity>(
+    sortBy: [SortDescriptor(\.fullName, order: .forward)]
+)
+```
+
+### Filtered Queries
+
+```swift
+// ✅ Correct: Predicate with filtering
+let predicate = #Predicate<ClientEntity> { client in
+    client.status.rawValue == "Active" && 
+    client.hasNdisPlan == true
+}
+let descriptor = FetchDescriptor<ClientEntity>(
+    predicate: predicate,
+    sortBy: [SortDescriptor(\.fullName, order: .forward)]
+)
+```
+
+### Pagination
+
+```swift
+// ✅ Correct: Pagination support
+public func fetch(limit: Int, offset: Int) async throws -> [Client] {
+    var descriptor = FetchDescriptor<ClientEntity>(
+        sortBy: [SortDescriptor(\.fullName, order: .forward)]
+    )
+    descriptor.fetchLimit = limit
+    descriptor.fetchOffset = offset
+    let entities = try modelContext.fetch(descriptor)
+    return entities.map { Client(from: $0) }
+}
+```
+
+## Error Handling
+
+### Error Types
+
+```swift
+// ✅ Correct: Specific repository errors
+enum RepositoryError: Error {
+    case entityNotFound
+    case invalidData(String)
+    case saveFailed(Error)
+    case deleteFailed(Error)
+}
+```
+
+### Error Propagation
+
+```swift
+// ✅ Correct: Error handling with rollback
+do {
+    try modelContext.save()
+} catch {
+    modelContext.rollback()
+    throw RepositoryError.saveFailed(error)
+}
+```
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: Returning entities instead of domain models
+func fetchAll() async throws -> [ClientEntity] {
+    // Should return [Client]
+}
+
+// ❌ Wrong: Creating context inside repository
+class ClientsRepositorySwiftData {
+    let modelContext = ModelContext(...)  // Should be injected
+}
+
+// ❌ Wrong: No error handling
+modelContext.insert(entity)
+try modelContext.save()  // No rollback on failure
+
+// ❌ Wrong: Synchronous methods
+func fetchAll() throws -> [Client] {  // Should be async throws
+}
+```
+
+## Related Rules
+
+- `swiftdata-core.mdc` - Query patterns and context management
+- `domain-entity-mapping.mdc` - Mapping between entities and domain models
+- `architecture.mdc` - Repository pattern in architecture
+
+## File References
+
+- `Packages/Core/Sources/Core/Ports/ClientsRepository.swift` - Repository interface example
+- `Packages/Data/Sources/Data/Repositories/ClientsRepositorySwiftData.swift` - Repository implementation example

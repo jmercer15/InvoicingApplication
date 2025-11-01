@@ -1,0 +1,310 @@
+---
+description: ViewModel patterns for MVVM architecture with dependency injection and state management
+globs:
+  - "**/*ViewModel*.swift"
+  - "**/Feature.*/**/ViewModels/**/*.swift"
+alwaysApply: false
+---
+
+# ViewModels
+
+## Overview
+
+ViewModels are the bridge between Views and business logic. They handle state management, business logic coordination, and repository interactions.
+
+## Core Principles
+
+- ViewModels are `@MainActor` classes conforming to `ObservableObject`
+- Dependencies injected via initializer
+- Use `@Published` for reactive properties
+- Never create dependencies inside ViewModel
+- Business logic coordination, not direct data access
+
+## ViewModel Structure
+
+### Basic Pattern
+
+```swift
+// ✅ Correct: ViewModel structure
+// Packages/Feature.Calendar/Sources/Feature_Calendar/ViewModels/CalendarViewModel.swift
+@MainActor
+public final class CalendarViewModel: ObservableObject {
+    // MARK: - Dependencies
+    private let modelContext: ModelContext
+    private let eventKitService: EventKitSyncService
+    let dataManager: CalendarDataManager
+    
+    // MARK: - Published Properties
+    @Published var selectedDate: Date = Date()
+    @Published var calendarViewType: CalendarViewType = .week
+    @Published var searchText: String = ""
+    @Published var isShowingNewSessionSheet: Bool = false
+    
+    // MARK: - Initialization
+    public init(
+        context: ModelContext,
+        eventKitService: EventKitSyncService,
+        dataManager: CalendarDataManager,
+        selectedDate: Date = Date(),
+        calendarViewType: CalendarViewType = .week,
+        searchText: String = "",
+        isShowingNewSessionSheet: Bool = false
+    ) {
+        self.modelContext = context
+        self.eventKitService = eventKitService
+        self.dataManager = dataManager
+        self.selectedDate = selectedDate
+        self.calendarViewType = calendarViewType
+        self.searchText = searchText
+        self.isShowingNewSessionSheet = isShowingNewSessionSheet
+        setupBindings()
+    }
+    
+    // MARK: - Private Methods
+    private func setupBindings() {
+        // Setup reactive bindings
+    }
+}
+```
+
+**Key Points**:
+- Class (not struct) marked `@MainActor`
+- Conforms to `ObservableObject`
+- Dependencies stored as private `let` properties
+- `@Published` for properties that affect UI
+- Initialization sets up bindings
+
+## Dependency Injection
+
+### Pattern
+
+Dependencies injected via initializer:
+
+```swift
+// ✅ Correct: Dependency injection
+@MainActor
+public final class ClientsViewModel: ObservableObject {
+    private let clientsRepository: ClientsRepository
+    
+    public init(clientsRepository: ClientsRepository) {
+        self.clientsRepository = clientsRepository
+    }
+}
+```
+
+**Dependencies Typically Include**:
+- Repositories: `ClientsRepository`, `SessionsRepository`
+- Services: `EventKitSyncService`, `SyncService`
+- ModelContext: For direct SwiftData access (when needed)
+- Other ViewModels: For coordination
+
+### AppAssembly Factory Methods
+
+ViewModels created via factory methods:
+
+```swift
+// ✅ Correct: Factory method in AppAssembly
+// InvoicingApplication/App/Composition/AppAssembly.swift
+func makeClientsViewModel() -> ClientsViewModel {
+    ClientsViewModel(clientsRepository: clientsRepository)
+}
+
+func makeCalendarViewModel() -> CalendarViewModel {
+    let eventKitService = EventKitSyncService.shared
+    let calendarDataManager = CalendarDataManager(context: modelContext, eventKitService: eventKitService)
+    return CalendarViewModel(
+        context: modelContext,
+        eventKitService: eventKitService,
+        dataManager: calendarDataManager
+    )
+}
+```
+
+## State Management
+
+### Published Properties
+
+Use `@Published` for reactive state:
+
+```swift
+// ✅ Correct: Published properties
+@Published var selectedDate: Date = Date()
+@Published var searchText: String = ""
+@Published var clients: [Client] = []
+@Published var isLoading: Bool = false
+@Published var errorMessage: String?
+```
+
+**When to Use `@Published`**:
+- State that affects UI rendering
+- State that needs to trigger view updates
+- State accessed by views via `$` for bindings
+
+### Private State
+
+Use private properties for internal state:
+
+```swift
+// ✅ Correct: Private internal state
+private var cancellables = Set<AnyCancellable>()
+private var isUpdatingFromCalendar = false
+private var isUpdatingFromContainer = false
+```
+
+## Business Logic
+
+### Repository Interactions
+
+```swift
+// ✅ Correct: Repository usage
+@MainActor
+public final class ClientsViewModel: ObservableObject {
+    private let clientsRepository: ClientsRepository
+    
+    @Published var clients: [Client] = []
+    @Published var isLoading: Bool = false
+    
+    func loadClients() async {
+        isLoading = true
+        do {
+            clients = try await clientsRepository.fetchAll()
+        } catch {
+            // Handle error
+        }
+        isLoading = false
+    }
+}
+```
+
+### Service Interactions
+
+```swift
+// ✅ Correct: Service usage
+@MainActor
+public final class CalendarViewModel: ObservableObject {
+    private let eventKitService: EventKitSyncService
+    
+    func syncWithCalendar() async {
+        do {
+            try await eventKitService.syncAllEvents()
+            // Update local state
+        } catch {
+            // Handle error
+        }
+    }
+}
+```
+
+## Combine Integration
+
+### Reactive Bindings
+
+```swift
+// ✅ Correct: Combine bindings
+private var cancellables = Set<AnyCancellable>()
+
+private func setupBindings() {
+    $searchText
+        .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+        .removeDuplicates()
+        .sink { [weak self] searchText in
+            self?.performSearch(searchText)
+        }
+        .store(in: &cancellables)
+}
+```
+
+## Initialization Patterns
+
+### Public Initializer
+
+For dependency injection:
+
+```swift
+// ✅ Correct: Public initializer
+public init(
+    context: ModelContext,
+    eventKitService: EventKitSyncService,
+    dataManager: CalendarDataManager
+) {
+    self.modelContext = context
+    self.eventKitService = eventKitService
+    self.dataManager = dataManager
+    setupBindings()
+}
+```
+
+### Internal Initializer
+
+For testing/previews:
+
+```swift
+// ✅ Correct: Internal initializer for testing
+init(
+    context: ModelContext,
+    eventKitService: EventKitSyncService,
+    dataManager: CalendarDataManager,
+    selectedDate: Date = Date()
+) {
+    // Same as public, allows preview/test injection
+}
+```
+
+## Thread Safety
+
+### MainActor
+
+All ViewModels are `@MainActor`:
+
+```swift
+// ✅ Correct: MainActor ViewModel
+@MainActor
+public final class CalendarViewModel: ObservableObject {
+    // All properties and methods are on main thread
+}
+```
+
+**Why**:
+- UI updates must be on main thread
+- ObservableObject publishes on main thread
+- Simplifies thread safety
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: Creating dependencies inside ViewModel
+class ClientsViewModel {
+    let repository = ClientsRepositorySwiftData(...) // Should be injected
+}
+
+// ❌ Wrong: Direct ModelContext usage for complex operations
+class ClientsViewModel {
+    let modelContext: ModelContext
+    
+    func loadClients() {
+        // Complex query logic here - should use repository
+        let descriptor = FetchDescriptor<ClientEntity>(...)
+        // ...
+    }
+}
+
+// ❌ Wrong: ViewModel as struct
+struct ClientsViewModel: ObservableObject {  // Should be class
+}
+
+// ❌ Wrong: No @MainActor
+public final class ClientsViewModel: ObservableObject {  // Should have @MainActor
+}
+```
+
+## Related Rules
+
+- `swiftui-views.mdc` - View integration patterns
+- `architecture.mdc` - Dependency injection patterns
+- `repository-pattern.mdc` - Repository usage
+
+## File References
+
+- `Packages/Feature.Calendar/Sources/Feature_Calendar/ViewModels/CalendarViewModel.swift` - Complete ViewModel example
+- `Packages/Feature.Clients/Sources/Feature_Clients/ViewModels/ClientsViewModel.swift` - Repository-based ViewModel
+- `InvoicingApplication/App/Composition/AppAssembly.swift` - ViewModel factory methods

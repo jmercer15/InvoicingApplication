@@ -26,29 +26,40 @@ public final class MMMZoneLookup: @unchecked Sendable {
     
     private init() {
         // Load polygons
-        let url = Bundle.main.url(forResource: "mmm_sa1", withExtension: "geojson")!
+        guard let url = Bundle.main.url(forResource: "mmm_sa1", withExtension: "geojson") else {
+            print("[MMMZoneLookup] ERROR: Could not find mmm_sa1.geojson resource in bundle")
+            self.polygons = []
+            return
+        }
         print("[MMMZoneLookup] Loading polygons from: \(url)")
-        let features = try! MKGeoJSONDecoder().decode(Data(contentsOf: url))
-            .compactMap { $0 as? MKGeoJSONFeature }
         
-        var polys: [ZonePoly] = []
-        for f in features {
-            for geometry in f.geometry {
-                if let poly = geometry as? MKPolygon {
-                    let props = String(data: f.properties ?? Data(), encoding: .utf8) ?? ""
-                    let mm = MMMZoneLookup.extractMMMCode(from: props)
-                    polys.append(ZonePoly(bbox: poly.boundingMapRect, ring: poly.coordinates, mm: mm))
-                } else if let multiPoly = geometry as? MKMultiPolygon {
-                    let props = String(data: f.properties ?? Data(), encoding: .utf8) ?? ""
-                    let mm = MMMZoneLookup.extractMMMCode(from: props)
-                    for poly in multiPoly.polygons {
+        do {
+            let data = try Data(contentsOf: url)
+            let features = try MKGeoJSONDecoder().decode(data)
+                .compactMap { $0 as? MKGeoJSONFeature }
+            
+            var polys: [ZonePoly] = []
+            for f in features {
+                for geometry in f.geometry {
+                    if let poly = geometry as? MKPolygon {
+                        let props = String(data: f.properties ?? Data(), encoding: .utf8) ?? ""
+                        let mm = MMMZoneLookup.extractMMMCode(from: props)
                         polys.append(ZonePoly(bbox: poly.boundingMapRect, ring: poly.coordinates, mm: mm))
+                    } else if let multiPoly = geometry as? MKMultiPolygon {
+                        let props = String(data: f.properties ?? Data(), encoding: .utf8) ?? ""
+                        let mm = MMMZoneLookup.extractMMMCode(from: props)
+                        for poly in multiPoly.polygons {
+                            polys.append(ZonePoly(bbox: poly.boundingMapRect, ring: poly.coordinates, mm: mm))
+                        }
                     }
                 }
             }
+            print("[MMMZoneLookup] Loaded \(polys.count) polygons for MMM zones.")
+            self.polygons = polys
+        } catch {
+            print("[MMMZoneLookup] ERROR: Failed to load or decode MMM zone data: \(error)")
+            self.polygons = []
         }
-        print("[MMMZoneLookup] Loaded \(polys.count) polygons for MMM zones.")
-        self.polygons = polys
     }
     
     // MARK: - MMM Lookup

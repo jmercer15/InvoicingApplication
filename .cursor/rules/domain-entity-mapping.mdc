@@ -1,0 +1,257 @@
+---
+description: Patterns for mapping between domain models and SwiftData entities
+globs:
+  - "**/*Mapping.swift"
+  - "**/Data/Mapping/**/*.swift"
+  - "**/Data/Repositories/**/*.swift"
+alwaysApply: false
+---
+
+# Domain-Entity Mapping Patterns
+
+## Overview
+
+Mapping between domain models (structs in Core) and SwiftData entities (classes in Data) maintains clean architecture separation. This rule covers file naming, mapping methods, and relationship handling.
+
+## Core Principles
+
+- Mapping files use `{ModelName}+Mapping.swift` naming
+- Domain models convert from entities using `init(from entity:)`
+- Entities update from domain models using `update(from domainModel:)`
+- Relationships are flattened to IDs in domain models
+- Type conversions handled explicitly
+
+## File Naming
+
+### Convention
+
+```swift
+// ✅ Correct: Mapping file naming
+// Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
+extension Client {
+    init(from entity: ClientEntity) { }
+}
+
+extension ClientEntity {
+    func update(from client: Client) { }
+}
+```
+
+**Guidelines**:
+- Always use `{ModelName}+Mapping.swift` format
+- Place in `Packages/Data/Sources/Data/Mapping/`
+- Contains both domain and entity extensions
+- One mapping file per domain model
+
+## Domain Model Initializer
+
+### Pattern
+
+```swift
+// ✅ Correct: Domain model initializer
+// Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
+extension Client {
+    /// Convert from ClientEntity to domain model
+    init(from entity: ClientEntity) {
+        self.init(
+            id: entity.id,
+            ndisNumber: entity.ndisNumber,
+            fullName: entity.fullName,
+            status: entity.status.rawValue,
+            email: entity.email,
+            notes: entity.notes,
+            phone: entity.phone,
+            creditAmount: entity.creditAmount,
+            isMinor: entity.isMinor,
+            hasNdisPlan: entity.hasNdisPlan,
+            planManagementType: entity.planManagementType,
+            billingAuthority: entity.billingAuthority?.rawValue,
+            address: entity.address.map { Address(from: $0) },
+            planManager: entity.planManager.map { PlanManager(from: $0) },
+            payee: entity.payee.map { Payee(from: $0) },
+            sendInvoicesToClient: entity.sendInvoicesToClient,
+            sendInvoicesToPayee: entity.sendInvoicesToPayee,
+            sendInvoicesToPlanManager: entity.sendInvoicesToPlanManager
+        )
+    }
+}
+```
+
+**Key Points**:
+- Method signature: `init(from entity: {EntityName})`
+- Converts all entity properties to domain model
+- Handles optional relationships with `.map { DomainModel(from: $0) }`
+- Converts enums: `entity.status.rawValue`
+- Handles optional values: `entity.email`
+
+### Relationship Handling
+
+```swift
+// ✅ Correct: Optional relationship mapping
+address: entity.address.map { Address(from: $0) }
+
+// ✅ Correct: Array relationship mapping
+// If domain model stores IDs:
+clientIds: entity.clients?.map { $0.id } ?? []
+
+// If domain model stores full objects (nested mapping):
+addresses: entity.addresses.map { Address(from: $0) }
+```
+
+## Entity Update Method
+
+### Pattern
+
+```swift
+// ✅ Correct: Entity update method
+// Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
+extension ClientEntity {
+    /// Update entity from domain model
+    func update(from client: Client) {
+        self.ndisNumber = client.ndisNumber
+        self.fullName = client.fullName
+        self.status = ClientStatus(rawValue: client.status) ?? .active
+        self.email = client.email
+        self.notes = client.notes
+        self.phone = client.phone
+        self.creditAmount = client.creditAmount
+        self.isMinor = client.isMinor
+        self.hasNdisPlan = client.hasNdisPlan
+        self.planManagementType = client.planManagementType
+        self.billingAuthority = client.billingAuthority.flatMap { BillingAuthority(rawValue: $0) }
+        self.sendInvoicesToClient = client.sendInvoicesToClient
+        self.sendInvoicesToPayee = client.sendInvoicesToPayee
+        self.sendInvoicesToPlanManager = client.sendInvoicesToPlanManager
+        // Note: Relationships updated separately if needed
+    }
+}
+```
+
+**Key Points**:
+- Method signature: `func update(from domainModel: {DomainModel})`
+- Updates entity properties from domain model
+- Preserves entity identity (ID not updated)
+- Converts enums: `ClientStatus(rawValue:)`
+- Handles optional conversions with `flatMap`
+- Relationships may need separate handling
+
+## Relationship Flattening
+
+### Pattern
+
+Domain models should store IDs, not full objects, to prevent deep object graphs:
+
+```swift
+// ✅ Correct: Domain model with IDs
+public struct Invoice {
+    public let id: UUID
+    public let clientId: UUID?  // ID, not Client object
+    public let invoiceNumber: String
+    // ...
+}
+
+// ✅ Correct: Mapping with ID extraction
+extension Invoice {
+    init(from entity: InvoiceEntity) {
+        self.init(
+            id: entity.id,
+            clientId: entity.client?.id,  // Extract ID only
+            invoiceNumber: entity.invoiceNumber
+        )
+    }
+}
+```
+
+**When to Flatten**:
+- One-to-many relationships: Store array of IDs
+- Optional relationships: Store optional ID
+- Many-to-many relationships: Store array of IDs
+
+**When NOT to Flatten**:
+- Simple value objects (e.g., `Address`)
+- Small, frequently accessed related objects
+- Embedded data that's always needed together
+
+## Type Conversions
+
+### Enum Conversions
+
+```swift
+// ✅ Correct: Enum to string
+extension Client {
+    init(from entity: ClientEntity) {
+        self.status = entity.status.rawValue
+        self.billingAuthority = entity.billingAuthority?.rawValue
+    }
+}
+
+// ✅ Correct: String to enum
+extension ClientEntity {
+    func update(from client: Client) {
+        self.status = ClientStatus(rawValue: client.status) ?? .active
+        self.billingAuthority = client.billingAuthority.flatMap { BillingAuthority(rawValue: $0) }
+    }
+}
+```
+
+### Optional Conversions
+
+```swift
+// ✅ Correct: Optional handling
+email: entity.email  // Optional to optional
+notes: entity.notes ?? ""  // Optional to non-optional with default
+billingAuthority: entity.billingAuthority?.rawValue  // Optional enum to optional string
+```
+
+### Computed Property Conversions
+
+```swift
+// ✅ Correct: String concatenation for computed properties
+extension Address {
+    init(from entity: AddressEntity) {
+        self.init(
+            id: entity.id,
+            street: "\(entity.streetNumber) \(entity.streetName)".trimmingCharacters(in: .whitespaces),
+            city: entity.city,
+            state: entity.state,
+            postcode: entity.postcode,
+            country: entity.country
+        )
+    }
+}
+```
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: Direct entity reference in domain model
+public struct Client {
+    var entity: ClientEntity  // Domain model should not reference entity
+}
+
+// ❌ Wrong: Manual property copying (error-prone)
+let client = Client(
+    id: entity.id,
+    ndisNumber: entity.ndisNumber,
+    fullName: entity.fullName,
+    // ... 50+ more properties manually listed
+)
+
+// ❌ Wrong: Deep object graph loading
+public struct Invoice {
+    var client: Client  // Full client object instead of clientId
+    var items: [InvoiceItem]  // Full items instead of itemIds
+}
+```
+
+## Related Rules
+
+- `architecture.mdc` - Clean architecture layer separation
+- `swiftdata-core.mdc` - Entity definition patterns
+- `repository-pattern.mdc` - Repository usage of mappings
+
+## File References
+
+- `Packages/Data/Sources/Data/Mapping/Client+Mapping.swift` - Complete mapping example
+- `Packages/Data/Sources/Data/Mapping/Architectural_Patterns_and_Conventions.md` - Detailed mapping conventions
+- `Packages/Core/Sources/Core/Domain/Client.swift` - Domain model structure

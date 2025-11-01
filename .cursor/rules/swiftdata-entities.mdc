@@ -1,0 +1,275 @@
+---
+description: SwiftData entity-specific patterns for entity definition, relationships, and indexing
+globs:
+  - "**/*Entity.swift"
+  - "**/Data/Persistence/**/*.swift"
+alwaysApply: false
+---
+
+# SwiftData Entities
+
+## Overview
+
+SwiftData entities are the persistence layer representation of domain models. This rule covers entity definition, relationship configuration, and indexing strategies.
+
+## Core Principles
+
+- Entities use `@Model public class`
+- UUID primary keys are required
+- Relationships use appropriate delete rules
+- Index frequently queried properties
+- Specify inverse relationships for bidirectional associations
+
+## Entity Definition
+
+### Basic Structure
+
+```swift
+// ✅ Correct: Entity definition
+// Packages/Data/Sources/Data/Persistence/ClientEntity.swift
+@Model public class ClientEntity {
+    #Index<ClientEntity>([\.fullName], [\.email], [\.phone], [\.isMinor], [\.hasNdisPlan])
+    
+    @Attribute(.unique) public var ndisNumber: String
+    public var id: UUID
+    public var fullName: String
+    public var status: ClientStatus
+    public var email: String?
+    public var phone: String?
+    
+    // Relationships...
+    
+    public init(id: UUID, ndisNumber: String, fullName: String, status: ClientStatus) {
+        self.id = id
+        self.ndisNumber = ndisNumber
+        self.fullName = fullName
+        self.status = status
+    }
+}
+```
+
+**Key Points**:
+- `@Model` macro (not annotation)
+- `public class` (not struct)
+- `#Index` macro for frequently queried properties
+- `@Attribute(.unique)` for unique constraints
+- `id: UUID` as primary key
+- Public initializer
+
+## Relationship Delete Rules
+
+### Cascade Rule
+
+Use `.cascade` for owned children:
+
+```swift
+// ✅ Correct: Cascade for owned children
+@Relationship(deleteRule: .cascade)
+public var clientServices: [ClientServiceEntity] = []
+// ClientServices have no meaning without Client
+
+@Relationship(deleteRule: .cascade)
+public var creditHistory: [CreditHistoryEntryEntity] = []
+// Credit history is tied to client (though financial data might use .nullify for audit)
+```
+
+**When to Use `.cascade`**:
+- Owned children that shouldn't exist without parent
+- Composition relationships
+- Examples: `clientServices`, `invoiceItems`
+
+### Nullify Rule
+
+Use `.nullify` for shared/optional relationships:
+
+```swift
+// ✅ Correct: Nullify for shared resources
+@Relationship(deleteRule: .nullify)
+public var address: AddressEntity?
+// Address can exist independently and be reused
+
+@Relationship(deleteRule: .nullify)
+public var planManager: PlanManagerEntity?
+// Plan manager can manage other clients
+
+@Relationship(deleteRule: .nullify)
+public var invoices: [InvoiceEntity] = []
+// Invoices must be preserved for legal/financial records
+```
+
+**When to Use `.nullify`**:
+- Shared resources that can exist independently
+- Optional relationships
+- Financial/audit data that must be preserved
+- Examples: `address`, `planManager`, `invoices`
+
+### Financial Data Consideration
+
+For financial data, consider `.nullify` to preserve audit trails:
+
+```swift
+// ⚠️ Consider: Nullify for financial data
+@Relationship(deleteRule: .nullify)  // Instead of .cascade
+public var invoices: [InvoiceEntity] = []
+// Preserves financial records even if client is deleted
+```
+
+Reference: `Packages/Data/Sources/Data/Mapping/Relationship_Delete_Rules_Audit.md`
+
+## Inverse Relationships
+
+### Bidirectional Relationships
+
+Specify `inverse:` for bidirectional relationships:
+
+```swift
+// ✅ Correct: Bidirectional relationship with inverse
+// In ClientEntity
+@Relationship(deleteRule: .nullify, inverse: \InvoiceEntity.client)
+public var invoices: [InvoiceEntity] = []
+
+// In InvoiceEntity
+@Relationship(deleteRule: .nullify, inverse: \ClientEntity.invoices)
+public var client: ClientEntity?
+```
+
+**Benefits**:
+- Maintains referential integrity
+- SwiftData manages both sides automatically
+- Prevents orphaned relationships
+
+## Index Configuration
+
+### Index Macro
+
+Use `#Index` macro for frequently queried properties:
+
+```swift
+// ✅ Correct: Index configuration
+@Model public class ClientEntity {
+    #Index<ClientEntity>([\.fullName], [\.email], [\.phone], [\.isMinor], [\.hasNdisPlan])
+    // ...
+}
+```
+
+### Indexing Guidelines
+
+Index the following:
+
+**Foreign Keys**:
+```swift
+#Index<SessionEntity>([\.client])  // If frequently queried by client
+```
+
+**Status/Enum Fields**:
+```swift
+#Index<ClientEntity>([\.status])  // For filtering by status
+```
+
+**Date Fields**:
+```swift
+#Index<SessionEntity>([\.startTime], [\.endTime])  // For date range queries
+```
+
+**Search Fields**:
+```swift
+#Index<ClientEntity>([\.fullName], [\.email])  // For text search
+```
+
+Reference: `Packages/Data/Sources/Data/Optimization/RecommendedIndexingStrategy.md`
+
+## Property Types
+
+### Required Properties
+
+```swift
+// ✅ Correct: Required properties
+public var id: UUID
+public var fullName: String
+public var status: ClientStatus
+```
+
+### Optional Properties
+
+```swift
+// ✅ Correct: Optional properties
+public var email: String?
+public var phone: String?
+public var notes: String?
+```
+
+### Default Values
+
+```swift
+// ✅ Correct: Default values
+public var creditAmount: Double = 0.0
+public var isMinor: Bool = false
+public var clientServices: [ClientServiceEntity] = []
+```
+
+## Complex Entity Example
+
+```swift
+// ✅ Correct: Complex entity with all patterns
+@Model public class SessionEntity: EventRepresentable, @unchecked Sendable {
+    #Index<SessionEntity>([\.startTime], [\.endTime], [\.isTravel], [\.location])
+    
+    public var id: UUID
+    public var title: String = ""
+    public var startTime: Date?
+    public var endTime: Date?
+    public var isTravel: Bool = false
+    public var status: SessionStatus?
+    
+    // Relationships with appropriate delete rules
+    @Relationship(deleteRule: .nullify, inverse: \ClientEntity.sessions)
+    public var client: ClientEntity?
+    
+    @Relationship(deleteRule: .nullify)
+    public var clientService: ClientServiceEntity?
+    
+    @Relationship(deleteRule: .nullify)
+    public var address: AddressEntity?
+    
+    @Relationship(deleteRule: .nullify, inverse: \InvoiceItemEntity.session)
+    public var invoiceItems: [InvoiceItemEntity] = []
+    
+    public init(id: UUID) {
+        self.id = id
+    }
+}
+```
+
+## Anti-Patterns
+
+```swift
+// ❌ Wrong: No primary key
+@Model public class ClientEntity {
+    public var name: String  // Missing id: UUID
+}
+
+// ❌ Wrong: Struct instead of class
+@Model public struct ClientEntity {  // Should be class
+}
+
+// ❌ Wrong: Wrong delete rule
+@Relationship(deleteRule: .cascade)
+public var invoices: [InvoiceEntity] = []  // Should be .nullify for financial data
+
+// ❌ Wrong: Missing inverse
+@Relationship(deleteRule: .nullify)  // Missing inverse: for bidirectional
+public var invoices: [InvoiceEntity] = []
+```
+
+## Related Rules
+
+- `swiftdata-core.mdc` - Core SwiftData patterns
+- `domain-entity-mapping.mdc` - Mapping to domain models
+- `repository-pattern.mdc` - Querying entities
+
+## File References
+
+- `Packages/Data/Sources/Data/Persistence/ClientEntity.swift` - Entity example
+- `Packages/Data/Sources/Data/Persistence/SessionEntity.swift` - Complex entity example
+- `Packages/Data/Sources/Data/Mapping/Relationship_Delete_Rules_Audit.md` - Delete rules guidelines
+- `Packages/Data/Sources/Data/Optimization/RecommendedIndexingStrategy.md` - Indexing guidelines

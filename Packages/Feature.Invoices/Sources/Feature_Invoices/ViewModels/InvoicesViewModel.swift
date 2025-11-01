@@ -457,7 +457,10 @@ extension InvoiceEditorViewModel {
         let currentBusiness = getBusiness()
         let printView = A4InvoiceSheetView(invoice: currentInvoice, business: currentBusiness)
         let hostingView = NSHostingView(rootView: printView.frame(width: 794, height: 1123)) // A4 size in points
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else {
+            print("Failed to copy NSPrintInfo")
+            return
+        }
         printInfo.horizontalPagination = .automatic
         printInfo.verticalPagination = .automatic
         printInfo.isHorizontallyCentered = true
