@@ -139,11 +139,15 @@ public struct NDISCatalogueDetailColumn: View {
                     Image(systemName: "list.bullet.rectangle.portrait")
                         .font(.largeTitle)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    
                     Text("Select an Item")
                         .font(.title2)
+                    
                     Text("Choose an NDIS support item from the list to view its details.")
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 40)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color("Background", bundle: .sharedUI))
             }

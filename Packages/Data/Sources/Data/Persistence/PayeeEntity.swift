@@ -12,6 +12,7 @@ import SwiftUI
 
 
 @Model public class PayeeEntity {
+    #Index<PayeeEntity>([\.fullName], [\.email], [\.phone], [\.relationToClient])
     public var id: UUID
     public var fullName: String = ""
     public var email: String?

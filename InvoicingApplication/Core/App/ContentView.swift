@@ -16,10 +16,12 @@ struct ContentView: View {
     @EnvironmentObject private var appAssembly: AppAssembly
     @Environment(\.modelContext) private var modelContext
 
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var preferredCompactColumn: NavigationSplitViewColumn = .sidebar
     @State private var selectedFeature: AppTab? = .invoices
-    @State private var detailNavigationPath = NavigationPath()
+    @State private var navigationPath = NavigationPath()
+    @State private var navigationHistory: [AppTab] = [.invoices]
+    @State private var forwardHistory: [AppTab] = []
+    @State private var canNavigateBack = false
+    @State private var canNavigateForward = false
     @StateObject private var invoicesViewModel = ContentView.makeInvoicesViewModel()
     @StateObject private var relationshipsViewModel = ContentView.makeRelationshipsViewModel()
     @StateObject private var calendarViewModel = ContentView.makeCalendarViewModel()
@@ -28,9 +30,6 @@ struct ContentView: View {
     @StateObject private var ndisCatalogueViewModel = ContentView.makeNDISCatalogueViewModel()
     @StateObject private var ndisBillingViewModel = ContentView.makeNDISBillingViewModel()
 
-    @State private var currentActiveFeature: AppTab? = .invoices
-    @State private var mainInspectorVisible = false
-    @State private var inspectorContent: InspectorContent? = nil
 
     private var maxTabLabelWidth: CGFloat {
         let font = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -42,62 +41,21 @@ struct ContentView: View {
 
     @ViewBuilder
     var body: some View {
-        Group {
-            if needsDetailColumn(for: selectedFeature) {
-                NavigationSplitView(
-                    columnVisibility: $columnVisibility,
-                    preferredCompactColumn: $preferredCompactColumn
-                ) {
-                    sidebar
-                } content: {
-                    contentNavigator
-                        .navigationSplitViewColumnWidth(min: 620, ideal: 860, max: 1280)
-                } detail: {
-                    detailColumn
-                }
-            } else {
-                NavigationSplitView(
-                    preferredCompactColumn: $preferredCompactColumn
-                ) {
-                    sidebar
-                } detail: {
-                    contentNavigator
-                }
-            }
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            mainContent
         }
-        .navigationSplitViewStyle(shrinkStyle(for: selectedFeature))
-        .inspector(isPresented: $mainInspectorVisible) {
-            mainInspectorPanel
-        }
-        .background(
-            Color("Background", bundle: .sharedUI)
-                .ignoresSafeArea(edges: .top)
-        )
-        .onAppear {
-            updateSplitVisibility(for: selectedFeature)
-        }
-        .onChange(of: selectedFeature) { _, newValue in
-            updateSplitVisibility(for: newValue)
-            guard let newValue else { return }
-            currentActiveFeature = newValue
-            if needsDetailColumn(for: newValue) {
-                detailNavigationPath = NavigationPath()
-            }
-        }
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var sidebar: some View {
         List(selection: $selectedFeature) {
             Section(header: featuresHeader) {
                 ForEach(AppTab.allCases) { feature in
-                    Button(action: { selectFeature(feature) }) {
+                    NavigationLink(value: feature) {
                         SidebarItemRow(icon: feature.iconName, title: feature.title)
                     }
-                    .buttonStyle(.plain)
-                    .background(
-                        selectedFeature == feature ? Color.accentColor.opacity(0.12) : Color.clear
-                    )
-                    .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
                 }
             }
         }
@@ -107,128 +65,198 @@ struct ContentView: View {
         .frame(minWidth: maxTabLabelWidth)
     }
 
-    private var contentNavigator: some View {
-        NavigationStack(path: $detailNavigationPath) {
-            featureContent(for: selectedFeature ?? .invoices)
-                .id(selectedFeature ?? .invoices)
-                .onPreferenceChange(InspectorContentPreferenceKey.self) { newContent in
-                    inspectorContent = newContent
+    private var mainContent: some View {
+        Group {
+            if selectedFeature == .invoiceTemplateEditor {
+                // Present template editor without NavigationStack to avoid conflicts
+                featureWorkspace(for: .invoiceTemplateEditor)
+                    .id(AppTab.invoiceTemplateEditor)
+            } else {
+                NavigationStack(path: $navigationPath) {
+                    // Root view - show selected feature or default
+                    Group {
+                        if let selectedFeature = selectedFeature {
+                            featureWorkspace(for: selectedFeature)
+                                .id(selectedFeature)
+                        } else {
+                            featureWorkspace(for: .invoices)
+                                .id(AppTab.invoices)
+                        }
+                    }
+                    .navigationDestination(for: AppTab.self) { feature in
+                        featureWorkspace(for: feature)
+                            .id(feature)
+                            .navigationTitle(feature.title)
+                            .onAppear {
+                                // Update navigation state when destination appears
+                                updateNavigationButtons()
+                            }
+                    }
                 }
-                .fluidTransition()
-                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: selectedFeature)
-        }
-    }
-
-    private var detailColumn: some View {
-        featureDetail(for: selectedFeature ?? .invoices)
-    }
-
-    private func selectFeature(_ feature: AppTab) {
-        if selectedFeature != feature {
-            selectedFeature = feature
-        }
-    }
-
-    @ViewBuilder
-    private var mainInspectorPanel: some View {
-        if let inspectorContent {
-            VSplitView {
-                InspectorHeader(feature: currentActiveFeature)
-                inspectorContent.view
-                    .inspectorColumnWidth(
-                        min: StyleGuide.Dimensions.inspectorWidthMin,
-                        ideal: StyleGuide.Dimensions.inspectorWidthIdeal,
-                        max: StyleGuide.Dimensions.inspectorWidthMax
-                    )
-            }
-        } else {
-            VSplitView {
-                InspectorHeader(feature: currentActiveFeature)
-                InspectorFallbackView(feature: currentActiveFeature)
             }
         }
+        .onAppear {
+            // Initialize navigation path with default selection
+            if navigationPath.isEmpty {
+                let initialFeature = selectedFeature ?? .invoices
+                if initialFeature != .invoiceTemplateEditor {
+                    navigationPath.append(initialFeature)
+                }
+                updateNavigationHistory(for: initialFeature)
+            }
+        }
+        .onChange(of: selectedFeature) { _, newValue in
+            // Update navigation path when selection changes
+            if let newValue = newValue {
+                updateNavigationHistory(for: newValue)
+                if newValue != .invoiceTemplateEditor {
+                    navigationPath = NavigationPath()
+                    navigationPath.append(newValue)
+                }
+            }
+        }
+        .onOpenURL { url in
+            // Handle deep linking
+            handleDeepLink(url: url)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button(action: navigateBack) {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(!canNavigateBack)
+                .help("Go Back")
+                .keyboardShortcut(.leftArrow, modifiers: .command)
+                
+                Button(action: navigateForward) {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(!canNavigateForward)
+                .help("Go Forward")
+                .keyboardShortcut(.rightArrow, modifiers: .command)
+            }
+            
+            ToolbarItem(placement: .principal) {
+                if let selectedFeature = selectedFeature {
+                    HStack(spacing: 4) {
+                        Image(systemName: selectedFeature.iconName)
+                            .foregroundColor(.accentColor)
+                        Text(selectedFeature.title)
+                            .font(.headline)
+                    }
+                }
+            }
+            
+            ToolbarItem(placement: .navigation) {
+                Menu {
+                    ForEach(AppTab.allCases) { feature in
+                        Button(action: {
+                            selectedFeature = feature
+                        }) {
+                            HStack {
+                                Image(systemName: feature.iconName)
+                                Text(feature.title)
+                                if selectedFeature == feature {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "list.bullet")
+                }
+            }
+        }
     }
 
+
     @ViewBuilder
-    private func featureContent(for feature: AppTab) -> some View {
+    private func featureWorkspace(for feature: AppTab) -> some View {
         switch feature {
         case .invoices:
-            InvoicesContentColumn(viewModel: invoicesViewModel)
-                .environment(\.modelContext, modelContext)
-                .onAppear { currentActiveFeature = .invoices }
+            HSplitView {
+                InvoicesContentColumn(viewModel: invoicesViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+
+                InvoicesDetailColumn(viewModel: invoicesViewModel, showInspector: .constant(false))
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+            }
         case .billingHub:
             BillingHubView()
                 .environmentObject(appAssembly.makeBillingHubViewModel())
                 .environment(\.modelContext, modelContext)
-                .onAppear { currentActiveFeature = .billingHub }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .invoiceTemplateEditor:
-            TemplateEditorContentColumn(workspace: templateEditorWorkspace)
-                .onAppear { currentActiveFeature = .invoiceTemplateEditor }
+            ZStack {
+                ModernTemplateEditorView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .environment(\.modelContext, modelContext)
+                    .environmentObject(templateEditorWorkspace)
+                    .environmentObject(templateEditorWorkspace.editorViewModel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color("Background", bundle: .sharedUI))
         case .calendar:
-            CalendarContentColumn(viewModel: calendarViewModel, showInspector: $mainInspectorVisible)
+            CalendarContentColumn(viewModel: calendarViewModel, showInspector: .constant(false))
                 .environment(\.modelContext, modelContext)
                 .environmentObject(EventKitSyncService.shared)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear {
-                    currentActiveFeature = .calendar
                     calendarViewModel.updateContextIfNeeded(modelContext)
                 }
         case .relationships:
-            RelationshipsContentColumn(viewModel: relationshipsViewModel)
-                .environment(\.modelContext, modelContext)
-                .onAppear {
-                    currentActiveFeature = .relationships
-                    relationshipsViewModel.updateContextIfNeeded(modelContext)
-                }
+            HSplitView {
+                RelationshipsContentColumn(viewModel: relationshipsViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+
+                RelationshipsDetailColumn(viewModel: relationshipsViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+            }
+            .onAppear {
+                relationshipsViewModel.updateContextIfNeeded(modelContext)
+            }
         case .ndisCatalogue:
-            NDISCatalogueContentColumn(viewModel: ndisCatalogueViewModel)
-                .environment(\.modelContext, modelContext)
-                .onAppear {
-                    currentActiveFeature = .ndisCatalogue
-                    ndisCatalogueViewModel.updateContextIfNeeded(modelContext)
-                }
+            HSplitView {
+                NDISCatalogueContentColumn(viewModel: ndisCatalogueViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+
+                NDISCatalogueDetailColumn(viewModel: ndisCatalogueViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+            }
+            .onAppear {
+                ndisCatalogueViewModel.updateContextIfNeeded(modelContext)
+            }
         case .ndisBilling:
-            NDISBillingContentColumn(viewModel: ndisBillingViewModel)
-                .environment(\.modelContext, modelContext)
-                .onAppear {
-                    currentActiveFeature = .ndisBilling
-                    ndisBillingViewModel.updateContextIfNeeded(modelContext)
-                }
+            HSplitView {
+                NDISBillingContentColumn(viewModel: ndisBillingViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+
+                NDISBillingDetailColumn(viewModel: ndisBillingViewModel)
+                    .background(Color("Background", bundle: .sharedUI))
+            }
+            .onAppear {
+                ndisBillingViewModel.updateContextIfNeeded(modelContext)
+            }
         case .testingArea:
             TestingAreaView()
                 .environment(\.modelContext, modelContext)
-                .onAppear { currentActiveFeature = .testingArea }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .settings:
-            SettingsContentColumn(viewModel: settingsViewModel)
-                .onAppear { currentActiveFeature = .settings }
-        }
-    }
+            HSplitView {
+                SettingsContentColumn(viewModel: settingsViewModel)
+                    .background(Color("Background", bundle: .sharedUI))
 
-    @ViewBuilder
-    private func featureDetail(for feature: AppTab) -> some View {
-        switch feature {
-        case .invoices:
-            InvoicesDetailColumn(viewModel: invoicesViewModel, showInspector: $mainInspectorVisible)
-                .environment(\.modelContext, modelContext)
-        case .relationships:
-            RelationshipsDetailColumn(viewModel: relationshipsViewModel)
-                .environment(\.modelContext, modelContext)
-                .onAppear {
-                    relationshipsViewModel.updateContextIfNeeded(modelContext)
-                }
-        case .calendar:
-            EmptyView()
-        case .invoiceTemplateEditor:
-            TemplateEditorDetailColumn(workspace: templateEditorWorkspace, isInspectorVisible: $mainInspectorVisible)
-        case .ndisCatalogue:
-            NDISCatalogueDetailColumn(viewModel: ndisCatalogueViewModel)
-                .environment(\.modelContext, modelContext)
-        case .ndisBilling:
-            NDISBillingDetailColumn(viewModel: ndisBillingViewModel)
-        case .settings:
-            SettingsDetailColumn(viewModel: settingsViewModel)
-                .environment(\.modelContext, modelContext)
-        default:
-            EmptyView()
+                SettingsDetailColumn(viewModel: settingsViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .background(Color("Background", bundle: .sharedUI))
+            }
         }
     }
 
@@ -288,100 +316,114 @@ struct ContentView: View {
             .font(.caption)
             .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
     }
-
-    private func updateSplitVisibility(for feature: AppTab?) {
-        columnVisibility = needsDetailColumn(for: feature) ? .all : .doubleColumn
+    
+    // MARK: - Navigation Helpers
+    
+    private func navigateBack() {
+        guard canNavigateBack, navigationHistory.count > 1 else { return }
+        
+        // Get current feature to add to forward history
+        if let currentFeature = selectedFeature {
+            forwardHistory.insert(currentFeature, at: 0)
+        }
+        
+        // Remove current feature from navigation history
+        navigationHistory.removeLast()
+        
+        if let previousFeature = navigationHistory.last {
+            selectedFeature = previousFeature
+            navigationPath = NavigationPath()
+            navigationPath.append(previousFeature)
+        }
+        
+        updateNavigationButtons()
     }
-
-    private func needsDetailColumn(for feature: AppTab?) -> Bool {
-        guard let feature else { return true }
-        switch feature {
-        case .billingHub, .calendar, .testingArea:
-            return false
-        default:
-            return true
+    
+    private func navigateForward() {
+        guard canNavigateForward, !forwardHistory.isEmpty else { return }
+        
+        // Get the next feature from forward history
+        let nextFeature = forwardHistory.removeFirst()
+        
+        // Add current feature to forward history for potential back navigation
+        if let currentFeature = selectedFeature {
+            forwardHistory.insert(currentFeature, at: 0)
+        }
+        
+        // Navigate to the next feature
+        selectedFeature = nextFeature
+        navigationPath = NavigationPath()
+        navigationPath.append(nextFeature)
+        
+        // Update navigation history
+        navigationHistory.append(nextFeature)
+        
+        updateNavigationButtons()
+    }
+    
+    private func updateNavigationHistory(for feature: AppTab) {
+        // Add to history if it's not already the last item
+        if navigationHistory.last != feature {
+            // Clear forward history when navigating to a new feature
+            forwardHistory.removeAll()
+            
+            // Add to navigation history
+            navigationHistory.append(feature)
+            
+            // Optimize navigation performance
+            optimizeNavigationPerformance()
+        }
+        updateNavigationButtons()
+    }
+    
+    private func updateNavigationButtons() {
+        canNavigateBack = navigationHistory.count > 1
+        canNavigateForward = !forwardHistory.isEmpty
+    }
+    
+    // MARK: - Deep Linking Support
+    
+    private func handleDeepLink(url: URL) {
+        guard let scheme = url.scheme,
+              scheme == "invoicingapp" else { return }
+        
+        let pathComponents = url.pathComponents.filter { $0 != "/" }
+        
+        if let firstComponent = pathComponents.first,
+           let feature = AppTab.allCases.first(where: { $0.rawValue == firstComponent }) {
+            selectedFeature = feature
+            updateNavigationHistory(for: feature)
+            navigationPath = NavigationPath()
+            navigationPath.append(feature)
         }
     }
-
-    private func usesProminentDetail(for feature: AppTab) -> Bool {
-        switch feature {
-        case .invoices, .relationships, .invoiceTemplateEditor, .settings:
-            return true
-        default:
-            return false
+    
+    // MARK: - Navigation Performance Optimization
+    
+    private func optimizeNavigationPerformance() {
+        // Limit navigation history to prevent memory issues
+        if navigationHistory.count > 20 {
+            let excessCount = navigationHistory.count - 20
+            navigationHistory.removeFirst(excessCount)
         }
-    }
-
-    private func shrinkStyle(for feature: AppTab?) -> ShrinkFitSplitViewStyle {
-        let feature = feature ?? .invoices
-        let sidebarClamp: ClosedRange<CGFloat> = 200...360
-
-        if needsDetailColumn(for: feature) {
-            if usesProminentDetail(for: feature) {
-                return ShrinkFitSplitViewStyle(
-                    variant: .detailExpands,
-                    sidebarClamp: sidebarClamp,
-                    contentClamp: 260...420,
-                    detailClamp: 520...1280
-                )
-            } else {
-                return ShrinkFitSplitViewStyle(
-                    variant: .contentExpands,
-                    sidebarClamp: sidebarClamp,
-                    contentClamp: 320...960,
-                    detailClamp: 320...680
-                )
+        
+        // Limit forward history to prevent memory issues
+        if forwardHistory.count > 20 {
+            let excessCount = forwardHistory.count - 20
+            forwardHistory.removeLast(excessCount)
+        }
+        
+        // Clear navigation path if it becomes too deep
+        if navigationPath.count > 10 {
+            navigationPath = NavigationPath()
+            if let currentFeature = selectedFeature {
+                navigationPath.append(currentFeature)
             }
-        } else {
-            return ShrinkFitSplitViewStyle(
-                sidebarClamp: sidebarClamp,
-                detailClamp: 520...1280
-            )
         }
     }
+
 }
 
-
-private struct InspectorHeader: View {
-    let feature: AppTab?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Inspector")
-                .font(.headline)
-            if let feature {
-                Text(feature.title)
-                    .font(.subheadline)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-            } else {
-                Text("No feature selected")
-                    .font(.subheadline)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-            }
-        }
-        .padding()
-    }
-}
-
-private struct InspectorFallbackView: View {
-    let feature: AppTab?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("No inspector content available")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            if let feature {
-                Text("Select an element in \(feature.title) to populate the inspector.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer()
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
 
 private extension View {
     @ViewBuilder
@@ -403,3 +445,4 @@ private extension View {
         #endif
     }
 }
+

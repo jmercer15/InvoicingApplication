@@ -2,6 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.jesse.InvoicingApplication</string>
+	<key>CFBundleName</key>
+	<string>InvoicingApplication</string>
+	<key>CFBundleDisplayName</key>
+	<string>InvoicingApplication</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -12,10 +34,197 @@
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
+				<string>public.content</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
-			<dict/>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>invcomp</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-invoice-component</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Section Component</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.section-component</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sectcomp</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-section-component</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Fruit ID</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.fruit-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fruitid</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-fruit-id</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Fruit Property ID</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.fruit-property-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fruitprop</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-fruit-property-id</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Session ID</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.session-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sessionid</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-session-id</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Invoice ID</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.invoice-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>invoiceid</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-invoice-id</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Billing Hub Group</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.invoicingapplication.billinghub.group</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bhgroup</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-billing-hub-group</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Group ID</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.group-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>groupid</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-group-id</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
+	<key>NSServices</key>
+	<array>
+		<dict/>
+		<dict/>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>To sync appointments and invoice due dates with your calendar.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>To add appointments and invoice due dates to your selected calendar.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict/>
+	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to display your position on the map.</string>
 </dict>
 </plist>

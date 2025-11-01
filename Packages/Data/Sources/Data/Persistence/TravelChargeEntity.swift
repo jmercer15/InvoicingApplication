@@ -11,18 +11,19 @@ import SwiftData
 
 
 @Model public class TravelChargeEntity: EventRepresentable {
+    #Index<TravelChargeEntity>([\.startTime], [\.endTime], [\.mmmZoneName], [\.travelDistance], [\.travelDuration])
     // Existing properties
     public var id: UUID
     public var mmmZoneName: String?
     public var travelDistance: Double?
     public var travelDuration: Double?
-    public var vehicleType: String?
+    public var vehicleType: VehicleType?
     public var parkingCost: Double?
     public var tollCost: Double?
     public var participantCount: Int16?
     public var splitCosts: Bool?
-    public var chargeType: String?
-    public var travelDirection: String?
+    public var chargeType: TravelChargeType?
+    public var travelDirection: TravelChargeDirection?
     @Relationship(deleteRule: .nullify) public var linkedSession: SessionEntity?
     @Relationship(deleteRule: .nullify) public var client: ClientEntity?
     @Relationship(deleteRule: .nullify) public var service: ClientServiceEntity?

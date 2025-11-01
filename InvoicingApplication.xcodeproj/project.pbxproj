@@ -3,16 +3,45 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 90;
 	objects = {
+
+/* Begin PBXBuildFile section */
+		CE2F05D12E82826000F48B8C /* Data in Frameworks */ = {isa = PBXBuildFile; productRef = CE2F05D02E82826000F48B8C /* Data */; };
+		CE2F05D42E8282FA00F48B8C /* SharedUI in Frameworks */ = {isa = PBXBuildFile; productRef = CE2F05D32E8282FA00F48B8C /* SharedUI */; };
+		CE2FF0162E827BB700F48B8C /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0152E827BB700F48B8C /* Core */; };
+		CE2FF0192E827BD000F48B8C /* Feature_Settings in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0182E827BD000F48B8C /* Feature_Settings */; };
+		CE2FF01C2E827BF900F48B8C /* Feature_Invoices in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF01B2E827BF900F48B8C /* Feature_Invoices */; };
+		CE2FF01F2E827C0800F48B8C /* Feature_Clients in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF01E2E827C0800F48B8C /* Feature_Clients */; };
+		CE2FF0222E827C1900F48B8C /* Feature_BillingHub in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0212E827C1900F48B8C /* Feature_BillingHub */; };
+		CE2FF0252E827C3300F48B8C /* Feature_Calendar in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0242E827C3300F48B8C /* Feature_Calendar */; };
+		CE59D5412E8291560097C66D /* Feature_InvoiceTemplateEditor in Frameworks */ = {isa = PBXBuildFile; productRef = CE59D5402E8291560097C66D /* Feature_InvoiceTemplateEditor */; };
+		CE59D5442E8291710097C66D /* Feature_NDIS in Frameworks */ = {isa = PBXBuildFile; productRef = CE59D5432E8291710097C66D /* Feature_NDIS */; };
+		CE5D31E52E8284E300CC8CBD /* CoreXLSX in Frameworks */ = {isa = PBXBuildFile; productRef = CE5D31E42E8284E300CC8CBD /* CoreXLSX */; };
+		CEDEF9A92E82DC5100684839 /* SharedUI in Frameworks */ = {isa = PBXBuildFile; productRef = CEDEF9A82E82DC5100684839 /* SharedUI */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		CEFD0AA02D8FC981008338E9 /* InvoicingApplication.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InvoicingApplication.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		CE1CBCBD2E597F2900C90458 /* Exceptions for "InvoicingApplication" folder in "Compile Sources" phase from "InvoicingApplication" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = CEFD0A9C2D8FC981008338E9 /* Sources */;
+			membershipExceptions = (
+				Core/Configuration/InvoicingApplication.entitlements,
+				Core/Configuration/InvoicingApplicationRelease.entitlements,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CEFD0AA22D8FC981008338E9 /* InvoicingApplication */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CE1CBCBD2E597F2900C90458 /* Exceptions for "InvoicingApplication" folder in "Compile Sources" phase from "InvoicingApplication" target */,
+			);
 			path = InvoicingApplication;
 			sourceTree = "<group>";
 		};
@@ -21,10 +50,20 @@
 /* Begin PBXFrameworksBuildPhase section */
 		CEFD0A9D2D8FC981008338E9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
+				CE59D5412E8291560097C66D /* Feature_InvoiceTemplateEditor in Frameworks */,
+				CE2FF0192E827BD000F48B8C /* Feature_Settings in Frameworks */,
+				CE2FF0162E827BB700F48B8C /* Core in Frameworks */,
+				CE2FF0252E827C3300F48B8C /* Feature_Calendar in Frameworks */,
+				CE5D31E52E8284E300CC8CBD /* CoreXLSX in Frameworks */,
+				CE2FF0222E827C1900F48B8C /* Feature_BillingHub in Frameworks */,
+				CE2FF01F2E827C0800F48B8C /* Feature_Clients in Frameworks */,
+				CE2F05D42E8282FA00F48B8C /* SharedUI in Frameworks */,
+				CE2FF01C2E827BF900F48B8C /* Feature_Invoices in Frameworks */,
+				CEDEF9A92E82DC5100684839 /* SharedUI in Frameworks */,
+				CE2F05D12E82826000F48B8C /* Data in Frameworks */,
+				CE59D5442E8291710097C66D /* Feature_NDIS in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -59,12 +98,34 @@
 			buildRules = (
 			);
 			dependencies = (
+				CE5578EE2E82DADB0002FA37 /* PBXTargetDependency */,
+				CE5578EC2E82DAD60002FA37 /* PBXTargetDependency */,
+				CE5578EA2E82DACE0002FA37 /* PBXTargetDependency */,
+				CE5578E82E82DACA0002FA37 /* PBXTargetDependency */,
+				CE5578E62E82DAC30002FA37 /* PBXTargetDependency */,
+				CE5578E42E82DABE0002FA37 /* PBXTargetDependency */,
+				CE5578E22E82DAB90002FA37 /* PBXTargetDependency */,
+				CE5578E02E82DAB50002FA37 /* PBXTargetDependency */,
+				CE5578DE2E82DAB00002FA37 /* PBXTargetDependency */,
+				CE5578DC2E82DAAB0002FA37 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CEFD0AA22D8FC981008338E9 /* InvoicingApplication */,
 			);
 			name = InvoicingApplication;
 			packageProductDependencies = (
+				CE2FF0152E827BB700F48B8C /* Core */,
+				CE2FF0182E827BD000F48B8C /* Feature_Settings */,
+				CE2FF01B2E827BF900F48B8C /* Feature_Invoices */,
+				CE2FF01E2E827C0800F48B8C /* Feature_Clients */,
+				CE2FF0212E827C1900F48B8C /* Feature_BillingHub */,
+				CE2FF0242E827C3300F48B8C /* Feature_Calendar */,
+				CE2F05D02E82826000F48B8C /* Data */,
+				CE2F05D32E8282FA00F48B8C /* SharedUI */,
+				CE5D31E42E8284E300CC8CBD /* CoreXLSX */,
+				CE59D5402E8291560097C66D /* Feature_InvoiceTemplateEditor */,
+				CE59D5432E8291710097C66D /* Feature_NDIS */,
+				CEDEF9A82E82DC5100684839 /* SharedUI */,
 			);
 			productName = InvoicingApplication;
 			productReference = CEFD0AA02D8FC981008338E9 /* InvoicingApplication.app */;
@@ -94,7 +155,20 @@
 			);
 			mainGroup = CEFD0A972D8FC981008338E9;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
+			packageReferences = (
+				CE2FF0142E827BB700F48B8C /* XCLocalSwiftPackageReference "Packages/Core" */,
+				CE2FF0172E827BD000F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Settings" */,
+				CE2FF01A2E827BF900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Invoices" */,
+				CE2FF01D2E827C0800F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Clients" */,
+				CE2FF0202E827C1900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.BillingHub" */,
+				CE2FF0232E827C3300F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Calendar" */,
+				CE2F05CF2E82826000F48B8C /* XCLocalSwiftPackageReference "Packages/Data" */,
+				CE2F05D22E8282FA00F48B8C /* XCLocalSwiftPackageReference "Packages/SharedUI" */,
+				CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */,
+				CE59D53F2E8291560097C66D /* XCLocalSwiftPackageReference "Packages/Feature.InvoiceTemplateEditor" */,
+				CE59D5422E8291710097C66D /* XCLocalSwiftPackageReference "Packages/Feature.NDIS" */,
+			);
+			preferredProjectObjectVersion = 90;
 			productRefGroup = CEFD0AA12D8FC981008338E9 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -107,25 +181,64 @@
 /* Begin PBXResourcesBuildPhase section */
 		CEFD0A9E2D8FC981008338E9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		CEFD0A9C2D8FC981008338E9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		CE5578DC2E82DAAB0002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578DB2E82DAAB0002FA37 /* Core */;
+		};
+		CE5578DE2E82DAB00002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578DD2E82DAB00002FA37 /* Feature_Settings */;
+		};
+		CE5578E02E82DAB50002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578DF2E82DAB50002FA37 /* Feature_Invoices */;
+		};
+		CE5578E22E82DAB90002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578E12E82DAB90002FA37 /* Feature_Clients */;
+		};
+		CE5578E42E82DABE0002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578E32E82DABE0002FA37 /* Feature_BillingHub */;
+		};
+		CE5578E62E82DAC30002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578E52E82DAC30002FA37 /* Feature_Calendar */;
+		};
+		CE5578E82E82DACA0002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578E72E82DACA0002FA37 /* Data */;
+		};
+		CE5578EA2E82DACE0002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578E92E82DACE0002FA37 /* SharedUI */;
+		};
+		CE5578EC2E82DAD60002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578EB2E82DAD60002FA37 /* Feature_InvoiceTemplateEditor */;
+		};
+		CE5578EE2E82DADB0002FA37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = CE5578ED2E82DADB0002FA37 /* Feature_NDIS */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
-		CEFD0AB22D8FC983008338E9 /* Debug */ = {
+		CEFD0AB22D8FC983008338E9 /* Debug configuration for PBXProject "InvoicingApplication" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -178,17 +291,19 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = macosx;
+				SDKROOT = macosx26.0;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		CEFD0AB32D8FC983008338E9 /* Release */ = {
+		CEFD0AB32D8FC983008338E9 /* Release configuration for PBXProject "InvoicingApplication" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -235,61 +350,73 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				SDKROOT = macosx;
+				SDKROOT = macosx26.0;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
-		CEFD0AB52D8FC983008338E9 /* Debug */ = {
+		CEFD0AB52D8FC983008338E9 /* Debug configuration for PBXNativeTarget "InvoicingApplication" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = InvoicingApplication/InvoicingApplication.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"InvoicingApplication/Preview Content\"";
+				DEVELOPMENT_TEAM = LV5SAR7LY2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InvoicingApplication/Core/Configuration/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jesse.InvoicingApplication;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		CEFD0AB62D8FC983008338E9 /* Release */ = {
+		CEFD0AB62D8FC983008338E9 /* Release configuration for PBXNativeTarget "InvoicingApplication" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = InvoicingApplication/InvoicingApplication.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"InvoicingApplication/Preview Content\"";
+				DEVELOPMENT_TEAM = LV5SAR7LY2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InvoicingApplication/Core/Configuration/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jesse.InvoicingApplication;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -299,22 +426,176 @@
 		CEFD0A9B2D8FC981008338E9 /* Build configuration list for PBXProject "InvoicingApplication" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				CEFD0AB22D8FC983008338E9 /* Debug */,
-				CEFD0AB32D8FC983008338E9 /* Release */,
+				CEFD0AB22D8FC983008338E9 /* Debug configuration for PBXProject "InvoicingApplication" */,
+				CEFD0AB32D8FC983008338E9 /* Release configuration for PBXProject "InvoicingApplication" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		CEFD0AB42D8FC983008338E9 /* Build configuration list for PBXNativeTarget "InvoicingApplication" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				CEFD0AB52D8FC983008338E9 /* Debug */,
-				CEFD0AB62D8FC983008338E9 /* Release */,
+				CEFD0AB52D8FC983008338E9 /* Debug configuration for PBXNativeTarget "InvoicingApplication" */,
+				CEFD0AB62D8FC983008338E9 /* Release configuration for PBXNativeTarget "InvoicingApplication" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		CE2F05CF2E82826000F48B8C /* XCLocalSwiftPackageReference "Packages/Data" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Data;
+		};
+		CE2F05D22E8282FA00F48B8C /* XCLocalSwiftPackageReference "Packages/SharedUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SharedUI;
+		};
+		CE2FF0142E827BB700F48B8C /* XCLocalSwiftPackageReference "Packages/Core" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Core;
+		};
+		CE2FF0172E827BD000F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Settings" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.Settings;
+		};
+		CE2FF01A2E827BF900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Invoices" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.Invoices;
+		};
+		CE2FF01D2E827C0800F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Clients" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.Clients;
+		};
+		CE2FF0202E827C1900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.BillingHub" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.BillingHub;
+		};
+		CE2FF0232E827C3300F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Calendar" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.Calendar;
+		};
+		CE59D53F2E8291560097C66D /* XCLocalSwiftPackageReference "Packages/Feature.InvoiceTemplateEditor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.InvoiceTemplateEditor;
+		};
+		CE59D5422E8291710097C66D /* XCLocalSwiftPackageReference "Packages/Feature.NDIS" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Feature.NDIS;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CoreOffice/CoreXLSX.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.14.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CE2F05D02E82826000F48B8C /* Data */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Data;
+		};
+		CE2F05D32E8282FA00F48B8C /* SharedUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SharedUI;
+		};
+		CE2FF0152E827BB700F48B8C /* Core */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Core;
+		};
+		CE2FF0182E827BD000F48B8C /* Feature_Settings */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_Settings;
+		};
+		CE2FF01B2E827BF900F48B8C /* Feature_Invoices */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_Invoices;
+		};
+		CE2FF01E2E827C0800F48B8C /* Feature_Clients */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_Clients;
+		};
+		CE2FF0212E827C1900F48B8C /* Feature_BillingHub */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_BillingHub;
+		};
+		CE2FF0242E827C3300F48B8C /* Feature_Calendar */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_Calendar;
+		};
+		CE5578DB2E82DAAB0002FA37 /* Core */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF0142E827BB700F48B8C /* XCLocalSwiftPackageReference "Packages/Core" */;
+			productName = Core;
+		};
+		CE5578DD2E82DAB00002FA37 /* Feature_Settings */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF0172E827BD000F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Settings" */;
+			productName = Feature_Settings;
+		};
+		CE5578DF2E82DAB50002FA37 /* Feature_Invoices */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF01A2E827BF900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Invoices" */;
+			productName = Feature_Invoices;
+		};
+		CE5578E12E82DAB90002FA37 /* Feature_Clients */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF01D2E827C0800F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Clients" */;
+			productName = Feature_Clients;
+		};
+		CE5578E32E82DABE0002FA37 /* Feature_BillingHub */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF0202E827C1900F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.BillingHub" */;
+			productName = Feature_BillingHub;
+		};
+		CE5578E52E82DAC30002FA37 /* Feature_Calendar */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2FF0232E827C3300F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Calendar" */;
+			productName = Feature_Calendar;
+		};
+		CE5578E72E82DACA0002FA37 /* Data */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2F05CF2E82826000F48B8C /* XCLocalSwiftPackageReference "Packages/Data" */;
+			productName = Data;
+		};
+		CE5578E92E82DACE0002FA37 /* SharedUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE2F05D22E8282FA00F48B8C /* XCLocalSwiftPackageReference "Packages/SharedUI" */;
+			productName = SharedUI;
+		};
+		CE5578EB2E82DAD60002FA37 /* Feature_InvoiceTemplateEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE59D53F2E8291560097C66D /* XCLocalSwiftPackageReference "Packages/Feature.InvoiceTemplateEditor" */;
+			productName = Feature_InvoiceTemplateEditor;
+		};
+		CE5578ED2E82DADB0002FA37 /* Feature_NDIS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE59D5422E8291710097C66D /* XCLocalSwiftPackageReference "Packages/Feature.NDIS" */;
+			productName = Feature_NDIS;
+		};
+		CE59D5402E8291560097C66D /* Feature_InvoiceTemplateEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_InvoiceTemplateEditor;
+		};
+		CE59D5432E8291710097C66D /* Feature_NDIS */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Feature_NDIS;
+		};
+		CE5D31E42E8284E300CC8CBD /* CoreXLSX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */;
+			productName = CoreXLSX;
+		};
+		CEDEF9A82E82DC5100684839 /* SharedUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SharedUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CEFD0A982D8FC981008338E9 /* Project object */;
 }

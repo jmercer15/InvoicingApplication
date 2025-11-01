@@ -12,9 +12,11 @@ import SwiftUI
 
 
 @Model public class ClientEntity {
+    #Index<ClientEntity>([\.fullName], [\.email], [\.phone], [\.isMinor], [\.hasNdisPlan])
+    
     @Attribute(.unique) public var ndisNumber: String
     public var fullName: String
-    public var status: String
+    public var status: ClientStatus
     public var email: String? = nil
     public var id: UUID
     public var notes: String? = nil
@@ -23,7 +25,7 @@ import SwiftUI
     public var isMinor: Bool = false
     public var hasNdisPlan: Bool = false
     public var planManagementType: String?
-    public var billingAuthority: String?
+    public var billingAuthority: BillingAuthority?
     @Relationship(deleteRule: .nullify) public var address: AddressEntity?
     @Relationship(deleteRule: .cascade) public var clientServices: [ClientServiceEntity] = []
     @Relationship(deleteRule: .nullify) public var invoices: [InvoiceEntity] = []
@@ -37,7 +39,7 @@ import SwiftUI
     public var sendInvoicesToClient: Bool?
     public var sendInvoicesToPayee: Bool?
     public var sendInvoicesToPlanManager: Bool?
-    public init(id: UUID, ndisNumber: String, fullName: String, status: String) {
+    public init(id: UUID, ndisNumber: String, fullName: String, status: ClientStatus) {
         self.id = id
         self.ndisNumber = ndisNumber
         self.fullName = fullName

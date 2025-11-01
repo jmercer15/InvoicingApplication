@@ -9,42 +9,9 @@
 import Foundation
 import SwiftData
 
-/// Validation status for address entities
-enum AddressValidationStatus: String, Codable, CaseIterable {
-    case unvalidated = "unvalidated"
-    case pending = "pending"
-    case valid = "valid"
-    case failed = "failed"
-    
-    var displayName: String {
-        switch self {
-        case .unvalidated: return "Not Validated"
-        case .pending: return "Validating..."
-        case .valid: return "Valid"
-        case .failed: return "Validation Failed"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .unvalidated: return "questionmark.circle"
-        case .pending: return "clock"
-        case .valid: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
-        }
-    }
-    
-    var color: String {
-        switch self {
-        case .unvalidated: return "gray"
-        case .pending: return "blue"
-        case .valid: return "green"
-        case .failed: return "red"
-        }
-    }
-}
 
 @Model public class AddressEntity: @unchecked Sendable {
+    #Index<AddressEntity>([\.country], [\.state], [\.city], [\.suburb], [\.postcode])
     public var id: UUID
     public var country: String = ""
     public var postcode: String = ""
@@ -60,7 +27,7 @@ enum AddressValidationStatus: String, Codable, CaseIterable {
     public var longitude: Double = 0.0
     
     // Validation tracking
-    var validationStatus: String = AddressValidationStatus.unvalidated.rawValue
+    public var validationStatus: AddressValidationStatus = AddressValidationStatus.unvalidated
     var lastValidationAttempt: Date?
     var validationError: String?
     
@@ -123,15 +90,6 @@ enum AddressValidationStatus: String, Codable, CaseIterable {
     }
     
     
-    // Computed property for validation status
-    var validationStatusEnum: AddressValidationStatus {
-        get {
-            return AddressValidationStatus(rawValue: validationStatus) ?? .unvalidated
-        }
-        set {
-            validationStatus = newValue.rawValue
-        }
-    }
     
     // Helper to check if address is valid for geocoding
     var isValidForGeocoding: Bool {

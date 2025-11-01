@@ -11,6 +11,7 @@ import SwiftData
 
 
 @Model public class PlanManagerEntity {
+    #Index<PlanManagerEntity>([\.name], [\.email], [\.phone], [\.abn])
     @Attribute(.unique) public var abn: String
     public var id: UUID
     public var name: String?

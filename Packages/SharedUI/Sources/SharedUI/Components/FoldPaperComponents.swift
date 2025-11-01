@@ -1,5 +1,6 @@
 import SwiftUI
 
+
 // MARK: - TreeItem Data Structure
 public struct TreeItem: Hashable, Identifiable {
     public var id: String
@@ -25,6 +26,7 @@ public struct FoldPaperContainer: View {
     @Binding var items: [TreeItem]
     @State private var selectedItemID: String? = nil
     @State private var selectionPath: [String] = []
+    @State private var breadcrumbHeight: CGFloat = 28
     let onItemTap: ((TreeItem) -> Void)?
 
     public init(items: Binding<[TreeItem]>, onItemTap: ((TreeItem) -> Void)? = nil) {
@@ -33,7 +35,7 @@ public struct FoldPaperContainer: View {
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             breadcrumbView
 
             List(currentItems, id: \.id) { item in
@@ -42,9 +44,14 @@ public struct FoldPaperContainer: View {
                     .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .scrollIndicators(.hidden)
+            .frame(maxWidth: 400) // Limit list width
         }
-        .padding(.horizontal, 8)
+        .padding(12)
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
+        .padding(16)
         .animation(.easeInOut(duration: 0.2), value: selectionPath)
         .onChange(of: items) {
             pruneSelectionPath()
@@ -78,34 +85,45 @@ public struct FoldPaperContainer: View {
     private let breadcrumbIndent: CGFloat = 12
 
     private var breadcrumbView: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 6) {
             if !selectionPath.isEmpty {
-                Button(action: goBack) {
-                    Image(systemName: "chevron.backward")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.24))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .shadow(color: Color.accentColor.opacity(0.16), radius: 2, x: 0, y: 1)
-                .accessibilityLabel(Text("Back"))
-                .appInteractiveCursor()
-                .transition(.scale.combined(with: .opacity))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.24))
+                    .frame(width: 40, height: breadcrumbHeight)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                    )
+                    .overlay(
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundColor(.accentColor)
+                    )
+                    .shadow(color: Color.accentColor.opacity(0.16), radius: 2, x: 0, y: 1)
+                    .onTapGesture {
+                        goBack()
+                    }
+                    .accessibilityLabel(Text("Back"))
+                    .appInteractiveCursor()
+                    .transition(.scale.combined(with: .opacity))
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 breadcrumbSegments()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: 400, alignment: .leading) // Match list width
             .padding(.vertical, 1)
+            .background(
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear {
+                            breadcrumbHeight = geometry.size.height
+                        }
+                        .onChange(of: geometry.size.height) { _, newHeight in
+                            breadcrumbHeight = newHeight
+                        }
+                }
+            )
         }
         .padding(.horizontal, 4)
     }
@@ -142,7 +160,7 @@ public struct FoldPaperContainer: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8) // Reduced horizontal padding
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(background)
@@ -151,7 +169,7 @@ public struct FoldPaperContainer: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Color.primary.opacity(0.16), lineWidth: 0.5)
                 )
-                .padding(.leading, CGFloat(index) * breadcrumbIndent)
+                .padding(.trailing, CGFloat(index) * breadcrumbIndent)
             }
             .buttonStyle(.plain)
             .appInteractiveCursor()
@@ -160,18 +178,10 @@ public struct FoldPaperContainer: View {
     }
 
     private func breadcrumbLabel(for node: TreeItem?) -> Text {
-        var leading = AttributedString(node?.title ?? "All Items")
-        leading.font = .system(.subheadline, design: .rounded).weight(.semibold)
-        leading.foregroundColor = .primary
-
-        if let subtitle = node?.subtitle, !subtitle.isEmpty {
-            var trailing = AttributedString(" • \(subtitle)")
-            trailing.font = .system(.caption, design: .rounded)
-            trailing.foregroundColor = .secondary
-            leading += trailing
-        }
-
-        return Text(leading)
+        let title = node?.title ?? "All Items"
+        return Text(title)
+            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+            .foregroundColor(.primary)
     }
 
     private func breadcrumbBackground(for node: TreeItem?) -> Color {
@@ -253,8 +263,8 @@ public struct FoldPaperContainer: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
+                .padding(.vertical, 10) // Reduced vertical padding
+                .padding(.horizontal, 12) // Reduced horizontal padding
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(parentBackground(for: item))
@@ -305,8 +315,8 @@ public struct FoldPaperContainer: View {
                         }
                     }
                 }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 14)
+                .padding(.vertical, 8) // Reduced vertical padding
+                .padding(.horizontal, 12) // Reduced horizontal padding
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(backgroundForChild(item))

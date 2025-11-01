@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B375F4D6D0E3E62F2F41EFAF"
+               BlueprintIdentifier = "CEFD0A9F2D8FC981008338E9"
                BuildableName = "InvoicingApplication.app"
                BlueprintName = "InvoicingApplication"
                ReferencedContainer = "container:InvoicingApplication.xcodeproj">
@@ -44,7 +44,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B375F4D6D0E3E62F2F41EFAF"
+            BlueprintIdentifier = "CEFD0A9F2D8FC981008338E9"
             BuildableName = "InvoicingApplication.app"
             BlueprintName = "InvoicingApplication"
             ReferencedContainer = "container:InvoicingApplication.xcodeproj">
@@ -61,7 +61,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B375F4D6D0E3E62F2F41EFAF"
+            BlueprintIdentifier = "CEFD0A9F2D8FC981008338E9"
             BuildableName = "InvoicingApplication.app"
             BlueprintName = "InvoicingApplication"
             ReferencedContainer = "container:InvoicingApplication.xcodeproj">

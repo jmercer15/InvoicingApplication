@@ -11,6 +11,7 @@ import SwiftData
 
 
 @Model public class BusinessEntity {
+    #Index<BusinessEntity>([\.name], [\.email], [\.phone], [\.abn])
     @Attribute(.unique) public var abn: String
     public var name: String = ""
     public var email: String = ""

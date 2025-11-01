@@ -11,13 +11,15 @@ import SwiftData
 
 
 @Model public class SessionEntity: EventRepresentable, @unchecked Sendable {
+    #Index<SessionEntity>([\.startTime], [\.endTime], [\.isTravel], [\.location])
+    
     // Existing properties
     public var id: UUID
     public var attendeesCount: Int32 = 0
     public var derivedFromEKEventID: String?
     public var googleColorId: String?
     public var isTravel: Bool = false
-    public var status: String?
+    public var status: SessionStatus?
     // Sessions can be visually grouped in the 'Grouped' subcolumn
     public var groupID: UUID?
     // Position index within the Grouped subcolumn (nil groupID = ungrouped scope)

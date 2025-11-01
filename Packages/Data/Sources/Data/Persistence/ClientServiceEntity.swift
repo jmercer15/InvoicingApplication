@@ -11,6 +11,7 @@ import SwiftData
 
 
 @Model public class ClientServiceEntity: @unchecked Sendable {
+    #Index<ClientServiceEntity>([\.serviceName], [\.ndisCode], [\.isActive], [\.startDate], [\.endDate], [\.rate])
     public var id: UUID
     public var serviceName: String = ""
     public var unit: String = ""

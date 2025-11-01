@@ -1,0 +1,54 @@
+import Foundation
+
+/// Canonical billing status enumeration that maps to the kanban workflow
+public enum BillingStatus: String, CaseIterable, Codable, Sendable {
+    case completed = "completed"
+    case grouped = "grouped"
+    case assignServices = "needs_services"
+    case addTravel = "needs_travel"
+    case reviewDrafts = "review_draft"
+    case readyToSend = "ready_to_send"
+    case pending = "pending"
+    case received = "received"
+    
+    /// Display name for UI
+    public var displayName: String {
+        switch self {
+        case .completed: return "Completed"
+        case .grouped: return "Grouped"
+        case .assignServices: return "Assign Services"
+        case .addTravel: return "Add Travel"
+        case .reviewDrafts: return "Review Drafts"
+        case .readyToSend: return "Ready to Send"
+        case .pending: return "Pending"
+        case .received: return "Received"
+        }
+    }
+    
+    /// Column type for kanban board organization
+    public var columnType: BillingColumnType {
+        switch self {
+        case .completed, .grouped:
+            return .preparing
+        case .assignServices, .addTravel, .reviewDrafts, .readyToSend:
+            return .processing
+        case .pending, .received:
+            return .payment
+        }
+    }
+}
+
+/// Kanban column grouping for billing workflow
+public enum BillingColumnType: String, CaseIterable, Sendable {
+    case preparing = "preparing"
+    case processing = "processing"
+    case payment = "payment"
+    
+    public var displayName: String {
+        switch self {
+        case .preparing: return "Preparing"
+        case .processing: return "Processing"
+        case .payment: return "Payment"
+        }
+    }
+}

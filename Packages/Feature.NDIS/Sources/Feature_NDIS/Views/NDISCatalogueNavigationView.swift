@@ -10,13 +10,24 @@ struct NDISCatalogueNavigationView: View {
     @State private var navigationTree: [TreeItem] = []
     @State private var selectionPath: [String] = []
     @State private var breadcrumbHeight: CGFloat = 32
+    @State private var minimumCardWidth: CGFloat = 260
+    @State private var availableWidth: CGFloat = 0
+    @State private var optimalColumns: Int = 1
+    @Namespace private var cardNamespace
 
-    private let columns: [GridItem] = [
-        GridItem(.adaptive(minimum: 260, maximum: 360), spacing: 16, alignment: .top)
-    ]
 
     private var itemLookup: [UUID: NDISItemEntity] {
         Dictionary(uniqueKeysWithValues: viewModel.filteredItems.map { ($0.id, $0) })
+    }
+
+    private func calculateOptimalColumns(
+        availableWidth: CGFloat,
+        itemCount: Int,
+        maxItemWidth: CGFloat,
+        spacing: CGFloat
+    ) -> Int {
+        guard availableWidth > 0, itemCount > 0, maxItemWidth > 0 else { return 1 }
+        return max(1, min(Int(availableWidth / (maxItemWidth + spacing)), itemCount))
     }
 
     private var currentNodes: [TreeItem] {
@@ -41,6 +52,35 @@ struct NDISCatalogueNavigationView: View {
         }
         return trail
     }
+    
+    private func updateGridLayout(for newAvailableWidth: CGFloat) {
+        let minCardWidth = IntrinsicContentMeasurer.measureCardContentWidth(
+            title: "Sample NDIS Support Item Title",
+            subtitle: "Sample item number",
+            additionalContent: "Browse items"
+        )
+
+        // Calculate optimal columns for the new width
+        let newOptimalColumns = calculateOptimalColumns(
+            availableWidth: newAvailableWidth,
+            itemCount: currentNodes.count,
+            maxItemWidth: minCardWidth,
+            spacing: 16
+        )
+
+        // Only update if there's a meaningful change
+        let widthDifference = abs(minCardWidth - minimumCardWidth)
+        let columnsChanged = newOptimalColumns != optimalColumns
+        let widthChanged = abs(newAvailableWidth - availableWidth) > 10
+
+        if widthDifference > 10 || columnsChanged || widthChanged {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                minimumCardWidth = minCardWidth
+                availableWidth = newAvailableWidth
+                optimalColumns = newOptimalColumns
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,14 +95,38 @@ struct NDISCatalogueNavigationView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color("Background", bundle: .sharedUI))
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-                        ForEach(currentNodes, id: \.id) { node in
-                            card(for: node)
+                GeometryReader { geometry in
+                    ScrollView {
+                        Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                            ForEach(0..<Int(ceil(Double(currentNodes.count) / Double(optimalColumns))), id: \.self) { rowIndex in
+                                GridRow {
+                                    ForEach(0..<optimalColumns, id: \.self) { columnIndex in
+                                        let itemIndex = rowIndex * optimalColumns + columnIndex
+                                        if itemIndex < currentNodes.count {
+                                            card(for: currentNodes[itemIndex])
+                                                .matchedGeometryEffect(id: "card-\(currentNodes[itemIndex].id)", in: cardNamespace)
+                                                .transition(.asymmetric(
+                                                    insertion: .scale.combined(with: .opacity),
+                                                    removal: .scale.combined(with: .opacity)
+                                                ))
+                                        } else {
+                                            Color.clear
+                                                .frame(width: minimumCardWidth, height: 100)
+                                        }
+                                    }
+                                }
+                            }
                         }
+                        .animation(.easeInOut(duration: 0.5), value: optimalColumns)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 20)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
+                    .onAppear {
+                        updateGridLayout(for: geometry.size.width)
+                    }
+                    .onChange(of: geometry.size.width) { newWidth in
+                        updateGridLayout(for: newWidth)
+                    }
                 }
                 .background(Color.clear)
             }
@@ -97,18 +161,15 @@ struct NDISCatalogueNavigationView: View {
                 level: selectionPath.count,
                 count: descendantCount(for: node)
             ) {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     selectionPath.append(node.id)
-                }
             }
         } else if let entityId = node.entityId, let uuid = UUID(uuidString: entityId), let item = itemLookup[uuid] {
             NDISCatalogueCard(
                 item: item,
+                preferredRegion: viewModel.preferredRegionIdentifier,
                 isSelected: viewModel.selectedItem?.id == item.id,
                 onSelect: {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         viewModel.selectedItem = item
-                    }
                 }
             )
             .contextMenu {
@@ -146,7 +207,7 @@ struct NDISCatalogueNavigationView: View {
                     .appInteractiveCursor()
             }
 
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
                 breadcrumbSegments
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,6 +247,7 @@ struct NDISCatalogueNavigationView: View {
                 }
                 .padding(.vertical, 6)
                 .padding(.horizontal, 14)
+                .padding(.leading, CGFloat(index) * 14) // Add indentation for each level
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(breadcrumbBackground(for: node))
@@ -194,7 +256,6 @@ struct NDISCatalogueNavigationView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
                 )
-                .padding(.trailing, CGFloat(index) * 14)
             }
             .buttonStyle(.plain)
             .appInteractiveCursor()
@@ -399,7 +460,17 @@ private struct NDISCatalogueNavigationNodeCard: View {
                 }
             }
             .padding(18)
-            .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+            .frame(
+                minWidth: IntrinsicContentMeasurer.measureCardContentWidth(
+                    title: node.title,
+                    subtitle: subtitle,
+                    additionalContent: "Browse \(count) \(count == 1 ? "item" : "items")",
+                    padding: 18
+                ),
+                maxWidth: .infinity,
+                minHeight: 110,
+                alignment: .topLeading
+            )
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(tint.opacity(0.1))
@@ -418,6 +489,7 @@ private struct NDISCatalogueNavigationNodeCard: View {
 
 private struct NDISCatalogueCard: View {
     let item: NDISItemEntity
+    let preferredRegion: String?
     let isSelected: Bool
     let onSelect: () -> Void
 
@@ -431,7 +503,13 @@ private struct NDISCatalogueCard: View {
     }
 
     private var pricingState: PricingState {
-        if let nationalPrice = item.regionalPrices.first(where: { ($0.regionIdentifier ?? "").uppercased() == "NATIONAL" })?.amount {
+        if let region = normalizedPreferredRegion,
+           let regionalPrice = price(forNormalizedRegion: region) {
+            let regionLabel = (regionalPrice.regionIdentifier?.isEmpty == false) ? regionalPrice.regionIdentifier! : preferredRegion ?? region
+            return .regional(regionalPrice.amount, regionLabel)
+        }
+
+        if let nationalPrice = price(forNormalizedRegion: "NATIONAL")?.amount {
             return .national(nationalPrice)
         }
 
@@ -449,6 +527,27 @@ private struct NDISCatalogueCard: View {
         }
 
         return .unavailable
+    }
+
+    private var normalizedPreferredRegion: String? {
+        guard let preferredRegion = preferredRegion, !preferredRegion.isEmpty else { return nil }
+        let scalars = preferredRegion.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+        let normalized = String(String.UnicodeScalarView(scalars)).uppercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func price(forNormalizedRegion region: String) -> RegionalPriceEntity? {
+        item.regionalPrices.first { price in
+            guard let identifier = normalizedRegionIdentifier(price.regionIdentifier) else { return false }
+            return identifier == region && price.amount > 0
+        }
+    }
+
+    private func normalizedRegionIdentifier(_ value: String?) -> String? {
+        guard let value = value, !value.isEmpty else { return nil }
+        let scalars = value.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+        let normalized = String(String.UnicodeScalarView(scalars)).uppercased()
+        return normalized.isEmpty ? nil : normalized
     }
 
     private var priceText: String {
@@ -565,7 +664,17 @@ private struct NDISCatalogueCardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(20)
-            .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
+            .frame(
+                minWidth: IntrinsicContentMeasurer.measureCardContentWidth(
+                    title: "Sample NDIS Support Item Title",
+                    subtitle: "Sample item number",
+                    additionalContent: "Quote Required",
+                    padding: 20
+                ),
+                maxWidth: .infinity,
+                minHeight: 160,
+                alignment: .topLeading
+            )
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(backgroundColor(isPressed: configuration.isPressed))

@@ -11,6 +11,8 @@ import SwiftData
 
 
 @Model public class NDISItemEntity: @unchecked Sendable {
+    #Index<NDISItemEntity>([\.itemNumber], [\.name], [\.isCurrent], [\.category], [\.registrationGroup], [\.effectiveStartDate], [\.effectiveEndDate], [\.itemDescription], [\.quoteRequired], [\.status], [\.type])
+    
     public var itemNumber: String
     public var name: String
     @Attribute(.unique) public var versionIdentifier: String

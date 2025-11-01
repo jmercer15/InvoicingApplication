@@ -1,5 +1,4 @@
 import SwiftUI
-import SharedUI
 
 struct RulerView: View {
     let orientation: RulerOrientation
@@ -26,10 +25,10 @@ struct RulerView: View {
         ZStack {
             // Ruler background (darker than control background, lighter than black)
             Rectangle()
-                .fill(Color("Black30", bundle: .sharedUI))
+                .fill(Color.elevatedSurface)
                 .overlay(
                     Rectangle()
-                        .stroke(Color("Border", bundle: .sharedUI), lineWidth: 0.5)
+                        .stroke(Color.primaryOutline, lineWidth: 0.5)
                 )
             
             // Selection range indicator
@@ -65,7 +64,7 @@ struct RulerView: View {
                 Group {
                     // Tick line
                     Rectangle()
-                        .fill(Color("Text", bundle: .sharedUI))
+                        .fill(Color.primaryText)
                         .frame(
                             width: orientation == .horizontal ? 0.5 : tick.height,
                             height: orientation == .horizontal ? tick.height : 0.5
@@ -76,7 +75,7 @@ struct RulerView: View {
                     if tick.showLabel {
                         Text(tick.label)
                             .font(.system(size: 8, weight: .regular, design: .monospaced))
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundColor(Color.secondaryText)
                             .position(labelPosition(for: tick))
                     }
                 }
@@ -211,7 +210,7 @@ struct RulerView: View {
             if adjustedPosition >= 0 && adjustedPosition <= length {
                 // Cursor line
                 Rectangle()
-                    .fill(Color("Red", bundle: .sharedUI).opacity(0.8))
+                    .fill(Color.warningColor.opacity(0.8))
                     .frame(
                         width: orientation == .horizontal ? 1 : rulerHeight,
                         height: orientation == .horizontal ? rulerHeight : 1
@@ -236,7 +235,7 @@ struct RulerView: View {
                         path.closeSubpath()
                     }
                 }
-                .fill(Color("Red", bundle: .sharedUI))
+                .fill(Color.warningColor)
             }
         }
     }
@@ -254,7 +253,7 @@ struct RulerView: View {
                 path.move(to: CGPoint(x: orientation == .horizontal ? clampedPosition : rulerHeight - 5, y: orientation == .horizontal ? rulerHeight - 5 : clampedPosition))
                 path.addLine(to: CGPoint(x: orientation == .horizontal ? clampedPosition : rulerHeight, y: orientation == .horizontal ? rulerHeight : clampedPosition))
             }
-            .stroke(Color("Cyan", bundle: .sharedUI).opacity(isClampedToStart || isClampedToEnd ? 0.5 : 1.0), lineWidth: 1)
+            .stroke(Color.accentColor.opacity(isClampedToStart || isClampedToEnd ? 0.5 : 1.0), lineWidth: 1)
 
             // Draw triangles for off-screen indicators pointing outwards
             if isClampedToStart {
@@ -269,7 +268,7 @@ struct RulerView: View {
                         path.addLine(to: CGPoint(x: rulerHeight - 2.5, y: clampedPosition + 5))
                     }
                 }
-                .fill(Color("Cyan", bundle: .sharedUI).opacity(0.5))
+                .fill(Color.accentColor.opacity(0.5))
             }
 
             if isClampedToEnd {
@@ -284,7 +283,7 @@ struct RulerView: View {
                         path.addLine(to: CGPoint(x: rulerHeight - 2.5, y: clampedPosition - 5))
                     }
                 }
-                .fill(Color("Cyan", bundle: .sharedUI).opacity(0.5))
+                .fill(Color.accentColor.opacity(0.5))
             }
         }
     }
@@ -372,7 +371,7 @@ private struct TickMark {
             )
             
             Rectangle()
-                .fill(Color("Gray30", bundle: .sharedUI))
+                .fill(Color.elevatedSurface)
                 .frame(width: 200, height: 300)
         }
     }

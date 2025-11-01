@@ -11,6 +11,7 @@ import SwiftData
 
 
 @Model public class InvoiceItemEntity {
+    #Index<InvoiceItemEntity>([\.itemDescription], [\.ndisItemNumber], [\.ndisSupportCategory], [\.ndisRegistrationGroup], [\.serviceDate], [\.rate], [\.amount], [\.quantity])
     public var id: UUID
     public var itemDescription: String = "" // Non-optional with default
     public var amount: Double = 0.0 // Non-optional with default
@@ -24,7 +25,7 @@ import SwiftData
     
     // NDIS-specific properties for billing algorithm
     public var ndisItemNumber: String?
-    public var claimType: String? // "Direct", "ProviderTravel", "Cancellation", etc.
+    public var claimType: NDISClaimType? // "Direct", "ProviderTravel", "Cancellation", etc.
     public var ndisSupportCategory: String?
     public var ndisRegistrationGroup: String?
     public var ndisOutcomeDomain: String?
@@ -95,26 +96,26 @@ import SwiftData
         guard let claimType = claimType else { return "Standard" }
         
         switch claimType {
-        case "Direct":
+        case .direct:
             return "Direct Support"
-        case "ProviderTravel":
+        case .providerTravel:
             return "Provider Travel"
-        case "Cancellation":
+        case .cancellation:
             return "Cancellation Fee"
-        case "Prepayment":
+        case .prepayment:
             return "Prepayment"
-        case "Telehealth":
+        case .telehealth:
             return "Telehealth"
-        case "NonFaceToFace":
+        case .nonFaceToFace:
             return "Non-Face-to-Face"
-        case "NDIAReport":
+        case .ndiaReport:
             return "NDIA Report"
-        case "IrregularSILSupport":
+        case .irregularSILSupport:
             return "Irregular SIL Support"
-        case "Bereavement":
+        case .bereavement:
             return "Bereavement Support"
         default:
-            return claimType
+            return claimType.rawValue
         }
     }
     

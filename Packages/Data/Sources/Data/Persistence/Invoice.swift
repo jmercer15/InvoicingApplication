@@ -11,6 +11,8 @@ import SwiftData
 
 
 @Model public class InvoiceEntity {
+    #Index<InvoiceEntity>([\.issueDate], [\.dueDate], [\.totalAmount], [\.paidDate], [\.sentDate])
+    
     @Attribute(.unique) public var invoiceNumber: String
     public var id: UUID
     public var totalAmount: Double = 0.0
@@ -24,7 +26,7 @@ import SwiftData
     public var notes: String?
     public var paidDate: Date?
     public var paymentTerms: String?
-    public var status: String?
+    public var status: InvoiceStatus?
     public var sentDate: Date?
     public var currencyCode: String = "AUD"
     public var billingOrder: Int32 = 0
@@ -44,7 +46,7 @@ import SwiftData
     public var clientAddress: String?
     
     // Billing Information (snapshot from billing authority)
-    public var billingAuthority: String? // "Client", "Parent/Guardian"
+    public var billingAuthority: BillingAuthority? // "Client", "Parent/Guardian"
     public var billToName: String?
     public var billToEmail: String?
     public var billToAddress: String?
@@ -124,7 +126,7 @@ import SwiftData
     /// Check if invoice is overdue
     var isOverdue: Bool {
         guard let dueDate = dueDate else { return false }
-        return dueDate < Date() && status != "Paid"
+        return dueDate < Date() && status != .paid
     }
     
     /// Days until due (negative if overdue)
@@ -160,7 +162,7 @@ import SwiftData
             billingAuthority = client.billingAuthority
             
             switch client.billingAuthority {
-            case "Parent/Guardian":
+            case .parentGuardian:
                 if let payee = client.payee {
                     billToName = payee.fullName
                     billToEmail = payee.email
@@ -172,7 +174,7 @@ import SwiftData
                     payeePhone = payee.phone
                     payeeAddress = payee.address?.fullFormattedAddress
                 }
-            case "Client":
+            case .client:
                 billToName = client.fullName
                 billToEmail = client.email
                 billToAddress = client.address?.fullFormattedAddress
