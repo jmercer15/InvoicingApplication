@@ -4,6 +4,9 @@ import Foundation
 public protocol ClientServicesRepository: Sendable {
     /// Fetch all services assigned to a client
     func fetch(for clientId: UUID) async throws -> [ClientService]
+    
+    /// Fetch a single client service by ID
+    func fetch(by id: UUID) async throws -> ClientService?
 
     /// Create a new client service assignment
     func create(_ clientService: ClientService) async throws -> ClientService

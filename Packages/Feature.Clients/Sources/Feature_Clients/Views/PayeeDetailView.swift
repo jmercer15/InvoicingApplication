@@ -13,85 +13,44 @@ import SwiftData
 import Data
 import SharedUI
 
+// MARK: - Helper Functions
+
+// Import helper function from Data package to avoid Codable conflicts
+// Helper functions defined in Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
+
 // MARK: - PayeeDetailView
 
 struct PayeeDetailView: View {
-    @Bindable var payee: PayeeEntity
-    let isCreatingNew: Bool
-    let onSave: (() -> Void)?
-    
-    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     
-    // For real-time data fetching
-    @Query private var allClients: [ClientEntity]
-    @Query private var relatedInvoices: [InvoiceEntity]
+    // ViewModel manages all state
+    @StateObject private var viewModel: PayeeDetailViewModel
     
-    // State variables
-    @State private var editableFullName: String = ""
-    @State private var editableStatus: String = "Active"
-    @State private var editableEmail: String = ""
-    @State private var editablePhone: String = ""
-    
-    // Address editing state
-    @State private var isEditingAddress: Bool = false
-    @State private var addressSearchText: String = ""
-    @State private var selectedSearchAddress: AddressData?
-    @State private var editableUnitNumber: String = ""
-    @State private var editableStreetNumber: String = ""
-    @State private var editableStreetName: String = ""
-    @State private var editableSuburb: String = ""
-    @State private var editablePostcode: String = ""
-    @State private var editableState: String = ""
-    @State private var editableCountry: String = ""
-    @State private var editablePoBox: String = ""
-    
-    // Client association state
-    @State private var showingClientSelector: Bool = false
+    // UI state only
     @State private var showingMapSheet: Bool = false
     @State private var showingAddressEditingSheet: Bool = false
-    @State private var selectedClientIDs: Set<UUID> = []
-    
-    // Alert state
-    @State private var showAlert: Bool = false
-    @State private var alertTitle: String = ""
-    @State private var alertMessage: String = ""
-    
-    // Formatters and validators
-    @StateObject private var emailValidator = EmailValidator()
-    @StateObject private var phoneFormatter = PhoneNumberFormatter()
     
     // Sorting state
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
     
-    // Computed properties
-    private var associatedClients: [ClientEntity] {
-        allClients.filter { $0.payee?.id == payee.id }
+    // Computed properties from ViewModel
+    private var associatedClients: [Client] {
+        viewModel.associatedClients
     }
     
-    private var filteredInvoices: [InvoiceEntity] {
-        let associatedClientIDs = Set(associatedClients.map { $0.id })
-        return relatedInvoices.filter { invoice in
-            guard let clientID = invoice.client?.id else { return false }
-            return associatedClientIDs.contains(clientID)
-        }
+    private var filteredInvoices: [Invoice] {
+        viewModel.relatedInvoices
     }
     
     private var payeeStatuses: [String] {
         ["Active", "Inactive", "Pending", "Suspended"]
     }
     
-    private var fullNameError: String? {
-        if editableFullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Full name is required"
-        }
-        return nil
-    }
     
     // MARK: - Computed Properties
     
-    private var sortedClients: [ClientEntity] {
+    private var sortedClients: [Client] {
         switch clientsSortOrder {
         case .nameAsc:
             return associatedClients.sorted { $0.fullName < $1.fullName }
@@ -102,14 +61,13 @@ struct PayeeDetailView: View {
         case .ndisDesc:
             return associatedClients.sorted { $0.ndisNumber > $1.ndisNumber }
         case .statusAsc:
-            return associatedClients.sorted { $0.status.rawValue < $1.status.rawValue }
+            return associatedClients.sorted { $0.status < $1.status }
         case .statusDesc:
-            return associatedClients.sorted { $0.status.rawValue > $1.status.rawValue }
-
+            return associatedClients.sorted { $0.status > $1.status }
         }
     }
     
-    private var sortedInvoices: [InvoiceEntity] {
+    private var sortedInvoices: [Invoice] {
         switch invoicesSortOrder {
         case .dateAsc:
             return filteredInvoices.sorted { $0.issueDate < $1.issueDate }
@@ -126,35 +84,84 @@ struct PayeeDetailView: View {
         case .amountDesc:
             return filteredInvoices.sorted { $0.totalAmount > $1.totalAmount }
         case .clientName:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
         case .numberAsc:
             return filteredInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .numberDesc:
             return filteredInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
         case .statusAsc:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
         case .statusDesc:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") > ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { ($0.status ?? "") > ($1.status ?? "") }
         }
     }
 
-    // Initializer for existing payees
+    // Initializer for existing payees (entity-based - for compatibility)
     init(payee: PayeeEntity, context: ModelContext, onSave: (() -> Void)? = nil) {
-        self.payee = payee
-        self.isCreatingNew = false
-        self.onSave = onSave
-        self._allClients = Query()
-        self._relatedInvoices = Query()
+        // Convert entity to domain model
+        // Note: Using extension from Data.Mapping module
+        let payeeDomain = payeeFromEntity(payee)
+        // Create temporary repositories for initialization
+        // In production, these should come from AppAssembly
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
+            payee: payeeDomain,
+            payeesRepository: payeesRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: false
+        ))
+        viewModel.dismiss = onSave ?? {}
+    }
+    
+    // Convenience initializer for domain model (preferred)
+    init(payee: Payee, context: ModelContext, onSave: (() -> Void)? = nil) {
+        // Create temporary repositories for initialization
+        // In production, these should come from AppAssembly
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
+            payee: payee,
+            payeesRepository: payeesRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: false
+        ))
+        viewModel.dismiss = onSave ?? {}
     }
     
     // Initializer for creating a new payee
     init(context: ModelContext, onSave: (() -> Void)? = nil) {
-        let newPayee = PayeeEntity(id: UUID(), fullName: "")
-        self.payee = newPayee
-        self.isCreatingNew = true
-        self.onSave = onSave
-        self._allClients = Query()
-        self._relatedInvoices = Query()
+        // Create new payee domain model
+        let newPayee = Payee(
+            id: UUID(),
+            fullName: "",
+            email: nil,
+            phone: nil,
+            address: nil,
+            status: "Active"
+        )
+        // Create temporary repositories for initialization
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
+            payee: newPayee,
+            payeesRepository: payeesRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: true
+        ))
+        viewModel.dismiss = onSave ?? { }
     }
 
     var body: some View {
@@ -197,215 +204,36 @@ struct PayeeDetailView: View {
             .padding(24)
             }
         }
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
-        .foregroundColor(Color("Text", bundle: .sharedUI))
-        .alert(alertTitle, isPresented: $showAlert) {
+        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .foregroundColor(Color(NSColor.labelColor))
+        .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
             .appInteractiveCursor()
         } message: {
-            Text(alertMessage)
-        }
-
-        .onAppear {
-            loadPayeeDetails()
+            Text(viewModel.alertMessage)
         }
         .sheet(isPresented: $showingMapSheet) {
-            InteractiveMapView(address: getCurrentAddressString())
-        }
-        .sheet(isPresented: $showingAddressEditingSheet) {
-            PayeeAddressEditingSheet(
-                payee: payee,
-                isPresented: $showingAddressEditingSheet
-            )
-        }
-
-        
-    }
-    
-    // MARK: - Helper Functions
-    
-    private func loadPayeeDetails() {
-        editableFullName = payee.fullName
-        editableStatus = payee.status ?? "Active"
-        editableEmail = payee.email ?? ""
-        editablePhone = payee.phone ?? ""
-        
-        // Initialize formatters
-        emailValidator.email = editableEmail
-        phoneFormatter.phoneNumber = editablePhone
-        
-        // Load address details if editing
-        if isEditingAddress {
-            loadAddressDetails()
-        }
-        
-        // Load existing address data into state variables
-        if let address = payee.address {
-            editableUnitNumber = address.unitNumber
-            editableStreetNumber = address.streetNumber
-            editableStreetName = address.streetName
-            editableSuburb = address.suburb
-            editablePostcode = address.postcode
-            editableState = address.state
-            editableCountry = address.country
-            editablePoBox = address.poBox
-            addressSearchText = formattedAddressString(address)
-        }
-        
-        // Load selected clients
-        selectedClientIDs = Set(associatedClients.map { $0.id })
-    }
-    
-    private func updateAndSavePayee() {
-        payee.fullName = editableFullName
-        payee.status = editableStatus
-        payee.email = editableEmail.isEmpty ? nil : editableEmail
-        payee.phone = editablePhone.isEmpty ? nil : editablePhone
-        
-        _ = saveContext()
-    }
-    
-    private func createPayeeAndDismiss() {
-        updateAndSavePayee()
-        if isCreatingNew && onSave != nil {
-            onSave?()
-        } else {
-            dismiss()
-        }
-    }
-    
-    private func deletePayeeAndDismiss() {
-        context.delete(payee)
-        _ = saveContext()
-        dismiss()
-    }
-    
-
-    
-    private func saveContext() -> Bool {
-        do {
-            try context.save()
-            return true
-        } catch {
-            alertTitle = "Save Error"
-            alertMessage = "Failed to save changes: \(error.localizedDescription)"
-            showAlert = true
-            return false
-        }
-    }
-    
-    private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-    
-    private func loadAddressDetails() {
-        guard let address = payee.address else { return }
-        editableUnitNumber = address.unitNumber
-        editableStreetNumber = address.streetNumber
-        editableStreetName = address.streetName
-        editableSuburb = address.suburb
-        editablePostcode = address.postcode
-        editableState = address.state
-        editableCountry = address.country
-        editablePoBox = address.poBox
-    }
-    
-    private func commitAddressChanges() {
-        let address = payee.address ?? AddressEntity()
-        address.unitNumber = editableUnitNumber
-        address.streetNumber = editableStreetNumber
-        address.streetName = editableStreetName
-        address.suburb = editableSuburb
-        address.postcode = editablePostcode
-        address.state = editableState
-        address.country = editableCountry
-        address.poBox = editablePoBox
-        
-        payee.address = address
-        _ = saveContext()
-        isEditingAddress = false
-    }
-    
-    private func updateClientAssociations() {
-        // Update client associations
-        for client in allClients {
-            if selectedClientIDs.contains(client.id) {
-                client.payee = payee
-            } else if client.payee?.id == payee.id {
-                client.payee = nil
+            if let address = viewModel.payee.address {
+                InteractiveMapView(address: viewModel.formattedAddressString(from: address))
             }
         }
-        _ = saveContext()
-    }
-    
-    private func openInMaps() {
-        guard let address = payee.address else { return }
-        let addressString = formattedAddressString(address)
-        let encodedAddress = addressString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "http://maps.apple.com/?address=\(encodedAddress)"
+        .sheet(isPresented: $showingAddressEditingSheet) {
+            PayeeAddressEditingSheetView(viewModel: viewModel, isPresented: $showingAddressEditingSheet)
+        }
+        .sheet(isPresented: $viewModel.showingClientSelector) {
+            ClientMultiSelector(
+                allClients: viewModel.allClients,
+                selectedClientIDs: $viewModel.selectedClientIDs
+            )
+            .onDisappear {
+                // Save client associations when selector closes
+                Task {
+                    await viewModel.updateClientAssociations()
+                }
+            }
+        }
+
         
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    private func formattedAddressString(_ address: AddressEntity) -> String {
-        var components: [String] = []
-        
-        if !address.unitNumber.isEmpty {
-            components.append("Unit \(address.unitNumber)")
-        }
-        if !address.streetNumber.isEmpty {
-            components.append(address.streetNumber)
-        }
-        if !address.streetName.isEmpty {
-            components.append(address.streetName)
-        }
-        if !address.suburb.isEmpty {
-            components.append(address.suburb)
-        }
-        if !address.state.isEmpty {
-            components.append(address.state)
-        }
-        if !address.postcode.isEmpty {
-            components.append(address.postcode)
-        }
-        if !address.country.isEmpty {
-            components.append(address.country)
-        }
-        
-        return components.joined(separator: " ")
-    }
-    
-    private func getCurrentAddressString() -> String {
-        // If we have existing address data, use that
-        if let address = payee.address, !address.fullAddressText.isEmpty {
-            return address.formattedAddress
-        }
-        
-        // Otherwise use the state variables for compact address
-        return formatAddressForDisplay()
-    }
-    
-    private func formatAddressForDisplay() -> String {
-        var parts: [String] = []
-        
-        if !editablePoBox.isEmpty {
-            parts.append("PO Box \(editablePoBox)")
-        } else {
-            if !editableUnitNumber.isEmpty { parts.append("Unit \(editableUnitNumber)") }
-            if !editableStreetNumber.isEmpty { parts.append(editableStreetNumber) }
-            if !editableStreetName.isEmpty { parts.append(editableStreetName) }
-        }
-        
-        if !editableSuburb.isEmpty { parts.append(editableSuburb) }
-        if !editableState.isEmpty { parts.append(editableState) }
-        if !editablePostcode.isEmpty { parts.append(editablePostcode) }
-        if !editableCountry.isEmpty { parts.append(editableCountry) }
-        
-        return parts.joined(separator: ", ")
     }
     
     // MARK: - Label Width Calculation
@@ -437,10 +265,10 @@ struct PayeeDetailView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI).opacity(0.9))
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(payee.fullName.isEmpty ? "New Payee" : payee.fullName)
+                    Text(viewModel.payee.fullName.isEmpty ? "New Payee" : viewModel.payee.fullName)
                         .font(.largeTitle.weight(.regular))
                         .kerning(5.0)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .foregroundColor(Color(NSColor.labelColor))
                         .lineLimit(1)
                     
                     Rectangle()
@@ -483,22 +311,22 @@ struct PayeeDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            TextField("Enter payee name", text: $editableFullName)
+                            TextField("Enter payee name", text: $viewModel.editableFullName)
                                 .textFieldStyle(.roundedBorder)
-                                .foregroundColor(fullNameError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                .accentColor(fullNameError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                .onChange(of: editableFullName) { updateAndSavePayee() }
+                                .foregroundColor(viewModel.fullNameError != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                .accentColor(viewModel.fullNameError != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                .onChange(of: viewModel.editableFullName) { _, _ in viewModel.updateAndSavePayee() }
                             
-                            Button(action: { copyToClipboard(editableFullName) }) {
+                            Button(action: { viewModel.copyToClipboard(viewModel.editableFullName) }) {
                                 Image(systemName: "doc.on.doc")
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.secondaryLabelColor))
                             }
                             .buttonStyle(.plain)
                         }
                             
-                            if let error = fullNameError {
+                            if let error = viewModel.fullNameError {
                                 Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
                             }
                         }
@@ -512,25 +340,26 @@ struct PayeeDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter email address", text: $emailValidator.email)
+                                TextField("Enter email address", text: $viewModel.emailValidator.email)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(emailValidator.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                    .accentColor(emailValidator.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                    .onChange(of: emailValidator.email) { 
-                                        editableEmail = emailValidator.email
-                                        if emailValidator.isValid { updateAndSavePayee() } 
+                                    .foregroundColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.emailValidator.email) { _, _ in 
+                                        if viewModel.emailValidator.isValid { 
+                                            viewModel.updateAndSavePayee() 
+                                        } 
                                     }
                                 
-                                Button(action: { copyToClipboard(emailValidator.email) }) {
+                                Button(action: { viewModel.copyToClipboard(viewModel.emailValidator.email) }) {
                                     Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
                                 .buttonStyle(.plain)
                             }
                             
-                            if let error = emailValidator.validationMessage {
+                            if let error = viewModel.emailValidator.validationMessage {
                                 Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
                             }
                         }
@@ -544,27 +373,28 @@ struct PayeeDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter phone number", text: $phoneFormatter.phoneNumber)
+                                TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(phoneFormatter.validationMessage != nil ? .red : .white)
-                                    .accentColor(phoneFormatter.validationMessage != nil ? .red : .blue)
-                                    .onChange(of: phoneFormatter.phoneNumber) { 
-                                        editablePhone = phoneFormatter.phoneNumber
-                                        if phoneFormatter.isValid { updateAndSavePayee() } 
+                                    .foregroundColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.phoneFormatter.phoneNumber) { _, _ in 
+                                        if viewModel.phoneFormatter.isValid { 
+                                            viewModel.updateAndSavePayee() 
+                                        } 
                                     }
                                 
-                                Button(action: { copyToClipboard(phoneFormatter.phoneNumber) }) {
+                                Button(action: { viewModel.copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
                                     Image(systemName: "doc.on.doc")
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
                                 .buttonStyle(.plain)
                             }
                             
-                            if let error = phoneFormatter.validationMessage {
+                            if let error = viewModel.phoneFormatter.validationMessage {
                                 Text(error)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
-                        }
+                            }
                     }
                 }
                 
@@ -586,15 +416,8 @@ struct PayeeDetailView: View {
     // MARK: - Address Helper Methods
     
     private var hasAddressData: Bool {
-        // Check state variables (for editing)
-        let hasStateData = !editableUnitNumber.isEmpty || !editableStreetNumber.isEmpty || !editableStreetName.isEmpty || 
-        !editableSuburb.isEmpty || !editableState.isEmpty || !editablePostcode.isEmpty || 
-        !editableCountry.isEmpty || !editablePoBox.isEmpty
-        
-        // Check existing address from entity
-        let hasExistingAddress = payee.address != nil && !payee.address!.fullAddressText.isEmpty
-        
-        return hasStateData || hasExistingAddress
+        // Check existing address from domain model
+        return viewModel.payee.address != nil
     }
     
     private var compactAddressView: some View {
@@ -604,10 +427,10 @@ struct PayeeDetailView: View {
                 .foregroundColor(Color("Text", bundle: .sharedUI))
             
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if hasAddressData {
-                    Text(formatAddressForDisplay())
+                if hasAddressData, let address = viewModel.payee.address {
+                    Text(viewModel.formattedAddressString(from: address))
                                     .font(.system(size: 14))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .foregroundColor(Color(NSColor.labelColor))
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
@@ -699,7 +522,7 @@ struct PayeeDetailView: View {
                 if !associatedClients.isEmpty {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedClients) { client in
+                            ForEach(sortedClients, id: \.id) { client in
                                 CompactClientRowView(client: client)
                             }
                         }
@@ -715,7 +538,9 @@ struct PayeeDetailView: View {
                 
                 HStack {
                     Spacer()
-                    Button(action: { showingClientSelector = true }) {
+                    Button(action: { 
+                        viewModel.showingClientSelector = true
+                    }) {
                         Label("Associate Clients", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(.glassProminent)
@@ -729,17 +554,6 @@ struct PayeeDetailView: View {
             .frame(minHeight: 120)
         }
         .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
-        .sheet(isPresented: $showingClientSelector) {
-            ClientMultiSelector(
-                allClients: allClients,
-                selectedClientIDs: $selectedClientIDs
-            )
-            .frame(minWidth: 600, minHeight: 400)
-            .onDisappear {
-                updateClientAssociations()
-            }
-        }
     }
     
     private var invoicesCard: some View {
@@ -777,7 +591,7 @@ struct PayeeDetailView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedInvoices) { invoice in
+                            ForEach(sortedInvoices, id: \.id) { invoice in
                                 CompactInvoiceRowView(invoice: invoice)
                             }
                         }
@@ -800,25 +614,17 @@ struct PayeeDetailView: View {
 
 
 
-// MARK: - Payee Address Editing Sheet
+// MARK: - Payee Address Editing Sheet (ViewModel-based)
 
-struct PayeeAddressEditingSheet: View {
-    @Bindable var payee: PayeeEntity
+struct PayeeAddressEditingSheetView: View {
+    @ObservedObject var viewModel: PayeeDetailViewModel
     @Binding var isPresented: Bool
     
     @State private var isManualMode = false
     
-    // Address editing state (matching NativeSessionFormView)
+    // Address search state
     @State private var addressSearchText: String = ""
     @State private var selectedAddress: AddressData?
-    @State private var unitNumber: String = ""
-    @State private var streetNumber: String = ""
-    @State private var streetName: String = ""
-    @State private var suburb: String = ""
-    @State private var postcode: String = ""
-    @State private var state: String = ""
-    @State private var country: String = ""
-    @State private var poBox: String = ""
     
     var body: some View {
         VStack(spacing: 16) {
@@ -846,19 +652,19 @@ struct PayeeAddressEditingSheet: View {
                             NativeAddressSearchField(
                                 searchText: $addressSearchText,
                                 selectedAddress: $selectedAddress,
-                                unitNumber: $unitNumber,
-                                streetNumber: $streetNumber,
-                                streetName: $streetName,
-                                suburb: $suburb,
-                                postcode: $postcode,
-                                state: $state,
-                                country: $country,
-                                poBox: $poBox
+                                unitNumber: $viewModel.editableUnitNumber,
+                                streetNumber: $viewModel.editableStreetNumber,
+                                streetName: $viewModel.editableStreetName,
+                                suburb: $viewModel.editableSuburb,
+                                postcode: $viewModel.editablePostcode,
+                                state: $viewModel.editableState,
+                                country: $viewModel.editableCountry,
+                                poBox: $viewModel.editablePoBox
                             )
                             .onChange(of: selectedAddress) { _, newValue in
                                 if newValue != nil {
                                     // Auto-commit the selected address and close the sheet
-                                    commitAddressChanges()
+                                    viewModel.commitAddressChanges(autosave: true)
                                     isPresented = false
                                 }
                             }
@@ -914,7 +720,7 @@ struct PayeeAddressEditingSheet: View {
                 
                 if hasAddressData {
                     Button("Done") {
-                        commitAddressChanges()
+                        viewModel.commitAddressChanges(autosave: true)
                         isPresented = false
                     }
                     .buttonStyle(.glassProminent)
@@ -936,32 +742,23 @@ struct PayeeAddressEditingSheet: View {
         )
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
-            loadExistingAddressData()
-        }
-    }
-    
-    private func loadExistingAddressData() {
-        if let address = payee.address {
-            unitNumber = address.unitNumber
-            streetNumber = address.streetNumber
-            streetName = address.streetName
-            suburb = address.suburb
-            postcode = address.postcode
-            state = address.state
-            country = address.country
-            poBox = address.poBox
-            addressSearchText = address.fullFormattedAddress
+            // Load existing address data from ViewModel
+            viewModel.loadAddressDetails()
+            if let address = viewModel.payee.address {
+                addressSearchText = viewModel.formattedAddressString(from: address)
+            }
         }
     }
     
     private var hasAddressData: Bool {
-        // Check state variables (for editing)
-        let hasStateData = !unitNumber.isEmpty || !streetNumber.isEmpty || !streetName.isEmpty || 
-        !suburb.isEmpty || !state.isEmpty || !postcode.isEmpty || 
-        !country.isEmpty || !poBox.isEmpty
+        // Check ViewModel's editable address fields
+        let hasStateData = !viewModel.editableUnitNumber.isEmpty || !viewModel.editableStreetNumber.isEmpty || 
+        !viewModel.editableStreetName.isEmpty || !viewModel.editableSuburb.isEmpty || 
+        !viewModel.editableState.isEmpty || !viewModel.editablePostcode.isEmpty || 
+        !viewModel.editableCountry.isEmpty || !viewModel.editablePoBox.isEmpty
         
-        // Check existing address from entity
-        let hasExistingAddress = payee.address != nil && !payee.address!.fullAddressText.isEmpty
+        // Check existing address from domain model
+        let hasExistingAddress = viewModel.payee.address != nil
         
         return hasStateData || hasExistingAddress
     }
@@ -977,11 +774,20 @@ struct PayeeAddressEditingSheet: View {
                 Spacer()
                 
                 Button("Clear") {
-                    clearAddressData()
+                    viewModel.editableUnitNumber = ""
+                    viewModel.editableStreetNumber = ""
+                    viewModel.editableStreetName = ""
+                    viewModel.editableSuburb = ""
+                    viewModel.editableState = ""
+                    viewModel.editablePostcode = ""
+                    viewModel.editableCountry = ""
+                    viewModel.editablePoBox = ""
+                    addressSearchText = ""
+                    selectedAddress = nil
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
-                .foregroundColor(.red)
+                .foregroundColor(Color(NSColor.systemRed))
             }
             .padding(.bottom, 4)
             
@@ -991,29 +797,29 @@ struct PayeeAddressEditingSheet: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Unit number (optional)", text: $unitNumber)
+                TextField("Unit number (optional)", text: $viewModel.editableUnitNumber)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // Street Number and Name
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Street:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    TextField("Number", text: $streetNumber)
+                    TextField("Number", text: $viewModel.editableStreetNumber)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                         .frame(width: 80)
                     
-                    TextField("Street name", text: $streetName)
+                    TextField("Street name", text: $viewModel.editableStreetName)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1022,30 +828,30 @@ struct PayeeAddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Suburb:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("Enter suburb", text: $suburb)
+                TextField("Enter suburb", text: $viewModel.editableSuburb)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // State and Postcode
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("State:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    TextField("State", text: $state)
+                    TextField("State", text: $viewModel.editableState)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                     
-                    TextField("Postcode", text: $postcode)
+                    TextField("Postcode", text: $viewModel.editablePostcode)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1054,53 +860,28 @@ struct PayeeAddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Country:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("Enter country", text: $country)
+                TextField("Enter country", text: $viewModel.editableCountry)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // PO Box
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("PO Box:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("PO Box number (optional)", text: $poBox)
+                TextField("PO Box number (optional)", text: $viewModel.editablePoBox)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
         }
     }
     
-    private func clearAddressData() {
-        unitNumber = ""
-        streetNumber = ""
-        streetName = ""
-        suburb = ""
-        state = ""
-        postcode = ""
-        country = ""
-        poBox = ""
-        addressSearchText = ""
-        selectedAddress = nil
-    }
-    
-    private func commitAddressChanges() {
-        let address = payee.address ?? AddressEntity()
-        address.unitNumber = unitNumber
-        address.streetNumber = streetNumber
-        address.streetName = streetName
-        address.suburb = suburb
-        address.postcode = postcode
-        address.state = state
-        address.country = country
-        address.poBox = poBox
-        
-        payee.address = address
-    }
 }
+
 

@@ -298,7 +298,7 @@ final class RoundTripMappingTests: XCTestCase {
         try modelContext.save()
         
         // Convert to domain model
-        let domainModel = Session(from: originalEntity)
+        let domainModel = Session.from(entity: originalEntity)
         
         // Create new entity and update from domain model
         let newEntity = SessionEntity(id: domainModel.id)

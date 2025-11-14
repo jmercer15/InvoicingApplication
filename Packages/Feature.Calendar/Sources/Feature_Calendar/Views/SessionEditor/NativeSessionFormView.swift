@@ -30,14 +30,44 @@ enum RepeatOption: String, CaseIterable, Identifiable {
 struct NativeSessionFormView: View {
     @ObservedObject var viewModel: NewSessionViewModel
     
+    // Helper view to fetch and display address
+    private struct AddressDisplayView: View {
+        let addressId: UUID
+        let addressRepository: AddressRepository
+        @State private var address: Address?
+        @State private var isLoading = true
+        
+        var body: some View {
+            Group {
+                if isLoading {
+                    Text("Loading address...")
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.caption)
+                } else if let address = address {
+                    Text(address.fullFormattedAddress)
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.caption)
+                } else {
+                    Text("Address not found")
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.caption)
+                }
+            }
+            .task {
+                isLoading = true
+                address = try? await addressRepository.fetch(by: addressId)
+                isLoading = false
+            }
+        }
+    }
+    
     // Form state
     @State private var selectedRepeatOption: RepeatOption? = .never
     @State private var showCustomRecurrence = false
     @State private var showAddressEditingSheet = false
     @State private var validationErrors: [String: String] = [:]
     
-    // Fetch clients directly here for the Picker
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
+    // Clients are fetched via ViewModel
     
     // Computed bindings for dropdown compatibility
     private var statusBinding: Binding<SessionStatus> {
@@ -250,7 +280,7 @@ struct NativeSessionFormView: View {
                         }
                     )) {
                         Text("Select a client").tag(nil as UUID?)
-                        ForEach(clients, id: \.id) { client in
+                        ForEach(viewModel.availableClients, id: \.id) { client in
                             Text(client.fullName).tag(client.id as UUID?)
                         }
                     }
@@ -272,11 +302,10 @@ struct NativeSessionFormView: View {
                             }
                         )) {
                             Text("Select a service").tag(nil as UUID?)
-                            let clientServices = selectedClient.clientServices
-                                ForEach(clientServices, id: \.id) { service in
-                                    Text(service.serviceName).tag(service.id as UUID?)
-                                }
+                            ForEach(viewModel.availableServices, id: \.id) { service in
+                                Text(service.serviceName).tag(service.id as UUID?)
                             }
+                        }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
@@ -554,15 +583,11 @@ struct NativeSessionFormView: View {
                         .padding(.vertical, 8)
                         .fluidListTransition()
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: hasAddressData)
-                } else if let existingAddress = viewModel.sessionToEdit?.address, !existingAddress.fullAddressText.isEmpty {
-                    // Fallback to displaying the already saved address if no active editing data
-                    currentAddressView(existingAddress)
-                    
-                    Divider()
-                        .background(Color.white.opacity(0.2))
-                        .padding(.vertical, 8)
+                } else if let addressId = viewModel.sessionToEdit?.addressId {
+                    // Fetch and display address using AddressRepository
+                    AddressDisplayView(addressId: addressId, addressRepository: viewModel.addressRepository)
                         .fluidListTransition()
-                        .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.sessionToEdit?.address?.fullAddressText.isEmpty)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.sessionToEdit?.addressId != nil)
                 }
                 
                 // Add/Edit Address button

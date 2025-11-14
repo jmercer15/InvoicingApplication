@@ -50,21 +50,48 @@ struct InvoiceDocumentData: Codable {
     let margins: DocumentMarginsData
     let zoom: CGFloat
     
+    // Optional fields for backward compatibility (older templates may not have these)
+    let sectionSplits: [Int: SectionSplit]? // Split structure with components, labels, and alignments
+    let pageSize: CGSize? // Page size (optional for backward compatibility)
+    
     init(from document: InvoiceDocument) {
+        // Save all components (includes both legacy components and components in splits)
         self.components = document.getAllComponents()
         self.margins = DocumentMarginsData(from: document.margins)
         self.zoom = document.zoom
+        // Save the complete split structure including nested splits, components, labels, and alignments
+        // Empty dictionary is saved as nil for cleaner JSON (older templates don't have this field)
+        self.sectionSplits = document.sectionSplits.isEmpty ? nil : document.sectionSplits
+        // Save page size (optional for backward compatibility)
+        self.pageSize = document.pageSize
     }
     
     func apply(to document: InvoiceDocument) {
-        // For now, only apply legacy components
-        // TODO: Add support for split components in template metadata
-        document.components = components.filter { component in
-            // Only include components that are in the legacy system
-            document.components.contains { $0.id == component.id }
-        }
+        // Restore document properties
         document.margins = margins.toDocumentMargins()
         document.zoom = zoom
+        
+        // Restore page size if present (for backward compatibility with older templates)
+        if let pageSize = pageSize {
+            document.pageSize = pageSize
+        }
+        
+        // Restore split structure (this includes components stored in splits)
+        // Use empty dictionary if sectionSplits is nil (for backward compatibility with older templates)
+        let splitsToRestore = sectionSplits ?? [:]
+        document.sectionSplits = splitsToRestore
+        
+        // Separate components into legacy components (not in any split) and split components
+        // For older templates without splits, all components go to the legacy array
+        let allComponentsInSplits = splitsToRestore.values.flatMap { split in
+            split.getAllComponents()
+        }
+        let componentIdsInSplits = Set(allComponentsInSplits.map { $0.id })
+        
+        // Restore legacy components (components not stored in any split)
+        document.components = components.filter { component in
+            !componentIdsInSplits.contains(component.id)
+        }
     }
 }
 

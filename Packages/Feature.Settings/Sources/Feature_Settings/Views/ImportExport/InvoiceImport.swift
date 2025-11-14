@@ -270,6 +270,19 @@ struct InvoiceImport {
                 
                 if let client = matchingClients.first {
                     invoiceEntity.client = client
+                    
+                    // Set payee relationship based on client's billing authority
+                    // If billing authority is parent/guardian and client has a payee, link invoice to that payee
+                    if client.billingAuthority == .parentGuardian, let clientPayee = client.payee {
+                        invoiceEntity.payee = clientPayee
+                    } else {
+                        // Explicitly clear payee relationship if not applicable
+                        invoiceEntity.payee = nil
+                    }
+                } else {
+                    // Client not found, clear relationships
+                    invoiceEntity.client = nil
+                    invoiceEntity.payee = nil
                 }
                 
                 // Set dates
@@ -303,6 +316,10 @@ struct InvoiceImport {
                 }
                 
                 invoiceEntity.status = InvoiceStatus(rawValue: invoice.status ?? "Draft") ?? .draft
+                
+                // Populate snapshot fields from relationships after setting them
+                // This ensures payee data is populated from client.payee when billing authority is Parent/Guardian
+                invoiceEntity.snapshotRelatedData()
                 
                 // Store original user data for later use with line items
                 if let userData = invoice.userData {

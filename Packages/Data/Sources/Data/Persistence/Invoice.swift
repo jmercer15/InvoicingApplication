@@ -183,6 +183,22 @@ import SwiftData
             }
         }
         
+        // Also snapshot payee data directly from payee relationship if it exists
+        // This handles cases where payee is set directly on the invoice
+        if let directPayee = payee {
+            if payeeName == nil { payeeName = directPayee.fullName }
+            if payeeEmail == nil { payeeEmail = directPayee.email }
+            if payeePhone == nil { payeePhone = directPayee.phone }
+            if payeeAddress == nil { payeeAddress = directPayee.address?.fullFormattedAddress }
+            
+            // If billing authority suggests parent/guardian but billTo fields aren't set, populate them
+            if (billingAuthority == .parentGuardian || billingAuthority == nil) && billToName == nil {
+                billToName = directPayee.fullName
+                billToEmail = directPayee.email
+                billToAddress = directPayee.address?.fullFormattedAddress
+            }
+        }
+        
         // Snapshot payment details
         if let business = business {
             bankName = business.bankName

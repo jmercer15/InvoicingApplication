@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Core",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "Core", targets: ["Core"])
     ],

@@ -3,8 +3,9 @@ import Core
 
 extension Session {
     /// Convert from SessionEntity to domain model
-    init(from entity: SessionEntity) {
-        self.init(
+    /// This uses a helper function approach to avoid Codable `init(from:)` conflict
+    public static func from(entity: SessionEntity) -> Session {
+        return Session(
             id: entity.id,
             title: entity.title,
             startTime: entity.startTime,

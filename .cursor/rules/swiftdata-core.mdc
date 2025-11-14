@@ -140,7 +140,7 @@ public func fetch(by idString: String) async throws -> Client? {
 }
 ```
 
-**Critical Rule**: Never use computed properties in predicates
+**Critical Rule**: Never use computed properties or forced unwrapping in predicates
 
 ```swift
 // ❌ Wrong: Computed property in predicate
@@ -152,7 +152,44 @@ FetchDescriptor<ClientEntity>(predicate: #Predicate {
 FetchDescriptor<ClientEntity>(predicate: #Predicate {
     $0.fullName.lowercased().contains(searchText)  // Won't work
 })
+
+// ❌ Wrong: Forced unwrapping in predicate (SwiftData doesn't support it)
+FetchDescriptor<SessionEntity>(predicate: #Predicate { session in
+    session.startTime != nil && session.startTime! >= startDate  // Will crash at runtime
+})
 ```
+
+### Predicate Best Practices
+
+When dealing with optional properties in predicates, use a simpler predicate and filter in memory:
+
+```swift
+// ✅ Correct: Simple predicate without forced unwrap, filter in memory
+public func fetch(from startDate: Date, to endDate: Date) async throws -> [Session] {
+    let predicate = #Predicate<SessionEntity> { session in
+        session.startTime != nil
+    }
+    let descriptor = FetchDescriptor<SessionEntity>(
+        predicate: predicate,
+        sortBy: [SortDescriptor(\.startTime, order: .forward)]
+    )
+    return try await MainActor.run {
+        let entities = try modelContext.fetch(descriptor)
+        // Filter in memory to avoid forced unwrap in predicate
+        let filteredEntities = entities.filter { entity in
+            guard let startTime = entity.startTime else { return false }
+            return startTime >= startDate && startTime <= endDate
+        }
+        return filteredEntities.map { Session.from(entity: $0) }
+    }
+}
+```
+
+**Guidelines**:
+
+- Use `property != nil` checks in predicates
+- Filter date ranges, comparisons, and complex logic in memory after fetching
+- This pattern applies to optional Date, String, and other optional properties
 
 ### Sorting
 

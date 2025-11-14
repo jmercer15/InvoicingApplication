@@ -297,7 +297,7 @@ struct AllDayCalendarItemView: View {
         }
     }
 
-    private func markSessionAs(_ status: SessionStatus, session: SessionEntity) {
+    private func markSessionAs(_ status: SessionStatus, session: Session) {
         let newStatus: String
         switch status {
         case .scheduled: newStatus = String.sessionStatusPlanned
@@ -314,10 +314,17 @@ struct AllDayCalendarItemView: View {
         case .received: newStatus = "Received"
         }
         
-        session.status = SessionStatus(rawValue: newStatus) ?? .scheduled
-        
-        // No need for try-catch as saveContext() doesn't throw
-        viewModel.saveContext()
+        // Update session status via repository
+        Task {
+            do {
+                try await viewModel.sessionsRepository.updateStatus(id: session.id, status: newStatus)
+                await MainActor.run {
+                    viewModel.updateDisplayableItems()
+                }
+            } catch {
+                print("[AllDayColumnView] Failed to update session status: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Context Menu Builder
@@ -336,8 +343,8 @@ struct AllDayCalendarItemView: View {
                 // Navigation logic
             }
 
-            let isCompleted = session.status?.rawValue == .sessionStatusCompleted
-            let isCancelled = session.status?.rawValue == .sessionStatusCancelled
+            let isCompleted = session.status == SessionStatus.completed.rawValue
+            let isCancelled = session.status == SessionStatus.cancelled.rawValue
 
             if !isCompleted && !isCancelled {
                 Divider()
@@ -378,15 +385,18 @@ struct AllDayCalendarItemView: View {
                 .appInteractiveCursor()
             }
             
+            // Delete via repository
             Button(role: .destructive, action: {
-                viewModel.handleDeleteFromEditor(
-                    with: .thisOnly,
-                    viewModel: NewSessionViewModel(
-                        context: viewModel.modelContext,
-                        session: session,
-                        instanceDate: nil
-                    )
-                )
+                Task {
+                    do {
+                        try await viewModel.sessionsRepository.delete(id: session.id)
+                        await MainActor.run {
+                            viewModel.updateDisplayableItems()
+                        }
+                    } catch {
+                        print("[AllDayColumnView] Failed to delete session: \(error.localizedDescription)")
+                    }
+                }
             }) {
                 Label("Delete Session...", systemImage: "trash")
             }

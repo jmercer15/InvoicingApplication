@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Feature.Settings",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "Feature_Settings", targets: ["Feature_Settings"])
     ],

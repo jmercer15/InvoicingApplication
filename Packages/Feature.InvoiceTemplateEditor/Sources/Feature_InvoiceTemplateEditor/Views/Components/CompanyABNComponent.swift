@@ -3,17 +3,13 @@ import SwiftUI
 // MARK: - Company ABN Component
 
 struct CompanyABNComponent: View {
-let component: InvoiceComponent
-@EnvironmentObject private var document: InvoiceDocument
-@Environment(\.modelContext) private var modelContext
-
-private var businessData: BusinessTemplateData {
-// Initialize shared instance if not already done
-if TemplateDataService.shared == nil {
-TemplateDataService.initializeShared(with: modelContext)
-}
-return TemplateDataService.getShared().getBusinessData()
-}
+    let component: InvoiceComponent
+    @EnvironmentObject private var document: InvoiceDocument
+    @EnvironmentObject private var templateDataService: TemplateDataService
+    
+    private var businessData: BusinessTemplateData {
+        templateDataService.getBusinessData()
+    }
 
 var body: some View {
 let baseFontSize = component.style.fontSize > 0 ? component.style.fontSize : 12

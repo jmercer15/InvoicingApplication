@@ -250,7 +250,7 @@ extension Color {
     // MARK: - Canvas and Document Colors
 
     static var canvasBackground: Color {
-        Color.white
+        Color(NSColor.windowBackgroundColor)
     }
 
     static var canvasOutline: Color {

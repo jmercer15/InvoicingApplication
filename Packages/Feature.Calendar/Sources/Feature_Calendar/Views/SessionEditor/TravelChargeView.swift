@@ -52,10 +52,14 @@ struct TravelChargeView: View {
     }
     
     // MARK: - Core Properties
-    let mainSession: SessionEntity
+    let mainSession: Session // Changed to domain model
     let instanceStartDate: Date?
     let instanceEndDate: Date?
     let daySessions: [DisplayableCalendarItem]
+    let addressRepository: AddressRepository
+    let sessionsRepository: SessionsRepository
+    let clientsRepository: ClientsRepository
+    let clientServicesRepository: ClientServicesRepository
     let onSave: () -> Void
 
     // MARK: - View State
@@ -89,6 +93,9 @@ struct TravelChargeView: View {
     @State private var hasExistingTravelBefore: Bool = false
     @State private var hasExistingTravelAfter: Bool = false
     
+    // Note: These are stored as entities because SessionFactory.createTravelSession requires entities.
+    // This is a localized violation needed for the factory pattern. Future refactoring could introduce
+    // a domain-model-based factory or adapter service in the Data layer.
     @State private var labourService: ClientServiceEntity?
     @State private var nonLabourService: ClientServiceEntity?
     
@@ -448,50 +455,84 @@ struct TravelChargeView: View {
 
     // MARK: - Data Logic
     private func checkForExistingTravel() {
+        guard let clientId = mainSession.clientId else { return }
         let sessionStartTime = effectiveStartTime
         let sessionEndTime = effectiveEndTime
         
-        // Find travel sessions that are perfectly aligned with the start or end of the main session
-        let travelBeforeDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { 
-            $0.isTravel == true
-        })
-        let travelAfterDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { 
-            $0.isTravel == true
-        })
-        do {
-            let beforeCandidates = try viewContext.fetch(travelBeforeDescriptor)
-            let existingBefore = beforeCandidates.filter {
-                $0.endTime == sessionStartTime && $0.client == mainSession.client
+        // Use repository to fetch sessions for the client
+        Task {
+            do {
+                // Fetch all sessions for this client to check for existing travel
+                let clientSessions = try await sessionsRepository.fetch(byClientId: clientId)
+                
+                // Filter for travel sessions that align with the main session
+                let existingBefore = clientSessions.filter { session in
+                    session.isTravel &&
+                    session.endTime == sessionStartTime &&
+                    session.clientId == clientId
             }
+                
             if !existingBefore.isEmpty {
+                    await MainActor.run {
                 self.hasExistingTravelBefore = true
                 self.travelDirection = .after // Switch to after if before exists
             }
-            let afterCandidates = try viewContext.fetch(travelAfterDescriptor)
-            let existingAfter = afterCandidates.filter {
-                $0.startTime == sessionEndTime && $0.client == mainSession.client
+                }
+                
+                let existingAfter = clientSessions.filter { session in
+                    session.isTravel &&
+                    session.startTime == sessionEndTime &&
+                    session.clientId == clientId
             }
+                
             if !existingAfter.isEmpty {
+                    await MainActor.run {
                 self.hasExistingTravelAfter = true
                 if !hasExistingTravelBefore { // Only switch if before wasn't already found
                     self.travelDirection = .before
+                        }
                 }
             }
         } catch {
             print("Failed to fetch existing travel sessions: \(error)")
+            }
         }
     }
 
     private func loadServices() {
         isLoading = true
-        guard let mainService = mainSession.clientService,
-              let client = mainSession.client else {
+        
+        guard let clientId = mainSession.clientId,
+              let serviceId = mainSession.clientServiceId else {
             isLoading = false
             return
         }
         
+        Task {
+            do {
+                // Fetch domain models via repositories
+                guard let client = try await clientsRepository.fetch(by: clientId),
+                      let mainService = try await clientServicesRepository.fetch(by: serviceId) else {
+                    await MainActor.run {
+                        isLoading = false
+                    }
+                    return
+                }
+                
+                // Fetch entities for SessionFactory (required for entity relationships)
+                // Note: SessionFactory.createTravelSession requires ClientServiceEntity for relationship setup.
+                // This is a localized violation - future refactoring could introduce a domain-model adapter.
+        let serviceDescriptor = FetchDescriptor<ClientServiceEntity>(predicate: #Predicate { $0.id == serviceId })
+                guard let mainServiceEntity = try? viewContext.fetch(serviceDescriptor).first else {
+                    await MainActor.run {
+            isLoading = false
+                    }
+            return
+        }
+        
+                await MainActor.run {
         // Labour service is the same as the main session's service
-        self.labourService = mainService
+                    self.labourService = mainServiceEntity
         
         // Find the corresponding non-labour service for the client
         guard let mainNdisCode = mainService.ndisCode,
@@ -502,11 +543,45 @@ struct TravelChargeView: View {
 
         let nonLabourCodeFragment = "_799_\(splitCode)_"
         
-        let clientServices = client.clientServices
-        self.nonLabourService = clientServices.first {
-            $0.ndisCode?.contains(nonLabourCodeFragment) == true
-        }
+                    // Fetch all client services to find the non-labour service
+                    Task {
+                        do {
+                            let allClientServices = try await clientServicesRepository.fetch(for: clientId)
+                            if let nonLabourService = allClientServices.first(where: { service in
+                                service.ndisCode?.contains(nonLabourCodeFragment) == true
+                            }) {
+                                // Fetch entity for non-labour service
+                                let nonLabourDescriptor = FetchDescriptor<ClientServiceEntity>(
+                                    predicate: #Predicate { $0.id == nonLabourService.id }
+                                )
+                                if let nonLabourEntity = try? viewContext.fetch(nonLabourDescriptor).first {
+                                    await MainActor.run {
+                                        self.nonLabourService = nonLabourEntity
+                                        isLoading = false
+                                    }
+                                } else {
+                                    await MainActor.run {
         isLoading = false
+                                    }
+                                }
+                            } else {
+                                await MainActor.run {
+                                    isLoading = false
+                                }
+                            }
+                        } catch {
+                            await MainActor.run {
+                                isLoading = false
+                            }
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                }
+            }
+        }
     }
 
     private func saveTravelCharges() {
@@ -622,12 +697,25 @@ struct TravelChargeView: View {
     }
 
     private func createSession(title: String, startTime: Date, endTime: Date, service: ClientServiceEntity, notes: String, isAllDay: Bool = false) {
+        // Fetch entities needed for SessionFactory
+        // Note: SessionFactory.createTravelSession requires ClientEntity and SessionEntity for relationship setup.
+        // This is a localized violation - the factory pattern requires entities for SwiftData relationships.
+        // TODO: Future refactoring could introduce a domain-model adapter or update SessionFactory to accept domain models.
+        guard let clientId = mainSession.clientId else { return }
+        let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: #Predicate { $0.id == clientId })
+        let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == mainSession.id })
+        
+        guard let client = try? viewContext.fetch(clientDescriptor).first,
+              let sessionEntity = try? viewContext.fetch(sessionDescriptor).first else {
+            return
+        }
+        
         // Use SessionFactory for consistent travel session creation
         let sessionFactory = SessionFactory(context: viewContext)
         let newSession = sessionFactory.createTravelSession(
-            client: mainSession.client!,
+            client: client,
             service: service,
-            linkedSession: mainSession,
+            linkedSession: sessionEntity,
             startTime: startTime,
             endTime: endTime,
             location: mainSession.location,
@@ -673,7 +761,7 @@ struct TravelChargeView: View {
 
         let otherLocationData = getOtherLocationEntity()
         
-        guard let otherEntity = otherLocationData.entity else {
+        guard let otherSession = otherLocationData.session else {
             await MainActor.run {
                 distanceCalculationError = otherLocationData.address // Contains the error message
                 isCalculatingDistance = false
@@ -681,7 +769,7 @@ struct TravelChargeView: View {
             return
         }
 
-        guard let otherCoordinates = await getOrFetchCoordinates(for: otherEntity) else {
+        guard let otherCoordinates = await getOrFetchCoordinates(for: otherSession) else {
             await MainActor.run {
                 distanceCalculationError = "Could not geocode the other location's address: \(otherLocationData.address)"
                 isCalculatingDistance = false
@@ -702,7 +790,7 @@ struct TravelChargeView: View {
         calculateDrivingDistance(from: sessionCoordinates, to: otherCoordinates)
     }
 
-    private func getOtherLocationEntity() -> (address: String, entity: SessionEntity?) {
+    private func getOtherLocationEntity() -> (address: String, session: Session?) {
         // Sort the sessions by their instance start time to ensure correct order
         let sortedSessions = daySessions.sorted { (item1: DisplayableCalendarItem, item2: DisplayableCalendarItem) -> Bool in
             guard let date1 = item1.startDate, let date2 = item2.startDate else {
@@ -752,7 +840,7 @@ struct TravelChargeView: View {
         return getBusinessLocation()
     }
 
-    private func getLocationData(for item: DisplayableCalendarItem) -> (address: String, entity: SessionEntity)? {
+    private func getLocationData(for item: DisplayableCalendarItem) -> (address: String, session: Session)? {
         guard let sessionTemplate = item.underlyingSession else { return nil }
 
         // For non-recurring, or if recurring has no exception, use the template's location.
@@ -764,11 +852,27 @@ struct TravelChargeView: View {
         return nil
     }
 
-    private func getBusinessLocation() -> (address: String, entity: SessionEntity?) {
+    private func getBusinessLocation() -> (address: String, session: Session?) {
+        // Note: BusinessEntity is a singleton configuration entity.
+        // Direct entity access is acceptable here as it's infrastructure-level configuration data.
+        // Future refactoring could introduce a BusinessRepository if business data becomes more complex.
         let businessDescriptor = FetchDescriptor<BusinessEntity>()
         do {
-            if let business = try viewContext.fetch(businessDescriptor).first, let address = business.address {
-                return (address.fullFormattedAddress, nil)
+            if let business = try viewContext.fetch(businessDescriptor).first,
+               let addressId = business.address?.id {
+                // Try to fetch address using repository first
+                Task {
+                    if let address = try? await addressRepository.fetch(by: addressId) {
+                        await MainActor.run {
+                            // Update address string if needed
+                            // Note: This is async, so for synchronous calls we fall back to entity access
+                        }
+                    }
+                }
+                // For synchronous return, use entity directly (limitation)
+                if let address = business.address {
+                    return (address.fullFormattedAddress, nil)
+                }
             }
         } catch {
             print("Error fetching business entity: \(error)")
@@ -776,6 +880,33 @@ struct TravelChargeView: View {
         return ("Business address not set.", nil)
     }
 
+    private func getOrFetchCoordinates(for session: Session) async -> CLLocationCoordinate2D? {
+        if session.sessionLatitude != 0 || session.sessionLongitude != 0 {
+            return CLLocationCoordinate2D(latitude: session.sessionLatitude, longitude: session.sessionLongitude)
+        }
+        
+        // Use domain model version of geocoding
+        // Note: After geocoding, we fetch the entity to get updated coordinates.
+        // This is a localized workaround - GeocodingService updates entities directly.
+        // TODO: Future refactoring could make GeocodingService update through repositories.
+        return await withCheckedContinuation { continuation in
+            GeocodingService.shared.geocodeAndSave(session: session, in: viewContext) {
+                // Re-fetch coordinates after geocoding via repository
+                Task {
+                    if let updatedSession = try? await sessionsRepository.fetch(byId: session.id),
+                       updatedSession.sessionLatitude != 0 || updatedSession.sessionLongitude != 0 {
+                        continuation.resume(returning: CLLocationCoordinate2D(
+                            latitude: updatedSession.sessionLatitude,
+                            longitude: updatedSession.sessionLongitude
+                        ))
+                } else {
+                    continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+    }
+    
     private func getOrFetchCoordinates(for entity: SessionEntity) async -> CLLocationCoordinate2D? {
         if entity.sessionLatitude != 0 || entity.sessionLongitude != 0 {
             return CLLocationCoordinate2D(latitude: entity.sessionLatitude, longitude: entity.sessionLongitude)
@@ -792,18 +923,35 @@ struct TravelChargeView: View {
         }
     }
     
-    private func getOrFetchCoordinates(for address: AddressEntity) async -> CLLocationCoordinate2D? {
+    private func getOrFetchCoordinates(for addressId: UUID) async -> CLLocationCoordinate2D? {
+        // Fetch address using AddressRepository
+        guard let address = try? await addressRepository.fetch(by: addressId) else {
+            return nil
+        }
+        
         if address.latitude != 0 || address.longitude != 0 {
             return CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude)
         }
 
+        // Geocode if coordinates not available
+        // Note: GeocodingService still works with entities, so we need ModelContext access
         return await withCheckedContinuation { continuation in
-            GeocodingService.shared.geocodeAndSave(addressEntity: address, in: viewContext) {
-                if address.latitude != 0 || address.longitude != 0 {
-                    continuation.resume(returning: CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude))
-                } else {
-                    continuation.resume(returning: nil)
+            // Fetch entity for geocoding service
+            let descriptor = FetchDescriptor<AddressEntity>(predicate: #Predicate { $0.id == addressId })
+            if let entity = try? viewContext.fetch(descriptor).first {
+                GeocodingService.shared.geocodeAndSave(addressEntity: entity, in: viewContext) {
+                    // Re-fetch address to get updated coordinates
+                    Task {
+                        if let updatedAddress = try? await addressRepository.fetch(by: addressId),
+                           updatedAddress.latitude != 0 || updatedAddress.longitude != 0 {
+                            continuation.resume(returning: CLLocationCoordinate2D(latitude: updatedAddress.latitude, longitude: updatedAddress.longitude))
+                        } else {
+                            continuation.resume(returning: nil)
+                        }
+                    }
                 }
+            } else {
+                continuation.resume(returning: nil)
             }
         }
     }

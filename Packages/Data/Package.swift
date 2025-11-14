@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Data",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "Data", targets: ["Data"])
     ],

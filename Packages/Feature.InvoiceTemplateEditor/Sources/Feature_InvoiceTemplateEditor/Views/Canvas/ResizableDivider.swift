@@ -37,6 +37,7 @@ struct ResizableDivider: View {
                     isHovered = hovering
                 }
             }
+            .pointerStyle(direction == .horizontal ? .columnResize : .rowResize)
         .gesture(
             DragGesture()
                 .onChanged { value in

@@ -20,7 +20,7 @@ import SwiftUI
     public var phone: String?
     public var relationToClient: String?
     public var status: String?
-    public var notes: String?
+    // notes property removed - violates architectural guidelines (payees should not have notes)
 
     @Relationship(deleteRule: .nullify) public var address: AddressEntity?
 

@@ -212,6 +212,17 @@ public final class EventKitSyncService: ObservableObject {
         }
     }
 
+    /// Synchronize a Session domain model with EventKit (domain model version)
+    public func sync(session: Session, modelContext: ModelContext) {
+        // Fetch entity for sync operation
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
+        guard let sessionEntity = try? modelContext.fetch(descriptor).first else {
+            print("[EventKitSyncService] Failed to find SessionEntity for session \(session.id)")
+            return
+        }
+        sync(session: sessionEntity, modelContext: modelContext)
+    }
+    
     /// Synchronize a SessionEntity with EventKit, respecting sync direction and conflict resolution policy.
     public func sync(session: SessionEntity, modelContext: ModelContext) {
         // Update sync status to syncing

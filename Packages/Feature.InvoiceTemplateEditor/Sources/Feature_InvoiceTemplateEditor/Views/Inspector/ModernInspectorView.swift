@@ -70,34 +70,10 @@ struct ModernInspectorView: View {
 
     enum InspectorSection: Hashable {
         case text
-        case layout
         case appearance
         case table
-        case textContent
-        case textTypography
-        case typographyFont
-        case typographySpacing
-        case typographyParagraph
-        case typographyDecoration
-        case typographyColor
-        case appearanceBackground
-        case appearanceBorder
-        case appearanceShadow
-        case shadowColor
-        case shadowOffset
-        case tableStructure
-        case tableFill
-        case tableBorders
-        case tableSpacing
-        case tableTypography
-        case tableColumns
-        case tableBorderAppearance
-        case tableBorderVisibility
         case image
         case shape
-        case shapeLine
-        case shapeTriangle
-        case shapeStar
     }
     private func ensureTableTypographyData(for component: InvoiceComponent) {
         guard !tableTypographyInitialised || lastTypographyComponentID != component.id else { return }
@@ -156,18 +132,18 @@ struct ModernInspectorView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(6)
                     }
                         .frame(maxWidth: .infinity)
                 }
-                //.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 //.padding(6)
-                //.glassEffect(
-                //    .regular.tint(.white),
-                //    in: .rect(cornerRadius: 12)
-                //)
-                //.glassEffectTransition(.materialize)
-                //.padding(12)
+                .glassEffect(
+                    .regular.tint(.white),
+                    in: .rect(cornerRadius: 12)
+                )
+                .glassEffectTransition(.materialize)
+                .padding(12)
             } else {
                 emptyState
             }
@@ -209,50 +185,28 @@ struct ModernInspectorView: View {
     private func textSectionContent(for component: InvoiceComponent, capabilities: InspectorCapabilities) -> some View {
         if capabilities.showsContentControls {
             if capabilities.nestsContentControls {
-                inspectorSection(
-                    title: "Content",
-                    section: .textContent,
-                    level: .l3Subsection,
-                    isVisible: true,
-                    expandedRadius: 8,
-                    collapsedRadius: 6
-                ) {
-                    textContentControls(for: component)
-                }
+                textContentControls(for: component, title: "Content")
             } else {
                 textContentControls(for: component)
             }
         }
+
+        if capabilities.showsTypographySection {
+            textTypographyControls(for: component)
+        }
     }
 
     private func sectionDescriptors(for component: InvoiceComponent, capabilities: InspectorCapabilities) -> [InspectorSectionDescriptor] {
-        [
+        let category = inspectorCategory(for: component)
+        let descriptors = [
             InspectorSectionDescriptor(
                 identifier: "text",
                 title: "Text",
                 section: .text,
                 alwaysExpanded: false,
-                isVisible: capabilities.showsTextSection
+                isVisible: category == .text && capabilities.showsTextSection
             ) {
                 AnyView(textSectionContent(for: component, capabilities: capabilities))
-            },
-            InspectorSectionDescriptor(
-                identifier: "typography",
-                title: "Typography",
-                section: .textTypography,
-                alwaysExpanded: false,
-                isVisible: capabilities.showsTypographySection
-            ) {
-                AnyView(typographySection(for: component))
-            },
-            InspectorSectionDescriptor(
-                identifier: "layout",
-                title: "Layout",
-                section: .layout,
-                alwaysExpanded: false,
-                isVisible: capabilities.showsLayoutSection
-            ) {
-                AnyView(layoutSection(for: component))
             },
             InspectorSectionDescriptor(
                 identifier: "appearance",
@@ -268,7 +222,7 @@ struct ModernInspectorView: View {
                 title: "Table",
                 section: .table,
                 alwaysExpanded: false,
-                isVisible: capabilities.showsTableSection
+                isVisible: category == .table && capabilities.showsTableSection
             ) {
                 AnyView(tableSection(for: component))
             },
@@ -277,7 +231,7 @@ struct ModernInspectorView: View {
                 title: "Image",
                 section: .image,
                 alwaysExpanded: true,
-                isVisible: capabilities.showsImageSection
+                isVisible: category == .image && capabilities.showsImageSection
             ) {
                 AnyView(imageContentControls(for: component))
             },
@@ -286,16 +240,24 @@ struct ModernInspectorView: View {
                 title: "Shape",
                 section: .shape,
                 alwaysExpanded: true,
-                isVisible: capabilities.showsShapeSection
+                isVisible: category == .shape && capabilities.showsShapeSection
             ) {
                 AnyView(shapeSection(for: component))
             }
         ]
+
+        let descriptorMap = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.section, $0) })
+        let order = orderedSections(for: category)
+
+        return order.compactMap { section -> InspectorSectionDescriptor? in
+            guard let descriptor = descriptorMap[section], descriptor.isVisible else { return nil }
+            return descriptor
+        }
     }
 
     @ViewBuilder
-    private func textContentControls(for component: InvoiceComponent) -> some View {
-        InspectorControlGroup {
+    private func textContentControls(for component: InvoiceComponent, title: String? = nil) -> some View {
+        controlGroupBox(title: title) {
             InspectorTextFieldRow(
                 label: "Content",
                 text: Binding(
@@ -315,7 +277,7 @@ struct ModernInspectorView: View {
 
     @ViewBuilder
     private func imageContentControls(for component: InvoiceComponent) -> some View {
-        InspectorControlGroup {
+        controlGroupBox {
             InspectorPickerRow(
                 label: "Content Mode",
                 selection: Binding(
@@ -341,249 +303,174 @@ struct ModernInspectorView: View {
         }
     }
 
+    @ViewBuilder
+    private func controlGroupBox<Content: View>(
+        title: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+        } label: {
+            if let title {
+                Text(title)
+                    .font(InspectorFontLevel.l4SubSubsection.font)
+                    .foregroundColor(InspectorFontLevel.l4SubSubsection.foregroundColor)
+                    .opacity(InspectorFontLevel.l4SubSubsection.textOpacity)
+                    .tracking(InspectorFontLevel.l4SubSubsection.letterSpacing)
+            } else {
+                EmptyView()
+            }
+        }
+        .inspectorControlGroupStyle()
+    }
+
     // MARK: - Text Typography Content
     @ViewBuilder
-    private func typographySection(for component: InvoiceComponent) -> some View {
+    private func textTypographyControls(for component: InvoiceComponent) -> some View {
         Group {
-            inspectorSection(
-                title: "Font",
-                section: .typographyFont,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 6,
-                collapsedRadius: 4
-            ) {
-                InspectorControlGroup {
-                    InspectorTextFieldRow(
-                        label: "Font Family",
-                        text: Binding(
-                            get: { component.style.fontFamily },
-                            set: { document.updateFontFamily(for: component.id, family: $0) }
-                        )
+            controlGroupBox(title: "Font") {
+                InspectorTextFieldRow(
+                    label: "Font Family",
+                    text: Binding(
+                        get: { component.style.fontFamily },
+                        set: { document.updateFontFamily(for: component.id, family: $0) }
                     )
+                )
 
-                    InspectorStepperFieldRow(
-                        label: "Font Size",
-                        value: Binding(
-                            get: { Double(component.style.fontSize) },
-                            set: { document.updateFontSize(for: component.id, fontSize: CGFloat($0)) }
-                        ),
-                        range: 6...72,
-                        step: 1
-                    )
+                InspectorStepperFieldRow(
+                    label: "Font Size",
+                    value: Binding(
+                        get: { Double(component.style.fontSize) },
+                        set: { document.updateFontSize(for: component.id, fontSize: CGFloat($0)) }
+                    ),
+                    range: 6...72,
+                    step: 1
+                )
 
-                    InspectorTextFieldRow(
-                        label: "Font Weight",
-                        text: Binding(
-                            get: { component.style.fontWeight },
-                            set: { document.updateFontWeight(for: component.id, weight: $0) }
-                        )
+                InspectorTextFieldRow(
+                    label: "Font Weight",
+                    text: Binding(
+                        get: { component.style.fontWeight },
+                        set: { document.updateFontWeight(for: component.id, weight: $0) }
                     )
+                )
+            }
+
+            controlGroupBox(title: "Spacing") {
+                InspectorStepperFieldRow(
+                    label: "Line Spacing",
+                    value: Binding(
+                        get: { Double(component.style.lineSpacing) },
+                        set: { document.updateLineSpacing(for: component.id, spacing: CGFloat($0)) }
+                    ),
+                    range: 0.5...3.0,
+                    step: 0.1
+                )
+
+                InspectorStepperFieldRow(
+                    label: "Letter Spacing",
+                    value: Binding(
+                        get: { Double(component.style.letterSpacing) },
+                        set: { document.updateLetterSpacing(for: component.id, spacing: CGFloat($0)) }
+                    ),
+                    range: -2.0...5.0,
+                    step: 0.1
+                )
+            }
+
+            controlGroupBox(title: "Paragraph & Case") {
+                InspectorPickerRow(
+                    label: "Text Alignment",
+                    selection: Binding(
+                        get: { component.style.textAlignment },
+                        set: { document.updateTextAlignment(for: component.id, alignment: $0) }
+                    ),
+                    options: TextAlignment.allCases
+                ) { alignment in
+                    Text(alignment.rawValue.capitalized)
+                        .controlValueStyle()
+                        .tag(alignment)
+                }
+
+                InspectorPickerRow(
+                    label: "Text Transform",
+                    selection: Binding(
+                        get: { component.style.textTransform },
+                        set: { document.updateTextTransform(for: component.id, transform: $0) }
+                    ),
+                    options: TextTransform.allCases
+                ) { transform in
+                    Text(transform.rawValue.capitalized)
+                        .controlValueStyle()
+                        .tag(transform)
                 }
             }
 
-            inspectorSection(
-                title: "Spacing",
-                section: .typographySpacing,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 6,
-                collapsedRadius: 4
-            ) {
-                InspectorControlGroup {
-                    InspectorStepperFieldRow(
-                        label: "Line Spacing",
-                        value: Binding(
-                            get: { Double(component.style.lineSpacing) },
-                            set: { document.updateLineSpacing(for: component.id, spacing: CGFloat($0)) }
-                        ),
-                        range: 0.5...3.0,
-                        step: 0.1
+            controlGroupBox(title: "Decoration") {
+                InspectorToggleRow(
+                    label: "Underline",
+                    isOn: Binding(
+                        get: { component.style.textUnderline },
+                        set: { document.updateTextUnderline(for: component.id, underline: $0) }
                     )
+                )
 
-                    InspectorStepperFieldRow(
-                        label: "Letter Spacing",
-                        value: Binding(
-                            get: { Double(component.style.letterSpacing) },
-                            set: { document.updateLetterSpacing(for: component.id, spacing: CGFloat($0)) }
-                        ),
-                        range: -2.0...5.0,
-                        step: 0.1
+                InspectorToggleRow(
+                    label: "Strikethrough",
+                    isOn: Binding(
+                        get: { component.style.textStrikethrough },
+                        set: { document.updateTextStrikethrough(for: component.id, strikethrough: $0) }
                     )
-                }
+                )
             }
 
-            inspectorSection(
-                title: "Paragraph & Case",
-                section: .typographyParagraph,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 6,
-                collapsedRadius: 4
-            ) {
-                InspectorControlGroup {
-                    InspectorPickerRow(
-                        label: "Text Alignment",
-                        selection: Binding(
-                            get: { component.style.textAlignment },
-                            set: { document.updateTextAlignment(for: component.id, alignment: $0) }
-                        ),
-                        options: TextAlignment.allCases
-                    ) { alignment in
-                        Text(alignment.rawValue.capitalized)
-                            .controlValueStyle()
-                            .tag(alignment)
-                    }
-
-                    InspectorPickerRow(
-                        label: "Text Transform",
-                        selection: Binding(
-                            get: { component.style.textTransform },
-                            set: { document.updateTextTransform(for: component.id, transform: $0) }
-                        ),
-                        options: TextTransform.allCases
-                    ) { transform in
-                        Text(transform.rawValue.capitalized)
-                            .controlValueStyle()
-                            .tag(transform)
-                    }
-                }
-            }
-
-            inspectorSection(
-                title: "Decoration",
-                section: .typographyDecoration,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 6,
-                collapsedRadius: 4
-            ) {
-                InspectorControlGroup {
-                    InspectorToggleRow(
-                        label: "Underline",
-                        isOn: Binding(
-                            get: { component.style.textUnderline },
-                            set: { document.updateTextUnderline(for: component.id, underline: $0) }
-                        )
+            controlGroupBox(title: "Color & Opacity") {
+                InspectorColorPickerRow(
+                    label: "Text Color",
+                    color: Binding(
+                        get: { component.style.textColorSwiftUI },
+                        set: { document.updateTextColor(for: component.id, color: $0.toHex()) }
                     )
+                )
 
-                    InspectorToggleRow(
-                        label: "Strikethrough",
-                        isOn: Binding(
-                            get: { component.style.textStrikethrough },
-                            set: { document.updateTextStrikethrough(for: component.id, strikethrough: $0) }
-                        )
-                    )
-                }
-            }
-
-            inspectorSection(
-                title: "Color & Opacity",
-                section: .typographyColor,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 6,
-                collapsedRadius: 4
-            ) {
-                InspectorControlGroup {
-                    InspectorColorPickerRow(
-                        label: "Text Color",
-                        color: Binding(
-                            get: { component.style.textColorSwiftUI },
-                            set: { document.updateTextColor(for: component.id, color: $0.toHex()) }
-                        )
-                    )
-
-                    InspectorStepperFieldRow(
-                        label: "Text Opacity",
-                        value: Binding(
-                            get: { Double(component.style.textOpacity) },
-                            set: { document.updateTextOpacity(for: component.id, opacity: CGFloat($0)) }
-                        ),
-                        range: 0...1,
-                        step: 0.1
-                    )
-                }
+                InspectorStepperFieldRow(
+                    label: "Text Opacity",
+                    value: Binding(
+                        get: { Double(component.style.textOpacity) },
+                        set: { document.updateTextOpacity(for: component.id, opacity: CGFloat($0)) }
+                    ),
+                    range: 0...1,
+                    step: 0.1
+                )
             }
         }
     }
-    // MARK: - Layout Content
-    @ViewBuilder
-    private func layoutSection(for component: InvoiceComponent) -> some View {
-        if component.type.isSection && !component.type.usesTableProperties {
-            InspectorControlGroup {
-                InspectorPickerRow(
-                    label: "Layout",
-                    selection: Binding(
-                        get: { component.style.sectionLayout },
-                        set: { document.updateSectionLayout(for: component.id, layout: $0) }
-                    ),
-                    options: SectionLayout.allCases
-                ) { layout in
-                    Text(layout.rawValue.capitalized)
-                        .controlValueStyle()
-                        .tag(layout)
-                }
 
-                InspectorStepperFieldRow(
-                    label: "Spacing",
-                    value: Binding(
-                        get: { Double(component.style.contentSpacing) },
-                        set: { document.updateContentSpacing(for: component.id, spacing: CGFloat($0)) }
-                    ),
-                    range: 0...50,
-                    step: 1
-                )
-
-                InspectorStepperFieldRow(
-                    label: "Padding",
-                    value: Binding(
-                        get: { Double(component.style.contentPadding) },
-                        set: { document.updateContentPadding(for: component.id, padding: CGFloat($0)) }
-                    ),
-                    range: 0...50,
-                    step: 1
-                )
-            }
-        }
-
-        if component.type.usesTableProperties {
-            InspectorControlGroup {
-                InspectorPickerRow(
-                    label: "Direction",
-                    selection: Binding(
-                        get: { component.style.tableDirection },
-                        set: { document.updateTableDirection(for: component.id, direction: $0) }
-                    ),
-                    options: TableDirection.allCases
-                ) { direction in
-                    Text(direction.rawValue.capitalized)
-                        .controlValueStyle()
-                        .tag(direction)
-                }
-
-                InspectorButtonRow(
-                    label: "Reset Direction",
-                    title: "Reset"
-                ) {
-                    document.updateTableDirection(for: component.id, direction: .horizontal)
-                }
-            }
+    private func orderedSections(for category: InspectorCategory) -> [InspectorSection] {
+        switch category {
+        case .text:
+            return [.text, .appearance]
+        case .container:
+            return [.text, .appearance]
+        case .table:
+            return [.table]
+        case .image:
+            return [.image, .appearance]
+        case .shape:
+            return [.shape, .appearance]
         }
     }
     // MARK: - Appearance Content
     @ViewBuilder
     private func appearanceSection(for component: InvoiceComponent) -> some View {
         Group {
-            inspectorSection(
-                title: "Background",
-                section: .appearanceBackground,
-                level: .l3Subsection,
-                isVisible: component.type.supportsBackgroundFill,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
+            if component.type.supportsBackgroundFill {
+                controlGroupBox(title: "Background") {
                     InspectorColorPickerRow(
                         label: "Background",
                         color: Binding(
@@ -604,15 +491,8 @@ struct ModernInspectorView: View {
                 }
             }
 
-            inspectorSection(
-                title: "Border",
-                section: .appearanceBorder,
-                level: .l3Subsection,
-                isVisible: component.type.supportsBorderControls,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
+            if component.type.supportsBorderControls {
+                controlGroupBox(title: "Border") {
                     InspectorColorPickerRow(
                         label: "Border Color",
                         color: Binding(
@@ -643,15 +523,8 @@ struct ModernInspectorView: View {
                 }
             }
 
-            inspectorSection(
-                title: "Shadow",
-                section: .appearanceShadow,
-                level: .l3Subsection,
-                isVisible: component.type.supportsShadow,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
+            if component.type.supportsShadow {
+                controlGroupBox(title: "Shadow") {
                     InspectorToggleRow(
                         label: "Shadow",
                         isOn: Binding(
@@ -662,82 +535,64 @@ struct ModernInspectorView: View {
                 }
 
                 if component.style.shadowEnabled {
-                    inspectorSection(
-                        title: "Color & Opacity",
-                        section: .shadowColor,
-                        level: .l4SubSubsection,
-                        isVisible: true,
-                        expandedRadius: 6,
-                        collapsedRadius: 4
-                    ) {
-                        InspectorControlGroup {
-                            InspectorColorPickerRow(
-                                label: "Shadow Color",
-                                color: Binding(
-                                    get: { component.style.shadowColorSwiftUI },
-                                    set: { document.updateShadowColor(for: component.id, color: $0.toHex()) }
-                                )
+                    controlGroupBox(title: "Color & Opacity") {
+                        InspectorColorPickerRow(
+                            label: "Shadow Color",
+                            color: Binding(
+                                get: { component.style.shadowColorSwiftUI },
+                                set: { document.updateShadowColor(for: component.id, color: $0.toHex()) }
                             )
+                        )
 
-                            InspectorStepperFieldRow(
-                                label: "Shadow Opacity",
-                                value: Binding(
-                                    get: { Double(component.style.shadowOpacity) },
-                                    set: { document.updateShadowOpacity(for: component.id, opacity: CGFloat($0)) }
-                                ),
-                                range: 0...1,
-                                step: 0.1
-                            )
-                        }
+                        InspectorStepperFieldRow(
+                            label: "Shadow Opacity",
+                            value: Binding(
+                                get: { Double(component.style.shadowOpacity) },
+                                set: { document.updateShadowOpacity(for: component.id, opacity: CGFloat($0)) }
+                            ),
+                            range: 0...1,
+                            step: 0.1
+                        )
                     }
 
-                    inspectorSection(
-                        title: "Offset & Blur",
-                        section: .shadowOffset,
-                        level: .l4SubSubsection,
-                        isVisible: true,
-                        expandedRadius: 6,
-                        collapsedRadius: 4
-                    ) {
-                        InspectorControlGroup {
-                            InspectorStepperFieldRow(
-                                label: "X",
-                                value: Binding(
-                                    get: { Double(component.style.shadowOffsetX) },
-                                    set: {
-                                        let clamped = CGFloat(min(max($0, -20), 20))
-                                        let currentY = document.component(component.id)?.style.shadowOffsetY ?? component.style.shadowOffsetY
-                                        document.updateShadowOffset(for: component.id, x: clamped, y: currentY)
-                                    }
-                                ),
-                                range: -20...20,
-                                step: 0.5
-                            )
+                    controlGroupBox(title: "Offset & Blur") {
+                        InspectorStepperFieldRow(
+                            label: "X",
+                            value: Binding(
+                                get: { Double(component.style.shadowOffsetX) },
+                                set: {
+                                    let clamped = CGFloat(min(max($0, -20), 20))
+                                    let currentY = document.component(component.id)?.style.shadowOffsetY ?? component.style.shadowOffsetY
+                                    document.updateShadowOffset(for: component.id, x: clamped, y: currentY)
+                                }
+                            ),
+                            range: -20...20,
+                            step: 0.5
+                        )
 
-                            InspectorStepperFieldRow(
-                                label: "Y",
-                                value: Binding(
-                                    get: { Double(component.style.shadowOffsetY) },
-                                    set: {
-                                        let clamped = CGFloat(min(max($0, -20), 20))
-                                        let currentX = document.component(component.id)?.style.shadowOffsetX ?? component.style.shadowOffsetX
-                                        document.updateShadowOffset(for: component.id, x: currentX, y: clamped)
-                                    }
-                                ),
-                                range: -20...20,
-                                step: 0.5
-                            )
+                        InspectorStepperFieldRow(
+                            label: "Y",
+                            value: Binding(
+                                get: { Double(component.style.shadowOffsetY) },
+                                set: {
+                                    let clamped = CGFloat(min(max($0, -20), 20))
+                                    let currentX = document.component(component.id)?.style.shadowOffsetX ?? component.style.shadowOffsetX
+                                    document.updateShadowOffset(for: component.id, x: currentX, y: clamped)
+                                }
+                            ),
+                            range: -20...20,
+                            step: 0.5
+                        )
 
-                            InspectorStepperFieldRow(
-                                label: "Shadow Radius",
-                                value: Binding(
-                                    get: { Double(component.style.shadowRadius) },
-                                    set: { document.updateShadowRadius(for: component.id, radius: CGFloat($0)) }
-                                ),
-                                range: 0...20,
-                                step: 0.5
-                            )
-                        }
+                        InspectorStepperFieldRow(
+                            label: "Shadow Radius",
+                            value: Binding(
+                                get: { Double(component.style.shadowRadius) },
+                                set: { document.updateShadowRadius(for: component.id, radius: CGFloat($0)) }
+                            ),
+                            range: 0...20,
+                            step: 0.5
+                        )
                     }
                 }
             }
@@ -747,211 +602,237 @@ struct ModernInspectorView: View {
     @ViewBuilder
     private func tableSection(for component: InvoiceComponent) -> some View {
         Group {
-            inspectorSection(
-                title: "Structure",
-                section: .tableStructure,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorToggleRow(
-                        label: "Show Header",
-                        isOn: Binding(
-                            get: { component.style.showTableHeader },
-                            set: { document.updateShowTableHeader(for: component.id, show: $0) }
-                        )
-                    )
-
-                    InspectorColorPickerRow(
-                        label: "Text Color",
-                        color: Binding(
-                            get: { component.style.tableTextColorSwiftUI },
-                            set: { document.updateTableTextColor(for: component.id, color: $0.toHex()) }
-                        )
-                    )
-                }
-            }
-
-            inspectorSection(
-                title: "Fill",
-                section: .tableFill,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorColorPickerRow(
-                        label: "Header Fill",
-                        color: Binding(
-                            get: { component.style.tableHeaderColorSwiftUI },
-                            set: { document.updateTableHeaderColor(for: component.id, color: $0.toHex()) }
-                        )
-                    )
-
-                    InspectorColorPickerRow(
-                        label: "Row Fill",
-                        color: Binding(
-                            get: { component.style.tableRowColorSwiftUI },
-                            set: { document.updateTableRowColor(for: component.id, color: $0.toHex()) }
-                        )
-                    )
-
-                    InspectorColorPickerRow(
-                        label: "Alt Row Fill",
-                        color: Binding(
-                            get: { component.style.tableRowAltColorSwiftUI },
-                            set: { document.updateTableRowAltColor(for: component.id, color: $0.toHex()) }
-                        )
-                    )
-
-                    InspectorToggleRow(
-                        label: "Alternating Rows",
-                        isOn: Binding(
-                            get: { component.style.useAlternatingRows },
-                            set: { document.updateUseAlternatingRows(for: component.id, use: $0) }
-                        )
-                    )
-                }
-            }
-
-            inspectorSection(
-                title: "Borders",
-                section: .tableBorders,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorToggleRow(
-                        label: "Show Borders",
-                        isOn: Binding(
-                            get: { component.style.showTableBorders },
-                            set: { document.updateShowTableBorders(for: component.id, show: $0) }
-                        )
-                    )
+            controlGroupBox(title: "Layout") {
+                InspectorPickerRow(
+                    label: "Direction",
+                    selection: Binding(
+                        get: { component.style.tableDirection },
+                        set: { document.updateTableDirection(for: component.id, direction: $0) }
+                    ),
+                    options: TableDirection.allCases
+                ) { direction in
+                    Text(direction.rawValue.capitalized)
+                        .controlValueStyle()
+                        .tag(direction)
                 }
 
-                if component.style.showTableBorders {
-                    inspectorSection(
-                        title: "Appearance",
-                        section: .tableBorderAppearance,
-                        level: .l4SubSubsection,
-                        isVisible: true,
-                        expandedRadius: 6,
-                        collapsedRadius: 4
-                    ) {
-                        InspectorControlGroup {
-                            InspectorColorPickerRow(
-                                label: "Border Color",
-                                color: Binding(
-                                    get: { component.style.tableBorderColorSwiftUI },
-                                    set: { document.updateTableBorderColor(for: component.id, color: $0.toHex()) }
-                                )
-                            )
-
-                            InspectorStepperFieldRow(
-                                label: "Border Width",
-                                value: Binding(
-                                    get: { Double(component.style.tableBorderWidth) },
-                                    set: { document.updateTableBorderWidth(for: component.id, width: CGFloat($0)) }
-                                ),
-                                range: 0...5,
-                                step: 0.5
-                            )
-                        }
-                    }
-                }
-
-                inspectorSection(
-                    title: "Visibility",
-                    section: .tableBorderVisibility,
-                    level: .l4SubSubsection,
-                    isVisible: true,
-                    expandedRadius: 6,
-                    collapsedRadius: 4
+                InspectorButtonRow(
+                    label: "Reset Direction",
+                    title: "Reset"
                 ) {
-                    InspectorControlGroup {
-                        InspectorToggleRow(
-                            label: "Header Borders",
-                            isOn: Binding(
-                                get: { component.style.showHeaderBorder },
-                                set: { document.updateShowHeaderBorder(for: component.id, show: $0) }
-                            )
-                        )
-
-                        InspectorToggleRow(
-                            label: "Row Borders",
-                            isOn: Binding(
-                                get: { component.style.showRowBorders },
-                                set: { document.updateShowRowBorders(for: component.id, show: $0) }
-                            )
-                        )
-
-                        InspectorToggleRow(
-                            label: "Cell Borders",
-                            isOn: Binding(
-                                get: { component.style.showCellBorders },
-                                set: { document.updateShowCellBorders(for: component.id, show: $0) }
-                            )
-                        )
-                    }
+                    document.updateTableDirection(for: component.id, direction: .horizontal)
                 }
             }
 
-            inspectorSection(
-                title: "Spacing",
-                section: .tableSpacing,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorStepperFieldRow(
-                        label: "Cell Padding",
-                        value: Binding(
-                            get: { Double(component.style.tableCellPadding) },
-                            set: { document.updateTableCellPadding(for: component.id, padding: CGFloat($0)) }
-                        ),
-                        range: 0...20,
-                        step: 1
+            controlGroupBox(title: "Structure") {
+                InspectorToggleRow(
+                    label: "Show Header",
+                    isOn: Binding(
+                        get: { component.style.showTableHeader },
+                        set: { document.updateShowTableHeader(for: component.id, show: $0) }
+                    )
+                )
+
+                InspectorColorPickerRow(
+                    label: "Text Color",
+                    color: Binding(
+                        get: { component.style.tableTextColorSwiftUI },
+                        set: { document.updateTableTextColor(for: component.id, color: $0.toHex()) }
+                    )
+                )
+            }
+
+            controlGroupBox(title: "Fill") {
+                InspectorColorPickerRow(
+                    label: "Header Fill",
+                    color: Binding(
+                        get: { component.style.tableHeaderColorSwiftUI },
+                        set: { document.updateTableHeaderColor(for: component.id, color: $0.toHex()) }
+                    )
+                )
+
+                InspectorColorPickerRow(
+                    label: "Row Fill",
+                    color: Binding(
+                        get: { component.style.tableRowColorSwiftUI },
+                        set: { document.updateTableRowColor(for: component.id, color: $0.toHex()) }
+                    )
+                )
+
+                InspectorColorPickerRow(
+                    label: "Alt Row Fill",
+                    color: Binding(
+                        get: { component.style.tableRowAltColorSwiftUI },
+                        set: { document.updateTableRowAltColor(for: component.id, color: $0.toHex()) }
+                    )
+                )
+
+                InspectorToggleRow(
+                    label: "Alternating Rows",
+                    isOn: Binding(
+                        get: { component.style.useAlternatingRows },
+                        set: { document.updateUseAlternatingRows(for: component.id, use: $0) }
+                    )
+                )
+            }
+
+            controlGroupBox(title: "Borders") {
+                InspectorToggleRow(
+                    label: "Show Borders",
+                    isOn: Binding(
+                        get: { component.style.showTableBorders },
+                        set: { document.updateShowTableBorders(for: component.id, show: $0) }
+                    )
+                )
+            }
+
+            if component.style.showTableBorders {
+                controlGroupBox(title: "Border Appearance") {
+                    InspectorColorPickerRow(
+                        label: "Border Color",
+                        color: Binding(
+                            get: { component.style.tableBorderColorSwiftUI },
+                            set: { document.updateTableBorderColor(for: component.id, color: $0.toHex()) }
+                        )
                     )
 
                     InspectorStepperFieldRow(
-                        label: "Header Padding",
+                        label: "Border Width",
                         value: Binding(
-                            get: { Double(component.style.tableHeaderPadding) },
-                            set: { document.updateTableHeaderPadding(for: component.id, padding: CGFloat($0)) }
+                            get: { Double(component.style.tableBorderWidth) },
+                            set: { document.updateTableBorderWidth(for: component.id, width: CGFloat($0)) }
                         ),
-                        range: 0...20,
-                        step: 1
+                        range: 0...5,
+                        step: 0.5
                     )
                 }
             }
 
-            inspectorSection(
-                title: "Typography",
-                section: .tableTypography,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
+            controlGroupBox(title: "Border Visibility") {
+                InspectorToggleRow(
+                    label: "Header Borders",
+                    isOn: Binding(
+                        get: { component.style.showHeaderBorder },
+                        set: { document.updateShowHeaderBorder(for: component.id, show: $0) }
+                    )
+                )
+
+                InspectorToggleRow(
+                    label: "Row Borders",
+                    isOn: Binding(
+                        get: { component.style.showRowBorders },
+                        set: { document.updateShowRowBorders(for: component.id, show: $0) }
+                    )
+                )
+
+                InspectorToggleRow(
+                    label: "Cell Borders",
+                    isOn: Binding(
+                        get: { component.style.showCellBorders },
+                        set: { document.updateShowCellBorders(for: component.id, show: $0) }
+                    )
+                )
+            }
+
+            controlGroupBox(title: "Shadow") {
+                InspectorToggleRow(
+                    label: "Shadow",
+                    isOn: Binding(
+                        get: { component.style.shadowEnabled },
+                        set: { document.updateShadowEnabled(for: component.id, enabled: $0) }
+                    )
+                )
+            }
+
+            if component.style.shadowEnabled {
+                controlGroupBox(title: "Shadow Color & Opacity") {
+                    InspectorColorPickerRow(
+                        label: "Shadow Color",
+                        color: Binding(
+                            get: { component.style.shadowColorSwiftUI },
+                            set: { document.updateShadowColor(for: component.id, color: $0.toHex()) }
+                        )
+                    )
+
+                    InspectorStepperFieldRow(
+                        label: "Shadow Opacity",
+                        value: Binding(
+                            get: { Double(component.style.shadowOpacity) },
+                            set: { document.updateShadowOpacity(for: component.id, opacity: CGFloat($0)) }
+                        ),
+                        range: 0...1,
+                        step: 0.1
+                    )
+                }
+
+                controlGroupBox(title: "Offset & Blur") {
+                    InspectorStepperFieldRow(
+                        label: "X",
+                        value: Binding(
+                            get: { Double(component.style.shadowOffsetX) },
+                            set: {
+                                let clamped = CGFloat(min(max($0, -20), 20))
+                                let currentY = document.component(component.id)?.style.shadowOffsetY ?? component.style.shadowOffsetY
+                                document.updateShadowOffset(for: component.id, x: clamped, y: currentY)
+                            }
+                        ),
+                        range: -20...20,
+                        step: 0.5
+                    )
+
+                    InspectorStepperFieldRow(
+                        label: "Y",
+                        value: Binding(
+                            get: { Double(component.style.shadowOffsetY) },
+                            set: {
+                                let clamped = CGFloat(min(max($0, -20), 20))
+                                let currentX = document.component(component.id)?.style.shadowOffsetX ?? component.style.shadowOffsetX
+                                document.updateShadowOffset(for: component.id, x: currentX, y: clamped)
+                            }
+                        ),
+                        range: -20...20,
+                        step: 0.5
+                    )
+
+                    InspectorStepperFieldRow(
+                        label: "Shadow Radius",
+                        value: Binding(
+                            get: { Double(component.style.shadowRadius) },
+                            set: { document.updateShadowRadius(for: component.id, radius: CGFloat($0)) }
+                        ),
+                        range: 0...20,
+                        step: 0.5
+                    )
+                }
+            }
+
+            controlGroupBox(title: "Spacing") {
+                InspectorStepperFieldRow(
+                    label: "Cell Padding",
+                    value: Binding(
+                        get: { Double(component.style.tableCellPadding) },
+                        set: { document.updateTableCellPadding(for: component.id, padding: CGFloat($0)) }
+                    ),
+                    range: 0...20,
+                    step: 1
+                )
+
+                InspectorStepperFieldRow(
+                    label: "Header Padding",
+                    value: Binding(
+                        get: { Double(component.style.tableHeaderPadding) },
+                        set: { document.updateTableHeaderPadding(for: component.id, padding: CGFloat($0)) }
+                    ),
+                    range: 0...20,
+                    step: 1
+                )
+            }
+
+            controlGroupBox(title: "Typography") {
                 tableTypographyControls(for: component)
             }
 
-            inspectorSection(
-                title: "Column Configuration",
-                section: .tableColumns,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
+            controlGroupBox(title: "Column Configuration") {
                 tableColumnControls(for: component)
             }
         }
@@ -967,7 +848,7 @@ struct ModernInspectorView: View {
         let columnConfig = currentComponent.style.columnConfiguration(for: selectedIndex)
         let rowConfig = currentComponent.style.rowConfiguration(for: selectedIndex)
 
-        return InspectorControlGroup {
+        return VStack(alignment: .leading, spacing: 6) {
             if tabCount > 1 {
                 InspectorLabeledRow(
                     label: currentComponent.style.tableDirection == .horizontal ? "Column" : "Row"
@@ -1069,7 +950,7 @@ struct ModernInspectorView: View {
         let selectedIndex = min(tableColumnsSelectedTab, max(0, columnCount - 1))
         let columnConfig = currentComponent.style.columnConfiguration(for: selectedIndex)
 
-        return InspectorControlGroup {
+        return VStack(alignment: .leading, spacing: 6) {
             if columnCount > 1 {
                 InspectorLabeledRow(label: "Column") {
                     Picker(
@@ -1150,110 +1031,83 @@ struct ModernInspectorView: View {
     private func shapeSection(for component: InvoiceComponent) -> some View {
         switch component.type {
         case .lineShape:
-            inspectorSection(
-                title: "Line",
-                section: .shapeLine,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorStepperFieldRow(
-                        label: "Thickness",
-                        value: Binding(
-                            get: { Double(component.style.lineThickness) },
-                            set: { document.updateLineThickness(for: component.id, thickness: CGFloat($0)) }
-                        ),
-                        range: 0.5...10,
-                        step: 0.5
-                    )
+            controlGroupBox(title: "Line") {
+                InspectorStepperFieldRow(
+                    label: "Thickness",
+                    value: Binding(
+                        get: { Double(component.style.lineThickness) },
+                        set: { document.updateLineThickness(for: component.id, thickness: CGFloat($0)) }
+                    ),
+                    range: 0.5...10,
+                    step: 0.5
+                )
 
-                    InspectorPickerRow(
-                        label: "Line Style",
-                        selection: Binding(
-                            get: { component.style.lineStyle },
-                            set: { document.updateLineStyle(for: component.id, style: $0) }
-                        ),
-                        options: LineStyle.allCases
-                    ) { style in
-                        Text(style.rawValue.capitalized)
-                            .controlValueStyle()
-                            .tag(style)
-                    }
+                InspectorPickerRow(
+                    label: "Line Style",
+                    selection: Binding(
+                        get: { component.style.lineStyle },
+                        set: { document.updateLineStyle(for: component.id, style: $0) }
+                    ),
+                    options: LineStyle.allCases
+                ) { style in
+                    Text(style.rawValue.capitalized)
+                        .controlValueStyle()
+                        .tag(style)
                 }
             }
         case .triangleShape:
-            inspectorSection(
-                title: "Triangle",
-                section: .shapeTriangle,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorPickerRow(
-                        label: "Direction",
-                        selection: Binding(
-                            get: { component.style.triangleDirection },
-                            set: { document.updateTriangleDirection(for: component.id, direction: $0) }
-                        ),
-                        options: TriangleDirection.allCases
-                    ) { direction in
-                        Text(direction.rawValue.capitalized)
-                            .controlValueStyle()
-                            .tag(direction)
-                    }
+            controlGroupBox(title: "Triangle") {
+                InspectorPickerRow(
+                    label: "Direction",
+                    selection: Binding(
+                        get: { component.style.triangleDirection },
+                        set: { document.updateTriangleDirection(for: component.id, direction: $0) }
+                    ),
+                    options: TriangleDirection.allCases
+                ) { direction in
+                    Text(direction.rawValue.capitalized)
+                        .controlValueStyle()
+                        .tag(direction)
+                }
 
-                    InspectorButtonRow(
-                        label: "Reset Direction",
-                        title: "Reset"
-                    ) {
-                        document.updateTriangleDirection(for: component.id, direction: .up)
-                    }
+                InspectorButtonRow(
+                    label: "Reset Direction",
+                    title: "Reset"
+                ) {
+                    document.updateTriangleDirection(for: component.id, direction: .up)
                 }
             }
         case .starShape:
-            inspectorSection(
-                title: "Star",
-                section: .shapeStar,
-                level: .l3Subsection,
-                isVisible: true,
-                expandedRadius: 8,
-                collapsedRadius: 6
-            ) {
-                InspectorControlGroup {
-                    InspectorStepperFieldRow(
-                        label: "Points",
-                        value: Binding(
-                            get: { Double(component.style.starPoints) },
-                            set: { document.updateStarPoints(for: component.id, points: Int($0)) }
-                        ),
-                        range: 3...12,
-                        step: 1
-                    )
+            controlGroupBox(title: "Star") {
+                InspectorStepperFieldRow(
+                    label: "Points",
+                    value: Binding(
+                        get: { Double(component.style.starPoints) },
+                        set: { document.updateStarPoints(for: component.id, points: Int($0)) }
+                    ),
+                    range: 3...12,
+                    step: 1
+                )
 
-                    InspectorStepperFieldRow(
-                        label: "Smoothness",
-                        value: Binding(
-                            get: { Double(component.style.starSmoothness) },
-                            set: { document.updateStarSmoothness(for: component.id, smoothness: CGFloat($0)) }
-                        ),
-                        range: 0.1...1.0,
-                        step: 0.05
-                    )
+                InspectorStepperFieldRow(
+                    label: "Smoothness",
+                    value: Binding(
+                        get: { Double(component.style.starSmoothness) },
+                        set: { document.updateStarSmoothness(for: component.id, smoothness: CGFloat($0)) }
+                    ),
+                    range: 0.1...1.0,
+                    step: 0.05
+                )
 
-                    InspectorStepperFieldRow(
-                        label: "Inner Ratio",
-                        value: Binding(
-                            get: { Double(component.style.starInnerRatio) },
-                            set: { document.updateStarInnerRatio(for: component.id, ratio: CGFloat($0)) }
-                        ),
-                        range: 0.1...0.9,
-                        step: 0.05
-                    )
-                }
+                InspectorStepperFieldRow(
+                    label: "Inner Ratio",
+                    value: Binding(
+                        get: { Double(component.style.starInnerRatio) },
+                        set: { document.updateStarInnerRatio(for: component.id, ratio: CGFloat($0)) }
+                    ),
+                    range: 0.1...0.9,
+                    step: 0.05
+                )
             }
         default:
             EmptyView()
@@ -1431,78 +1285,32 @@ private struct InspectorPropertySection: View {
     }
 
     private func headerGlassStyle(for level: InspectorFontLevel) -> Glass {
-        let tint: Color
+        let tint: NSColor
         switch level {
         case .l2SectionHeader:
-            tint = Color.accentColor.opacity(0.45)
+            tint = NSColor.systemFill
         case .l3Subsection:
-            tint = Color.blue.opacity(0.35)
+            tint = NSColor.secondarySystemFill
         case .l4SubSubsection:
-            tint = Color.purple.opacity(0.3)
+            tint = NSColor.tertiarySystemFill
         default:
-            tint = Color.primary.opacity(0.2)
+            tint = NSColor.quaternarySystemFill
         }
-        return .regular.interactive().tint(tint)
+        return .regular.interactive().tint(Color(tint))
     }
 }
 
 extension ModernInspectorView.InspectorSection {
-    static let topLevelGroup: Set<Self> = [.text, .textTypography, .layout, .appearance, .table]
-    static let textSubsections: Set<Self> = [.textContent]
-    static let typographySubsections: Set<Self> = [
-        .typographyFont, .typographySpacing, .typographyParagraph, .typographyDecoration, .typographyColor
-    ]
-    static let appearanceSubsections: Set<Self> = [.appearanceBackground, .appearanceBorder, .appearanceShadow]
-    static let shadowSubsections: Set<Self> = [.shadowColor, .shadowOffset]
-    static let tableSubsections: Set<Self> = [
-        .tableStructure, .tableFill, .tableBorders, .tableSpacing, .tableTypography, .tableColumns
-    ]
-    static let tableBorderSubsections: Set<Self> = [.tableBorderAppearance, .tableBorderVisibility]
-    static let shapeSubsections: Set<Self> = [.shapeLine, .shapeTriangle, .shapeStar]
+    static let topLevelGroup: Set<Self> = [.text, .appearance, .table, .image, .shape]
 
     var collapseGroups: [Set<Self>] {
         switch self {
-        case .text, .textTypography, .layout, .appearance, .table:
+        case .text, .appearance, .table, .image, .shape:
             return [Self.topLevelGroup]
-        case .textContent:
-            return [Self.textSubsections]
-        case .typographyFont, .typographySpacing, .typographyParagraph, .typographyDecoration, .typographyColor:
-            return [Self.typographySubsections]
-        case .appearanceBackground, .appearanceBorder, .appearanceShadow:
-            return [Self.appearanceSubsections]
-        case .shadowColor, .shadowOffset:
-            return [Self.shadowSubsections]
-        case .tableStructure, .tableFill, .tableBorders, .tableSpacing, .tableTypography, .tableColumns:
-            return [Self.tableSubsections]
-        case .tableBorderAppearance, .tableBorderVisibility:
-            return [Self.tableBorderSubsections]
-        case .image, .shape:
-            return []
-        case .shapeLine, .shapeTriangle, .shapeStar:
-            return [Self.shapeSubsections]
         }
     }
 
-    var descendants: Set<Self> {
-        switch self {
-        case .text:
-            return Self.textSubsections
-        case .textTypography:
-            return Self.typographySubsections
-        case .appearance:
-            return Self.appearanceSubsections.union(Self.shadowSubsections)
-        case .appearanceShadow:
-            return Self.shadowSubsections
-        case .table:
-            return Self.tableSubsections.union(Self.tableBorderSubsections)
-        case .tableBorders:
-            return Self.tableBorderSubsections
-        case .image, .shape:
-            return []
-        default:
-            return []
-        }
-    }
+    var descendants: Set<Self> { [] }
 }
 
 // MARK: - Tag View
@@ -1572,12 +1380,19 @@ private struct InspectorSectionDescriptor: Identifiable {
     }
 }
 
+private enum InspectorCategory {
+    case text
+    case container
+    case table
+    case image
+    case shape
+}
+
 private struct InspectorCapabilities {
     let showsTextSection: Bool
     let showsContentControls: Bool
     let nestsContentControls: Bool
     let showsTypographySection: Bool
-    let showsLayoutSection: Bool
     let showsAppearanceSection: Bool
     let showsTableSection: Bool
     let showsImageSection: Bool
@@ -1589,13 +1404,32 @@ private struct InspectorCapabilities {
         let supportsTypography = type.supportsTypography
 
         showsContentControls = isSimpleTextComponent
-        showsTextSection = showsContentControls
+        let excludesTextCategory = type.usesTableProperties || type.isImageComponent || type.isShape || type.isSection
+        showsTextSection = (showsContentControls || supportsTypography) && !excludesTextCategory
         nestsContentControls = isSimpleTextComponent && supportsTypography
         showsTypographySection = supportsTypography
-        showsLayoutSection = type.isSection || type.usesTableProperties
-        showsAppearanceSection = type.supportsBackgroundFill || type.supportsBorderControls || type.supportsShadow
+        let supportsAppearance = type.supportsBackgroundFill || type.supportsBorderControls || type.supportsShadow
+        showsAppearanceSection = supportsAppearance && !type.usesTableProperties
         showsTableSection = type.usesTableProperties
         showsImageSection = type.isImageComponent
         showsShapeSection = type.isShape
     }
+}
+
+private extension View {
+    func inspectorControlGroupStyle(cornerRadius: CGFloat = 8) -> some View {
+        self
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+    }
+}
+
+private func inspectorCategory(for component: InvoiceComponent) -> InspectorCategory {
+    let type = component.type
+    if type.usesTableProperties { return .table }
+    if type.isImageComponent { return .image }
+    if type.isShape { return .shape }
+    if type.isSection { return .container }
+    return .text
 }

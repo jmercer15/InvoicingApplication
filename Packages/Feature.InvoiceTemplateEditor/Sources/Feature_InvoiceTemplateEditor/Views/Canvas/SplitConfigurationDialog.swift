@@ -143,7 +143,7 @@ struct SplitPreview: View {
         ZStack {
             // Background
             Rectangle()
-                .fill(Color.white.opacity(0.8))
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.8))
                 .cornerRadius(4)
             
             // Preview content based on direction

@@ -37,7 +37,7 @@ enum InvoiceComponentType: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct InvoiceComponent: Identifiable, Codable, Transferable {
+struct InvoiceComponent: Identifiable, Codable, Transferable, Equatable {
     var id: UUID
     let type: InvoiceComponentType
     var position: CGPoint

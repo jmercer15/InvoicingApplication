@@ -4,6 +4,9 @@ import Combine
 
 @MainActor
 public class InvoiceTemplateEditorViewModel: ObservableObject {
+    // MARK: - Dependencies
+    private let templateManager: TemplateManager
+    
     @Published var document = InvoiceDocument()
     
     // The component palette now drives its own data, so this can be simplified.
@@ -46,16 +49,20 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
         let margins: InvoiceDocument.DocumentMargins
     }
 
-    public init() {
+    public init(templateManager: TemplateManager) {
+        self.templateManager = templateManager
         setupSubscriptions()
         loadDefaultTemplate()
     }
 
     private func setupSubscriptions() {
         // Monitor document changes for unsaved changes
+        // Use debounce to prevent infinite loops from rapid property updates
         document.objectWillChange
+            .debounce(for: .milliseconds(10), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.hasUnsavedChanges = true
+                guard let self = self, !self.hasUnsavedChanges else { return }
+                self.hasUnsavedChanges = true
             }
             .store(in: &cancellables)
 
@@ -97,18 +104,17 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
         currentMetadata = templateData.metadata
     }
 
-    func saveTemplate() async -> TemplateMetadata? {
+    func saveTemplate(thumbnailData: Data? = nil) async -> TemplateMetadata? {
         isLoading = true
         defer { isLoading = false }
 
-        let templateManager = await MainActor.run { TemplateManager.shared }
         let metadata = await templateManager.saveTemplate(
             document: document,
             name: currentTemplateName,
             description: templateDescription,
             author: "User",
             tags: templateTags,
-            thumbnailData: generateThumbnail(),
+            thumbnailData: thumbnailData,
             existingMetadata: currentMetadata
         )
 
@@ -391,9 +397,14 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
     }
 
     private func generateThumbnail() -> Data? {
-        // This would generate a thumbnail image of the current document
-        // For now, return nil
+        // Generate thumbnail using TemplateManager (requires workspace for rendering)
+        // Note: This should be called from a context that has access to workspace
+        // For now, return nil - thumbnail generation should happen at ViewModel level with workspace
         return nil
+    }
+    
+    func generateThumbnail(using workspace: TemplateEditorWorkspaceViewModel) -> Data? {
+        return templateManager.generateThumbnail(from: document, using: workspace)
     }
 
 }

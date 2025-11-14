@@ -14,6 +14,7 @@ struct ModernTemplateManagementView: View {
     @Binding var highlightedTemplateID: UUID?
     @Binding var isInspectorVisible: Bool
     @Binding var showingNewTemplateSheet: Bool
+    @EnvironmentObject private var templateDataService: TemplateDataService
     @State private var navigationPath = NavigationPath()
     @State private var searchText = ""
     @State private var selectedCategory: TemplateCategory = .all
@@ -105,6 +106,7 @@ struct ModernTemplateManagementView: View {
                 .environmentObject(workspace)
                 .environmentObject(workspace.editorViewModel)
                 .environmentObject(workspace.editorViewModel.document)
+                .environmentObject(templateDataService)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: navigationPath)

@@ -272,11 +272,17 @@ final class DomainToEntityUpdateTests: XCTestCase {
         // Create updated Address domain model
         let updatedAddress = Address(
             id: addressEntity.id,
-            street: "456 New St",
+            unitNumber: "",
+            streetNumber: "456",
+            streetName: "New St",
+            suburb: "",
             city: "New City",
             state: "New State",
             postcode: "3000",
-            country: "New Country"
+            country: "New Country",
+            poBox: "",
+            latitude: 0.0,
+            longitude: 0.0
         )
         
         // Test update

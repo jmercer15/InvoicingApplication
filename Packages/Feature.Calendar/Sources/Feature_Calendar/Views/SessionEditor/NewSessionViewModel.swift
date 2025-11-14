@@ -19,8 +19,11 @@ import SharedUI
 @MainActor
 class NewSessionViewModel: ObservableObject {
     let modelContext: ModelContext
-    var sessionToEdit: SessionEntity?
-    private let sessionModificationService: SessionModificationService
+    var sessionToEdit: Session? // Changed to domain model
+    let sessionModificationService: SessionModificationService // Made internal for CalendarViewModel access
+    private let clientsRepository: ClientsRepository
+    private let clientServicesRepository: ClientServicesRepository
+    let addressRepository: AddressRepository
     
     // MARK: - Save State Management
     @Published var isSaving = false
@@ -36,8 +39,13 @@ class NewSessionViewModel: ObservableObject {
     @Published var formModel: SessionFormModel
     
     // MARK: - Client & Service Domain Models (for display, fetched on demand)
-    @Published var selectedClient: ClientEntity?
-    @Published var selectedClientService: ClientServiceEntity?
+    @Published var selectedClient: Client?
+    @Published var selectedClientService: ClientService?
+    @Published var availableClients: [Client] = []
+    @Published var availableServices: [ClientService] = []
+    
+    // MARK: - Instance Date Tracking
+    private var originalInstanceDate: Date? // Store instance date for recurring session edits
     
     // MARK: - Dialog State Management
     @Published var showingRecurringEditOptions = false
@@ -69,17 +77,56 @@ class NewSessionViewModel: ObservableObject {
 
     init(
         context: ModelContext,
-        session: SessionEntity?,
-        instanceDate: Date?
+        session: Session?,
+        instanceDate: Date?,
+        clientsRepository: ClientsRepository,
+        clientServicesRepository: ClientServicesRepository,
+        addressRepository: AddressRepository
     ) {
         self.modelContext = context
-        self.sessionModificationService = SessionModificationService(context: context, eventKitService: EventKitSyncService.shared, recurrenceRuleBuilder: RecurrenceRuleBuilder())
+        self.clientsRepository = clientsRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.addressRepository = addressRepository
+        self.sessionModificationService = SessionModificationService(
+            context: context,
+            addressRepository: addressRepository,
+            eventKitService: EventKitSyncService.shared,
+            recurrenceRuleBuilder: RecurrenceRuleBuilder()
+        )
         self.sessionToEdit = session
+        self.originalInstanceDate = instanceDate // Store instance date for recurring session edits
         
         if let session = session {
             self.formModel = SessionFormModel(from: session)
-            self.selectedClient = session.client
-            self.selectedClientService = session.clientService
+            
+            // Fetch address if addressId is present
+            if let addressId = session.addressId {
+                Task {
+                    if let address = try? await addressRepository.fetch(by: addressId) {
+                        await MainActor.run {
+                            populateFormFromAddress(address)
+                        }
+                    }
+                }
+            }
+            // If editing a recurring session and instanceDate is provided, use it
+            // Otherwise, use the session's startTime as fallback for recurring sessions
+            if session.recurrenceRuleData != nil {
+                self.originalInstanceDate = instanceDate ?? session.startTime
+            }
+            // Fetch client and service asynchronously
+            Task {
+                if let clientId = session.clientId {
+                    self.selectedClient = try? await clientsRepository.fetch(by: clientId)
+                }
+                if let serviceId = session.clientServiceId {
+                    // Fetch service via client
+                    if let clientId = session.clientId {
+                        let services = try? await clientServicesRepository.fetch(for: clientId)
+                        self.selectedClientService = services?.first(where: { $0.id == serviceId })
+                    }
+                }
+            }
         } else {
             self.formModel = SessionFormModel()
             self.formModel.startTime = instanceDate ?? Date()
@@ -93,8 +140,17 @@ class NewSessionViewModel: ObservableObject {
             .map { $0.selectedClientID }
             .removeDuplicates()
             .sink { [weak self] newID in
-                guard let self = self else { return }
-                self.selectedClient = self.getClient(from: newID)
+                guard let self = self, let newID = newID else { return }
+                Task {
+                    self.selectedClient = try? await self.clientsRepository.fetch(by: newID)
+                    // Fetch services for the selected client
+                    if let clientId = self.selectedClient?.id {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.availableServices = services ?? []
+                    } else {
+                        self.availableServices = []
+                    }
+                }
                 // Clear service when client changes
                 if self.formModel.selectedClientServiceID != nil && self.selectedClient?.id != newID {
                     self.formModel.selectedClientServiceID = nil
@@ -107,26 +163,66 @@ class NewSessionViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] newID in
                 guard let self = self else { return }
-                self.selectedClientService = self.getService(from: newID)
+                Task {
+                    if let clientId = self.selectedClient?.id {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.selectedClientService = services?.first(where: { $0.id == newID })
+                    } else if let clientId = self.formModel.selectedClientID {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.selectedClientService = services?.first(where: { $0.id == newID })
+                    }
+                }
             }
             .store(in: &cancellables)
     }
     
     // Simplified init for creating from an EKEvent
-    init(context: ModelContext, from event: EKEvent) {
+    init(
+        context: ModelContext,
+        from event: EKEvent,
+        clientsRepository: ClientsRepository,
+        clientServicesRepository: ClientServicesRepository,
+        addressRepository: AddressRepository
+    ) {
         self.modelContext = context
-        self.sessionModificationService = SessionModificationService(context: context, eventKitService: EventKitSyncService.shared, recurrenceRuleBuilder: RecurrenceRuleBuilder())
+        self.clientsRepository = clientsRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.addressRepository = addressRepository
+        self.sessionModificationService = SessionModificationService(
+            context: context,
+            addressRepository: addressRepository,
+            eventKitService: EventKitSyncService.shared,
+            recurrenceRuleBuilder: RecurrenceRuleBuilder()
+        )
         self.formModel = SessionFormModel(from: event)
         
         setupValidation()
+        
+        // Fetch available clients for picker
+        Task {
+            do {
+                self.availableClients = try await clientsRepository.fetchAll()
+            } catch {
+                print("[NewSessionViewModel] Failed to fetch clients: \(error)")
+            }
+        }
         
         // Listen to changes in formModel.selectedClientID and selectedClientServiceID
         $formModel
             .map { $0.selectedClientID }
             .removeDuplicates()
             .sink { [weak self] newID in
-                guard let self = self else { return }
-                self.selectedClient = self.getClient(from: newID)
+                guard let self = self, let newID = newID else { return }
+                Task {
+                    self.selectedClient = try? await self.clientsRepository.fetch(by: newID)
+                    // Fetch services for the selected client
+                    if let clientId = self.selectedClient?.id {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.availableServices = services ?? []
+                    } else {
+                        self.availableServices = []
+                    }
+                }
                 // Clear service when client changes
                 if self.formModel.selectedClientServiceID != nil && self.selectedClient?.id != newID {
                     self.formModel.selectedClientServiceID = nil
@@ -139,7 +235,15 @@ class NewSessionViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] newID in
                 guard let self = self else { return }
-                self.selectedClientService = self.getService(from: newID)
+                Task {
+                    if let clientId = self.selectedClient?.id {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.selectedClientService = services?.first(where: { $0.id == newID })
+                    } else if let clientId = self.formModel.selectedClientID {
+                        let services = try? await self.clientServicesRepository.fetch(for: clientId)
+                        self.selectedClientService = services?.first(where: { $0.id == newID })
+                    }
+                }
             }
             .store(in: &cancellables)
     }
@@ -215,30 +319,28 @@ class NewSessionViewModel: ObservableObject {
         if isEditing, let session = sessionToEdit {
             // Determine the appropriate edit mode for recurring sessions
             let span: RecurringEditMode = session.recurrenceRuleData != nil ? .thisOnly : .thisOnly
-            let modificationResult = sessionModificationService.modifySession(session, with: formModel, mode: span, originalInstanceDate: session.occurrenceDate)
+            // Use stored instance date for recurring session edits
+            let instanceDate = session.recurrenceRuleData != nil ? originalInstanceDate : nil
             
-            switch modificationResult {
-            case .success(let result):
-                if case .sessionModified(let s) = result {
-                    print("[NewSessionViewModel] Session modified successfully: \(s.id.uuidString)")
-                } else if case .detachedInstanceCreated(let s) = result {
-                    print("[NewSessionViewModel] Detached instance created: \(s.id.uuidString)")
-                } else if case .seriesSplit(_, let newSeries) = result {
-                    print("[NewSessionViewModel] Series split, new series created: \(newSeries.id.uuidString)")
-                }
+            do {
+                let modifiedSession = try await sessionModificationService.modifySession(
+                    session,
+                    with: formModel,
+                    mode: span,
+                    originalInstanceDate: instanceDate
+                )
+                print("[NewSessionViewModel] Session modified successfully: \(modifiedSession.id.uuidString)")
                 onSaveCompleted?()
-            case .failure(let error):
+            } catch {
                 print("[NewSessionViewModel] Save failed: \(error.localizedDescription)")
                 self.saveError = error.localizedDescription
             }
         } else {
-            let creationResult = sessionModificationService.createSession(from: formModel)
-            
-            switch creationResult {
-            case .success(let session):
-                print("[NewSessionViewModel] Session created successfully: \(session.id.uuidString)")
+            do {
+                let newSession = try await sessionModificationService.createSession(from: formModel)
+                print("[NewSessionViewModel] Session created successfully: \(newSession.id.uuidString)")
                 onSaveCompleted?()
-            case .failure(let error):
+            } catch {
                 print("[NewSessionViewModel] Save failed: \(error.localizedDescription)")
                 self.saveError = error.localizedDescription
             }
@@ -273,38 +375,26 @@ class NewSessionViewModel: ObservableObject {
             showingRecurringDeleteOptions = true
         } else {
             Task { @MainActor in
-                executeDelete(with: .thisOnly)
+                await executeDelete(with: .thisOnly)
             }
         }
     }
     
     /// Execute delete with proper error handling
-    @MainActor func executeDelete(with span: RecurringEditMode) {
+    @MainActor func executeDelete(with span: RecurringEditMode) async {
         guard let sessionToDelete = sessionToEdit else { return }
         
-        let result = sessionModificationService.deleteSession(sessionToDelete, mode: span, originalInstanceDate: sessionToDelete.occurrenceDate)
+        // Use stored instance date for recurring session deletes
+        let instanceDate = sessionToDelete.recurrenceRuleData != nil ? originalInstanceDate : nil
         
-        switch result {
-        case .success(_):
+        do {
+            try await sessionModificationService.deleteSession(sessionToDelete, mode: span, originalInstanceDate: instanceDate)
             print("[NewSessionViewModel] Session deletion successful.")
             onSaveCompleted?()
-        case .failure(let error):
+        } catch {
             print("[NewSessionViewModel] Session deletion failed: \(error)")
             self.saveError = error.localizedDescription // Use saveError for delete errors too
         }
-    }
-    
-    // MARK: - Helper Methods to fetch related domain models for display
-    private func getClient(from id: UUID?) -> ClientEntity? {
-        guard let clientID = id else { return nil }
-        let descriptor = FetchDescriptor<ClientEntity>(predicate: #Predicate { $0.id == clientID })
-        return try? modelContext.fetch(descriptor).first
-    }
-
-    private func getService(from id: UUID?) -> ClientServiceEntity? {
-        guard let serviceID = id else { return nil }
-        let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: #Predicate { $0.id == serviceID })
-        return try? modelContext.fetch(descriptor).first
     }
     
     // MARK: - Address Handling
@@ -320,6 +410,19 @@ class NewSessionViewModel: ObservableObject {
         formModel.poBox = address.poBox
         // Note: AddressData no longer has coordinate property
         // Coordinates would need to be set separately if needed
+    }
+    
+    private func populateFormFromAddress(_ address: Address) {
+        formModel.unitNumber = address.unitNumber
+        formModel.streetNumber = address.streetNumber
+        formModel.streetName = address.streetName
+        formModel.suburb = address.suburb
+        formModel.state = address.state
+        formModel.postcode = address.postcode
+        formModel.country = address.country
+        formModel.poBox = address.poBox
+        formModel.sessionLatitude = address.latitude
+        formModel.sessionLongitude = address.longitude
     }
 }
 

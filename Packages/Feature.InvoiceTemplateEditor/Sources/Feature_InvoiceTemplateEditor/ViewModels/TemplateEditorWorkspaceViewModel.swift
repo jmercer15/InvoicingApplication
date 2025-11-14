@@ -2,7 +2,10 @@ import SwiftUI
 
 @MainActor
 public final class TemplateEditorWorkspaceViewModel: ObservableObject {
-    public let editorViewModel = InvoiceTemplateEditorViewModel()
+    // MARK: - Dependencies
+    private let templateManager: TemplateManager
+    
+    public let editorViewModel: InvoiceTemplateEditorViewModel
 
     @Published var templates: [TemplateItem] = []
     @Published var isLoadingTemplates = false
@@ -24,7 +27,9 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
 
     private var hasLoadedTemplates = false
 
-    public init() {
+    public init(templateManager: TemplateManager, editorViewModel: InvoiceTemplateEditorViewModel) {
+        self.templateManager = templateManager
+        self.editorViewModel = editorViewModel
         refreshMarginStrings()
     }
 
@@ -37,8 +42,7 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            let manager = await MainActor.run { TemplateManager.shared }
-            let metadataList = await manager.browseTemplates()
+            let metadataList = await templateManager.browseTemplates()
 
             await MainActor.run {
                 let items = metadataList
@@ -163,8 +167,7 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
         defer { isOpeningTemplate = false }
 
         if let metadata = template.metadata {
-            let manager = await MainActor.run { TemplateManager.shared }
-            guard let templateData = await manager.loadTemplate(metadata: metadata) else {
+            guard let templateData = await templateManager.loadTemplate(metadata: metadata) else {
                 templateLoadError = "Unable to load template \"\(template.name)\"."
                 return false
             }
@@ -238,8 +241,7 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
 
     func deleteTemplate(_ template: TemplateItem) async -> Bool {
         guard let metadata = template.metadata else { return false }
-        let manager = await MainActor.run { TemplateManager.shared }
-        let success = await manager.deleteTemplate(metadata: metadata)
+        let success = await templateManager.deleteTemplate(metadata: metadata)
 
         if success {
             templates.removeAll { $0.id == template.id }
@@ -253,15 +255,14 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
 
     func duplicateTemplate(_ template: TemplateItem) async -> TemplateItem? {
         guard let metadata = template.metadata else { return nil }
-        let manager = await MainActor.run { TemplateManager.shared }
-        guard let templateData = await manager.loadTemplate(metadata: metadata) else { return nil }
+        guard let templateData = await templateManager.loadTemplate(metadata: metadata) else { return nil }
 
         let duplicateName = makeUniqueTemplateName(basedOn: template.name)
 
         let documentCopy = InvoiceDocument()
         templateData.document.apply(to: documentCopy)
 
-        let savedMetadata = await manager.saveTemplate(
+        let savedMetadata = await templateManager.saveTemplate(
             document: documentCopy,
             name: duplicateName,
             description: templateData.metadata.description,
@@ -290,14 +291,13 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
         tags: [String]
     ) async -> TemplateItem? {
         guard let metadata = template.metadata else { return nil }
-        let manager = await MainActor.run { TemplateManager.shared }
-        guard let templateData = await manager.loadTemplate(metadata: metadata) else { return nil }
+        guard let templateData = await templateManager.loadTemplate(metadata: metadata) else { return nil }
 
         let newName = makeUniqueTemplateName(basedOn: name, excluding: template.id)
         let documentCopy = InvoiceDocument()
         templateData.document.apply(to: documentCopy)
 
-        let updatedMetadata = await manager.saveTemplate(
+        let updatedMetadata = await templateManager.saveTemplate(
             document: documentCopy,
             name: newName,
             description: description,

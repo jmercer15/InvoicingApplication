@@ -25,59 +25,139 @@ private struct GridWidthPreferenceKey: PreferenceKey {
 
 /// Custom alignment picker using a 3x3 grid of buttons
 struct AlignmentGridPicker: View {
+    let label: String
     @Binding var horizontalAlignment: TextAlignment
     @Binding var verticalAlignment: VerticalAlignment
     
     var body: some View {
-        Grid(horizontalSpacing: 1, verticalSpacing: 1) {
-            GridRow {
-                alignmentButton(horizontal: .leading, vertical: .top)
-                alignmentButton(horizontal: .center, vertical: .top)
-                alignmentButton(horizontal: .trailing, vertical: .top)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(Color(NSColor.secondaryLabelColor))
             
-            GridRow {
-                alignmentButton(horizontal: .leading, vertical: .center)
-                alignmentButton(horizontal: .center, vertical: .center)
-                alignmentButton(horizontal: .trailing, vertical: .center)
+            Grid(horizontalSpacing: 1, verticalSpacing: 1) {
+                GridRow {
+                    alignmentButton(horizontal: .leading, vertical: .top)
+                    alignmentButton(horizontal: .center, vertical: .top)
+                    alignmentButton(horizontal: .trailing, vertical: .top)
+                }
+                
+                GridRow {
+                    alignmentButton(horizontal: .leading, vertical: .center)
+                    alignmentButton(horizontal: .center, vertical: .center)
+                    alignmentButton(horizontal: .trailing, vertical: .center)
+                }
+                
+                GridRow {
+                    alignmentButton(horizontal: .leading, vertical: .bottom)
+                    alignmentButton(horizontal: .center, vertical: .bottom)
+                    alignmentButton(horizontal: .trailing, vertical: .bottom)
+                }
             }
-            
-            GridRow {
-                alignmentButton(horizontal: .leading, vertical: .bottom)
-                alignmentButton(horizontal: .center, vertical: .bottom)
-                alignmentButton(horizontal: .trailing, vertical: .bottom)
-            }
+            .padding(1)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            )
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color(.systemGray))
-        )
     }
     
     private func alignmentButton(horizontal: TextAlignment, vertical: VerticalAlignment) -> some View {
         let isSelected = horizontalAlignment == horizontal && verticalAlignment == vertical
         
-        return Button(action: {
-            horizontalAlignment = horizontal
-            verticalAlignment = vertical
-        }) {
-            Image(systemName: isSelected ? "circle.fill" : "circle")
-                .font(.system(size: 8, weight: .medium))
-                .foregroundColor(isSelected ? .white : .primary)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .frame(width: 16, height: 16)
-        .background(
-            RoundedRectangle(cornerRadius: 2)
-                .fill(isSelected ? Color.blue : Color(.systemGray))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 0.5)
-                )
+        // Get the appropriate arrow icon based on alignment
+        let iconName = alignmentIconName(horizontal: horizontal, vertical: vertical)
+        
+        return AlignmentButton(
+            iconName: iconName,
+            isSelected: isSelected,
+            action: {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    horizontalAlignment = horizontal
+                    verticalAlignment = vertical
+                }
+            }
         )
-        .scaleEffect(isSelected ? 1.05 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: isSelected)
+    }
+    
+    private struct AlignmentButton: View {
+        let iconName: String
+        let isSelected: Bool
+        let action: () -> Void
+        
+        @State private var isHovered = false
+        
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: iconName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isSelected ? .white : Color(NSColor.labelColor))
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(AlignmentButtonStyle(isSelected: isSelected, isHovered: isHovered))
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+            .pointerStyle(.link)
+            .onHover { hovering in
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private struct AlignmentButtonStyle: ButtonStyle {
+        let isSelected: Bool
+        let isHovered: Bool
+        
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(
+                            isSelected ? Color.blue :
+                            configuration.isPressed ? Color(.systemGray).opacity(0.5) :
+                            isHovered ? Color(.systemGray).opacity(0.35) :
+                            Color(.systemGray).opacity(0.2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                        )
+                )
+                .scaleEffect(
+                    isSelected ? 1.05 :
+                    configuration.isPressed ? 0.95 :
+                    isHovered ? 1.02 : 1.0
+                )
+                .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+                .animation(.easeInOut(duration: 0.1), value: isHovered)
+                .animation(.easeInOut(duration: 0.15), value: isSelected)
+        }
+    }
+    
+    private func alignmentIconName(horizontal: TextAlignment, vertical: VerticalAlignment) -> String {
+        switch (horizontal, vertical) {
+        case (.leading, .top):
+            return "arrow.up.left"
+        case (.center, .top):
+            return "arrow.up"
+        case (.trailing, .top):
+            return "arrow.up.right"
+        case (.leading, .center):
+            return "arrow.left"
+        case (.center, .center):
+            return "arrow.up.and.down.and.arrow.left.and.right"
+        case (.trailing, .center):
+            return "arrow.right"
+        case (.leading, .bottom):
+            return "arrow.down.left"
+        case (.center, .bottom):
+            return "arrow.down"
+        case (.trailing, .bottom):
+            return "arrow.down.right"
+        default:
+            return "arrow.up.and.down.and.arrow.left.and.right"
+        }
     }
 }
 
@@ -188,12 +268,19 @@ public struct ColumnWidthConfig {
 // MARK: - DocumentGridView
 
 /// Generic document grid view with perfect gridlines and custom column widths
+struct TableBorderOptions {
+    var showHeaderBorders: Bool = true
+    var showRowBorders: Bool = true
+    var showCellBorders: Bool = true
+}
+
 public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     private let data: [[Item]]
     private let cellContent: (DocumentTableItem) -> CellContent
     private let borderColor: Color
     private let borderWidth: CGFloat
     private let columnConfigs: [ColumnWidthConfig]
+    private let borderOptions: TableBorderOptions?
     private let defaultAutoColumnWidth: CGFloat = 80
     
     /// Tracks the measured width for each column (for auto-sizing)
@@ -205,6 +292,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
         borderColor: Color = .gray,
         borderWidth: CGFloat = 1.0,
         columnConfigs: [ColumnWidthConfig] = [],
+        borderOptions: TableBorderOptions? = nil,
         @ViewBuilder cellContent: @escaping (DocumentTableItem) -> CellContent
     ) {
         self.data = data
@@ -217,6 +305,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
         } else {
             self.columnConfigs = columnConfigs
         }
+        self.borderOptions = borderOptions
     }
     
     public var body: some View {
@@ -388,7 +477,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                     // Check each column position for borders
                     ForEach(0..<columnWidths.count, id: \.self) { colIndex in
                         let cellAboveEmpty = isCellAboveEmpty(rowIndex: rowIndex, cellIndex: colIndex)
-                        let shouldShowBorder = !cellAboveEmpty
+                        let shouldShowBorder = !cellAboveEmpty && shouldDrawHorizontalBorder(beforeRow: rowIndex)
 
                         Rectangle()
                             .fill(shouldShowBorder ? borderColor : Color.clear)
@@ -426,7 +515,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                 // Check each column position for bottom borders
                 ForEach(0..<columnWidths.count, id: \.self) { colIndex in
                     let finalCellEmpty = isBottomCellEmpty(columnIndex: colIndex)
-                    let shouldShowBorder = !finalCellEmpty
+                    let shouldShowBorder = !finalCellEmpty && shouldDrawBottomBorder()
 
                     Rectangle()
                         .fill(shouldShowBorder ? borderColor : Color.clear)
@@ -439,16 +528,19 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     
     private func verticalBorderForCell(_ item: DocumentTableItem, rowIndex: Int, cellIndex: Int, rowData: [DocumentTableItem]) -> some View {
         let isCurrentCellEmpty = item.isTransparent
+        let showCellBorders = borderOptions?.showCellBorders ?? true
         let edges = getBorderEdgesForCell(
                         rowIndex: rowIndex,
                         cellIndex: cellIndex,
                         totalRows: data.count,
                         totalCells: rowData.count
                     )
+        let isFirstCell = cellIndex == 0
+        let isLastCell = cellIndex == rowData.count - 1
 
         return ZStack {
             // Leading border
-            if edges.contains(.leading) {
+            if edges.contains(.leading) && (showCellBorders || isFirstCell) {
                 let leadingColor = isCurrentCellEmpty ? Color.clear : borderColor
                 Rectangle()
                     .fill(leadingColor)
@@ -457,7 +549,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
             }
 
             // Trailing border
-            if edges.contains(.trailing) {
+            if edges.contains(.trailing) && (showCellBorders || isLastCell) {
                 Rectangle()
                     .fill(borderColor)
                     .frame(width: borderWidth)
@@ -467,17 +559,16 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     }
 
     private func isCellAboveEmpty(rowIndex: Int, cellIndex: Int) -> Bool {
-        // Check if there's a cell above and if it's empty
         guard rowIndex > 0 && rowIndex < data.count else { return false }
         let rowAbove = data[rowIndex - 1]
         guard cellIndex < rowAbove.count else { return false }
 
         if let cellAbove = rowAbove[cellIndex] as? DocumentTableItem {
             return cellAbove.isTransparent
-            }
-            return false
         }
-        
+
+        return false
+    }
     private func getBorderEdgesForCell(rowIndex: Int, cellIndex: Int, totalRows: Int, totalCells: Int) -> [Edge] {
         var edges: [Edge] = [.leading] // Every cell gets left border
         
@@ -488,5 +579,15 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
         
         return edges
     }
-}
 
+    private func shouldDrawHorizontalBorder(beforeRow rowIndex: Int) -> Bool {
+        if rowIndex == 0 {
+            return borderOptions?.showHeaderBorders ?? true
+        }
+        return borderOptions?.showRowBorders ?? true
+    }
+
+    private func shouldDrawBottomBorder() -> Bool {
+        borderOptions?.showRowBorders ?? true
+    }
+}

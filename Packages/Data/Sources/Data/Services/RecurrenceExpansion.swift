@@ -1,5 +1,6 @@
 import Foundation
 import EventKit
+import Core
 
 public struct RecurrenceExpansion {
     public struct Instance {
@@ -8,8 +9,48 @@ public struct RecurrenceExpansion {
     }
 
     /// Expands a recurring session into all instances within the given date range.
+    /// Overload for SessionEntity (legacy, kept for backward compatibility)
     public static func expandInstances(
         for templateSession: SessionEntity,
+        rule: EKRecurrenceRule,
+        masterStartTime: Date,
+        masterEndTime: Date,
+        rangeStart: Date,
+        rangeEnd: Date
+    ) -> [Instance] {
+        return expandInstances(
+            isAllDay: templateSession.isAllDay,
+            rule: rule,
+            masterStartTime: masterStartTime,
+            masterEndTime: masterEndTime,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd
+        )
+    }
+    
+    /// Expands a recurring session into all instances within the given date range.
+    /// Overload for Session domain model
+    public static func expandInstances(
+        for templateSession: Session,
+        rule: EKRecurrenceRule,
+        masterStartTime: Date,
+        masterEndTime: Date,
+        rangeStart: Date,
+        rangeEnd: Date
+    ) -> [Instance] {
+        return expandInstances(
+            isAllDay: templateSession.isAllDay,
+            rule: rule,
+            masterStartTime: masterStartTime,
+            masterEndTime: masterEndTime,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd
+        )
+    }
+    
+    /// Internal implementation that only needs isAllDay
+    private static func expandInstances(
+        isAllDay: Bool,
         rule: EKRecurrenceRule,
         masterStartTime: Date,
         masterEndTime: Date,
@@ -31,10 +72,10 @@ public struct RecurrenceExpansion {
             if let ruleEndCount = rule.recurrenceEnd?.occurrenceCount, ruleEndCount > 0 && occurrenceCountSinceMaster >= ruleEndCount {
                 break
             }
-            if matchesRule(date: iterationDate, rule: rule, masterStartTime: masterStartTime, calendar: calendar, templateIsAllDay: templateSession.isAllDay) {
+            if matchesRule(date: iterationDate, rule: rule, masterStartTime: masterStartTime, calendar: calendar, templateIsAllDay: isAllDay) {
                 let instanceStartDate = iterationDate
                 var finalInstanceStartDate = instanceStartDate
-                if !templateSession.isAllDay {
+                if !isAllDay {
                     let masterTimeComponents = calendar.dateComponents([.hour, .minute, .second], from: masterStartTime)
                     finalInstanceStartDate = calendar.date(bySettingHour: masterTimeComponents.hour ?? 0,
                                                            minute: masterTimeComponents.minute ?? 0,

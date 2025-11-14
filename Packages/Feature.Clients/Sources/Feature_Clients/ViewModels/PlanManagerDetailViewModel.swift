@@ -2,17 +2,23 @@ import SwiftUI
 import AppKit
 import MapKit
 import SwiftData
+import Core
 import Data
 import SharedUI
 
-class PlanManagerDetailViewModel: ObservableObject {
+@MainActor
+public class PlanManagerDetailViewModel: ObservableObject {
     
     // MARK: - Core Dependencies
+    private let planManagersRepository: PlanManagerRepository
+    private let clientsRepository: ClientsRepository
+    private let invoicesRepository: InvoicesRepository
+    // ModelContext still needed for address geocoding
     let modelContext: ModelContext
     var dismiss: () -> Void = {}
 
     // MARK: - Published Properties
-    @Published var planManager: PlanManagerEntity
+    @Published private(set) var planManager: PlanManager
     let isCreatingNew: Bool
 
     // Editable Plan Manager Properties
@@ -30,6 +36,7 @@ class PlanManagerDetailViewModel: ObservableObject {
     @Published var editableStreetNumber: String = ""
     @Published var editableStreetName: String = ""
     @Published var editableSuburb: String = ""
+    @Published var editableCity: String = ""
     @Published var editablePostcode: String = ""
     @Published var editableState: String = ""
     @Published var editableCountry: String = ""
@@ -37,11 +44,11 @@ class PlanManagerDetailViewModel: ObservableObject {
     @Published var addressSearchText: String = ""
     @Published var selectedSearchAddress: AddressData?
 
-    // Managed Clients
-    @Published var managedClients: [ClientEntity] = []
+    // Managed Clients (Domain Models)
+    @Published var managedClients: [Client] = []
 
-    // Invoices
-    @Published var relatedInvoices: [InvoiceEntity] = []
+    // Invoices (Domain Models)
+    @Published var relatedInvoices: [Invoice] = []
 
     // UI State
     @Published var isEditingAddress: Bool = false
@@ -51,26 +58,38 @@ class PlanManagerDetailViewModel: ObservableObject {
     @Published var alertMessage: String = ""
 
     // MARK: - Initializer
-    init(planManager: PlanManagerEntity, context: ModelContext, isCreating: Bool) {
+    public init(
+        planManager: PlanManager,
+        planManagersRepository: PlanManagerRepository,
+        clientsRepository: ClientsRepository,
+        invoicesRepository: InvoicesRepository,
+        modelContext: ModelContext,
+        isCreating: Bool
+    ) {
         self.planManager = planManager
-        self.modelContext = context
+        self.planManagersRepository = planManagersRepository
+        self.clientsRepository = clientsRepository
+        self.invoicesRepository = invoicesRepository
+        self.modelContext = modelContext
         self.isCreatingNew = isCreating
         self.phoneFormatter = PhoneNumberFormatter(initialPhoneNumber: planManager.phone ?? "")
         self.emailValidator = EmailValidator(initialEmail: planManager.email ?? "")
         
-        loadAllDetails()
-        fetchRelatedInvoices()
+        Task {
+            await loadAllDetails()
+            await fetchRelatedInvoices()
+        }
     }
     
     // MARK: - Data Loading
-    func loadAllDetails() {
-        editableBusinessName = planManager.name ?? ""
+    func loadAllDetails() async {
+        editableBusinessName = planManager.name
         editableAbn = planManager.abn
         phoneFormatter.phoneNumber = planManager.phone ?? ""
         emailValidator.email = planManager.email ?? ""
         loadAddressDetails()
-        fetchManagedClients()
-        fetchRelatedInvoices()
+        await fetchManagedClients()
+        await fetchRelatedInvoices()
     }
 
     func loadAddressDetails() {
@@ -79,170 +98,239 @@ class PlanManagerDetailViewModel: ObservableObject {
             editableStreetNumber = address.streetNumber
             editableStreetName = address.streetName
             editableSuburb = address.suburb
+            editableCity = address.city
             editablePostcode = address.postcode
             editableState = address.state
-            editableCountry = address.country
+            editableCountry = address.country.isEmpty ? "Australia" : address.country
             editablePoBox = address.poBox
         } else {
-            editableUnitNumber = ""; editableStreetNumber = ""; editableStreetName = ""
-            editableSuburb = ""; editablePostcode = ""; editableState = ""
-            editableCountry = "Australia"; editablePoBox = ""
+            editableUnitNumber = ""
+            editableStreetNumber = ""
+            editableStreetName = ""
+            editableSuburb = ""
+            editableCity = ""
+            editablePostcode = ""
+            editableState = ""
+            editableCountry = "Australia"
+            editablePoBox = ""
         }
     }
     
-    private func fetchManagedClients() {
-        let descriptor = FetchDescriptor<ClientEntity>(
-            sortBy: [SortDescriptor(\.fullName)]
-        )
+    private func fetchManagedClients() async {
         do {
-            let allClients = try modelContext.fetch(descriptor)
-            self.managedClients = allClients.filter { $0.planManager?.id == planManager.id }
+            managedClients = try await clientsRepository.fetch(byPlanManagerId: planManager.id)
         } catch {
-            print("Error fetching managed clients for \(planManager.name ?? "Plan Manager"): \(error)")
-            self.managedClients = []
+            print("❌ [PlanManagerDetailViewModel] Error fetching managed clients: \(error)")
+            managedClients = []
         }
     }
     
-    private func fetchRelatedInvoices() {
-        let allInvoices: [InvoiceEntity] = managedClients
-            .flatMap { client in
-                client.invoices
+    private func fetchRelatedInvoices() async {
+        do {
+            // Fetch invoices from managed clients
+            var clientInvoices: [Invoice] = []
+            for client in managedClients {
+                let clientInvoiceList = try await invoicesRepository.fetch(byClientId: client.id)
+                clientInvoices.append(contentsOf: clientInvoiceList)
             }
-            .compactMap { invoice in
-                invoice
+            
+            // Remove duplicates by ID
+            let uniqueInvoices = Array(Set(clientInvoices))
+            relatedInvoices = uniqueInvoices.sorted {
+                $0.issueDate > $1.issueDate
             }
-        
-        relatedInvoices = allInvoices.sorted { (invoice1: InvoiceEntity, invoice2: InvoiceEntity) in
-            invoice1.issueDate > invoice2.issueDate
+        } catch {
+            print("❌ [PlanManagerDetailViewModel] Error fetching related invoices: \(error)")
+            relatedInvoices = []
         }
     }
     
     // MARK: - Save & Update Logic
-    @discardableResult
-    func saveContext() -> Bool {
-        do {
-            try modelContext.save()
-            return true
-        } catch {
-            let nsError = error as NSError
-            alertTitle = "Save Error"
-            alertMessage = "Could not save changes: \(nsError.localizedDescription)"
-            showAlert = true
-            return false
-        }
-    }
     
     func updateAndSavePlanManager() {
-        guard !isCreatingNew else { return }
-
-        let trimmedBusinessName = editableBusinessName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedBusinessName.isEmpty {
-            businessNameError = "Business Name cannot be empty."; return
-        } else {
-            businessNameError = nil; planManager.name = trimmedBusinessName
+        Task {
+            await savePlanManagerUpdates()
         }
-        
-        if isValidABN(editableAbn) {
-            abnError = nil; planManager.abn = editableAbn
-        } else {
-            abnError = "Invalid ABN. Must be 11 digits."; return
-        }
-        
-        if emailValidator.isValid { planManager.email = emailValidator.email }
-        if phoneFormatter.isValid { planManager.phone = phoneFormatter.phoneNumber }
-
-        _ = saveContext()
     }
     
     func createPlanManagerAndDismiss() {
         let trimmedBusinessName = editableBusinessName.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedBusinessName.isEmpty {
-            businessNameError = "Business Name cannot be empty."; return
+            businessNameError = "Business Name cannot be empty."
+            return
         }
         
         if !isValidABN(editableAbn) {
-            abnError = "Invalid ABN. Must be 11 digits."; showAlert = true; alertTitle="Validation Error"; alertMessage=abnError!; return
+            abnError = "Invalid ABN. Must be 11 digits."
+            showAlert = true
+            alertTitle = "Validation Error"
+            alertMessage = abnError ?? "Invalid ABN"
+            return
         }
         
         if !emailValidator.email.isEmpty && !emailValidator.isValid {
-            alertTitle = "Validation Error"; alertMessage = "Invalid email address."; showAlert = true; return
+            alertTitle = "Validation Error"
+            alertMessage = "Invalid email address."
+            showAlert = true
+            return
         }
-
-            planManager.name = trimmedBusinessName
-        planManager.abn = editableAbn
-        planManager.email = emailValidator.email.isEmpty ? nil : emailValidator.email
-        planManager.phone = phoneFormatter.phoneNumber.isEmpty ? nil : phoneFormatter.phoneNumber
         
-        commitAddressChanges(autosave: false)
-        
-        modelContext.insert(planManager)
-        if saveContext() {
+        Task {
+            await createNewPlanManager()
             dismiss()
+        }
+    }
+    
+    private func savePlanManagerUpdates() async {
+        let trimmedBusinessName = editableBusinessName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBusinessName.isEmpty else {
+            businessNameError = "Business Name cannot be empty."
+            return
+        }
+        
+        guard isValidABN(editableAbn) else {
+            abnError = "Invalid ABN. Must be 11 digits."
+            return
+        }
+        
+        // Create address from editable fields if address is being edited
+        let addressToSave: Address?
+        if isEditingAddress || !editableStreetName.isEmpty || !editableStreetNumber.isEmpty {
+            let addressId = planManager.address?.id ?? UUID()
+            addressToSave = Address(
+                id: addressId,
+                unitNumber: editableUnitNumber,
+                streetNumber: editableStreetNumber,
+                streetName: editableStreetName,
+                suburb: editableSuburb,
+                city: editableCity,
+                state: editableState,
+                postcode: editablePostcode,
+                country: editableCountry.isEmpty ? "Australia" : editableCountry,
+                poBox: editablePoBox,
+                latitude: planManager.address?.latitude ?? 0.0,
+                longitude: planManager.address?.longitude ?? 0.0
+            )
+        } else {
+            addressToSave = planManager.address
+        }
+        
+        // Create updated plan manager domain model
+        let updatedPlanManager = PlanManager(
+            id: planManager.id,
+            name: trimmedBusinessName,
+            email: emailValidator.isValid ? emailValidator.email : planManager.email,
+            phone: phoneFormatter.isValid ? phoneFormatter.phoneNumber : planManager.phone,
+            address: addressToSave,
+            abn: editableAbn
+        )
+        
+        do {
+            let savedPlanManager = try await planManagersRepository.update(updatedPlanManager)
+            planManager = savedPlanManager
+            await fetchManagedClients()
+            await fetchRelatedInvoices()
+        } catch {
+            let nsError = error as NSError
+            alertTitle = "Save Error"
+            alertMessage = "Could not save changes: \(nsError.localizedDescription)"
+            showAlert = true
+        }
+    }
+    
+    private func createNewPlanManager() async {
+        // Create address from editable fields if any address data exists
+        let address: Address?
+        if !editableStreetName.isEmpty || !editableStreetNumber.isEmpty || !editableSuburb.isEmpty || !editableCity.isEmpty {
+            address = Address(
+                id: UUID(),
+                unitNumber: editableUnitNumber,
+                streetNumber: editableStreetNumber,
+                streetName: editableStreetName,
+                suburb: editableSuburb,
+                city: editableCity,
+                state: editableState,
+                postcode: editablePostcode,
+                country: editableCountry.isEmpty ? "Australia" : editableCountry,
+                poBox: editablePoBox,
+                latitude: 0.0,
+                longitude: 0.0
+            )
+        } else {
+            address = nil
+        }
+        
+        // Create new plan manager domain model
+        let newPlanManager = PlanManager(
+            id: UUID(),
+            name: editableBusinessName.trimmingCharacters(in: .whitespacesAndNewlines),
+            email: emailValidator.email.isEmpty ? nil : emailValidator.email,
+            phone: phoneFormatter.phoneNumber.isEmpty ? nil : phoneFormatter.phoneNumber,
+            address: address,
+            abn: editableAbn
+        )
+        
+        do {
+            let savedPlanManager = try await planManagersRepository.create(newPlanManager)
+            planManager = savedPlanManager
+        } catch {
+            let nsError = error as NSError
+            alertTitle = "Save Error"
+            alertMessage = "Could not save plan manager: \(nsError.localizedDescription)"
+            showAlert = true
         }
     }
     
     // MARK: - Address Logic
     func commitAddressChanges(autosave: Bool = true) {
-        if planManager.address == nil {
-             if editableUnitNumber.isEmpty && editableStreetNumber.isEmpty && editableStreetName.isEmpty &&
-                editableSuburb.isEmpty && editablePostcode.isEmpty && editableState.isEmpty && editableCountry.isEmpty && editablePoBox.isEmpty {
-                 isEditingAddress = false
-                 return
-             }
-             planManager.address = AddressEntity()
-         }
+        // Create or update Address domain model from editable fields
+        let addressId = planManager.address?.id ?? UUID()
+        let updatedAddress = Address(
+            id: addressId,
+            unitNumber: editableUnitNumber,
+            streetNumber: editableStreetNumber,
+            streetName: editableStreetName,
+            suburb: editableSuburb,
+            city: editableCity,
+            state: editableState,
+            postcode: editablePostcode,
+            country: editableCountry.isEmpty ? "Australia" : editableCountry,
+            poBox: editablePoBox,
+            latitude: planManager.address?.latitude ?? 0.0,
+            longitude: planManager.address?.longitude ?? 0.0
+        )
         
-        planManager.address?.unitNumber = editableUnitNumber
-        planManager.address?.streetNumber = editableStreetNumber
-        planManager.address?.streetName = editableStreetName
-        planManager.address?.suburb = editableSuburb
-        planManager.address?.postcode = editablePostcode
-        planManager.address?.state = editableState
-        planManager.address?.country = editableCountry
-        planManager.address?.poBox = editablePoBox
+        // Update plan manager with new address
+        let updatedPlanManager = PlanManager(
+            id: planManager.id,
+            name: planManager.name,
+            email: planManager.email,
+            phone: planManager.phone,
+            address: updatedAddress,
+            abn: planManager.abn
+        )
         
+        planManager = updatedPlanManager
         isEditingAddress = false
         
-        if let address = planManager.address {
-            let container = modelContext.container
-            DispatchQueue.main.async {
-                Task {
-                    // Create a background context to avoid data races
-                    let backgroundContext = ModelContext(container)
-                    await GeocodingService.shared.geocodeAndSave(addressEntity: address, in: backgroundContext)
-                }
-            }
-        }
-        
         if autosave && !isCreatingNew {
-            _ = saveContext()
+            Task {
+                await savePlanManagerUpdates()
+            }
         }
     }
     
-    func formattedAddressString(_ address: AddressEntity) -> String {
-        var components: [String] = []
-        if !address.poBox.isEmpty { components.append("PO Box \(address.poBox)") }
-        else {
-            if !address.unitNumber.isEmpty { components.append("Unit \(address.unitNumber)") }
-            var streetLine = ""
-            if !address.streetNumber.isEmpty { streetLine += address.streetNumber }
-            if !address.streetName.isEmpty { streetLine += streetLine.isEmpty ? address.streetName : " \(address.streetName)" }
-            if !streetLine.isEmpty { components.append(streetLine) }
-        }
-        if !address.suburb.isEmpty { components.append(address.suburb) }
-        var statePostcodeLine = ""
-        if !address.state.isEmpty { statePostcodeLine += address.state }
-        if !address.postcode.isEmpty { statePostcodeLine += statePostcodeLine.isEmpty ? address.postcode : " \(address.postcode)" }
-        if !statePostcodeLine.isEmpty { components.append(statePostcodeLine) }
-        if !address.country.isEmpty { components.append(address.country) }
-        return components.joined(separator: ", ")
+    func formattedAddressString(from address: Address) -> String {
+        return address.fullFormattedAddress
     }
     
     func openInMaps() {
         guard let address = planManager.address else { return }
-        let query = formattedAddressString(address)
+        let query = address.fullFormattedAddress
         if let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: "maps://?q=\(encodedQuery)") { NSWorkspace.shared.open(url) }
+           let url = URL(string: "maps://?q=\(encodedQuery)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - Plan Manager Actions
@@ -251,9 +339,16 @@ class PlanManagerDetailViewModel: ObservableObject {
     }
     
     func deletePlanManagerAndDismiss() {
-        modelContext.delete(planManager)
-        if saveContext() {
-            dismiss()
+        Task {
+            do {
+                try await planManagersRepository.delete(id: planManager.id)
+                dismiss()
+            } catch {
+                let nsError = error as NSError
+                alertTitle = "Delete Error"
+                alertMessage = "Could not delete plan manager: \(nsError.localizedDescription)"
+                showAlert = true
+            }
         }
     }
     

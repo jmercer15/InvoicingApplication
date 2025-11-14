@@ -741,7 +741,7 @@ struct DocumentRenderer: View {
             }
         }
         .frame(width: document.pageSize.width, height: document.pageSize.height)
-        .background(Color("White", bundle: .sharedUI))
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
@@ -751,7 +751,7 @@ struct ComponentView: View {
     var body: some View {
         // SwiftUI component rendering for preview
                     Rectangle()
-            .fill(Color("Gray30", bundle: .sharedUI))
+            .fill(Color(NSColor.systemGray))
             .frame(width: component.size.width, height: component.size.height)
             .position(component.position)
     }

@@ -3,6 +3,7 @@ import PDFKit
 import UniformTypeIdentifiers
 import SwiftData
 import Data
+import Core
 
 // MARK: - Date Formatters
 public extension DateFormatter {
@@ -87,7 +88,8 @@ public extension Date {
 
 // MARK: - Invoice Numbering Service
 public struct InvoiceNumberingService {
-    public static func nextNumber(for client: ClientEntity?, context: ModelContext) -> String {
+    /// Generate next invoice number using domain model (preferred)
+    public static func nextNumber(for client: Client?, context: ModelContext) -> String {
         if let client = client {
             let nameParts = client.fullName.split(separator: " ").map { String($0) }
             if let first = nameParts.first, let last = nameParts.last, !first.isEmpty, !last.isEmpty {
@@ -115,5 +117,13 @@ public struct InvoiceNumberingService {
         }
         let next = (suffixes.max() ?? 0) + 1
         return String(format: "INV-%04d", next)
+    }
+    
+    /// Legacy method for ClientEntity (kept for backward compatibility)
+    @available(*, deprecated, message: "Use nextNumber(for:context:) with Client domain model instead")
+    public static func nextNumber(for client: ClientEntity?, context: ModelContext) -> String {
+        // Use public helper function to convert entity to domain model
+        let clientDomain: Client? = client.map { clientFromEntity($0) }
+        return nextNumber(for: clientDomain, context: context)
     }
 }

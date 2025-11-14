@@ -13,9 +13,13 @@ struct ContentRectangleView: View {
     let components: [InvoiceComponent]
     let containerSize: CGSize
     let sectionLabel: String?
+    let contentAlignment: SectionSplit.LeafAlignment
+    let sectionIndex: Int?
+    let childIndex: Int?
     let onAddComponent: (InvoiceComponent) -> Void
     let onSplit: (SectionSplit.SplitDirection, Int, Int?, Int?) -> Void
     let onSetLabel: ((String?) -> Void)?
+    let onSetAlignment: ((SectionSplit.LeafAlignment) -> Void)?
     let onComponentSelect: (InvoiceComponent) -> Void
     
     @EnvironmentObject private var document: InvoiceDocument
@@ -31,10 +35,10 @@ struct ContentRectangleView: View {
     
     var body: some View {
         ZStack {
-            // Background rectangle with drop destination
+            // Background rectangle with drop destination, constrained to container size
             Rectangle()
                 .fill(isHovered ? Color.accentColor.opacity(0.15) : Color.canvasBackground)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: containerSize.width, height: containerSize.height)
                 .contentShape(Rectangle())
                 .animation(.easeInOut(duration: 0.2), value: isHovered)
                 .onDrop(of: [UTType.invoiceComponent], isTargeted: .constant(false)) { providers, location in
@@ -46,6 +50,64 @@ struct ContentRectangleView: View {
                     }
                 }
                 .contextMenu {
+                    // Alignment submenu
+                    if onSetAlignment != nil {
+                        Menu("Content Alignment") {
+                            // Horizontal alignment
+                            Menu("Horizontal") {
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.horizontal = .leading
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Leading", systemImage: contentAlignment.horizontal == .leading ? "checkmark" : "")
+                                }
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.horizontal = .center
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Center", systemImage: contentAlignment.horizontal == .center ? "checkmark" : "")
+                                }
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.horizontal = .trailing
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Trailing", systemImage: contentAlignment.horizontal == .trailing ? "checkmark" : "")
+                                }
+                            }
+                            
+                            // Vertical alignment
+                            Menu("Vertical") {
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.vertical = .top
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Top", systemImage: contentAlignment.vertical == .top ? "checkmark" : "")
+                                }
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.vertical = .center
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Center", systemImage: contentAlignment.vertical == .center ? "checkmark" : "")
+                                }
+                                Button(action: {
+                                    var newAlignment = contentAlignment
+                                    newAlignment.vertical = .bottom
+                                    onSetAlignment?(newAlignment)
+                                }) {
+                                    Label("Bottom", systemImage: contentAlignment.vertical == .bottom ? "checkmark" : "")
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                    }
+                    
+                    // Split options
                     ForEach(SectionSplit.commonSplits, id: \.id) { splitOption in
                         Button(action: {
                             selectedSplitDirection = splitOption.direction
@@ -92,26 +154,67 @@ struct ContentRectangleView: View {
                 .padding(8)
             }
             
-            // Render components within this section using natural layout
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(components) { component in
+            // Render components within this section using configured alignment
+            // Calculate available size accounting for padding (8 on each side = 16 total)
+            let availableWidth = max(0, containerSize.width - 16)
+            let availableHeight = max(0, containerSize.height - 16)
+            
+            // Use conditional layout: single component without VStack for perfect alignment,
+            // multiple components with VStack for proper spacing
+            Group {
+                if components.count == 1, let component = components.first {
+                    // Single component: render directly for perfect alignment
                     SelectableComponentView(
                         component: component,
                         onSelect: { onComponentSelect(component) }
                     )
-                    .frame(width: component.size.width, height: component.size.height)
+                    .frame(
+                        width: min(component.size.width, availableWidth),
+                        height: min(component.size.height, availableHeight)
+                    )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.8)),
                         removal: .scale(scale: 0.8).combined(with: .opacity).animation(.easeInOut(duration: 0.2))
                     ))
-                    .animation(.easeInOut(duration: 0.3), value: components.count)
-                    .onAppear {
-                        print("   🎨 Rendering component: \(component.id) of type \(component.type)")
+                } else {
+                    // Multiple components: use VStack with spacing
+                    VStack(spacing: 8) {
+                        ForEach(components) { component in
+                            SelectableComponentView(
+                                component: component,
+                                onSelect: { onComponentSelect(component) }
+                            )
+                            .frame(
+                                width: min(component.size.width, availableWidth),
+                                height: min(component.size.height, availableHeight)
+                            )
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.8)),
+                                removal: .scale(scale: 0.8).combined(with: .opacity).animation(.easeInOut(duration: 0.2))
+                            ))
+                        }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .animation(.easeInOut(duration: 0.3), value: components.count)
+            .onAppear {
+                if components.count == 1 {
+                    let componentType = components.first?.type.rawValue ?? "unknown"
+                    print("   🎨 Rendering single component: \(components.first?.id ?? UUID()) of type \(componentType)")
+                } else {
+                    print("   🎨 Rendering \(components.count) components")
+                }
+            }
             .padding(8)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: Alignment(
+                    horizontal: contentAlignment.horizontal.swiftUIAlignment,
+                    vertical: contentAlignment.vertical.swiftUIAlignment
+                )
+            )
+            .clipped() // Ensure content doesn't overflow the container
             .onAppear {
                 print("   📺 ContentRectangleView appeared with \(components.count) components")
                 if !components.isEmpty {
@@ -129,16 +232,16 @@ struct ContentRectangleView: View {
             // Processing overlay
             if isProcessingSplit {
                 Rectangle()
-                    .fill(Color.black.opacity(0.3))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .fill(Color(NSColor.shadowColor).opacity(0.3))
+                    .frame(width: containerSize.width, height: containerSize.height)
                     .overlay(
                         VStack(spacing: 12) {
                             ProgressView()
                                 .scaleEffect(1.2)
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: Color(NSColor.labelColor)))
                             Text("Creating Split...")
                                 .font(.caption)
-                                .foregroundColor(.white)
+                                .foregroundColor(Color(NSColor.labelColor))
                         }
                     )
                     .transition(.opacity)
@@ -152,11 +255,11 @@ struct ContentRectangleView: View {
                     HStack {
                         Spacer()
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(Color(NSColor.systemGreen))
                             .font(.title2)
                             .background(
                                 Circle()
-                                    .fill(Color.white)
+                                    .fill(Color(NSColor.windowBackgroundColor))
                                     .frame(width: 32, height: 32)
                             )
                             .shadow(radius: 4)
@@ -175,6 +278,8 @@ struct ContentRectangleView: View {
                 }
             }
         }
+        .frame(width: containerSize.width, height: containerSize.height)
+        .clipped()
         .sheet(isPresented: $showingSplitDialog) {
             SplitConfigurationDialog(
                 direction: $selectedSplitDirection,

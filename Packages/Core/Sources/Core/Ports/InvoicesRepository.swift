@@ -6,7 +6,7 @@ public protocol InvoicesRepository: Sendable {
     func fetchAll() async throws -> [Invoice]
     
     /// Fetch invoices by client ID
-    func fetch(by clientId: UUID) async throws -> [Invoice]
+    func fetch(byClientId clientId: UUID) async throws -> [Invoice]
     
     /// Fetch invoices by status
     func fetch(by status: String) async throws -> [Invoice]
@@ -46,6 +46,9 @@ public protocol InvoicesRepository: Sendable {
     
     /// Remove invoice item
     func removeItem(id: UUID) async throws
+    
+    /// Fetch invoice items for a specific invoice
+    func fetchItems(by invoiceId: UUID) async throws -> [InvoiceItem]
     
     /// Search invoices by query
     func search(query: String) async throws -> [Invoice]

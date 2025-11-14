@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import SwiftData // Import SwiftData
 import MapKit
+import Core
 
 @MainActor
 public class GeocodingService {
@@ -45,6 +46,27 @@ public class GeocodingService {
         }
     }
     
+    /// Geocodes an address string for a Session domain model and updates it with latitude and longitude (domain model version)
+    ///
+    /// - Parameters:
+    ///   - session: The `Session` domain model to update. The `location` property will be used for the lookup.
+    ///   - context: The `ModelContext` to perform the update on.
+    ///   - completion: An optional closure to be executed after the operation is finished.
+    public func geocodeAndSave(session: Session, in context: ModelContext, completion: (() -> Void)? = nil) {
+        guard let location = session.location, !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion?()
+            return
+        }
+        
+        // Fetch entity for update
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
+        guard let sessionEntity = try? context.fetch(descriptor).first else {
+            completion?()
+            return
+        }
+        geocodeAndSave(sessionEntity: sessionEntity, in: context, completion: completion)
+    }
+    
     /// Geocodes an address string for a SessionEntity and updates it with latitude and longitude.
     ///
     /// - Parameters:
@@ -79,7 +101,31 @@ public class GeocodingService {
         }
     }
     
-    /// Bulk geocodes sessions and their related entities to ensure coordinates are available
+    /// Bulk geocodes sessions and their related entities to ensure coordinates are available (domain model version)
+    /// This should be called before running auto-determination services
+    func ensureCoordinatesForSession(_ session: Session, modelContext: ModelContext, completion: @escaping (Bool) -> Void) {
+        print("🌍 [GeocodingService] Starting bulk coordinate check for session: \(session.id.uuidString)")
+        
+        Task {
+            let success = await self.ensureCoordinatesForSession(session, modelContext: modelContext)
+            completion(success)
+        }
+    }
+    
+    /// Async version of ensureCoordinatesForSession (domain model version)
+    func ensureCoordinatesForSession(_ session: Session, modelContext: ModelContext) async -> Bool {
+        print("🌍 [GeocodingService] Starting async bulk coordinate check for session: \(session.id.uuidString)")
+        
+        // Fetch entity for coordinate updates
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
+        guard let sessionEntity = try? modelContext.fetch(descriptor).first else {
+            print("🌍 [GeocodingService] Failed to find SessionEntity for session \(session.id)")
+            return false
+        }
+        return await ensureCoordinatesForSession(sessionEntity, modelContext: modelContext)
+    }
+    
+    /// Bulk geocodes sessions and their related entities to ensure coordinates are available (entity version)
     /// This should be called before running auto-determination services
     func ensureCoordinatesForSession(_ session: SessionEntity, modelContext: ModelContext, completion: @escaping (Bool) -> Void) {
         print("🌍 [GeocodingService] Starting bulk coordinate check for session: \(session.id.uuidString)")
@@ -90,7 +136,7 @@ public class GeocodingService {
         }
     }
     
-    /// Async version of ensureCoordinatesForSession
+    /// Async version of ensureCoordinatesForSession (entity version)
     func ensureCoordinatesForSession(_ session: SessionEntity, modelContext: ModelContext) async -> Bool {
         print("🌍 [GeocodingService] Starting async bulk coordinate check for session: \(session.id.uuidString)")
         

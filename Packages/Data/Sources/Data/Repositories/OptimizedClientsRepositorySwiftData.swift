@@ -394,4 +394,28 @@ extension OptimizedClientsRepositorySwiftData {
         let entities = try modelContext.fetch(descriptor)
         return entities.map { Client(from: $0) }
     }
+    
+    public func fetch(byPayeeId payeeId: UUID) async throws -> [Client] {
+        let predicate = #Predicate<ClientEntity> { client in
+            client.payee?.id == payeeId
+        }
+        let descriptor = FetchDescriptor<ClientEntity>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\ClientEntity.fullName, order: .forward)]
+        )
+        let entities = try modelContext.fetch(descriptor)
+        return entities.map { Client(from: $0) }
+    }
+    
+    public func fetch(byPlanManagerId planManagerId: UUID) async throws -> [Client] {
+        let predicate = #Predicate<ClientEntity> { client in
+            client.planManager?.id == planManagerId
+        }
+        let descriptor = FetchDescriptor<ClientEntity>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\ClientEntity.fullName, order: .forward)]
+        )
+        let entities = try modelContext.fetch(descriptor)
+        return entities.map { Client(from: $0) }
+    }
 }

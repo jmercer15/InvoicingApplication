@@ -1,21 +1,22 @@
 import SwiftUI
 import SwiftData
+import Core
 import SharedUI
 import Data
 
 public struct RelationshipsContentColumn: View {
     @ObservedObject private var viewModel: RelationshipsContainerViewModel
-    @Environment(\.modelContext) private var viewContext
 
     @State private var searchText: String = ""
     @State private var selectedFilter: EntityFilter = .all
     @State private var selectedStatus: StatusFilter = .all
     @State private var isMultiSelectMode: Bool = false
     @State private var treeItems: [TreeItem] = []
-
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
-    @Query(sort: \PayeeEntity.fullName) private var payees: [PayeeEntity]
-    @Query(sort: \PlanManagerEntity.name) private var planManagers: [PlanManagerEntity]
+    
+    // Use domain models from ViewModel instead of @Query
+    private var clients: [Client] { viewModel.clients }
+    private var payees: [Payee] { viewModel.payees }
+    private var planManagers: [PlanManager] { viewModel.planManagers }
 
     public init(viewModel: RelationshipsContainerViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
@@ -24,20 +25,15 @@ public struct RelationshipsContentColumn: View {
     public var body: some View {
         FoldPaperContainer(items: $treeItems, onItemTap: handleItemTap)
             .background(Color.clear)
-            .environment(\.modelContext, viewContext)
             .searchable(text: $searchText)
             .toolbar(content: toolbarContent)
-            .onAppear(perform: synchroniseContext)
-            .onChange(of: viewContext) { _, newValue in
-                viewModel.updateContextIfNeeded(newValue)
-            }
             .onAppear(perform: updateTreeItems)
             .onChange(of: searchText) { _, _ in updateTreeItems() }
             .onChange(of: selectedFilter) { _, _ in updateTreeItems() }
             .onChange(of: selectedStatus) { _, _ in updateTreeItems() }
-            .onChange(of: clients) { _, _ in updateTreeItems() }
-            .onChange(of: payees) { _, _ in updateTreeItems() }
-            .onChange(of: planManagers) { _, _ in updateTreeItems() }
+            .onChange(of: viewModel.clients) { _, _ in updateTreeItems() }
+            .onChange(of: viewModel.payees) { _, _ in updateTreeItems() }
+            .onChange(of: viewModel.planManagers) { _, _ in updateTreeItems() }
     }
 
     @ToolbarContentBuilder
@@ -96,10 +92,6 @@ public struct RelationshipsContentColumn: View {
         }
     }
 
-    private func synchroniseContext() {
-        viewModel.updateContextIfNeeded(viewContext)
-        updateTreeItems()
-    }
 
     private func handleItemTap(_ item: TreeItem) {
         guard let entityIdString = item.entityId,
@@ -124,7 +116,7 @@ public struct RelationshipsContentColumn: View {
         if selectedFilter == .all || selectedFilter == .clients {
             let filtered = clients.filter { client in
                 let matchesSearch = searchText.isEmpty || client.fullName.localizedCaseInsensitiveContains(searchText)
-                let matchesStatus = selectedStatus == .all || client.status.rawValue == selectedStatus.rawValue
+                let matchesStatus = selectedStatus == .all || client.status == selectedStatus.rawValue
                 return matchesSearch && matchesStatus
             }
 
@@ -133,7 +125,7 @@ public struct RelationshipsContentColumn: View {
                     TreeItem(
                         id: "client_\(client.id)",
                         title: client.fullName,
-                        subtitle: client.status.rawValue,
+                        subtitle: client.status,
                         children: nil,
                         entityId: client.id.uuidString,
                         entityType: "client"
@@ -179,14 +171,14 @@ public struct RelationshipsContentColumn: View {
 
         if selectedFilter == .all || selectedFilter == .planManagers {
             let filtered = planManagers.filter { manager in
-                searchText.isEmpty || (manager.name?.localizedCaseInsensitiveContains(searchText) ?? false)
+                searchText.isEmpty || manager.name.localizedCaseInsensitiveContains(searchText)
             }
 
             if !filtered.isEmpty {
                 let children = filtered.map { manager in
                     TreeItem(
                         id: "planmanager_\(manager.id)",
-                        title: manager.name ?? "Unknown",
+                        title: manager.name,
                         subtitle: "Plan Manager",
                         children: nil,
                         entityId: manager.id.uuidString,
@@ -210,10 +202,11 @@ public struct RelationshipsContentColumn: View {
 public struct RelationshipsDetailColumn: View {
     @ObservedObject private var viewModel: RelationshipsContainerViewModel
     @Environment(\.modelContext) private var viewContext
-
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
-    @Query(sort: \PayeeEntity.fullName) private var payees: [PayeeEntity]
-    @Query(sort: \PlanManagerEntity.name) private var planManagers: [PlanManagerEntity]
+    
+    // Use domain models from ViewModel instead of @Query
+    private var clients: [Client] { viewModel.clients }
+    private var payees: [Payee] { viewModel.payees }
+    private var planManagers: [PlanManager] { viewModel.planManagers }
 
     @State private var showingDeleteAlert: Bool = false
     @State private var deleteAlertTitle: String = ""
@@ -229,13 +222,24 @@ public struct RelationshipsDetailColumn: View {
             switch viewModel.detailState {
             case .client(let objectID):
                 if let client = clients.first(where: { $0.id == objectID }) {
-                    ClientDetailView(client: client, context: viewContext)
-                        .id("client_\(objectID)")
+                    // Note: ClientDetailView requires ClientEntity for @Bindable SwiftData integration.
+                    // This is a localized workaround: fetch entity to satisfy @Bindable requirement,
+                    // but the ViewModel immediately converts to domain model. Future refactoring could
+                    // remove @Bindable dependency and accept domain models directly.
+                    if let clientEntity = try? viewContext.fetch(FetchDescriptor<ClientEntity>(
+                        predicate: #Predicate { $0.id == objectID }
+                    )).first {
+                        ClientDetailView(client: clientEntity, context: viewContext)
+                            .id("client_\(objectID)")
+                    } else {
+                        emptyState
+                    }
                 } else {
                     emptyState
                 }
             case .payee(let objectID):
                 if let payee = payees.first(where: { $0.id == objectID }) {
+                    // Use domain model directly - PayeeDetailView accepts Payee domain model
                     PayeeDetailView(payee: payee, context: viewContext)
                         .id("payee_\(objectID)")
                 } else {
@@ -243,6 +247,7 @@ public struct RelationshipsDetailColumn: View {
                 }
             case .planManager(let objectID):
                 if let manager = planManagers.first(where: { $0.id == objectID }) {
+                    // Use domain model directly - PlanManagerDetailView accepts PlanManager domain model
                     PlanManagerDetailView(planManager: manager, context: viewContext)
                         .id("planManager_\(objectID)")
                 } else {
@@ -335,10 +340,15 @@ public struct RelationshipsDetailColumn: View {
         deleteAlertTitle = "Delete Client"
         deleteAlertMessage = "Are you sure you want to delete this client? This action cannot be undone."
         deleteAction = {
-            if let client = clients.first(where: { $0.id == id }) {
-                viewContext.delete(client)
-                try? viewContext.save()
-                viewModel.detailState = .none
+            Task {
+                do {
+                    try await viewModel.clientsRepository.delete(id: id)
+                    await MainActor.run {
+                        viewModel.detailState = .none
+                    }
+                } catch {
+                    print("❌ Error deleting client: \(error)")
+                }
             }
         }
         showingDeleteAlert = true
@@ -348,10 +358,15 @@ public struct RelationshipsDetailColumn: View {
         deleteAlertTitle = "Delete Payee"
         deleteAlertMessage = "Are you sure you want to delete this payee? This action cannot be undone."
         deleteAction = {
-            if let payee = payees.first(where: { $0.id == id }) {
-                viewContext.delete(payee)
-                try? viewContext.save()
-                viewModel.detailState = .none
+            Task {
+                do {
+                    try await viewModel.payeesRepository.delete(id: id)
+                    await MainActor.run {
+                        viewModel.detailState = .none
+                    }
+                } catch {
+                    print("❌ Error deleting payee: \(error)")
+                }
             }
         }
         showingDeleteAlert = true
@@ -361,10 +376,15 @@ public struct RelationshipsDetailColumn: View {
         deleteAlertTitle = "Delete Plan Manager"
         deleteAlertMessage = "Are you sure you want to delete this plan manager? This action cannot be undone."
         deleteAction = {
-            if let planManager = planManagers.first(where: { $0.id == id }) {
-                viewContext.delete(planManager)
-                try? viewContext.save()
-                viewModel.detailState = .none
+            Task {
+                do {
+                    try await viewModel.planManagersRepository.delete(id: id)
+                    await MainActor.run {
+                        viewModel.detailState = .none
+                    }
+                } catch {
+                    print("❌ Error deleting plan manager: \(error)")
+                }
             }
         }
         showingDeleteAlert = true

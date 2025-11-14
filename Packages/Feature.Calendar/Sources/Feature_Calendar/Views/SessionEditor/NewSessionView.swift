@@ -76,8 +76,7 @@ struct NewSessionView: View {
         }
     }
 
-    // Fetch clients directly here for the Picker
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
+    // Clients are fetched via ViewModel
 
     // Binding helpers for Int -> Double conversion for FormStepper
     private var recurrenceIntervalProxy: Binding<Double> {
@@ -348,9 +347,9 @@ struct NewSessionView: View {
                         .font(.caption)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                     Picker("Client", selection: $viewModel.selectedClient) {
-                        Text("Select a client").tag(nil as ClientEntity?)
-                        ForEach(clients, id: \.id) { client in
-                            Text(client.fullName).tag(client as ClientEntity?)
+                        Text("Select a client").tag(nil as Client?)
+                        ForEach(viewModel.availableClients, id: \.id) { client in
+                            Text(client.fullName).tag(client as Client?)
                         }
                     }
                     .pickerStyle(.menu)
@@ -362,9 +361,9 @@ struct NewSessionView: View {
                             .font(.caption)
                             .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                         Picker("Service", selection: $viewModel.selectedClientService) {
-                            Text("Select a service").tag(nil as ClientServiceEntity?)
-                            ForEach(Array(selectedClient.clientServices), id: \.id) { service in
-                                Text(service.serviceName).tag(service as ClientServiceEntity?)
+                            Text("Select a service").tag(nil as ClientService?)
+                            ForEach(viewModel.availableServices, id: \.id) { service in
+                                Text(service.serviceName).tag(service as ClientService?)
                             }
                         }
                         .pickerStyle(.menu)

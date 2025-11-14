@@ -7,7 +7,7 @@ import SharedUI
 // MARK: - Compact Row Views
 
 struct CompactServiceRowView: View {
-    @Bindable var service: ClientServiceEntity
+    let service: ClientService
     
     var body: some View {
         HStack(spacing: 8) {
@@ -33,22 +33,22 @@ struct CompactServiceRowView: View {
 }
 
 struct CompactInvoiceRowView: View {
-    let invoice: InvoiceEntity
+    let invoice: Invoice
     
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(invoice.invoiceNumber)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 Text("$\(invoice.totalAmount, specifier: "%.2f") • \(invoice.issueDate.formatted(date: .abbreviated, time: .omitted))")
                     .font(.system(size: 11))
-                    .foregroundColor(Color("Gray20", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.secondaryLabelColor))
             }
             
             Spacer()
             
-            StatusBadge(status: invoice.status?.rawValue ?? "Draft")
+            StatusBadge(status: invoice.status ?? "Draft")
                 .scaleEffect(0.8)
         }
         .padding(.horizontal, 6)
@@ -59,7 +59,7 @@ struct CompactInvoiceRowView: View {
 }
 
 struct CompactClientRowView: View {
-    let client: ClientEntity
+    let client: Client
     
     var body: some View {
         HStack(spacing: 8) {
@@ -70,17 +70,17 @@ struct CompactClientRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.fullName)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 if !client.ndisNumber.isEmpty {
                     Text("NDIS: \(client.ndisNumber)")
                         .font(.system(size: 11))
-                        .foregroundColor(Color("Gray20", bundle: .sharedUI))
+                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                 }
             }
             
             Spacer()
             
-            StatusBadge(status: client.status.rawValue)
+            StatusBadge(status: client.status)
                 .scaleEffect(0.8)
         }
         .padding(.horizontal, 6)

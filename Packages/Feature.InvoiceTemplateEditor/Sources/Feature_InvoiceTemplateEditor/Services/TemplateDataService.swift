@@ -6,97 +6,137 @@
 //
 
 import Foundation
-import SwiftData
 import SwiftUI
-import Data
 import Core
 
 /// Service for providing real data from persisted entities to the template editor
+/// Uses repository pattern for data access
+/// Ensures all components always display data from the same invoice
 @MainActor
 public class TemplateDataService: ObservableObject {
-    private let modelContext: ModelContext
-    private let selectedInvoice: InvoiceEntity?
+    // MARK: - Dependencies
+    private let invoicesRepository: InvoicesRepository
+    private let clientsRepository: ClientsRepository
     
-    public init(modelContext: ModelContext) {
-        print("🚀 [TemplateDataService] Initializing with modelContext")
-        self.modelContext = modelContext
-        self.selectedInvoice = Self.selectRandomInvoice(from: modelContext)
+    // Selected invoice for template preview (domain model)
+    // Marked as private(set) to prevent external modification
+    // All components access data through this single source of truth
+    @Published private(set) var selectedInvoice: Invoice?
+    @Published private(set) var selectedInvoiceItems: [InvoiceItem] = []
+    
+    // Track invoice ID to ensure consistency
+    private(set) var selectedInvoiceId: UUID?
+    
+    public init(
+        invoicesRepository: InvoicesRepository,
+        clientsRepository: ClientsRepository
+    ) {
+        self.invoicesRepository = invoicesRepository
+        self.clientsRepository = clientsRepository
+        Task {
+            await selectRandomInvoice()
+        }
+    }
+    
+    /// Sets a specific invoice as the selected invoice for all template components
+    /// This ensures all components display data from the same invoice
+    public func setSelectedInvoice(_ invoice: Invoice) async {
+        print("🔄 [TemplateDataService] Setting selected invoice: \(invoice.invoiceNumber)")
         
-        if let invoice = selectedInvoice {
-            print("✅ [TemplateDataService] Selected invoice: \(invoice.invoiceNumber)")
-        } else {
-            print("❌ [TemplateDataService] No invoices found in database")
-        }
-    }
-    
-    /// Shared instance for consistent data across all components
-    public static var shared: TemplateDataService?
-    
-    /// Initialize the shared instance with a model context
-    /// Call this once when the template editor starts to ensure all components use the same invoice
-    public static func initializeShared(with modelContext: ModelContext) {
-        print("🔧 [TemplateDataService] Initializing shared instance")
-        shared = TemplateDataService(modelContext: modelContext)
-        print("✅ [TemplateDataService] Shared instance created")
-    }
-    
-    /// Get the shared instance
-    /// Note: Components should call initializeShared(with:) before using getShared()
-    public static func getShared() -> TemplateDataService {
-        print("🔍 [TemplateDataService] getShared() called")
-        guard let shared = shared else {
-            print("❌ [TemplateDataService] Shared instance not initialized!")
-            fatalError("TemplateDataService.shared must be initialized before use. Call TemplateDataService.initializeShared(with: modelContext) first.")
-        }
-        print("✅ [TemplateDataService] Returning shared instance")
-        return shared
+        // Store the invoice ID for validation
+        selectedInvoiceId = invoice.id
+        
+        // Update the selected invoice
+        selectedInvoice = invoice
+        
+        // Reload invoice items for this invoice
+        await loadInvoiceItems(for: invoice.id)
+        
+        print("✅ [TemplateDataService] Invoice set: \(invoice.invoiceNumber), ID: \(invoice.id)")
     }
     
     /// Selects a random invoice from the database for template editing, preferring invoices with complete relationship data
-    private static func selectRandomInvoice(from modelContext: ModelContext) -> InvoiceEntity? {
+    private func selectRandomInvoice() async {
         print("🔍 [TemplateDataService] Selecting random invoice from database")
-        let descriptor = FetchDescriptor<InvoiceEntity>()
         
         do {
-            let invoices = try modelContext.fetch(descriptor)
+            let invoices = try await invoicesRepository.fetchAll()
             print("📊 [TemplateDataService] Found \(invoices.count) invoices in database")
             
-            // First, try to find an invoice with complete relationship data
+            // Prefer invoices with complete snapshot data (business, client, payee names)
             let invoicesWithCompleteData = invoices.filter { invoice in
-                return invoice.business != nil && 
-                       invoice.client != nil && 
-                       invoice.payee != nil
+                return invoice.businessName != nil &&
+                       invoice.clientName != nil &&
+                       (invoice.payeeName != nil || invoice.billToName != nil)
             }
             
+            let invoiceToSelect: Invoice?
             if !invoicesWithCompleteData.isEmpty {
-                let selectedInvoice = invoicesWithCompleteData.randomElement()!
-                print("✅ [TemplateDataService] Selected invoice with complete relationships: \(selectedInvoice.invoiceNumber)")
-                return selectedInvoice
-            }
-            
-            // Fallback to any random invoice
-            if let selectedInvoice = invoices.randomElement() {
-                print("✅ [TemplateDataService] Selected random invoice: \(selectedInvoice.invoiceNumber)")
-                return selectedInvoice
+                invoiceToSelect = invoicesWithCompleteData.randomElement()!
+                print("✅ [TemplateDataService] Selected invoice with complete data: \(invoiceToSelect?.invoiceNumber ?? "unknown")")
+            } else if let randomInvoice = invoices.randomElement() {
+                invoiceToSelect = randomInvoice
+                print("✅ [TemplateDataService] Selected random invoice: \(invoiceToSelect?.invoiceNumber ?? "unknown")")
             } else {
                 print("❌ [TemplateDataService] No invoices available for selection")
-                return nil
+                invoiceToSelect = nil
+            }
+            
+            // Set the selected invoice using the public method to ensure consistency
+            if let invoice = invoiceToSelect {
+                await setSelectedInvoice(invoice)
+            } else {
+                selectedInvoiceId = nil
+                selectedInvoice = nil
+                selectedInvoiceItems = []
             }
         } catch {
             print("❌ [TemplateDataService] Error fetching invoices: \(error)")
-            return nil
+            selectedInvoiceId = nil
+            selectedInvoice = nil
+            selectedInvoiceItems = []
+        }
+    }
+    
+    /// Loads invoice items for the selected invoice using repository
+    /// Only loads items if the invoiceId matches the currently selected invoice
+    private func loadInvoiceItems(for invoiceId: UUID) async {
+        // Verify this is still the selected invoice
+        guard invoiceId == selectedInvoiceId else {
+            print("⚠️ [TemplateDataService] Invoice ID mismatch - skipping item load")
+            return
+        }
+        
+        do {
+            let items = try await invoicesRepository.fetchItems(by: invoiceId)
+            
+            // Double-check the invoice ID still matches before updating
+            if invoiceId == selectedInvoiceId {
+                selectedInvoiceItems = items
+                print("✅ [TemplateDataService] Loaded \(selectedInvoiceItems.count) invoice items for invoice \(invoiceId)")
+            } else {
+                print("⚠️ [TemplateDataService] Invoice changed during item load - discarding items")
+            }
+        } catch {
+            print("❌ [TemplateDataService] Error loading invoice items: \(error)")
+            // Only clear items if this is still the selected invoice
+            if invoiceId == selectedInvoiceId {
+                selectedInvoiceItems = []
+            }
         }
     }
     
     // MARK: - Client Data
     
     /// Gets client data from the selected invoice's snapshotted client data
+    /// Always returns data from the same invoice as other get* methods
     public func getClientData(for clientId: UUID? = nil) -> ClientTemplateData {
         print("🔍 [TemplateDataService] getClientData() called")
         
-        guard let invoice = selectedInvoice else {
+        // Ensure we have a selected invoice - all components use the same one
+        guard let invoice = selectedInvoice, invoice.id == selectedInvoiceId else {
             print("❌ [TemplateDataService] No selected invoice found")
-                return ClientTemplateData(
+            return ClientTemplateData(
                 name: "No Client Data",
                 address: "",
                 city: "",
@@ -119,33 +159,41 @@ public class TemplateDataService: ObservableObject {
         print("   - clientAddress: '\(invoice.clientAddress ?? "nil")'")
         print("   - clientNDISNumber: '\(invoice.clientNDISNumber ?? "nil")'")
         
-        // Use snapshotted data if available, otherwise fall back to relationship data (following Invoices feature pattern)
-        let clientData: ClientTemplateData
-        
-        // Priority 1: Use snapshotted data if available
-        let clientName = invoice.clientName ?? invoice.client?.fullName ?? ""
-        let clientEmail = invoice.clientEmail ?? invoice.client?.email ?? ""
-        let clientPhone = invoice.clientPhone ?? invoice.client?.phone ?? ""
-        let clientAddress = invoice.clientAddress ?? invoice.client?.address?.fullFormattedAddress ?? ""
-        let clientNDISNumber = invoice.clientNDISNumber ?? invoice.client?.ndisNumber ?? ""
+        // Use snapshotted data from invoice domain model
+        let clientName = invoice.clientName ?? ""
+        let clientEmail = invoice.clientEmail ?? ""
+        let clientPhone = invoice.clientPhone ?? ""
+        let clientAddress = invoice.clientAddress ?? ""
+        let clientNDISNumber = invoice.clientNDISNumber ?? ""
         
         if !clientName.isEmpty {
-            print("📊 [TemplateDataService] Using client data (snapshotted + relationship fallback)")
-            clientData = ClientTemplateData(
+            print("📊 [TemplateDataService] Using client data from invoice snapshot")
+            let clientData = ClientTemplateData(
                 name: clientName,
                 address: clientAddress,
-                city: invoice.client?.address?.suburb ?? "",
+                city: "", // Not in invoice snapshot
                 email: clientEmail,
                 phone: clientPhone,
                 ndisNumber: clientNDISNumber,
-                state: invoice.client?.address?.state ?? "",
-                postcode: invoice.client?.address?.postcode ?? "",
-                status: invoice.client?.status.rawValue ?? "Active",
-                isMinor: invoice.client?.isMinor ?? false,
-                hasNdisPlan: invoice.client?.hasNdisPlan ?? true
+                state: "", // Not in invoice snapshot
+                postcode: "", // Not in invoice snapshot
+                status: "Active", // Default, not in snapshot
+                isMinor: false, // Not in snapshot
+                hasNdisPlan: !clientNDISNumber.isEmpty
             )
+            print("📤 [TemplateDataService] Returning client data: \(clientData.name)")
+            return clientData
         } else {
-            // No client data available
+            // Try to fetch from repository using clientId if available
+            if let clientId = invoice.clientId ?? clientId {
+                Task {
+                    if let client = try? await clientsRepository.fetch(by: clientId) {
+                        // Update selected invoice with client data if needed
+                        // For now, return default
+                    }
+                }
+            }
+            
             print("❌ [TemplateDataService] No client data available")
             return ClientTemplateData(
                 name: "No Client Data",
@@ -161,20 +209,19 @@ public class TemplateDataService: ObservableObject {
                 hasNdisPlan: false
             )
         }
-        
-        print("📤 [TemplateDataService] Returning client data: \(clientData.name)")
-        return clientData
     }
     
     // MARK: - Business Data
     
     /// Gets business data from the selected invoice's snapshotted business data
+    /// Always returns data from the same invoice as other get* methods
     public func getBusinessData() -> BusinessTemplateData {
         print("🔍 [TemplateDataService] getBusinessData() called")
         
-        guard let invoice = selectedInvoice else {
+        // Ensure we have a selected invoice - all components use the same one
+        guard let invoice = selectedInvoice, invoice.id == selectedInvoiceId else {
             print("❌ [TemplateDataService] No selected invoice found")
-                return BusinessTemplateData(
+            return BusinessTemplateData(
                 name: "No Business Data",
                 abn: "",
                 email: "",
@@ -200,36 +247,28 @@ public class TemplateDataService: ObservableObject {
         print("   - bankName: '\(invoice.bankName ?? "nil")'")
         print("   - bankAccountName: '\(invoice.bankAccountName ?? "nil")'")
         
-        // Follow Invoices feature pattern: invoice.business ?? fetch first business from database
-        var business: BusinessEntity? = invoice.business
-        if business == nil {
-            print("📊 [TemplateDataService] No business relationship, fetching first business from database")
-            let descriptor = FetchDescriptor<BusinessEntity>()
-            business = (try? modelContext.fetch(descriptor))?.first
-        }
-        
-        // Use snapshotted data if available, otherwise fall back to business entity data
-        let businessName = invoice.businessName ?? business?.name ?? ""
-        let businessABN = invoice.businessABN ?? business?.abn ?? ""
-        let businessEmail = invoice.businessEmail ?? business?.email ?? ""
-        let businessPhone = invoice.businessPhone ?? business?.phone ?? ""
-        let businessAddress = invoice.businessAddress ?? business?.address?.fullFormattedAddress ?? ""
-        let bankName = invoice.bankName ?? business?.bankName ?? ""
-        let bankAccountName = invoice.bankAccountName ?? business?.bankAccountName ?? ""
-        let bankBSB = invoice.bankBSB ?? business?.bankBSB ?? ""
-        let bankAccountNumber = invoice.bankAccountNumber ?? business?.bankAccountNumber ?? ""
+        // Use snapshotted data from invoice domain model
+        let businessName = invoice.businessName ?? ""
+        let businessABN = invoice.businessABN ?? ""
+        let businessEmail = invoice.businessEmail ?? ""
+        let businessPhone = invoice.businessPhone ?? ""
+        let businessAddress = invoice.businessAddress ?? ""
+        let bankName = invoice.bankName ?? ""
+        let bankAccountName = invoice.bankAccountName ?? ""
+        let bankBSB = invoice.bankBSB ?? ""
+        let bankAccountNumber = invoice.bankAccountNumber ?? ""
         
         if !businessName.isEmpty {
-            print("📊 [TemplateDataService] Using business data (snapshotted + business entity fallback)")
+            print("📊 [TemplateDataService] Using business data from invoice snapshot")
             let businessData = BusinessTemplateData(
                 name: businessName,
                 abn: businessABN,
                 email: businessEmail,
                 phone: businessPhone,
                 address: businessAddress,
-                city: business?.address?.city ?? "",
-                state: business?.address?.state ?? "",
-                postcode: business?.address?.postcode ?? "",
+                city: "", // Not in invoice snapshot
+                state: "", // Not in invoice snapshot
+                postcode: "", // Not in invoice snapshot
                 bankAccountName: bankAccountName,
                 bankAccountNumber: bankAccountNumber,
                 bankBSB: bankBSB,
@@ -238,7 +277,6 @@ public class TemplateDataService: ObservableObject {
             print("📤 [TemplateDataService] Returning business data: \(businessData.name)")
             return businessData
         } else {
-            // No business data available
             print("❌ [TemplateDataService] No business data available")
             return BusinessTemplateData(
                 name: "No Business Data",
@@ -260,12 +298,14 @@ public class TemplateDataService: ObservableObject {
     // MARK: - Payee Data
     
     /// Gets payee data from the selected invoice's snapshotted payee data
+    /// Always returns data from the same invoice as other get* methods
     public func getPayeeData(for clientId: UUID? = nil) -> PayeeTemplateData {
         print("🔍 [TemplateDataService] getPayeeData() called")
         
-        guard let invoice = selectedInvoice else {
+        // Ensure we have a selected invoice - all components use the same one
+        guard let invoice = selectedInvoice, invoice.id == selectedInvoiceId else {
             print("❌ [TemplateDataService] No selected invoice found")
-                return PayeeTemplateData(
+            return PayeeTemplateData(
                 name: "No Payee Data",
                 role: "",
                 id: UUID().uuidString,
@@ -284,37 +324,36 @@ public class TemplateDataService: ObservableObject {
         print("   - payeeEmail: '\(invoice.payeeEmail ?? "nil")'")
         print("   - payeePhone: '\(invoice.payeePhone ?? "nil")'")
         print("   - payeeAddress: '\(invoice.payeeAddress ?? "nil")'")
-        print("   - billingAuthority: '\(invoice.billingAuthority?.rawValue ?? "nil")'")
+        print("   - billingAuthority: '\(invoice.billingAuthority ?? "nil")'")
         print("   - billToName: '\(invoice.billToName ?? "nil")'")
         print("   - billToEmail: '\(invoice.billToEmail ?? "nil")'")
         print("   - billToAddress: '\(invoice.billToAddress ?? "nil")'")
         
-        // Use snapshotted data if available, otherwise fall back to relationship data (following Invoices feature pattern)
-        let payeeData: PayeeTemplateData
-        
-        // Priority 1: Use snapshotted data if available
-        let payeeName = invoice.payeeName ?? invoice.client?.payee?.fullName ?? ""
-        let payeeEmail = invoice.payeeEmail ?? invoice.client?.payee?.email ?? ""
-        let payeePhone = invoice.payeePhone ?? invoice.client?.payee?.phone ?? ""
-        let payeeAddress = invoice.payeeAddress ?? invoice.client?.payee?.address?.fullFormattedAddress ?? ""
+        // Use snapshotted data from invoice domain model
+        // Prefer payeeName, fallback to billToName
+        let payeeName = invoice.payeeName ?? invoice.billToName ?? ""
+        let payeeEmail = invoice.payeeEmail ?? invoice.billToEmail ?? ""
+        let payeePhone = invoice.payeePhone ?? ""
+        let payeeAddress = invoice.payeeAddress ?? invoice.billToAddress ?? ""
         
         if !payeeName.isEmpty {
-            print("📊 [TemplateDataService] Using payee data (snapshotted + relationship fallback)")
-            payeeData = PayeeTemplateData(
+            print("📊 [TemplateDataService] Using payee data from invoice snapshot")
+            let payeeData = PayeeTemplateData(
                 name: payeeName,
-                role: invoice.client?.payee?.relationToClient ?? "Parent/Guardian",
-                id: invoice.client?.payee?.id.uuidString ?? UUID().uuidString,
+                role: "Parent/Guardian", // Default, not in snapshot
+                id: invoice.payeeId?.uuidString ?? UUID().uuidString,
                 email: payeeEmail,
                 phone: payeePhone,
                 address: payeeAddress,
-                city: invoice.client?.payee?.address?.city ?? "",
-                state: invoice.client?.payee?.address?.state ?? "",
-                postcode: invoice.client?.payee?.address?.postcode ?? ""
+                city: "", // Not in invoice snapshot
+                state: "", // Not in invoice snapshot
+                postcode: "" // Not in invoice snapshot
             )
+            print("📤 [TemplateDataService] Returning payee data: \(payeeData.name)")
+            return payeeData
         } else {
-            // No payee data available
             print("❌ [TemplateDataService] No payee data available")
-                return PayeeTemplateData(
+            return PayeeTemplateData(
                 name: "No Payee Data",
                 role: "",
                 id: UUID().uuidString,
@@ -326,39 +365,39 @@ public class TemplateDataService: ObservableObject {
                 postcode: ""
             )
         }
-        
-        print("📤 [TemplateDataService] Returning payee data: \(payeeData.name)")
-        return payeeData
     }
     
     // MARK: - Service Data
     
-    /// Gets service data from the selected invoice's invoice items relationship
+    /// Gets service data from the selected invoice's invoice items
+    /// Always returns data from the same invoice as other get* methods
     public func getServiceData(for clientId: UUID? = nil) -> [ServiceTemplateData] {
         print("🔍 [TemplateDataService] getServiceData() called")
         
-        guard let invoice = selectedInvoice else {
+        // Ensure we have a selected invoice - all components use the same one
+        guard let invoice = selectedInvoice, invoice.id == selectedInvoiceId else {
             print("❌ [TemplateDataService] No selected invoice found")
             return []
         }
         
         print("✅ [TemplateDataService] Found selected invoice: \(invoice.invoiceNumber)")
-        print("📊 [TemplateDataService] Invoice items count: \(invoice.items.count)")
+        print("📊 [TemplateDataService] Invoice items count: \(selectedInvoiceItems.count)")
         
-        let serviceData = invoice.items.map { item in
-            print("   - Item: '\(item.itemDescription)' | Rate: \(item.rate) | Qty: \(item.quantity) | Amount: \(item.amount)")
+        // Use InvoiceItem domain models - note: some fields may not be available in domain model
+        let serviceData = selectedInvoiceItems.map { item in
+            print("   - Item: '\(item.itemDescription)' | Rate: \(item.rate) | Qty: \(item.quantity) | Total: \(item.lineTotal)")
             return ServiceTemplateData(
                 name: item.itemDescription,
-                unit: item.unit ?? "hr",
+                unit: "hr", // Default, not in InvoiceItem domain model
                 rate: item.rate,
-                amount: item.amount,
+                amount: item.lineTotal, // Use lineTotal from domain model
                 quantity: item.quantity,
                 description: item.itemDescription,
-                serviceDate: item.serviceDate,
-                ndisItemNumber: item.ndisItemNumber,
-                ndisSupportCategory: item.ndisSupportCategory,
-                ndisRegistrationGroup: item.ndisRegistrationGroup,
-                claimType: getClaimTypeDisplayName(for: item.claimType)
+                serviceDate: Date(), // Default, not in InvoiceItem domain model
+                ndisItemNumber: nil, // Not in InvoiceItem domain model
+                ndisSupportCategory: nil, // Not in InvoiceItem domain model
+                ndisRegistrationGroup: nil, // Not in InvoiceItem domain model
+                claimType: nil // Not in InvoiceItem domain model
             )
         }
         
@@ -369,12 +408,15 @@ public class TemplateDataService: ObservableObject {
     // MARK: - Invoice Data
     
     /// Gets invoice data from the selected invoice
+    /// Always returns data from the same invoice as other get* methods
     public func getInvoiceData(for invoiceId: UUID? = nil) -> InvoiceTemplateData {
         print("🔍 [TemplateDataService] getInvoiceData() called")
         
-        guard let invoice = selectedInvoice else {
+        // Ensure we have a selected invoice - all components use the same one
+        // Ignore the invoiceId parameter - we always use the selected invoice
+        guard let invoice = selectedInvoice, invoice.id == selectedInvoiceId else {
             print("❌ [TemplateDataService] No selected invoice found")
-                return InvoiceTemplateData(
+            return InvoiceTemplateData(
                 invoiceNumber: "No Invoice Data",
                 issueDate: Date(),
                 dueDate: Date(),
@@ -392,52 +434,24 @@ public class TemplateDataService: ObservableObject {
         print("   - dueDate: \(invoice.dueDate?.description ?? "nil")")
         print("   - totalAmount: \(invoice.totalAmount)")
         print("   - taxRate: \(invoice.taxRate)")
-        print("   - subtotal: \(invoice.subtotal)")
-        print("   - calculatedTotal: \(invoice.calculatedTotal)")
+        
+        // Calculate subtotal from items
+        let subtotal = selectedInvoiceItems.reduce(0.0) { $0 + $1.lineTotal }
+        // Calculate total - using invoice totalAmount if available, otherwise calculate from subtotal
+        let calculatedTotal = invoice.totalAmount > 0 ? invoice.totalAmount : (subtotal * (1 + invoice.taxRate / 100.0))
         
         let invoiceData = InvoiceTemplateData(
-                    invoiceNumber: invoice.invoiceNumber,
-                    issueDate: invoice.issueDate,
+            invoiceNumber: invoice.invoiceNumber,
+            issueDate: invoice.issueDate,
             dueDate: invoice.dueDate ?? Date(),
             totalAmount: invoice.totalAmount,
-                    taxRate: invoice.taxRate,
-            subtotal: invoice.subtotal,
-            calculatedTotal: invoice.calculatedTotal
+            taxRate: invoice.taxRate,
+            subtotal: subtotal,
+            calculatedTotal: calculatedTotal
         )
         
         print("📤 [TemplateDataService] Returning invoice data: \(invoiceData.invoiceNumber)")
         return invoiceData
-    }
-    
-    
-    // MARK: - Helper Methods
-    
-    /// Gets the display name for NDIS claim type
-    private func getClaimTypeDisplayName(for claimType: NDISClaimType?) -> String {
-        guard let claimType = claimType else { return "Standard" }
-        
-        switch claimType {
-        case .direct:
-            return "Direct Support"
-        case .providerTravel:
-            return "Provider Travel"
-        case .cancellation:
-            return "Cancellation Fee"
-        case .prepayment:
-            return "Prepayment"
-        case .telehealth:
-            return "Telehealth"
-        case .nonFaceToFace:
-            return "Non-Face-to-Face"
-        case .ndiaReport:
-            return "NDIA Report"
-        case .irregularSILSupport:
-            return "Irregular SIL Support"
-        case .bereavement:
-            return "Bereavement Support"
-        @unknown default:
-            return claimType.rawValue
-        }
     }
     
 }

@@ -12,6 +12,39 @@ import Feature_Settings
 import Feature_NDIS
 import Feature_InvoiceTemplateEditor
 
+// Note: Repository types from Data module are used directly in makeInvoicesViewModel()
+
+// Helper function to create ModelContainer using Data module entities
+// This avoids the ambiguity between Foundation.Data and Data module, and between SharedUI/Data ModelContainerHelper
+private func createModelContainerSafely() -> ModelContainer? {
+    do {
+        let schema = Schema([
+            ClientEntity.self,
+            BusinessEntity.self,
+            AddressEntity.self,
+            InvoiceEntity.self,
+            InvoiceItemEntity.self,
+            ClientServiceEntity.self,
+            PayeeEntity.self,
+            PlanManagerEntity.self,
+            SessionEntity.self,
+            TravelChargeEntity.self,
+            TravelChargeAuditLog.self,
+            TravelChargeReviewItem.self,
+            CreditHistoryEntryEntity.self,
+            NDISItemEntity.self,
+            RegionalPriceEntity.self
+        ])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+        print("Created ModelContainer with persistent storage")
+        return container
+    } catch {
+        print("Failed to create ModelContainer: \(error)")
+        return nil
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var appAssembly: AppAssembly
     @Environment(\.modelContext) private var modelContext
@@ -25,7 +58,12 @@ struct ContentView: View {
     @StateObject private var invoicesViewModel = ContentView.makeInvoicesViewModel()
     @StateObject private var relationshipsViewModel = ContentView.makeRelationshipsViewModel()
     @StateObject private var calendarViewModel = ContentView.makeCalendarViewModel()
-    @StateObject private var templateEditorWorkspace = ContentView.makeTemplateEditorWorkspace()
+    @StateObject private var templateEditorWorkspace: TemplateEditorWorkspaceViewModel = {
+        // Temporary initialization - will be replaced by AppAssembly in onAppear
+        let manager = TemplateManager()
+        let editor = InvoiceTemplateEditorViewModel(templateManager: manager)
+        return TemplateEditorWorkspaceViewModel(templateManager: manager, editorViewModel: editor)
+    }()
     @StateObject private var settingsViewModel = ContentView.makeSettingsViewModel()
     @StateObject private var ndisCatalogueViewModel = ContentView.makeNDISCatalogueViewModel()
     @StateObject private var ndisBillingViewModel = ContentView.makeNDISBillingViewModel()
@@ -184,20 +222,20 @@ struct ContentView: View {
                     .background(Color("Background", bundle: .sharedUI))
             }
         case .billingHub:
-            BillingHubView()
-                .environmentObject(appAssembly.makeBillingHubViewModel())
+            BillingHubView(viewModel: appAssembly.makeBillingHubViewModel())
                 .environment(\.modelContext, modelContext)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .invoiceTemplateEditor:
             ZStack {
-                ModernTemplateEditorView()
+                ModernTemplateEditorView(workspace: templateEditorWorkspace)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.modelContext, modelContext)
                     .environmentObject(templateEditorWorkspace)
                     .environmentObject(templateEditorWorkspace.editorViewModel)
+                    .environmentObject(appAssembly.templateDataService)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color("Background", bundle: .sharedUI))
+            .background(Color(NSColor.windowBackgroundColor))
         case .calendar:
             CalendarContentColumn(viewModel: calendarViewModel, showInspector: .constant(false))
                 .environment(\.modelContext, modelContext)
@@ -217,7 +255,7 @@ struct ContentView: View {
                     .background(Color("Background", bundle: .sharedUI))
             }
             .onAppear {
-                relationshipsViewModel.updateContextIfNeeded(modelContext)
+                // Context is managed by ViewModel through repositories
             }
         case .ndisCatalogue:
             HSplitView {
@@ -261,38 +299,64 @@ struct ContentView: View {
     }
 
     private static func makeInvoicesViewModel() -> InvoicesContainerViewModel {
-        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+        // For preview/initialization purposes, create temporary repositories
+        // Note: In production, this should use AppAssembly.makeInvoicesViewModel()
+        guard let container = createModelContainerSafely() else {
             fatalError("Failed to create model container for invoices")
         }
-        let dummyContext = ModelContext(container)
-        return InvoicesContainerViewModel(context: dummyContext)
+        let modelContext = ModelContext(container)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: modelContext)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
+        return InvoicesContainerViewModel(
+            invoicesRepository: invoicesRepository,
+            clientServicesRepository: clientServicesRepository,
+            clientsRepository: clientsRepository
+        )
     }
 
     private static func makeRelationshipsViewModel() -> RelationshipsContainerViewModel {
-        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+        // For preview/initialization purposes, create temporary repositories
+        // Note: In production, this should use AppAssembly.makeRelationshipsViewModel()
+        guard let container = createModelContainerSafely() else {
             fatalError("Failed to create model container for relationships")
         }
-        let dummyContext = ModelContext(container)
+        let modelContext = ModelContext(container)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: modelContext)
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: modelContext)
         return RelationshipsContainerViewModel(
-            context: dummyContext,
-            navigationManager: AppNavigationManager.shared
+            clientsRepository: clientsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            navigationManager: AppNavigationManager.shared,
+            requestRelationshipDelete: { _ in }
         )
     }
 
     private static func makeCalendarViewModel() -> CalendarContainerViewModel {
-        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+        // For preview/initialization purposes, create temporary repositories
+        // Note: In production, this should use AppAssembly.makeCalendarContainerViewModel()
+        guard let container = createModelContainerSafely() else {
             fatalError("Failed to create model container for calendar")
         }
         let dummyContext = ModelContext(container)
-        return CalendarContainerViewModel(modelContext: dummyContext)
+        let sessionsRepository = SessionsRepositorySwiftData(modelContext: dummyContext)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: dummyContext)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: dummyContext)
+        let addressRepository = AddressRepositorySwiftData(modelContext: dummyContext)
+        return CalendarContainerViewModel(
+            sessionsRepository: sessionsRepository,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            addressRepository: addressRepository,
+            modelContext: dummyContext // Needed for EventKit external changes handling
+        )
     }
 
-    private static func makeTemplateEditorWorkspace() -> TemplateEditorWorkspaceViewModel {
-        TemplateEditorWorkspaceViewModel()
-    }
 
     private static func makeNDISCatalogueViewModel() -> NDISContainerViewModel {
-        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+        guard let container = createModelContainerSafely() else {
             fatalError("Failed to create model container for NDIS catalogue")
         }
         let dummyContext = ModelContext(container)
@@ -300,11 +364,21 @@ struct ContentView: View {
     }
 
     private static func makeNDISBillingViewModel() -> NDISBillingWorkspaceViewModel {
-        guard let container = ModelContainerHelper.createModelContainerSafely() else {
+        guard let container = createModelContainerSafely() else {
             fatalError("Failed to create model container for NDIS billing")
         }
         let dummyContext = ModelContext(container)
-        return NDISBillingWorkspaceViewModel(modelContext: dummyContext)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: dummyContext)
+        let sessionsRepository = SessionsRepositorySwiftData(modelContext: dummyContext)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: dummyContext)
+        let ndisBillingService = NDISBillingIntegrationService(modelContext: dummyContext)
+        return NDISBillingWorkspaceViewModel(
+            clientsRepository: clientsRepository,
+            sessionsRepository: sessionsRepository,
+            invoicesRepository: invoicesRepository,
+            ndisBillingService: ndisBillingService,
+            modelContext: dummyContext
+        )
     }
 
     private static func makeSettingsViewModel() -> SettingsWorkspaceViewModel {

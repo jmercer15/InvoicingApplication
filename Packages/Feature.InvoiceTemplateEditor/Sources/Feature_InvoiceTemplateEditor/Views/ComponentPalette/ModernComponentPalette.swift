@@ -20,12 +20,23 @@ struct ModernComponentPalette: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label {
                     Text("Component Library")
-                        .font(.headline)
+                        .font(.system(.headline, design: .rounded))
                         .foregroundColor(Color.primaryText)
                 } icon: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.1))
+                            .frame(width: 24, height: 24)
                     Image(systemName: "square.grid.3x2")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
                 }
                 .labelStyle(.titleAndIcon)
 
@@ -57,10 +68,21 @@ struct ModernComponentPalette: View {
                         .fill(Color.secondaryFill)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.primaryOutline.opacity(0.12), lineWidth: 0.5)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.primaryOutline.opacity(0.15),
+                                            Color.primaryOutline.opacity(0.08)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 0.5
+                                )
                         )
                 )
-                .shadow(color: Color.primaryShadow.opacity(0.03), radius: 1, x: 0, y: 1)
+                .shadow(color: Color.primaryShadow.opacity(0.04), radius: 2, x: 0, y: 1)
+                .shadow(color: Color.accentColor.opacity(0.02), radius: 4, x: 0, y: 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -72,17 +94,40 @@ struct ModernComponentPalette: View {
                         if !isFiltering || !items.isEmpty {
                             // Section header
                             VStack(alignment: .leading, spacing: 8) {
-                                Button(action: { toggleSection(section.title) }) {
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        toggleSection(section.title)
+                                    }
+                                }) {
                                     HStack(spacing: 10) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.accentColor.opacity(0.08))
+                                                .frame(width: 20, height: 20)
                                         Image(systemName: expandedSections.contains(section.title) ? "chevron.up" : "chevron.down")
-                                            .font(.system(size: 12, weight: .medium))
+                                                .font(.system(size: 10, weight: .semibold))
                                             .foregroundColor(.accentColor)
+                                        }
 
                                         Text(section.title)
-                                            .font(.system(size: 14, weight: .semibold, design: .default))
+                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
                                             .foregroundColor(Color.primaryText)
 
                                         Spacer()
+                                        
+                                        if expandedSections.contains(section.title) {
+                                            Text("\(items.count)")
+                                                .font(.caption2)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(Color.secondaryText)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(
+                                                    Capsule()
+                                                        .fill(Color.accentColor.opacity(0.08))
+                                                )
+                                                .transition(.scale.combined(with: .opacity))
+                                        }
                                     }
                                     .padding(.vertical, 6)
                                 }
@@ -94,6 +139,10 @@ struct ModernComponentPalette: View {
                                         ForEach(items) { descriptor in
                                             // Palette item
                                             PaletteItemView(descriptor: descriptor)
+                                                .transition(.asymmetric(
+                                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                                    removal: .opacity.combined(with: .move(edge: .top))
+                                                ))
                                         }
                                     }
                                     .padding(.top, 4)
@@ -101,8 +150,26 @@ struct ModernComponentPalette: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                            .shadow(color: Color.primaryShadow.opacity(0.03), radius: 1, x: 0, y: 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.primarySurface)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .strokeBorder(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color.primaryOutline.opacity(0.1),
+                                                        Color.primaryOutline.opacity(0.05)
+                                                    ],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 0.5
+                                            )
+                                    )
+                            )
+                            .shadow(color: Color.primaryShadow.opacity(0.04), radius: 3, x: 0, y: 1.5)
+                            .shadow(color: Color.accentColor.opacity(0.01), radius: 6, x: 0, y: 3)
                         }
                     }
 
@@ -236,34 +303,112 @@ struct ModernComponentPalette: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(Color.accentColor.opacity(0.18))
+                        .fill(
+                            isHovered 
+                                ? LinearGradient(
+                                    colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.15)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(
+                                    colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.12)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                        )
                         .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isHovered ? Color.accentColor.opacity(0.3) : Color.accentColor.opacity(0.15),
+                                    lineWidth: isHovered ? 1 : 0.5
+                                )
+                        )
                     Image(systemName: descriptor.icon)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.accentColor)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(
+                            isHovered
+                                ? LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                        )
+                        .scaleEffect(isHovered ? 1.1 : 1.0)
                 }
                 
                 Text(descriptor.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .default))
                     .foregroundColor(Color.primaryText)
                 
                 Spacer()
+                
+                if isHovered {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color.accentColor.opacity(0.6))
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isHovered ? Color.hoverHighlight : Color.primarySurface)
+                    .fill(
+                        isHovered 
+                            ? LinearGradient(
+                                colors: [
+                                    Color.hoverHighlight,
+                                    Color.hoverHighlight.opacity(0.8)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            : LinearGradient(
+                                colors: [
+                                    Color.primarySurface,
+                                    Color.primarySurface.opacity(0.95)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(isHovered ? Color.accentColor.opacity(0.35) : Color.primaryOutline.opacity(0.6), lineWidth: 0.5)
+                            .strokeBorder(
+                                isHovered 
+                                    ? LinearGradient(
+                                        colors: [
+                                            Color.accentColor.opacity(0.4),
+                                            Color.accentColor.opacity(0.25)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                    : LinearGradient(
+                                        colors: [
+                                            Color.primaryOutline.opacity(0.6),
+                                            Color.primaryOutline.opacity(0.4)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                lineWidth: isHovered ? 0.75 : 0.5
+                            )
                     )
             )
-            .shadow(color: Color.primaryShadow.opacity(isHovered ? 0.10 : 0), radius: isHovered ? 6 : 0, x: 0, y: isHovered ? 3 : 0)
+            .shadow(color: Color.primaryShadow.opacity(isHovered ? 0.12 : 0), radius: isHovered ? 8 : 0, x: 0, y: isHovered ? 4 : 0)
+            .shadow(color: Color.accentColor.opacity(isHovered ? 0.08 : 0), radius: isHovered ? 12 : 0, x: 0, y: isHovered ? 6 : 0)
+            .scaleEffect(isHovered ? 1.02 : 1.0)
             .pointerStyle(.link)
             .help(descriptor.description)
             .onHover { hovering in
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     isHovered = hovering
                 }
             }

@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 // Layout types and DocumentGridView are now in DocumentGridLayout.swift
 
@@ -9,7 +8,7 @@ import SwiftData
 struct DocumentGridComponent: View {
     let component: InvoiceComponent
     @EnvironmentObject private var document: InvoiceDocument
-    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var templateDataService: TemplateDataService
     
     // Context parameters for targeted data access
     let clientId: UUID?
@@ -35,31 +34,29 @@ struct DocumentGridComponent: View {
                 data: data,
                 borderColor: currentComponent.style.showTableBorders ? currentComponent.style.tableBorderColorSwiftUI : .clear,
                 borderWidth: currentComponent.style.showTableBorders ? currentComponent.style.tableBorderWidth : 0,
-            columnConfigs: columnConfigurations
+                columnConfigs: columnConfigurations,
+                borderOptions: TableBorderOptions(
+                    showHeaderBorders: currentComponent.style.showHeaderBorder,
+                    showRowBorders: currentComponent.style.showRowBorders,
+                    showCellBorders: currentComponent.style.showCellBorders
+                )
             ) { item in
                 renderGridCell(for: item)
             }
             .id("\(currentComponent.id)-\(currentComponent.style.hashValue)") // Force re-render when style changes
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(currentComponent.style.padding)
-            .background(
-                RoundedRectangle(cornerRadius: currentComponent.style.cornerRadius)
-                    .fill(isSectionComponent ? Color.clear : currentComponent.style.backgroundColorSwiftUI)
-                    .opacity(isSectionComponent ? 1.0 : currentComponent.style.backgroundOpacity)
-            )
-            // Note: Border is handled by DocumentGridView's unified border system
             .shadow(
                 color: currentComponent.style.shadowEnabled ? currentComponent.style.shadowColorSwiftUI.opacity(currentComponent.style.shadowOpacity) : .clear,
                 radius: currentComponent.style.shadowRadius,
                 x: currentComponent.style.shadowOffsetX,
                 y: currentComponent.style.shadowOffsetY
             )
-            .padding(currentComponent.style.margin)
         .background(
             GeometryReader { geometry in
                 Color.clear
             .onAppear {
                 // Initialize column configurations when the view appears
+                initializeColumnsIfNeeded()
                 initializeColumnsForData(data)
             }
         }
@@ -69,32 +66,48 @@ struct DocumentGridComponent: View {
     
     // MARK: - Column Configurations
     
+    @State private var hasInitializedColumns = false
+    
     private var columnConfigurations: [ColumnWidthConfig] {
         // Get the number of columns from the sample data
+        let columnCount = sampleData.first?.count ?? 4
+        
+        // Note: Initialization is moved to onAppear to avoid modifying @Published
+        // properties from computed properties, which causes infinite loops
+        
+        // Convert dynamic column configurations to ColumnWidthConfig array
+        var configs: [ColumnWidthConfig] = []
+        for i in 0..<columnCount {
+            let config = currentComponent.style.columnConfiguration(for: i)
+            // Enforce mutual exclusivity: prioritize auto-sized, then flexible, then fixed
+            if config.isAutoSized {
+                configs.append(.autoSized())
+            } else if config.isFlexible {
+                configs.append(.flexible())
+            } else {
+                configs.append(.fixed(config.width))
+            }
+        }
+        return configs
+    }
+    
+    private func initializeColumnsIfNeeded() {
+        guard !hasInitializedColumns else { return }
+        
         let columnCount = sampleData.first?.count ?? 4
         
         // Initialize configurations based on table direction
         if currentComponent.style.tableDirection == .horizontal {
             if currentComponent.style.columnConfigurations.isEmpty {
                 document.initializeColumnConfigurations(for: currentComponent.id, columnCount: columnCount)
+                hasInitializedColumns = true
             }
         } else {
             if currentComponent.style.rowConfigurations.isEmpty {
                 document.initializeRowConfigurations(for: currentComponent.id, rowCount: columnCount)
-            }
+                hasInitializedColumns = true
         }
-        
-        // Convert dynamic column configurations to ColumnWidthConfig array
-        var configs: [ColumnWidthConfig] = []
-        for i in 0..<columnCount {
-            let config = currentComponent.style.columnConfiguration(for: i)
-            configs.append(ColumnWidthConfig(
-                isFlexible: config.isFlexible,
-                fixedWidth: config.isFlexible ? nil : config.width,
-                isAutoSized: config.isAutoSized
-            ))
         }
-        return configs
     }
     
     // MARK: - Sample Data
@@ -103,7 +116,7 @@ struct DocumentGridComponent: View {
     private var sampleData: [[DocumentTableItem]] {
         let generator = DocumentGridDataGenerator(
             component: currentComponent,
-            modelContext: modelContext,
+            templateDataService: templateDataService,
             clientId: clientId,
             invoiceId: invoiceId
         )
@@ -113,7 +126,7 @@ struct DocumentGridComponent: View {
     private var isSectionComponent: Bool {
         let generator = DocumentGridDataGenerator(
             component: currentComponent,
-            modelContext: modelContext,
+            templateDataService: templateDataService,
             clientId: clientId,
             invoiceId: invoiceId
         )
@@ -165,9 +178,9 @@ struct DocumentGridComponent: View {
                     return config.headerAlignment
                 }
             case .vertical:
-                // Vertical: use row header alignment
-                if let row = item.rowIndex {
-                    let config = currentComponent.style.rowConfiguration(for: row)
+                // Vertical: use column header alignment (columns are configured, not rows)
+                if let col = item.columnIndex {
+                    let config = currentComponent.style.columnConfiguration(for: col)
                     return config.headerAlignment
                 }
             }
@@ -181,9 +194,9 @@ struct DocumentGridComponent: View {
                 return def
             }
         case .vertical:
-            // Vertical: use row default
-            if let row = item.rowIndex {
-                let config = currentComponent.style.rowConfiguration(for: row)
+            // Vertical: use column default (columns are configured, not rows)
+            if let col = item.columnIndex {
+                let config = currentComponent.style.columnConfiguration(for: col)
                 return config.alignment
             }
         }
@@ -216,9 +229,9 @@ struct DocumentGridComponent: View {
                     return config.headerVerticalAlignment
                 }
             case .vertical:
-                // Vertical: use row header vertical alignment
-                if let row = item.rowIndex {
-                    let config = currentComponent.style.rowConfiguration(for: row)
+                // Vertical: use column header vertical alignment (columns are configured, not rows)
+                if let col = item.columnIndex {
+                    let config = currentComponent.style.columnConfiguration(for: col)
                     return config.headerVerticalAlignment
                 }
             }
@@ -233,9 +246,9 @@ struct DocumentGridComponent: View {
                 return config.verticalAlignment
             }
         case .vertical:
-            // Vertical: use row default
-            if let row = item.rowIndex {
-                let config = currentComponent.style.rowConfiguration(for: row)
+            // Vertical: use column default (columns are configured, not rows)
+            if let col = item.columnIndex {
+                let config = currentComponent.style.columnConfiguration(for: col)
                 return config.verticalAlignment
             }
         }
@@ -290,14 +303,6 @@ struct DocumentGridComponent: View {
                 }
             }
             .gridCellAnchor(gridCellAnchorForItem(item)) // Apply anchor to the entire cell content
-            // Note: Borders are handled by DocumentGridView's unified border system
-            .shadow(
-                color: currentComponent.style.shadowEnabled && currentComponent.style.shadowColorSwiftUI != Color.clear ? 
-                       currentComponent.style.shadowColorSwiftUI.opacity(currentComponent.style.shadowOpacity) : .clear,
-                radius: currentComponent.style.shadowRadius,
-                x: currentComponent.style.shadowOffsetX,
-                y: currentComponent.style.shadowOffsetY
-            )
         )
     }
     
@@ -464,12 +469,21 @@ struct DocumentGridComponent: View {
 /// Property editor for the document grid component with advanced grid-specific options
 struct DocumentGridPropertyEditor: View {
     @EnvironmentObject private var document: InvoiceDocument
+    @EnvironmentObject private var templateDataService: TemplateDataService
     @Environment(\.modelContext) private var modelContext
     let component: InvoiceComponent
-    
+    let clientId: UUID?
+    let invoiceId: UUID?
     
     // State for TabView selection
     @State private var selectedColumnTab = 0
+    
+    // Initializer with default values for optional parameters
+    init(component: InvoiceComponent, clientId: UUID? = nil, invoiceId: UUID? = nil) {
+        self.component = component
+        self.clientId = clientId
+        self.invoiceId = invoiceId
+    }
     
     /// Ensures the selected tab is within valid bounds
     private var validSelectedTab: Int {
@@ -482,8 +496,22 @@ struct DocumentGridPropertyEditor: View {
     }
     
     // Get the number of columns from the sample data
+    @State private var hasInitializedPropertyEditorColumns = false
+    
     private var columnCount: Int {
         // Get the actual number of columns from the sample data
+        let sampleData = generateSampleData()
+        let detectedCount = sampleData.first?.count ?? 4
+        
+        // Note: Initialization is deferred to avoid modifying @Published properties
+        // from computed properties. Use .onAppear or Task for initialization.
+        
+        return detectedCount
+    }
+    
+    private func initializePropertyEditorColumnsIfNeeded() {
+        guard !hasInitializedPropertyEditorColumns else { return }
+        
         let sampleData = generateSampleData()
         let detectedCount = sampleData.first?.count ?? 4
         
@@ -491,14 +519,14 @@ struct DocumentGridPropertyEditor: View {
         if currentComponent.style.tableDirection == .horizontal {
             if currentComponent.style.columnConfigurations.isEmpty {
                 document.initializeColumnConfigurations(for: currentComponent.id, columnCount: detectedCount)
+                hasInitializedPropertyEditorColumns = true
             }
         } else {
             if currentComponent.style.rowConfigurations.isEmpty {
                 document.initializeRowConfigurations(for: currentComponent.id, rowCount: detectedCount)
+                hasInitializedPropertyEditorColumns = true
             }
         }
-        
-        return detectedCount
     }
     
     /// Returns the number of tabs needed based on table direction (for rows/data fields)
@@ -526,24 +554,13 @@ struct DocumentGridPropertyEditor: View {
         return sampleData.first?.count ?? 2 // Usually 2 for vertical (label + value)
     }
     
-    /// Determines if this is a section component that should use section-specific data
-    private var isSectionComponent: Bool {
-        let generator = DocumentGridDataGenerator(
-            component: currentComponent,
-            modelContext: modelContext,
-            clientId: nil,
-            invoiceId: nil
-        )
-        return generator.isSectionComponent
-    }
-    
     /// Generates section-specific data for section components
     private func generateSectionData() -> [[DocumentTableItem]] {
         let generator = DocumentGridDataGenerator(
             component: currentComponent,
-            modelContext: modelContext,
-            clientId: nil,
-            invoiceId: nil
+            templateDataService: templateDataService,
+            clientId: clientId,
+            invoiceId: invoiceId
         )
         return generator.generateSectionData()
     }
@@ -552,9 +569,9 @@ struct DocumentGridPropertyEditor: View {
     private func generateSampleData() -> [[DocumentTableItem]] {
         let generator = DocumentGridDataGenerator(
             component: currentComponent,
-            modelContext: modelContext,
-            clientId: nil,
-            invoiceId: nil
+            templateDataService: templateDataService,
+            clientId: clientId,
+            invoiceId: invoiceId
         )
         return generator.generateSampleData()
     }
@@ -676,18 +693,17 @@ struct DocumentGridPropertyEditor: View {
     }
 
     private func generateTypographyGroup() -> some View {
-        GroupBox("Typography") {
-            VStack {
-                generateFontFamilyPicker()
-                generateFontSizeAndWeightRow()
-                generateSpacingRow()
-                generateLineLimitSlider()
-            }
-            .padding()
+        Group {
+            generateFontFamilyPicker()
+            generateFontSizeAndWeightRow()
+            generateSpacingRow()
+            generateLineLimitSlider()
         }
+        .padding()
     }
 
     private func generateFontFamilyPicker() -> some View {
+        ControlRowContainer {
         LabeledContent("Font Family", content: {
             Picker("Font Family", selection: Binding(
                 get: { FontFamilyOption(styleValue: currentComponent.style.fontFamily) },
@@ -699,18 +715,21 @@ struct DocumentGridPropertyEditor: View {
             }
             .pickerStyle(.menu)
         })
+            .padding(.vertical, 3)
+        }
     }
 
     private func generateFontSizeAndWeightRow() -> some View {
-        HStack {
+        Group {
             generateFontSizeSlider()
             generateFontWeightPicker()
         }
     }
 
     private func generateFontSizeSlider() -> some View {
+        ControlRowContainer {
         LabeledContent("Size", content: {
-            HStack {
+            Group {
                 Slider(
                     value: Binding(
                         get: { Double(currentComponent.style.fontSize) },
@@ -723,9 +742,12 @@ struct DocumentGridPropertyEditor: View {
                     .monospacedDigit()
             }
         })
+            .padding(.vertical, 3)
+        }
     }
 
     private func generateFontWeightPicker() -> some View {
+        ControlRowContainer {
         LabeledContent("Weight", content: {
             Picker("Weight", selection: Binding(
                 get: { FontWeightOption(styleValue: currentComponent.style.fontWeight) },
@@ -737,18 +759,21 @@ struct DocumentGridPropertyEditor: View {
             }
             .pickerStyle(.menu)
         })
+            .padding(.vertical, 3)
+        }
     }
 
     private func generateSpacingRow() -> some View {
-        HStack {
+        Group {
             generateLineSpacingSlider()
             generateLetterSpacingSlider()
         }
     }
 
     private func generateLineSpacingSlider() -> some View {
+        ControlRowContainer {
         LabeledContent("Line Spacing", content: {
-            HStack {
+            Group {
                 Slider(
                     value: Binding(
                         get: { Double(currentComponent.style.lineSpacing) },
@@ -761,11 +786,14 @@ struct DocumentGridPropertyEditor: View {
                     .monospacedDigit()
             }
         })
+            .padding(.vertical, 3)
+        }
     }
 
     private func generateLetterSpacingSlider() -> some View {
+        ControlRowContainer {
         LabeledContent("Letter Spacing", content: {
-            HStack {
+            Group {
                 Slider(
                     value: Binding(
                         get: { Double(currentComponent.style.letterSpacing) },
@@ -778,11 +806,14 @@ struct DocumentGridPropertyEditor: View {
                     .monospacedDigit()
             }
         })
+            .padding(.vertical, 3)
+        }
     }
 
     private func generateLineLimitSlider() -> some View {
+        ControlRowContainer {
         LabeledContent("Line Limit", content: {
-            HStack {
+            Group {
                 Slider(
                     value: Binding(
                         get: { Double(getLineLimitForTab(selectedColumnTab)) },
@@ -795,6 +826,8 @@ struct DocumentGridPropertyEditor: View {
                     .monospacedDigit()
             }
         })
+            .padding(.vertical, 3)
+        }
     }
     
     // Generate direction-aware tabs (columns for horizontal, rows for vertical)
@@ -827,21 +860,19 @@ struct DocumentGridPropertyEditor: View {
     }
     
     private func generateTabContent(for index: Int) -> some View {
-        ScrollView {
-            VStack(alignment: .leading) {
-                generateTypographyGroup()
-                generateDataCellAlignmentGroup(for: index)
-                generateHeaderAlignmentGroup(for: index)
-            }
-            .padding()
+        Group {
+            generateTypographyGroup()
+            generateDataCellAlignmentGroup(for: index)
+            generateHeaderAlignmentGroup(for: index)
         }
+        .padding()
     }
     
 
     
     private func generateDataCellAlignmentGroup(for index: Int) -> some View {
-        GroupBox("Data Cell Alignment") {
                         AlignmentGridPicker(
+            label: "Data Cell Alignment",
                             horizontalAlignment: Binding(
                                 get: { 
                                     switch currentComponent.style.tableDirection {
@@ -866,12 +897,11 @@ struct DocumentGridPropertyEditor: View {
                             )
                         )
             .padding()
-        }
     }
     
     private func generateHeaderAlignmentGroup(for index: Int) -> some View {
-        GroupBox("Header Alignment") {
                         AlignmentGridPicker(
+            label: "Header Alignment",
                             horizontalAlignment: Binding(
                                 get: { 
                                     switch currentComponent.style.tableDirection {
@@ -896,7 +926,6 @@ struct DocumentGridPropertyEditor: View {
                             )
                         )
             .padding()
-        }
     }
     
     // Generate column tabs for horizontal tables (for configuring column widths)
@@ -908,15 +937,26 @@ struct DocumentGridPropertyEditor: View {
     private func generateColumnTabsForHorizontal() -> some View {
         TabView(selection: $selectedHorizontalColumnTab) {
             ForEach(Array(0..<columnCount), id: \.self) { columnIndex in
-                VStack(alignment: .leading) {
-                    ModernSectionHeader(title: "Column \(columnIndex + 1) Width Settings")
+                Group {
+                    Text("Column \(columnIndex + 1) Width Settings")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .padding(.vertical, 4)
                     
-                    ModernDivider()
+                    Divider()
+                        .background(Color(NSColor.separatorColor).opacity(0.3))
+                        .padding(.vertical, 4)
                     
                     // Width Behavior Section
-                    VStack(alignment: .leading) {
-                        ModernSectionHeader(title: "Width Behavior")
+                    Group {
+                        Text("Width Behavior")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Color(NSColor.secondaryLabelColor))
+                            .padding(.vertical, 4)
                         
+                        ControlRowContainer {
                         LabeledContent("Flexible Width", content: {
                             Toggle("", isOn: Binding(
                                 get: { currentComponent.style.columnConfiguration(for: columnIndex).isFlexible },
@@ -924,7 +964,10 @@ struct DocumentGridPropertyEditor: View {
                             ))
                             .labelsHidden()
                         })
+                            .padding(.vertical, 3)
+                        }
                         
+                        ControlRowContainer {
                         LabeledContent("Auto-Size Width", content: {
                             Toggle("", isOn: Binding(
                                 get: { currentComponent.style.columnConfiguration(for: columnIndex).isAutoSized },
@@ -932,10 +975,13 @@ struct DocumentGridPropertyEditor: View {
                             ))
                             .labelsHidden()
                         })
+                            .padding(.vertical, 3)
+                        }
                         
                         if !currentComponent.style.columnConfiguration(for: columnIndex).isFlexible {
+                            ControlRowContainer {
                             LabeledContent("Fixed Width", content: {
-                                HStack {
+                                Group {
                                     Slider(
                                         value: Binding(
                                             get: { Double(currentComponent.style.columnConfiguration(for: columnIndex).width) },
@@ -948,6 +994,8 @@ struct DocumentGridPropertyEditor: View {
                                         .monospacedDigit()
                             }
                             })
+                                .padding(.vertical, 3)
+                            }
                         }
                     }
                 }
@@ -971,15 +1019,26 @@ struct DocumentGridPropertyEditor: View {
     private func generateColumnTabsForVertical() -> some View {
         TabView(selection: $selectedVerticalColumnTab) {
             ForEach(Array(0..<columnCountForVertical), id: \.self) { columnIndex in
-                VStack(alignment: .leading) {
-                    ModernSectionHeader(title: "Column \(columnIndex + 1) Width Settings")
+                Group {
+                    Text("Column \(columnIndex + 1) Width Settings")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .padding(.vertical, 4)
                     
-                    ModernDivider()
+                    Divider()
+                        .background(Color(NSColor.separatorColor).opacity(0.3))
+                        .padding(.vertical, 4)
                     
                     // Width Behavior Section
-                    VStack(alignment: .leading) {
-                        ModernSectionHeader(title: "Width Behavior")
+                    Group {
+                        Text("Width Behavior")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Color(NSColor.secondaryLabelColor))
+                            .padding(.vertical, 4)
                         
+                        ControlRowContainer {
                         LabeledContent("Flexible Width", content: {
                             Toggle("", isOn: Binding(
                                 get: { currentComponent.style.columnConfiguration(for: columnIndex).isFlexible },
@@ -987,7 +1046,10 @@ struct DocumentGridPropertyEditor: View {
                             ))
                             .labelsHidden()
                         })
+                            .padding(.vertical, 3)
+                        }
                         
+                        ControlRowContainer {
                         LabeledContent("Auto-Size Width", content: {
                             Toggle("", isOn: Binding(
                                 get: { currentComponent.style.columnConfiguration(for: columnIndex).isAutoSized },
@@ -995,10 +1057,13 @@ struct DocumentGridPropertyEditor: View {
                             ))
                             .labelsHidden()
                         })
+                            .padding(.vertical, 3)
+                        }
                         
                         if !currentComponent.style.columnConfiguration(for: columnIndex).isFlexible {
+                            ControlRowContainer {
                             LabeledContent("Fixed Width", content: {
-                                HStack {
+                                Group {
                                     Slider(
                                         value: Binding(
                                             get: { Double(currentComponent.style.columnConfiguration(for: columnIndex).width) },
@@ -1011,6 +1076,8 @@ struct DocumentGridPropertyEditor: View {
                                         .monospacedDigit()
                             }
                             })
+                                .padding(.vertical, 3)
+                            }
                         }
                     }
                 }
@@ -1052,14 +1119,12 @@ struct DocumentGridPropertyEditor: View {
                 ))
                 
                 // Column Width Settings
-                GroupBox("Column Width") {
-                    if currentComponent.style.tableDirection == .horizontal {
-                        generateColumnTabsForHorizontal()
-                            .padding()
-                    } else {
-                        generateColumnTabsForVertical()
-                            .padding()
-                    }
+                if currentComponent.style.tableDirection == .horizontal {
+                    generateColumnTabsForHorizontal()
+                        .padding()
+                } else {
+                    generateColumnTabsForVertical()
+                        .padding()
                 }
             }
             
@@ -1078,53 +1143,57 @@ struct DocumentGridPropertyEditor: View {
             // Section 3: Fill
             Section("Fill") {
                 // Text Group
-                GroupBox("Text") {
-                    VStack {
-                        LabeledContent("Color", content: {
-                            HStack {
-                                ColorPicker("", selection: Binding(
-                                    get: { currentComponent.style.textColorSwiftUI },
-                                    set: { document.updateTextColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
-                                ))
-                                .labelsHidden()
-                                
-                                TextField("Hex", text: Binding(
-                                    get: { "#\(currentComponent.style.textColor)" },
-                                    set: { 
-                                        let hex = $0.replacingOccurrences(of: "#", with: "")
-                                        document.updateTextColor(for: currentComponent.id, color: sanitizedHex(hex))
-                                    }
-                                ))
-                                .textFieldStyle(.roundedBorder)
-                            }
-                        })
-                        
-                        LabeledContent("Opacity", content: {
-                            HStack {
-                                Slider(
-                                    value: Binding(
-                                        get: { Double(currentComponent.style.textOpacity) },
-                                        set: { document.updateTextOpacity(for: currentComponent.id, opacity: CGFloat($0)) }
-                                    ),
-                                    in: 0...1,
-                                    step: 0.05
-                                )
-                                Text(String(format: "%.2f", currentComponent.style.textOpacity))
-                                    .monospacedDigit()
-                            }
-                        })
+                Group {
+                    ControlRowContainer {
+                    LabeledContent("Color", content: {
+                        Group {
+                            ColorPicker("", selection: Binding(
+                                get: { currentComponent.style.textColorSwiftUI },
+                                set: { document.updateTextColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
+                            ))
+                            .labelsHidden()
+                            
+                            TextField("Hex", text: Binding(
+                                get: { "#\(currentComponent.style.textColor)" },
+                                set: { 
+                                    let hex = $0.replacingOccurrences(of: "#", with: "")
+                                    document.updateTextColor(for: currentComponent.id, color: hex.uppercased())
+                                }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                        }
+                    })
+                        .padding(.vertical, 3)
                     }
-                    .padding()
+                    
+                    ControlRowContainer {
+                    LabeledContent("Opacity", content: {
+                        Group {
+                            Slider(
+                                value: Binding(
+                                    get: { Double(currentComponent.style.textOpacity) },
+                                    set: { document.updateTextOpacity(for: currentComponent.id, opacity: CGFloat($0)) }
+                                ),
+                                in: 0...1,
+                                step: 0.05
+                            )
+                            Text(String(format: "%.2f", currentComponent.style.textOpacity))
+                                .monospacedDigit()
+                        }
+                    })
+                        .padding(.vertical, 3)
+                    }
                 }
+                .padding()
                 
                 // Backgrounds Group
-                GroupBox("Table Backgrounds") {
-                    VStack {
-                        LabeledContent("Header", content: {
-                            HStack {
+                Group {
+                    ControlRowContainer {
+                    LabeledContent("Header", content: {
+                            Group {
                                 ColorPicker("", selection: Binding(
                                     get: { currentComponent.style.tableHeaderColorSwiftUI },
-                                    set: { document.updateTableHeaderColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
+                                    set: { document.updateTableHeaderColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
                                 ))
                                 .labelsHidden()
                                 
@@ -1132,18 +1201,21 @@ struct DocumentGridPropertyEditor: View {
                                     get: { "#\(currentComponent.style.tableHeaderColor)" },
                                     set: { 
                                         let hex = $0.replacingOccurrences(of: "#", with: "")
-                                        document.updateTableHeaderColor(for: currentComponent.id, color: sanitizedHex(hex))
+                                        document.updateTableHeaderColor(for: currentComponent.id, color: hex.uppercased())
                                     }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                             }
                         })
+                        .padding(.vertical, 3)
+                    }
                         
+                        ControlRowContainer {
                         LabeledContent(currentComponent.style.tableDirection == .horizontal ? "1st Row" : "1st Column", content: {
-                            HStack {
+                            Group {
                                 ColorPicker("", selection: Binding(
                                     get: { currentComponent.style.tableRowColorSwiftUI },
-                                    set: { document.updateTableRowColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
+                                    set: { document.updateTableRowColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
                                 ))
                                 .labelsHidden()
                                 
@@ -1151,18 +1223,21 @@ struct DocumentGridPropertyEditor: View {
                                     get: { "#\(currentComponent.style.tableRowColor)" },
                                     set: { 
                                         let hex = $0.replacingOccurrences(of: "#", with: "")
-                                        document.updateTableRowColor(for: currentComponent.id, color: sanitizedHex(hex))
+                                        document.updateTableRowColor(for: currentComponent.id, color: hex.uppercased())
                                     }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                             }
                         })
+                        .padding(.vertical, 3)
+                    }
                         
+                        ControlRowContainer {
                         LabeledContent(currentComponent.style.tableDirection == .horizontal ? "2nd Row" : "2nd Column", content: {
-                            HStack {
+                            Group {
                                 ColorPicker("", selection: Binding(
                                     get: { currentComponent.style.tableRowAltColorSwiftUI },
-                                    set: { document.updateTableRowAltColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
+                                    set: { document.updateTableRowAltColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
                                 ))
                                 .labelsHidden()
                                 
@@ -1170,13 +1245,16 @@ struct DocumentGridPropertyEditor: View {
                                     get: { "#\(currentComponent.style.tableRowAltColor)" },
                                     set: { 
                                         let hex = $0.replacingOccurrences(of: "#", with: "")
-                                        document.updateTableRowAltColor(for: currentComponent.id, color: sanitizedHex(hex))
+                                        document.updateTableRowAltColor(for: currentComponent.id, color: hex.uppercased())
                                     }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                             }
                         })
+                        .padding(.vertical, 3)
+                    }
                         
+                        ControlRowContainer {
                         LabeledContent(currentComponent.style.tableDirection == .horizontal ? "Alternating Rows" : "Banded Columns", content: {
                             Toggle("", isOn: Binding(
                                 get: { currentComponent.style.useAlternatingRows },
@@ -1184,6 +1262,8 @@ struct DocumentGridPropertyEditor: View {
                             ))
                             .labelsHidden()
                         })
+                        .padding(.vertical, 3)
+                    }
                     }
                     .padding()
                 }
@@ -1197,44 +1277,48 @@ struct DocumentGridPropertyEditor: View {
                 ))
                 
                 if currentComponent.style.showTableBorders {
-                    GroupBox("Border Settings") {
-                        VStack {
-                            LabeledContent("Width", content: {
-                                HStack {
-                                    Slider(
-                                        value: Binding(
-                                            get: { Double(currentComponent.style.tableBorderWidth) },
-                                            set: { document.updateTableBorderWidth(for: currentComponent.id, width: CGFloat($0)) }
-                                        ),
-                                        in: 0.5...3.0,
-                                        step: 0.1
-                                    )
-                                    Text(String(format: "%.1f", currentComponent.style.tableBorderWidth))
-                                        .monospacedDigit()
-                                }
-                            })
-                            
-                            LabeledContent("Color", content: {
-                                HStack {
-                                    ColorPicker("", selection: Binding(
-                                        get: { currentComponent.style.tableBorderColorSwiftUI },
-                                        set: { document.updateTableBorderColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
-                                    ))
-                                    .labelsHidden()
-                                    
-                                    TextField("Hex", text: Binding(
-                                        get: { "#\(currentComponent.style.tableBorderColor)" },
-                                        set: { 
-                                            let hex = $0.replacingOccurrences(of: "#", with: "")
-                                            document.updateTableBorderColor(for: currentComponent.id, color: sanitizedHex(hex))
-                                        }
-                                    ))
-                                    .textFieldStyle(.roundedBorder)
-                                }
-                            })
+                    Group {
+                        ControlRowContainer {
+                        LabeledContent("Width", content: {
+                            Group {
+                                Slider(
+                                    value: Binding(
+                                        get: { Double(currentComponent.style.tableBorderWidth) },
+                                        set: { document.updateTableBorderWidth(for: currentComponent.id, width: CGFloat($0)) }
+                                    ),
+                                    in: 0.5...3.0,
+                                    step: 0.1
+                                )
+                                Text(String(format: "%.1f", currentComponent.style.tableBorderWidth))
+                                    .monospacedDigit()
+                            }
+                        })
+                            .padding(.vertical, 3)
                         }
-                        .padding()
+                            
+                        ControlRowContainer {
+                        LabeledContent("Color", content: {
+                            Group {
+                                ColorPicker("", selection: Binding(
+                                    get: { currentComponent.style.tableBorderColorSwiftUI },
+                                    set: { document.updateTableBorderColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
+                                ))
+                                .labelsHidden()
+                                
+                                TextField("Hex", text: Binding(
+                                    get: { "#\(currentComponent.style.tableBorderColor)" },
+                                    set: { 
+                                        let hex = $0.replacingOccurrences(of: "#", with: "")
+                                        document.updateTableBorderColor(for: currentComponent.id, color: hex.uppercased())
+                                    }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                            }
+                        })
+                            .padding(.vertical, 3)
+                        }
                     }
+                    .padding()
                 }
             }
             
@@ -1246,141 +1330,156 @@ struct DocumentGridPropertyEditor: View {
                 ))
                 
                 if currentComponent.style.shadowEnabled {
-                    GroupBox("Shadow Settings") {
-                        VStack {
-                            HStack {
-                                LabeledContent("Radius", content: {
-                                    HStack {
-                                        Slider(
-                                            value: Binding(
-                                                get: { Double(currentComponent.style.shadowRadius) },
-                                                set: { document.updateShadowRadius(for: currentComponent.id, radius: CGFloat($0)) }
-                                            ),
-                                            in: 0...20,
+                    Group {
+                        ControlRowContainer {
+                        LabeledContent("Radius", content: {
+                            Group {
+                                Slider(
+                                    value: Binding(
+                                        get: { Double(currentComponent.style.shadowRadius) },
+                                        set: { document.updateShadowRadius(for: currentComponent.id, radius: CGFloat($0)) }
+                                    ),
+                                        in: 0...20,
                         step: 0.5
-                                        )
-                                        Text(String(format: "%.1f", currentComponent.style.shadowRadius))
-                                            .monospacedDigit()
-                                    }
-                                })
-                                
-                                LabeledContent("Opacity", content: {
-                                    HStack {
-                                        Slider(
-                                            value: Binding(
-                                                get: { Double(currentComponent.style.shadowOpacity) },
-                                                set: { document.updateShadowOpacity(for: currentComponent.id, opacity: CGFloat($0)) }
-                                            ),
-                                            in: 0...1,
-                                            step: 0.05
-                                        )
-                                        Text(String(format: "%.2f", currentComponent.style.shadowOpacity))
-                                            .monospacedDigit()
-                                    }
-                                })
+                                )
+                                Text(String(format: "%.1f", currentComponent.style.shadowRadius))
+                                    .monospacedDigit()
                             }
-                            
-                            LabeledContent("Offset", content: {
-                                HStack {
-                                    HStack {
-                                        Text("X:")
-                                        
-                                        Slider(
-                                            value: Binding(
-                                                get: { Double(currentComponent.style.shadowOffsetX) },
-                                                set: { document.updateShadowOffset(for: currentComponent.id, x: CGFloat($0), y: currentComponent.style.shadowOffsetY) }
-                                            ),
-                                            in: -10...10,
-                                            step: 1
-                                        )
-                                        Text("\(Int(currentComponent.style.shadowOffsetX))")
-                                    }
-                                    
-                                    HStack {
-                                        Text("Y:")
-                                        
-                                        Slider(
-                                            value: Binding(
-                                                get: { Double(currentComponent.style.shadowOffsetY) },
-                                                set: { document.updateShadowOffset(for: currentComponent.id, x: currentComponent.style.shadowOffsetX, y: CGFloat($0)) }
-                                            ),
-                                            in: -10...10,
-                                            step: 1
-                                        )
-                                        Text("\(Int(currentComponent.style.shadowOffsetY))")
-                                    }
-                                }
-                            })
-                            
-                            LabeledContent("Color", content: {
-                                HStack {
-                                    ColorPicker("", selection: Binding(
-                                        get: { currentComponent.style.shadowColorSwiftUI },
-                                        set: { document.updateShadowColor(for: currentComponent.id, color: sanitizedHex($0.toHex())) }
-                                    ))
-                                    .labelsHidden()
-                                    
-                                    TextField("Hex", text: Binding(
-                                        get: { "#\(currentComponent.style.shadowColor)" },
-                                        set: { 
-                                            let hex = $0.replacingOccurrences(of: "#", with: "")
-                                            document.updateShadowColor(for: currentComponent.id, color: sanitizedHex(hex))
-                                        }
-                                    ))
-                                    .textFieldStyle(.roundedBorder)
-                                }
-                            })
+                        })
+                            .padding(.vertical, 3)
                         }
-                        .padding()
+                            
+                        ControlRowContainer {
+                        LabeledContent("Opacity", content: {
+                            Group {
+                                Slider(
+                                    value: Binding(
+                                        get: { Double(currentComponent.style.shadowOpacity) },
+                                        set: { document.updateShadowOpacity(for: currentComponent.id, opacity: CGFloat($0)) }
+                                    ),
+                                        in: 0...1,
+                                        step: 0.05
+                                )
+                                Text(String(format: "%.2f", currentComponent.style.shadowOpacity))
+                                    .monospacedDigit()
+                            }
+                        })
+                            .padding(.vertical, 3)
+                        }
+                            
+                        ControlRowContainer {
+                        LabeledContent("Offset", content: {
+                            Group {
+                                Group {
+                                    Text("X:")
+                                    
+                                    Slider(
+                                        value: Binding(
+                                            get: { Double(currentComponent.style.shadowOffsetX) },
+                                            set: { document.updateShadowOffset(for: currentComponent.id, x: CGFloat($0), y: currentComponent.style.shadowOffsetY) }
+                                        ),
+                                        in: -10...10,
+                                        step: 1
+                                    )
+                                    Text("\(Int(currentComponent.style.shadowOffsetX))")
+                                }
+                                
+                                Group {
+                                    Text("Y:")
+                                    
+                                    Slider(
+                                        value: Binding(
+                                            get: { Double(currentComponent.style.shadowOffsetY) },
+                                            set: { document.updateShadowOffset(for: currentComponent.id, x: currentComponent.style.shadowOffsetX, y: CGFloat($0)) }
+                                        ),
+                                        in: -10...10,
+                                        step: 1
+                                    )
+                                    Text("\(Int(currentComponent.style.shadowOffsetY))")
+                                }
+                            }
+                        })
+                        .padding(.vertical, 3)
+                        }
+                            
+                        ControlRowContainer {
+                        LabeledContent("Color", content: {
+                            Group {
+                                ColorPicker("", selection: Binding(
+                                    get: { currentComponent.style.shadowColorSwiftUI },
+                                    set: { document.updateShadowColor(for: currentComponent.id, color: $0.toHex().replacingOccurrences(of: "#", with: "").uppercased()) }
+                                ))
+                                .labelsHidden()
+                                
+                                TextField("Hex", text: Binding(
+                                    get: { "#\(currentComponent.style.shadowColor)" },
+                                    set: { 
+                                        let hex = $0.replacingOccurrences(of: "#", with: "")
+                                        document.updateShadowColor(for: currentComponent.id, color: hex.uppercased())
+                                    }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                            }
+                        })
+                        .padding(.vertical, 3)
+                        }
                     }
+                    .padding()
                 }
             }
             
             // Section 6: Spacing
             Section("Spacing") {
-                GroupBox("Padding") {
-                    VStack {
-                        LabeledContent {
-                            HStack {
-                                Slider(
-                                    value: Binding(
-                                        get: { Double(currentComponent.style.tableHeaderPadding) },
-                                        set: { document.updateTableHeaderPadding(for: currentComponent.id, padding: CGFloat($0)) }
-                                    ),
-                                    in: 4...20,
+                Group {
+                    ControlRowContainer {
+                    LabeledContent {
+                        Group {
+                            Slider(
+                                value: Binding(
+                                    get: { Double(currentComponent.style.tableHeaderPadding) },
+                                    set: { document.updateTableHeaderPadding(for: currentComponent.id, padding: CGFloat($0)) }
+                                ),
+                                in: 4...20,
                     step: 1
-                                )
-                                Text("\(Int(currentComponent.style.tableHeaderPadding))")
-                                    .monospacedDigit()
-                            }
-                        } label: {
-                            Label("Header", systemImage: "square.stack.3d.up")
+                            )
+                            Text("\(Int(currentComponent.style.tableHeaderPadding))")
+                                .monospacedDigit()
                         }
-                        
-                        LabeledContent {
-                            HStack {
-                                Slider(
-                                    value: Binding(
-                                        get: { Double(currentComponent.style.tableCellPadding) },
-                                        set: { document.updateTableCellPadding(for: currentComponent.id, padding: CGFloat($0)) }
-                                    ),
-                                    in: 4...20,
-                    step: 1
-                                )
-                                Text("\(Int(currentComponent.style.tableCellPadding))")
-                                    .monospacedDigit()
-                            }
-                        } label: {
-                            Label("Cell", systemImage: "square.grid.2x2")
+                    } label: {
+                        Label("Header", systemImage: "square.stack.3d.up")
                         }
-                        
+                        .padding(.vertical, 3)
                     }
-                    .padding()
+                    
+                    ControlRowContainer {
+                    LabeledContent {
+                        Group {
+                            Slider(
+                                value: Binding(
+                                    get: { Double(currentComponent.style.tableCellPadding) },
+                                    set: { document.updateTableCellPadding(for: currentComponent.id, padding: CGFloat($0)) }
+                                ),
+                                in: 4...20,
+                    step: 1
+                            )
+                            Text("\(Int(currentComponent.style.tableCellPadding))")
+                                .monospacedDigit()
+                        }
+                    } label: {
+                        Label("Cell", systemImage: "square.grid.2x2")
+                        }
+                        .padding(.vertical, 3)
+                    }
+                    
                 }
+                .padding()
             }
-        }
+        
         .formStyle(.grouped)
         .id(currentComponent.id) // Force re-render when component changes
+        .onAppear {
+            // Initialize columns when property editor appears to avoid infinite loops
+            initializePropertyEditorColumnsIfNeeded()
+        }
     }
 }
-

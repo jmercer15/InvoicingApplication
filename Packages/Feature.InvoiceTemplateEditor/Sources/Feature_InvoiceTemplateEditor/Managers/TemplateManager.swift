@@ -3,10 +3,7 @@ import SwiftUI
 import AppKit
 import CoreGraphics
 
-class TemplateManager: ObservableObject, @unchecked Sendable {
-    @MainActor
-    static let shared = TemplateManager()
-    
+public class TemplateManager: ObservableObject, @unchecked Sendable {
     @Published var recentTemplates: [TemplateMetadata] = []
     @Published var isLoading = false
     @Published var lastError: String?
@@ -15,7 +12,7 @@ class TemplateManager: ObservableObject, @unchecked Sendable {
     private let recentTemplatesKey = "RecentTemplates"
     private let maxRecentTemplates = 10
     
-    private init() {
+    public init() {
         // Create templates directory in Application Support
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         templatesDirectory = appSupport.appendingPathComponent("InvoiceTemplates", isDirectory: true)
@@ -150,9 +147,8 @@ class TemplateManager: ObservableObject, @unchecked Sendable {
     // MARK: - Utility Methods
     
     @MainActor
-    func generateThumbnail(from document: InvoiceDocument) -> Data? {
+    func generateThumbnail(from document: InvoiceDocument, using workspace: TemplateEditorWorkspaceViewModel) -> Data? {
         // Create a thumbnail of the current document using the modern canvas
-        let workspace = TemplateEditorWorkspaceViewModel()
         workspace.editorViewModel.document = document
         workspace.marginLeftStr = String(format: "%.0f", document.margins.left)
         workspace.marginRightStr = String(format: "%.0f", document.margins.right)

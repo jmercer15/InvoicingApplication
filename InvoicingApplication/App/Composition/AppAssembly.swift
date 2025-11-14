@@ -2,11 +2,13 @@ import Foundation
 import SwiftData
 import Core
 import Data
+import SharedUI
 import Feature_Calendar
 import Feature_BillingHub
 import Feature_Clients
 import Feature_Invoices
 import Feature_InvoiceTemplateEditor
+import Feature_NDIS
 import Feature_Settings
 
 /// Main dependency injection container for the application
@@ -17,7 +19,8 @@ public class AppAssembly: ObservableObject {
     
     /// Model container for SwiftData
     public let modelContainer: ModelContainer
-    public var modelContext: ModelContext { ModelContext(modelContainer) }
+    /// Shared model context for all repositories (created on main thread)
+    public let modelContext: ModelContext
     
     // MARK: - Data Layer
     
@@ -25,6 +28,11 @@ public class AppAssembly: ObservableObject {
     public lazy var sessionsRepository: SessionsRepository = SessionsRepositorySwiftData(modelContext: modelContext)
     public lazy var invoicesRepository: InvoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
     public lazy var clientsRepository: ClientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
+    public lazy var clientServicesRepository: ClientServicesRepository = ClientServicesRepositorySwiftData(modelContext: modelContext)
+    public lazy var ndisItemsRepository: NDISItemRepository = NDISItemRepositorySwiftData(modelContext: modelContext)
+    public lazy var payeesRepository: PayeeRepository = PayeeRepositorySwiftData(modelContext: modelContext)
+    public lazy var planManagersRepository: PlanManagerRepository = PlanManagerRepositorySwiftData(modelContext: modelContext)
+    public lazy var addressRepository: AddressRepository = AddressRepositorySwiftData(modelContext: modelContext)
     
     /// External services
     public lazy var syncService: SyncService = EventKitSyncServiceAdapter()
@@ -57,17 +65,37 @@ public class AppAssembly: ObservableObject {
     /// Calendar feature
     func makeCalendarViewModel() -> CalendarViewModel {
         let eventKitService = EventKitSyncService.shared
-        let calendarDataManager = CalendarDataManager(context: modelContext, eventKitService: eventKitService)
+        let calendarDataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
         return CalendarViewModel(
-            context: modelContext,
+            sessionsRepository: sessionsRepository,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
             eventKitService: eventKitService,
-            dataManager: calendarDataManager
+            dataManager: calendarDataManager,
+            modelContext: modelContext, // Needed for EventKit external changes handling
+            addressRepository: addressRepository
+        )
+    }
+    
+    /// Calendar Container ViewModel factory
+    func makeCalendarContainerViewModel() -> CalendarContainerViewModel {
+        let eventKitService = EventKitSyncService.shared
+        return CalendarContainerViewModel(
+            sessionsRepository: sessionsRepository,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            addressRepository: addressRepository,
+            modelContext: modelContext // Needed for EventKit external changes handling
         )
     }
     
     /// Billing Hub feature
     func makeBillingHubViewModel() -> BillingHubViewModel {
-        BillingHubViewModel(modelContext: modelContext)
+        BillingHubViewModel(
+            sessionsRepository: sessionsRepository,
+            invoicesRepository: invoicesRepository,
+            clientsRepository: clientsRepository
+        )
     }
     
     /// Clients feature
@@ -77,9 +105,62 @@ public class AppAssembly: ObservableObject {
         )
     }
     
+    /// Client Detail ViewModel factory
+    func makeClientDetailViewModel(client: Client, isCreating: Bool) -> ClientDetailViewModel {
+        ClientDetailViewModel(
+            client: client,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            invoicesRepository: invoicesRepository,
+            ndisItemsRepository: ndisItemsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            modelContext: modelContext,
+            isCreating: isCreating
+        )
+    }
+    
     /// Invoices feature
     func makeInvoicesViewModel() -> InvoicesContainerViewModel {
-        InvoicesContainerViewModel(context: modelContext)
+        InvoicesContainerViewModel(
+            invoicesRepository: invoicesRepository,
+            clientServicesRepository: clientServicesRepository,
+            clientsRepository: clientsRepository
+        )
+    }
+    
+    /// Relationships feature
+    func makeRelationshipsViewModel() -> RelationshipsContainerViewModel {
+        RelationshipsContainerViewModel(
+            clientsRepository: clientsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            navigationManager: AppNavigationManager.shared
+        )
+    }
+    
+    /// Payee Detail ViewModel factory
+    func makePayeeDetailViewModel(payee: Payee, isCreating: Bool) -> PayeeDetailViewModel {
+        PayeeDetailViewModel(
+            payee: payee,
+            payeesRepository: payeesRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: modelContext,
+            isCreating: isCreating
+        )
+    }
+    
+    /// Plan Manager Detail ViewModel factory
+    func makePlanManagerDetailViewModel(planManager: PlanManager, isCreating: Bool) -> PlanManagerDetailViewModel {
+        PlanManagerDetailViewModel(
+            planManager: planManager,
+            planManagersRepository: planManagersRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: modelContext,
+            isCreating: isCreating
+        )
     }
     
     /// Settings feature
@@ -91,36 +172,71 @@ public class AppAssembly: ObservableObject {
         )
     }
     
+    /// Template Editor feature
+    func makeTemplateEditorWorkspace() -> TemplateEditorWorkspaceViewModel {
+        let templateManager = TemplateManager()
+        let editorViewModel = InvoiceTemplateEditorViewModel(templateManager: templateManager)
+        return TemplateEditorWorkspaceViewModel(
+            templateManager: templateManager,
+            editorViewModel: editorViewModel
+        )
+    }
+    
+    /// NDIS Billing Integration Service
+    public lazy var ndisBillingService: NDISBillingIntegrationService = {
+        NDISBillingIntegrationService(modelContext: modelContext)
+    }()
+    
+    /// NDIS Billing Workspace ViewModel factory
+    func makeNDISBillingWorkspaceViewModel() -> NDISBillingWorkspaceViewModel {
+        NDISBillingWorkspaceViewModel(
+            clientsRepository: clientsRepository,
+            sessionsRepository: sessionsRepository,
+            invoicesRepository: invoicesRepository,
+            ndisBillingService: ndisBillingService,
+            modelContext: modelContext
+        )
+    }
+    
+    /// Template Data Service for preview data
+    public lazy var templateDataService: TemplateDataService = TemplateDataService(
+        invoicesRepository: invoicesRepository,
+        clientsRepository: clientsRepository
+    )
+    
     // MARK: - Initialization
     
     public init() {
         // Create model container with all entities
-        self.modelContainer = ModelContainerHelper.createModelContainerSafely() ?? {
-            do {
-                let schema = Schema([
-                    ClientEntity.self,
-                    BusinessEntity.self,
-                    AddressEntity.self,
-                    InvoiceEntity.self,
-                    InvoiceItemEntity.self,
-                    ClientServiceEntity.self,
-                    PayeeEntity.self,
-                    PlanManagerEntity.self,
-                    SessionEntity.self,
-                    TravelChargeEntity.self,
-                    TravelChargeAuditLog.self,
-                    TravelChargeReviewItem.self,
-                    CreditHistoryEntryEntity.self,
-                    NDISItemEntity.self,
-                    RegionalPriceEntity.self
-                ])
-                
-                let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-                return try ModelContainer(for: schema, configurations: [modelConfiguration])
-            } catch {
-                fatalError("Could not create ModelContainer: \(error)")
-            }
-        }()
+        // Inline implementation to avoid module qualification issues
+        do {
+            let schema = Schema([
+                ClientEntity.self,
+                BusinessEntity.self,
+                AddressEntity.self,
+                InvoiceEntity.self,
+                InvoiceItemEntity.self,
+                ClientServiceEntity.self,
+                PayeeEntity.self,
+                PlanManagerEntity.self,
+                SessionEntity.self,
+                TravelChargeEntity.self,
+                TravelChargeAuditLog.self,
+                TravelChargeReviewItem.self,
+                CreditHistoryEntryEntity.self,
+                NDISItemEntity.self,
+                RegionalPriceEntity.self
+            ])
+            
+            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            self.modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            // Create a single shared ModelContext on the main thread
+            self.modelContext = ModelContext(modelContainer)
+            print("Created ModelContainer with persistent storage")
+        } catch {
+            print("Failed to create ModelContainer: \(error)")
+            fatalError("Could not create ModelContainer: \(error)")
+        }
     }
 }
 

@@ -78,12 +78,19 @@ struct CalendarBulkOperationsToolbar: View {
 }
 
 #Preview {
+    // Note: Preview disabled - would need CalendarViewModel(sessionsRepository:clientsRepository:clientServicesRepository:eventKitService:modelContext:)
+    EmptyView()
+    /*
+    let container = try! ModelContainer(for: SessionEntity.self)
+    let context = ModelContext(container)
+    let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
+    let eventKitService = EventKitSyncService.shared
+    let dataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
     CalendarBulkOperationsToolbar(viewModel: CalendarViewModel(
-        context: ModelContext(try! ModelContainer(for: SessionEntity.self)),
-        eventKitService: EventKitSyncService.shared,
-        dataManager: CalendarDataManager(
-            context: ModelContext(try! ModelContainer(for: SessionEntity.self)),
-            eventKitService: EventKitSyncService.shared
-        )
+        sessionsRepository: sessionsRepository,
+        eventKitService: eventKitService,
+        dataManager: dataManager,
+        modelContext: context
     ))
+    */
 } 

@@ -196,12 +196,16 @@ struct TemplateItem: Identifiable, Hashable {
 
 /// Modern template editor with a fresh, intuitive design
 public struct ModernTemplateEditorView: View {
-    @StateObject private var workspace = TemplateEditorWorkspaceViewModel()
+    @StateObject private var workspace: TemplateEditorWorkspaceViewModel
     @State private var highlightedTemplateID: UUID? = nil
     @State private var isInspectorVisible = true
     @State private var showingNewTemplateSheet = false
     
-    public init() {}
+    public init(workspace: TemplateEditorWorkspaceViewModel) {
+        self._workspace = StateObject(wrappedValue: workspace)
+    }
+    
+    @EnvironmentObject private var templateDataService: TemplateDataService
     
     public var body: some View {
         ModernTemplateManagementView(
@@ -211,15 +215,17 @@ public struct ModernTemplateEditorView: View {
             showingNewTemplateSheet: $showingNewTemplateSheet
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .environmentObject(workspace)
         .environmentObject(workspace.editorViewModel)
         .environmentObject(workspace.editorViewModel.document)
+        .environmentObject(templateDataService)
         .sheet(isPresented: $showingNewTemplateSheet) {
             ModernTemplateCreatorSheet(onCreateTemplate: handleCreateTemplate)
                 .environmentObject(workspace)
                 .environmentObject(workspace.editorViewModel)
                 .environmentObject(workspace.editorViewModel.document)
+                .environmentObject(templateDataService)
         }
     }
 

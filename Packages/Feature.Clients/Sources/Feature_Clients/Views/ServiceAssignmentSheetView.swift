@@ -1,27 +1,28 @@
 import SwiftUI
 import SwiftData
+import Core
 import Data
 import SharedUI
 
 
 struct ServiceAssignmentSheetView: View {
     let client: ClientEntity
-    let onProceed: ([NDISItemEntity]) -> Void
-    let alreadySelectedItems: [NDISItemEntity]
-    let availableNDISItems: [NDISItemEntity]
+    let onProceed: ([NDISItem]) -> Void
+    let alreadySelectedItems: [NDISItem]
+    let availableNDISItems: [NDISItem]
 
     @Environment(\.modelContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedItemIDs: Set<UUID> = []
-    @State private var filteredItems: [NDISItemEntity] = []
+    @State private var filteredItems: [NDISItem] = []
     @State private var searchText: String = ""
 
     init(
         client: ClientEntity,
-        alreadySelectedItems: [NDISItemEntity],
-        availableNDISItems: [NDISItemEntity],
-        onProceed: @escaping ([NDISItemEntity]) -> Void
+        alreadySelectedItems: [NDISItem],
+        availableNDISItems: [NDISItem],
+        onProceed: @escaping ([NDISItem]) -> Void
     ) {
         self.client = client
         self.onProceed = onProceed
@@ -82,8 +83,9 @@ struct ServiceAssignmentSheetView: View {
             filteredItems = availableNDISItems
         } else {
             filteredItems = availableNDISItems.filter { item in
-                item.itemDescription?.localizedCaseInsensitiveContains(searchText) ?? false ||
-                item.itemNumber.localizedCaseInsensitiveContains(searchText)
+                item.description?.localizedCaseInsensitiveContains(searchText) ?? false ||
+                item.itemNumber.localizedCaseInsensitiveContains(searchText) ||
+                item.name.localizedCaseInsensitiveContains(searchText)
             }
         }
     }
@@ -159,7 +161,7 @@ struct ServiceAssignmentSheetView: View {
     }
     
     @ViewBuilder
-    private func serviceRow(for item: NDISItemEntity) -> some View {
+    private func serviceRow(for item: NDISItem) -> some View {
         HStack(spacing: 12) {
             Image(systemName: selectedItemIDs.contains(item.id) ? "checkmark.circle.fill" : "circle")
                 .font(.title2)
@@ -342,7 +344,7 @@ struct ServiceAssignmentSheetView: View {
     }
     
     @ViewBuilder
-    private func priceRangeDisplay(for item: NDISItemEntity) -> some View {
+    private func priceRangeDisplay(for item: NDISItem) -> some View {
         if !item.regionalPrices.isEmpty {
             let priceValues = item.regionalPrices.map { $0.amount }
             let minPrice = priceValues.min() ?? 0.0
@@ -356,9 +358,9 @@ struct ServiceAssignmentSheetView: View {
                 }
                 Text("/ \(item.unit ?? "")").font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
-        } else if item.quoteRequired == true {
+        } else if let price = item.price, price > 0 {
             VStack(alignment: .trailing, spacing: 2) {
-                Text("Quote Required").font(.caption).fontWeight(.medium)
+                Text(String(format: "$%.2f", price)).fontWeight(.medium)
                 Text("/ \(item.unit ?? "")").font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
         } else {

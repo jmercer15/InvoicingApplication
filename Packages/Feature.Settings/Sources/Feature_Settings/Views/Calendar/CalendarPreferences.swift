@@ -105,6 +105,10 @@ final class CalendarPreferences: ObservableObject {
         }
     }
     struct PerCalendarSettings: Codable {
+        // Note: colorHex is stored for backward compatibility and user-selected calendar colors
+        // Calendar colors support arbitrary user selections (not just system colors)
+        // Future: Consider migrating to a color identifier system while maintaining user customizations
+        @available(*, deprecated, message: "Calendar colors should eventually use color system, but must support arbitrary user selections")
         var colorHex: String?
         var isMonitored: Bool
         var customSyncDirection: SyncDirection?

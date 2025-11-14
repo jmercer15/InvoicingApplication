@@ -23,6 +23,11 @@ extension ClientService {
 extension NDISItem {
     /// Convert from NDISItemEntity to domain model
     init(from entity: NDISItemEntity) {
+        let regionalPrices = entity.regionalPrices.map { RegionalPriceSnapshot(
+            regionIdentifier: $0.regionIdentifier ?? "",
+            amount: $0.amount
+        ) }
+        
         self.init(
             id: entity.id,
             itemNumber: entity.itemNumber,
@@ -30,7 +35,12 @@ extension NDISItem {
             description: entity.itemDescription,
             category: entity.category,
             unit: entity.unit,
-            price: Self.extractRepresentativePrice(from: entity.regionalPrices)
+            price: Self.extractRepresentativePrice(from: entity.regionalPrices),
+            isCurrent: entity.isCurrent,
+            effectiveStartDate: entity.effectiveStartDate,
+            effectiveEndDate: entity.effectiveEndDate,
+            nonFaceToFaceProvision: entity.nonFaceToFaceProvision,
+            regionalPrices: regionalPrices
         )
     }
     

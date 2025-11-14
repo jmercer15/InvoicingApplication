@@ -1,7 +1,7 @@
 import Foundation
 
 /// Domain model for an invoice
-public struct Invoice: Identifiable, Codable, Equatable, Sendable {
+public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let id: UUID
     public let invoiceNumber: String
     public let totalAmount: Double

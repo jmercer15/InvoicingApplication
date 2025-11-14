@@ -124,7 +124,7 @@ public struct InvoicesContentColumn: View {
     }
 
     private func syncContext() {
-        viewModel.updateContextIfNeeded(viewContext)
+        // Note: updateContextIfNeeded removed - repositories handle persistence
         viewModel.initializeIfNeeded()
     }
 }
@@ -230,7 +230,7 @@ public struct InvoicesDetailColumn: View {
     }
 
     private func syncContext() {
-        viewModel.updateContextIfNeeded(viewContext)
+        // Note: updateContextIfNeeded removed - repositories handle persistence
         viewModel.initializeIfNeeded()
     }
 }

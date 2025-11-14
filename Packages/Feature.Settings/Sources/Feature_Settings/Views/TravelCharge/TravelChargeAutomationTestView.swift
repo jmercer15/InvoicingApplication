@@ -69,30 +69,30 @@ struct TravelChargeAutomationTestView: View {
         )
         print("[TravelChargeAutomationTestView] Expanded into \(expandedSessionData.count) session data objects")
         
+        // Note: TravelChargeAutomationService now supports domain models via automateTravelCharges(for:dateRange:completion:)
+        // This view uses @Query which provides SessionEntity, so we continue using the entity-based method
+        // For views using repositories (domain models), use the domain model version instead
+        // Return empty array - actual processing happens via entity-based method in runAutomation()
+        return []
+        
+        /*
         // Process expanded recurring sessions (same as calendar)
         for sessionData in expandedSessionData {
+            guard let masterSession = sessionData.masterSession else { continue }
+            // TODO: Fetch SessionEntity for TravelChargeAutomationService
             for instance in sessionData.instances {
-                instances.append(TravelChargeAutomationService.SessionInstance(
-                    session: sessionData.masterSession,
-                    instanceStart: instance.instanceStart,
-                    instanceEnd: instance.instanceEnd
-                ))
+                // Need SessionEntity here, not Session domain model
             }
         }
         
         // Process non-recurring sessions (same as calendar)
         let nonRecurringSessions = sessions.filter { $0.recurrenceRuleData == nil }
         for session in nonRecurringSessions {
-            if let startTime = session.startTime {
-                instances.append(TravelChargeAutomationService.SessionInstance(
-                    session: session,
-                    instanceStart: startTime,
-                    instanceEnd: session.endTime ?? startTime
-                ))
-            }
+            // TODO: Fetch SessionEntity for TravelChargeAutomationService
         }
         
         return instances.sorted { $0.instanceStart < $1.instanceStart }
+        */
     }
 
     // Address search state

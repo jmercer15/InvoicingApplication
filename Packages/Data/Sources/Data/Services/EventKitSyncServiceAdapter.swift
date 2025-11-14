@@ -64,14 +64,9 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
     }
     
     public func sync(session: Session) async throws {
-        // Convert domain Session to SessionEntity for the existing service
-        // This is a temporary bridge - in a full implementation, you'd want to
-        // refactor the EventKitSyncService to work with domain models directly
-        let sessionEntity = SessionEntity(id: session.id)
-        sessionEntity.update(from: session)
-        
+        // EventKitSyncService already supports domain models via sync(session:modelContext:)
         // Create a temporary ModelContext for the sync operation
-        // In a real implementation, this would be injected
+        // In a real implementation, this would be injected via repository pattern
         let modelContainer = ModelContainerHelper.createModelContainerSafely() ?? {
             do {
                 let schema = Schema([SessionEntity.self])
@@ -83,7 +78,8 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
         }()
         let modelContext = ModelContext(modelContainer)
         
-        eventKitService.sync(session: sessionEntity, modelContext: modelContext)
+        // Use domain model method directly
+        eventKitService.sync(session: session, modelContext: modelContext)
     }
     
     public func delete(syncIdentifier: String) async throws {
@@ -112,12 +108,10 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
     }
     
     public func updateSessionFromRemote(session: Session, remoteEvent: CalendarEvent) async throws -> Session {
-        // Convert CalendarEvent back to EKEvent for the existing service
-        // This is a temporary bridge - in a full implementation, you'd want to
-        // refactor the EventKitSyncService to work with domain models directly
-        
-        // For now, return the original session as this is a complex operation
-        // that would require significant refactoring of the existing service
+        // EventKitSyncService.updateSessionFromRemote requires SessionEntity and EKEvent
+        // This adapter method would need ModelContext to fetch the entity
+        // For now, return the original session - this operation requires entity-level access
+        // Future: Consider refactoring to use SessionsRepository for entity updates
         return session
     }
     

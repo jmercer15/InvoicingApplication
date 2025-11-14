@@ -32,7 +32,10 @@ struct CalendarView: View {
                 let newSessionViewModel = NewSessionViewModel(
                     context: viewContext,
                     session: sessionInfo.session,
-                    instanceDate: sessionInfo.instanceStart
+                    instanceDate: sessionInfo.instanceStart,
+                    clientsRepository: viewModel.clientsRepository,
+                    clientServicesRepository: viewModel.clientServicesRepository,
+                    addressRepository: viewModel.addressRepository
                 )
                 
                 NativeSessionSheetView(viewModel: newSessionViewModel, onDismiss: { viewModel.isShowingNewSessionSheet = false })
@@ -63,7 +66,10 @@ struct CalendarView: View {
             if let event = viewModel.eventToConvert {
                 let newSessionViewModel = NewSessionViewModel(
                     context: viewContext,
-                    from: event
+                    from: event,
+                    clientsRepository: viewModel.clientsRepository,
+                    clientServicesRepository: viewModel.clientServicesRepository,
+                    addressRepository: viewModel.addressRepository
                 )
                 
                 NativeSessionSheetView(viewModel: newSessionViewModel, onDismiss: { viewModel.eventToConvert = nil })
@@ -96,7 +102,7 @@ struct CalendarView: View {
                 let daySessions = allItems.filter { item in
                     guard let itemSession = item.underlyingSession, // Use underlyingSession
                           !itemSession.isTravel,
-                          itemSession.client?.id == session.client?.id else {
+                          itemSession.clientId == session.clientId else {
                         return false
                     }
                     guard let startDate = item.startDate else { return false }
@@ -108,7 +114,11 @@ struct CalendarView: View {
                     instanceStartDate: viewModel.selectedInstanceStartDateForTravel,
                     instanceEndDate: viewModel.selectedInstanceEndDateForTravel,
                     daySessions: daySessions,
-                    onSave: { 
+                    addressRepository: viewModel.addressRepository,
+                    sessionsRepository: viewModel.sessionsRepository,
+                    clientsRepository: viewModel.clientsRepository,
+                    clientServicesRepository: viewModel.clientServicesRepository,
+                    onSave: {
                         viewModel.updateDisplayableItems()
                         viewModel.selectedSessionForTravel = nil
                         viewModel.selectedInstanceStartDateForTravel = nil
@@ -116,8 +126,6 @@ struct CalendarView: View {
                     }
                 )
                 .environment(\.modelContext, viewContext)
-                .fluidSheetTransition()
-                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isShowingTravelChargeSheet)
             } else {
                 Text("Error: Session data missing.")
             }
@@ -209,11 +217,11 @@ struct NewSessionSheetView: View {
             isPresented: $viewModel.showingRecurringDeleteOptions,
             titleVisibility: .visible
         ) {
-            Button("Delete This Event Only", role: .destructive) { viewModel.executeDelete(with: .thisOnly) }
+            Button("Delete This Event Only", role: .destructive) { Task { await viewModel.executeDelete(with: .thisOnly) } }
             .appInteractiveCursor()
-            Button("Delete This and Future Events", role: .destructive) { viewModel.executeDelete(with: .thisAndFuture) }
+            Button("Delete This and Future Events", role: .destructive) { Task { await viewModel.executeDelete(with: .thisAndFuture) } }
             .appInteractiveCursor()
-            Button("Delete All Events in Series", role: .destructive) { viewModel.executeDelete(with: .all) }
+            Button("Delete All Events in Series", role: .destructive) { Task { await viewModel.executeDelete(with: .all) } }
             .appInteractiveCursor()
             Button("Cancel", role: .cancel) { }
             .appInteractiveCursor()
@@ -325,11 +333,11 @@ struct NativeSessionSheetView: View {
             isPresented: $viewModel.showingRecurringDeleteOptions,
             titleVisibility: .visible
         ) {
-            Button("Delete This Event Only", role: .destructive) { viewModel.executeDelete(with: .thisOnly) }
+            Button("Delete This Event Only", role: .destructive) { Task { await viewModel.executeDelete(with: .thisOnly) } }
             .appInteractiveCursor()
-            Button("Delete This and Future Events", role: .destructive) { viewModel.executeDelete(with: .thisAndFuture) }
+            Button("Delete This and Future Events", role: .destructive) { Task { await viewModel.executeDelete(with: .thisAndFuture) } }
             .appInteractiveCursor()
-            Button("Delete All Events in Series", role: .destructive) { viewModel.executeDelete(with: .all) }
+            Button("Delete All Events in Series", role: .destructive) { Task { await viewModel.executeDelete(with: .all) } }
             .appInteractiveCursor()
             Button("Cancel", role: .cancel) { }
             .appInteractiveCursor()

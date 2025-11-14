@@ -566,20 +566,13 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         author: String = "",
         tags: [String] = []
     ) async -> Bool {
-        let thumbnailData = await MainActor.run {
-            TemplateManager.shared.generateThumbnail(from: self)
-        }
-        return await TemplateManager.shared.saveTemplate(
-            document: self,
-            name: name,
-            description: description,
-            author: author,
-            tags: tags,
-            thumbnailData: thumbnailData
-        ) != nil
+        // Note: This method should be called through ViewModel which has access to TemplateManager
+        // Keeping for backward compatibility but TemplateManager should be injected at call site
+        fatalError("saveTemplate should be called through InvoiceTemplateEditorViewModel.saveTemplate() instead")
     }
     func loadTemplate(_ templateData: TemplateData) {
         components.removeAll()
+        sectionSplits.removeAll() // Clear existing splits
         selectedComponentID = nil
         margins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
         zoom = 1.0

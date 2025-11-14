@@ -156,21 +156,10 @@ struct PayeeImport {
                     //     await GeocodingService.shared.geocodeAndSave(addressEntity: addressEntity, in: context)
                     // }
                 }
-                // Bank details are stored in notes since PayeeEntity doesn't have bankDetails property
+                // Bank details cannot be stored - PayeeEntity.notes has been removed per architectural guidelines
+                // Note: Bank details from import are discarded as payees should not store notes
                 if payee.bankAccount != nil || payee.bankBSB != nil {
-                    var bankNotes = "Bank Details: "
-                    if let bsb = payee.bankBSB {
-                        bankNotes += "BSB: \(bsb) "
-                    }
-                    if let account = payee.bankAccount {
-                        bankNotes += "Account: \(account)"
-                    }
-                    // Append to existing notes if any
-                    if let existingNotes = payeeEntity.notes, !existingNotes.isEmpty {
-                        payeeEntity.notes = "\(existingNotes)\n\(bankNotes)"
-                    } else {
-                        payeeEntity.notes = bankNotes
-                    }
+                    print("⚠️ [PayeeImport] Bank details for \(payee.payeeName) cannot be stored - PayeeEntity.notes removed per architectural guidelines")
                 }
                 // Set default status
                 payeeEntity.status = payee.status ?? "Active"

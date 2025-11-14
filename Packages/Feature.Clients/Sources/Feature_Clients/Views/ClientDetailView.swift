@@ -4,6 +4,13 @@ import Core
 import Data
 import SharedUI
 
+// MARK: - Helper Functions
+
+// Import helper functions from Data package to avoid Codable conflicts
+// Helper functions defined in:
+// - Packages/Data/Sources/Data/Mapping/Client+Mapping.swift (clientFromEntity, payeeFromEntity, planManagerFromEntity)
+// - Packages/Data/Sources/Data/Mapping/Invoice+Mapping.swift (invoiceFromEntity)
+
 // MARK: - Billing Authority Enum
 
 struct ClientDetailView: View {
@@ -36,11 +43,7 @@ struct ClientDetailView: View {
     @State private var country: String = ""
     @State private var poBox: String = ""
     
-    // Real-time queries for related data
-    @Query private var clientServices: [ClientServiceEntity]
-    @Query private var relatedInvoices: [InvoiceEntity]
-    @Query private var allPayees: [PayeeEntity]
-    @Query private var allPlanManagers: [PlanManagerEntity]
+    // Note: clientServices and relatedInvoices now come from viewModel (domain models)
     
     // Sorting state
     @State private var servicesSortOrder: ServicesSortOrder = .nameAsc
@@ -51,15 +54,32 @@ struct ClientDetailView: View {
         self.isCreatingNew = false
         self.onSave = onSave
         
-        // Initialize ViewModel
-        self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(client: client, context: context, isCreating: false))
+        // Convert entity to domain model and create repositories
+        // Note: Using extension from Data.Mapping module
+        let clientDomain = clientFromEntity(client)
+        // Create temporary repositories for initialization
+        // In production, these should come from AppAssembly
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        let ndisItemsRepository = NDISItemRepositorySwiftData(modelContext: context)
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
         
-        // Set up queries for this specific client
-        let clientID = client.id
-        _clientServices = Query(filter: #Predicate { $0.client?.id == clientID }, sort: \ClientServiceEntity.serviceName)
-        _relatedInvoices = Query(filter: #Predicate { $0.client?.id == clientID }, sort: \InvoiceEntity.issueDate)
-        _allPayees = Query(sort: \PayeeEntity.fullName)
-        _allPlanManagers = Query(sort: \PlanManagerEntity.name)
+        // Initialize ViewModel with domain model and repositories
+        self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(
+            client: clientDomain,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            invoicesRepository: invoicesRepository,
+            ndisItemsRepository: ndisItemsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            modelContext: context,
+            isCreating: false
+        ))
+        
+        // Note: clientServices and relatedInvoices are loaded by ViewModel
         
         // Load existing address data
         if let address = client.address {
@@ -76,19 +96,36 @@ struct ClientDetailView: View {
     }
     
     init(context: ModelContext, onSave: (() -> Void)? = nil) {
-        let newClient = ClientEntity(id: UUID(), ndisNumber: "", fullName: "", status: .active)
-        self.client = newClient
+        let newClientEntity = ClientEntity(id: UUID(), ndisNumber: "", fullName: "", status: .active)
+        self.client = newClientEntity
         self.isCreatingNew = true
         self.onSave = onSave
         
-        // Initialize ViewModel for new client
-        self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(client: newClient, context: context, isCreating: true))
+        // Convert entity to domain model
+        // Note: Using extension from Data.Mapping module
+        let clientDomain = clientFromEntity(newClientEntity)
+        // Create temporary repositories for initialization
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        let ndisItemsRepository = NDISItemRepositorySwiftData(modelContext: context)
+        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
         
-        // Set up empty queries for new client
-        _clientServices = Query(filter: #Predicate { _ in false })
-        _relatedInvoices = Query(filter: #Predicate { _ in false })
-        _allPayees = Query(sort: \PayeeEntity.fullName)
-        _allPlanManagers = Query(sort: \PlanManagerEntity.name)
+        // Initialize ViewModel for new client
+        self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(
+            client: clientDomain,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            invoicesRepository: invoicesRepository,
+            ndisItemsRepository: ndisItemsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            modelContext: context,
+            isCreating: true
+        ))
+        
+        // Note: clientServices and relatedInvoices are loaded by ViewModel
     }
     
     var body: some View {
@@ -145,7 +182,7 @@ struct ClientDetailView: View {
                 }
             )
             .fluidSheetTransition()
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: showingServiceAssignment)
+            .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: showingServiceAssignment)
         }
         .sheet(isPresented: $viewModel.isPresentingServiceBulkEditor) {
             ServiceBulkEditorView(
@@ -155,12 +192,12 @@ struct ClientDetailView: View {
                 }
             )
             .fluidSheetTransition()
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isPresentingServiceBulkEditor)
+            .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isPresentingServiceBulkEditor)
         }
         .sheet(isPresented: $showingMapSheet) {
             InteractiveMapView(address: getCurrentAddressString())
             .fluidSheetTransition()
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: showingMapSheet)
+            .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: showingMapSheet)
         }
         .sheet(isPresented: $showingAddressEditingSheet) {
             ClientAddressEditingSheet(
@@ -168,7 +205,7 @@ struct ClientDetailView: View {
                 isPresented: $showingAddressEditingSheet
             )
             .fluidSheetTransition()
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: showingAddressEditingSheet)
+            .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: showingAddressEditingSheet)
         }
 
         
@@ -322,7 +359,7 @@ struct ClientDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: client.hasNdisPlan)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.hasNdisPlan)
                 }
                 
                 // Plan Manager - Only shown when Type is "Plan-Managed"
@@ -333,19 +370,21 @@ struct ClientDetailView: View {
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
                         Picker("", selection: Binding(
-                            get: { client.planManager },
-                            set: { client.planManager = $0 }
+                            get: { viewModel.selectedPlanManager?.id },
+                            set: { newPlanManagerId in
+                                viewModel.updatePlanManager(by: newPlanManagerId)
+                            }
                         )) {
-                            Text("Select Plan Manager").tag(nil as PlanManagerEntity?)
-                            ForEach(allPlanManagers) { planManager in
-                                Text(planManager.name ?? "Unnamed Plan Manager").tag(planManager as PlanManagerEntity?)
+                            Text("Select Plan Manager").tag(nil as UUID?)
+                            ForEach(viewModel.allPlanManagers) { planManager in
+                                Text(planManager.name).tag(planManager.id as UUID?)
                             }
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: client.planManagementType)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.planManagementType)
                 }
                 
                 Spacer(minLength: 0)
@@ -429,19 +468,21 @@ struct ClientDetailView: View {
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
                         Picker("", selection: Binding(
-                            get: { client.payee },
-                            set: { client.payee = $0 }
+                            get: { viewModel.selectedPayee?.id },
+                            set: { newPayeeId in
+                                viewModel.updatePayee(by: newPayeeId)
+                            }
                         )) {
-                            Text("Select Parent/Guardian").tag(nil as PayeeEntity?)
-                            ForEach(allPayees) { payee in
-                                Text(payee.fullName).tag(payee as PayeeEntity?)
+                            Text("Select Parent/Guardian").tag(nil as UUID?)
+                            ForEach(viewModel.allPayees) { payee in
+                                Text(payee.fullName).tag(payee.id as UUID?)
                             }
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: client.billingAuthority)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.billingAuthority)
                 }
                 
                 // Credit Amount - Always shown
@@ -608,7 +649,7 @@ struct ClientDetailView: View {
             .padding(.bottom, 16)
             
             VStack(spacing: 12) {
-                if clientServices.isEmpty {
+                if viewModel.clientServices.isEmpty {
                     Text("No services assigned")
                         .foregroundColor(.gray)
                         .padding(.vertical, 8)
@@ -672,7 +713,7 @@ struct ClientDetailView: View {
             .padding(.bottom, 16)
             
             VStack(spacing: 12) {
-                if relatedInvoices.isEmpty {
+                if viewModel.relatedInvoices.isEmpty {
                     Text("No invoices found")
                         .foregroundColor(.gray)
                         .padding(.vertical, 8)
@@ -754,53 +795,53 @@ struct ClientDetailView: View {
         }
     }
     
-    private var sortedServices: [ClientServiceEntity] {
+    private var sortedServices: [ClientService] {
         switch servicesSortOrder {
         case .nameAsc:
-            return clientServices.sorted { $0.serviceName < $1.serviceName }
+            return viewModel.clientServices.sorted { $0.serviceName < $1.serviceName }
         case .nameDesc:
-            return clientServices.sorted { $0.serviceName > $1.serviceName }
+            return viewModel.clientServices.sorted { $0.serviceName > $1.serviceName }
         case .rateAsc:
-            return clientServices.sorted { $0.rate < $1.rate }
+            return viewModel.clientServices.sorted { $0.rate < $1.rate }
         case .rateDesc:
-            return clientServices.sorted { $0.rate > $1.rate }
+            return viewModel.clientServices.sorted { $0.rate > $1.rate }
         case .dateAddedAsc:
-            return clientServices.sorted { ($0.startDate ?? Date.distantPast) < ($1.startDate ?? Date.distantPast) }
+            return viewModel.clientServices.sorted { ($0.startDate ?? Date.distantPast) < ($1.startDate ?? Date.distantPast) }
         case .dateAddedDesc:
-            return clientServices.sorted { ($0.startDate ?? Date.distantPast) > ($1.startDate ?? Date.distantPast) }
+            return viewModel.clientServices.sorted { ($0.startDate ?? Date.distantPast) > ($1.startDate ?? Date.distantPast) }
         case .dateCreatedAsc:
-            return clientServices.sorted(by: { ($0.startDate ?? Date.distantPast) < ($1.startDate ?? Date.distantPast) })
+            return viewModel.clientServices.sorted(by: { ($0.startDate ?? Date.distantPast) < ($1.startDate ?? Date.distantPast) })
         case .dateCreatedDesc:
-            return clientServices.sorted(by: { ($0.startDate ?? Date.distantPast) > ($1.startDate ?? Date.distantPast) })
+            return viewModel.clientServices.sorted(by: { ($0.startDate ?? Date.distantPast) > ($1.startDate ?? Date.distantPast) })
         }
     }
     
-    private var sortedInvoices: [InvoiceEntity] {
+    private var sortedInvoices: [Invoice] {
         switch invoicesSortOrder {
         case .dateAsc:
-            return relatedInvoices.sorted { $0.issueDate < $1.issueDate }
+            return viewModel.relatedInvoices.sorted { $0.issueDate < $1.issueDate }
         case .dateDesc:
-            return relatedInvoices.sorted { $0.issueDate > $1.issueDate }
+            return viewModel.relatedInvoices.sorted { $0.issueDate > $1.issueDate }
         case .dueDateAsc:
-            return relatedInvoices.sorted { ($0.dueDate ?? Date.distantPast) < ($1.dueDate ?? Date.distantPast) }
+            return viewModel.relatedInvoices.sorted { ($0.dueDate ?? Date.distantPast) < ($1.dueDate ?? Date.distantPast) }
         case .dueDateDesc:
-            return relatedInvoices.sorted { ($0.dueDate ?? Date.distantPast) > ($1.dueDate ?? Date.distantPast) }
+            return viewModel.relatedInvoices.sorted { ($0.dueDate ?? Date.distantPast) > ($1.dueDate ?? Date.distantPast) }
         case .invoiceNumber:
-            return relatedInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
+            return viewModel.relatedInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .amountAsc:
-            return relatedInvoices.sorted { $0.totalAmount < $1.totalAmount }
+            return viewModel.relatedInvoices.sorted { $0.totalAmount < $1.totalAmount }
         case .amountDesc:
-            return relatedInvoices.sorted { $0.totalAmount > $1.totalAmount }
+            return viewModel.relatedInvoices.sorted { $0.totalAmount > $1.totalAmount }
         case .clientName:
-            return relatedInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return viewModel.relatedInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
         case .numberAsc:
-            return relatedInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
+            return viewModel.relatedInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .numberDesc:
-            return relatedInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
+            return viewModel.relatedInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
         case .statusAsc:
-            return relatedInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return viewModel.relatedInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
         case .statusDesc:
-            return relatedInvoices.sorted { ($0.status?.rawValue ?? "") > ($1.status?.rawValue ?? "") }
+            return viewModel.relatedInvoices.sorted { ($0.status ?? "") > ($1.status ?? "") }
         }
     }
     

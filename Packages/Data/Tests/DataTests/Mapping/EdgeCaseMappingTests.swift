@@ -252,7 +252,7 @@ final class EdgeCaseMappingTests: XCTestCase {
         try modelContext.save()
         
         // Test mapping to domain model
-        let session = Session(from: sessionEntity)
+        let session = Session.from(entity: sessionEntity)
         
         // Verify zero values are preserved
         XCTAssertEqual(session.groupedPosition, 0)
@@ -330,7 +330,7 @@ final class EdgeCaseMappingTests: XCTestCase {
         try modelContext.save()
         
         // Test mapping to domain model
-        let session = Session(from: sessionEntity)
+        let session = Session.from(entity: sessionEntity)
         
         // Verify data edge cases are handled correctly
         XCTAssertEqual(session.recurrenceRuleData, Data())
@@ -373,7 +373,7 @@ final class EdgeCaseMappingTests: XCTestCase {
         try modelContext.save()
         
         // Test mapping to domain model
-        let session = Session(from: sessionEntity)
+        let session = Session.from(entity: sessionEntity)
         
         // Verify date edge cases are handled correctly
         XCTAssertEqual(session.startTime, Date(timeIntervalSince1970: 0))

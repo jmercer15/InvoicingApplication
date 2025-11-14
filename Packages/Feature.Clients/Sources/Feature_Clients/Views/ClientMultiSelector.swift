@@ -15,22 +15,23 @@
 //
 
 import SwiftUI
-import Data
+import Core
 import SharedUI
 
-// Extracted Client Multi-Selector for Sheet
+// Extracted Client Multi-Selector for Sheet (Domain Model-based)
 struct ClientMultiSelector: View {
-    let allClients: [ClientEntity]
+    let allClients: [Client]
     @Binding var selectedClientIDs: Set<UUID>
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
-    var filteredClients: [ClientEntity] {
+    var filteredClients: [Client] {
         if searchText.isEmpty {
             return allClients
         } else {
             return allClients.filter {
-                ($0.fullName.localizedCaseInsensitiveContains(searchText))
+                ($0.fullName.localizedCaseInsensitiveContains(searchText)) ||
+                ($0.ndisNumber.localizedCaseInsensitiveContains(searchText))
             }
         }
     }
@@ -61,7 +62,7 @@ struct ClientMultiSelector: View {
             // Search field
             HStack {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.secondaryLabelColor))
                 TextField("Search Clients", text: $searchText)
                     .textFieldStyle(.roundedBorder)
             }
@@ -74,14 +75,22 @@ struct ClientMultiSelector: View {
                         toggleSelection(clientID: client.id)
                     } label: {
                         HStack {
-                            Text(client.fullName)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(client.fullName)
+                                    .foregroundColor(Color(NSColor.labelColor))
+                                if !client.ndisNumber.isEmpty {
+                                    Text("NDIS: \(client.ndisNumber)")
+                                        .font(.caption)
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                }
+                            }
                             Spacer()
                             if selectedClientIDs.contains(client.id) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(Color("Primary", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemBlue))
                             } else {
                                 Image(systemName: "circle")
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.secondaryLabelColor))
                             }
                         }
                     }

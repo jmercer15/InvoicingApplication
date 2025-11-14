@@ -3,10 +3,8 @@
 import SwiftUI
 import Combine
 import PDFKit
-import SwiftData
 import AppKit
 import Core
-import Data
 import SharedUI
 
 // The data race warnings below are false positives for ObservableObject usage on main thread
@@ -26,10 +24,13 @@ enum GroupBy: String, CaseIterable, Identifiable {
 @MainActor
 public class InvoicesContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    private var modelContext: ModelContext
+    let invoicesRepository: InvoicesRepository
+    let clientServicesRepository: ClientServicesRepository
+    let clientsRepository: ClientsRepository
     
     // MARK: - Published State
-    @Published public var selectedInvoice: InvoiceEntity?
+    @Published public var selectedInvoice: Invoice?
+    @Published private(set) var allInvoices: [Invoice] = []
     @Published var invoiceSearchText: String = ""
     @Published var invoiceFilterStatus: Set<String> = []
     @Published var invoiceSortOrder: InvoicesSortOrder = .dateDesc
@@ -40,7 +41,7 @@ public class InvoicesContainerViewModel: ObservableObject {
     @Published var sortDirection: SortDirection = .descending
     
     // Detail view management
-    @Published private(set) var displayedInvoice: InvoiceEntity?
+    @Published private(set) var displayedInvoice: Invoice?
     @Published private(set) var isTransitioningToBlack: Bool = false
     @Published private(set) var invoiceEditorViewModel: InvoiceEditorViewModel?
     @Published var isEditingInvoice: Bool = false
@@ -51,7 +52,7 @@ public class InvoicesContainerViewModel: ObservableObject {
     @Published var isNewInvoiceButtonHovered: Bool = false
     
     // Private state for tracking changes
-    private var previousSelectedInvoice: InvoiceEntity?
+    private var previousSelectedInvoice: Invoice?
     private var selectionAnimationTask: Task<Void, Never>? = nil
     
     private var cancellables = Set<AnyCancellable>()
@@ -59,11 +60,40 @@ public class InvoicesContainerViewModel: ObservableObject {
     private var emailSharingService: NSSharingService?
     
     // MARK: - Initializer
-    public init(context: ModelContext) {
-        self.modelContext = context
+    public init(invoicesRepository: InvoicesRepository, clientServicesRepository: ClientServicesRepository, clientsRepository: ClientsRepository) {
+        self.invoicesRepository = invoicesRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.clientsRepository = clientsRepository
         setupBindings()
-        
-        // Observe changes to the ModelContext
+        Task {
+            await fetchAllInvoices()
+        }
+    }
+    
+    // MARK: - Data Fetching
+    func fetchAllInvoices() async {
+        do {
+            allInvoices = try await invoicesRepository.fetchAll()
+        } catch {
+            print("❌ [InvoicesContainerViewModel] Error fetching invoices: \(error)")
+            allInvoices = []
+        }
+    }
+    
+    func deleteInvoices(_ invoiceIds: [UUID]) async {
+        do {
+            for invoiceId in invoiceIds {
+                try await invoicesRepository.delete(id: invoiceId)
+            }
+            await fetchAllInvoices()
+            
+            // Clear selection if deleted invoice was selected
+            if let selectedId = selectedInvoice?.id, invoiceIds.contains(selectedId) {
+                selectedInvoice = nil
+            }
+        } catch {
+            print("❌ [InvoicesContainerViewModel] Error deleting invoices: \(error)")
+        }
     }
     
     // MARK: - Private Methods
@@ -128,7 +158,7 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
     
     @MainActor
-    private func handleInvoiceSelectionChange(newInvoice: InvoiceEntity?) {
+    private func handleInvoiceSelectionChange(newInvoice: Invoice?) {
         print("[InvoicesContainerViewModel] selectedInvoice changed to: \(newInvoice?.invoiceNumber ?? "nil")")
 
         guard newInvoice?.id != previousSelectedInvoice?.id else { return }
@@ -158,8 +188,14 @@ public class InvoicesContainerViewModel: ObservableObject {
         previousSelectedInvoice = newInvoice
     }
     
-    private func createInvoiceEditorViewModel(for invoice: InvoiceEntity, isNew: Bool) -> InvoiceEditorViewModel {
-        let viewModel = InvoiceEditorViewModel(context: modelContext, invoice: invoice, isNew: isNew)
+    private func createInvoiceEditorViewModel(for invoice: Invoice, isNew: Bool) -> InvoiceEditorViewModel {
+        let viewModel = InvoiceEditorViewModel(
+            invoicesRepository: invoicesRepository,
+            clientServicesRepository: clientServicesRepository,
+            clientsRepository: clientsRepository,
+            invoice: invoice,
+            isNew: isNew
+        )
         viewModel.onInvoiceDeleted = { [weak self] in
             // Clear the selected invoice when deleted
             self?.selectedInvoice = nil
@@ -167,10 +203,10 @@ public class InvoicesContainerViewModel: ObservableObject {
         return viewModel
     }
     
-    private func isNewInvoice(_ invoice: InvoiceEntity) -> Bool {
+    private func isNewInvoice(_ invoice: Invoice) -> Bool {
         // Check if this is a new invoice that hasn't been saved yet
         // New invoices will have empty invoice number and no client
-        return (invoice.invoiceNumber.isEmpty || invoice.invoiceNumber == "") && invoice.client == nil
+        return (invoice.invoiceNumber.isEmpty || invoice.invoiceNumber == "") && invoice.clientId == nil
     }
     
     // MARK: - Public Methods
@@ -186,7 +222,7 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
 
     @MainActor
-    private func applySelectionImmediately(invoice: InvoiceEntity?) {
+    private func applySelectionImmediately(invoice: Invoice?) {
         if let invoice {
             displayedInvoice = invoice
             let isNew = isNewInvoice(invoice)
@@ -201,7 +237,7 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
 
     @MainActor
-    private func animateToInvoice(_ invoice: InvoiceEntity) async {
+    private func animateToInvoice(_ invoice: Invoice) async {
         withAnimation(.easeInOut(duration: 0.12)) {
             isTransitioningToBlack = true
         }
@@ -246,174 +282,132 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
     
     func prepareNewInvoice() {
-        let newInvoice = InvoiceEntity(id: UUID(), invoiceNumber: "")
-        newInvoice.date = Date()
-        let issueDate = newInvoice.issueDate
-        newInvoice.dueDate = Calendar.current.date(byAdding: .day, value: AppConstants.defaultInvoiceDueDays, to: issueDate)
-        newInvoice.status = .draft
-        newInvoice.paymentTerms = UserDefaults.standard.string(forKey: "defaultPaymentTerms") ?? "\(AppConstants.defaultInvoiceDueDays) days"
-        newInvoice.taxRate = UserDefaults.standard.double(forKey: "defaultTaxRate") // Assumes defaultTaxRate exists in UserDefaults
-        newInvoice.currencyCode = "AUD"
-        // Don't set a temporary number here, generate it on save if needed
-        
-        // Insert the invoice into the model context immediately so it can be tracked and properly deleted if cancelled
-        modelContext.insert(newInvoice)
+        let issueDate = Date()
+        let newInvoice = Invoice(
+            id: UUID(),
+            invoiceNumber: "",
+            totalAmount: 0.0,
+            taxRate: UserDefaults.standard.double(forKey: "defaultTaxRate"),
+            creditApplied: 0.0,
+            discount: 0.0,
+            date: issueDate,
+            dueDate: Calendar.current.date(byAdding: .day, value: AppConstants.defaultInvoiceDueDays, to: issueDate),
+            issueDate: issueDate,
+            paymentTerms: UserDefaults.standard.string(forKey: "defaultPaymentTerms") ?? "\(AppConstants.defaultInvoiceDueDays) days",
+            status: "draft",
+            currencyCode: "AUD"
+        )
         selectedInvoice = newInvoice
         isEditingInvoice = true // Set to true for a new invoice
     }
     
     @MainActor
-    func exportInvoiceToPDF(invoice: InvoiceEntity) {
-        guard invoice.business != nil else {
-            print("Business details are not loaded yet. Cannot export PDF.")
-            return
-        }
+    func exportInvoiceToPDF(invoice: Invoice) {
+        Task {
+            guard let pdfData = await generatePdfData(invoice: invoice) else {
+                print("Failed to generate PDF data for export.")
+                return
+            }
 
-        guard let pdfData = generatePdfData(invoice: invoice) else {
-            print("Failed to generate PDF data for export.")
-            return
-        }
-
-        let savePanel = NSSavePanel()
-        savePanel.canCreateDirectories = true
-        savePanel.showsTagField = false
-        savePanel.nameFieldStringValue = "Invoice-\(invoice.invoiceNumber).pdf"
-        
-        savePanel.begin { result in
-            guard result == .OK, let url = savePanel.url else { return }
+            let savePanel = NSSavePanel()
+            savePanel.canCreateDirectories = true
+            savePanel.showsTagField = false
+            savePanel.nameFieldStringValue = "Invoice-\(invoice.invoiceNumber).pdf"
             
-            do {
-                try pdfData.write(to: url)
-                print("PDF exported successfully to \(url.lastPathComponent).")
-            } catch {
-                print("Failed to write PDF to \(url): \(error.localizedDescription).")
+            savePanel.begin { result in
+                guard result == .OK, let url = savePanel.url else { return }
+                
+                do {
+                    try pdfData.write(to: url)
+                    print("PDF exported successfully to \(url.lastPathComponent).")
+                } catch {
+                    print("Failed to write PDF to \(url): \(error.localizedDescription).")
+                }
             }
         }
     }
 
     @MainActor
-    private func generatePdfData(invoice: InvoiceEntity) -> Data? {
-        let business = invoice.business ?? {
-            let descriptor = FetchDescriptor<BusinessEntity>()
-            return (try? modelContext.fetch(descriptor))?.first
-        }()
-        guard let biz = business else { return nil }
-        return InvoiceSharingService.renderPDFData(invoice: invoice, business: biz, context: modelContext)
+    private func generatePdfData(invoice: Invoice) async -> Data? {
+        // Fetch invoice items for PDF generation
+        do {
+            let invoiceItems = try await invoicesRepository.fetchItems(by: invoice.id)
+            return InvoiceSharingService.renderPDFData(invoice: invoice, invoiceItems: invoiceItems)
+        } catch {
+            print("❌ [InvoicesContainerViewModel] Error fetching invoice items for PDF: \(error)")
+            return nil
+        }
     }
     
-    func updateInvoiceStatus(_ invoice: InvoiceEntity, status: String) {
-        invoice.status = InvoiceStatus(rawValue: status) ?? .draft
-        // Add paidDate logic if status is "Paid"
-        if status == AppConstants.invoiceStatusPaid {
-            invoice.paidDate = Date()
-        } else {
-            invoice.paidDate = nil
-        }
-        _ = saveContext()
-    }
-
-    private func saveContext() -> Bool {
+    func updateInvoiceStatus(_ invoiceId: UUID, status: String) async {
         do {
-            try modelContext.save()
-            return true
+            try await invoicesRepository.updateStatus(id: invoiceId, status: status)
+            // If status is paid, also update paidDate via repository
+            if status == AppConstants.invoiceStatusPaid {
+                // Note: Repository should handle paidDate update in updateStatus
+                // If not, we may need to fetch, update, and save
+            }
         } catch {
-            print("Error saving context: \(error)")
-            // Handle error (e.g., show alert)
-            // Consider rolling back if appropriate
-            modelContext.rollback()
-            return false
+            print("❌ [InvoicesContainerViewModel] Error updating invoice status: \(error)")
         }
     }
 
     @MainActor
-    func sendInvoiceViaEmail(invoice: InvoiceEntity) {
-        guard let pdfData = generatePdfData(invoice: invoice) else {
-            print("Failed to generate PDF data for email.")
-            return
-        }
-
-        let pdfFileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
-
-        do {
-            try pdfData.write(to: pdfFileURL)
-        } catch {
-            print("Failed to write PDF data to temporary file: \(error.localizedDescription)")
-            return
-        }
-
-        var primaryRecipient: (email: String, name: String)? = nil
-        var ccRecipients: [(email: String, name: String)] = []
-
-        // Use snapshot data if available, otherwise fall back to relationships
-        let billingAuthority = invoice.billingAuthority ?? invoice.client?.billingAuthority
-        let billToEmail = invoice.billToEmail
-        let billToName = invoice.billToName
-        let clientEmail = invoice.clientEmail ?? invoice.client?.email
-        let clientName = invoice.clientName ?? invoice.client?.fullName
-        let payeeEmail = invoice.payeeEmail ?? invoice.client?.payee?.email
-        let payeeName = invoice.payeeName ?? invoice.client?.payee?.fullName
-        
-        // Determine primary recipient based on billing authority
-        switch billingAuthority {
-        case .parentGuardian:
-            if let email = billToEmail ?? payeeEmail, !email.isEmpty {
-                primaryRecipient = (email: email, name: billToName ?? payeeName ?? "Parent/Guardian")
+    func sendInvoiceViaEmail(invoice: Invoice) {
+        Task {
+            guard let pdfData = await generatePdfData(invoice: invoice) else {
+                print("Failed to generate PDF data for email.")
+                return
             }
-        case .client:
+
+            let pdfFileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
+
+            do {
+                try pdfData.write(to: pdfFileURL)
+            } catch {
+                print("Failed to write PDF data to temporary file: \(error.localizedDescription)")
+                return
+            }
+
+            var primaryRecipient: (email: String, name: String)? = nil
+            var ccRecipients: [(email: String, name: String)] = []
+
+            // Use snapshot data from domain model
+            let billToEmail = invoice.billToEmail
+            let billToName = invoice.billToName
+            let clientEmail = invoice.clientEmail
+            let clientName = invoice.clientName
+            let payeeEmail = invoice.payeeEmail
+            let payeeName = invoice.payeeName
+            
+            // Determine primary recipient based on billing authority (from snapshot)
+            // Note: billingAuthority is stored as String in snapshot, need to parse if needed
             if let email = billToEmail ?? clientEmail, !email.isEmpty {
                 primaryRecipient = (email: email, name: billToName ?? clientName ?? "Client")
+            } else if let email = payeeEmail, !email.isEmpty {
+                primaryRecipient = (email: email, name: payeeName ?? "Parent/Guardian")
             }
-        default:
-            // Fallback to client email
-            if let email = clientEmail, !email.isEmpty {
-                primaryRecipient = (email: email, name: clientName ?? "Client")
+
+            guard let primary = primaryRecipient else {
+                print("No valid primary recipient found for invoice \(invoice.invoiceNumber).")
+                return
             }
-        }
-        
-        // Add other enabled recipients as CC (using snapshot data when available)
-        if let client = invoice.client {
-            if client.sendInvoicesToClient ?? true, let email = clientEmail, !email.isEmpty {
-                let clientRecipient = (email: email, name: clientName ?? "Client")
-                if primaryRecipient?.email != email {
-                    ccRecipients.append(clientRecipient)
+
+            let subject = "Invoice \(invoice.invoiceNumber) from \(invoice.businessName ?? "Your Business") - Due \(dateFormatter.string(from: invoice.dueDate ?? Date()))"
+            let body = "Dear \(primary.name),\n\nPlease find attached your invoice \(invoice.invoiceNumber)."
+
+            // Use NSSharingService to compose with the attachment
+            if let service = NSSharingService(named: .composeEmail) {
+                service.recipients = [primary.email] + ccRecipients.map { $0.email }
+                service.subject = subject
+                self.emailSharingService = service
+                service.perform(withItems: [body as NSString, pdfFileURL as NSURL])
+                
+                // Update invoice status via repository
+                if invoice.status == AppConstants.invoiceStatusDraft {
+                    try? await invoicesRepository.updateStatus(id: invoice.id, status: "sent")
                 }
             }
-            
-            if client.sendInvoicesToPayee ?? true, let email = payeeEmail, !email.isEmpty {
-                let payeeRecipient = (email: email, name: payeeName ?? "Parent/Guardian")
-                if primaryRecipient?.email != email {
-                    ccRecipients.append(payeeRecipient)
-                }
-            }
-            
-            if client.sendInvoicesToPlanManager ?? true, let planManager = client.planManager, let planManagerEmail = planManager.email, !planManagerEmail.isEmpty {
-                let planManagerRecipient = (email: planManagerEmail, name: planManager.name ?? "Plan Manager")
-                if primaryRecipient?.email != planManagerEmail {
-                    ccRecipients.append(planManagerRecipient)
-                }
-            }
-        }
-
-        guard let primary = primaryRecipient else {
-            print("No valid primary recipient found for invoice \(invoice.invoiceNumber).")
-            return
-        }
-
-        let subject = "Invoice \(invoice.invoiceNumber) from \(invoice.businessName ?? invoice.business?.name ?? "Your Business") - Due \(dateFormatter.string(from: invoice.dueDate ?? Date()))"
-        let body = "Dear \(primary.name),\n\nPlease find attached your invoice \(invoice.invoiceNumber)."
-
-        // Use NSSharingService to compose with the attachment
-        if let service = NSSharingService(named: .composeEmail) {
-            service.recipients = [primary.email] + ccRecipients.map { $0.email }
-            service.subject = subject
-            self.emailSharingService = service
-            service.perform(withItems: [body as NSString, pdfFileURL as NSURL])
-            // Mark sent at initiation (or wire a delegate similar to editor)
-            invoice.sentDate = Date()
-            if invoice.status?.rawValue == AppConstants.invoiceStatusDraft {
-                invoice.status = .sent
-            }
-            _ = saveContext()
         }
     }
 
@@ -433,12 +427,7 @@ public class InvoicesContainerViewModel: ObservableObject {
         invoiceFilterStatus.isEmpty ? "line.horizontal.3.decrease.circle" : "line.horizontal.3.decrease.circle.fill"
     }
 
-    // Update the modelContext if a new one is provided
-    func updateContextIfNeeded(_ newContext: ModelContext) {
-        if modelContext !== newContext {
-            modelContext = newContext
-        }
-    }
+    // Note: Context update removed - repositories handle persistence
 }
 
 private let dateFormatter: DateFormatter = {

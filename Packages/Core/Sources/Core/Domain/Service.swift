@@ -1,7 +1,7 @@
 import Foundation
 
 /// Domain model for a client service (service assigned to a client)
-public struct ClientService: Identifiable, Codable, Equatable, Sendable {
+public struct ClientService: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let id: UUID
     public let clientId: UUID
     public let serviceName: String
@@ -42,7 +42,7 @@ public struct ClientService: Identifiable, Codable, Equatable, Sendable {
 }
 
 /// Domain model for an NDIS item
-public struct NDISItem: Codable, Equatable, Sendable {
+public struct NDISItem: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public let itemNumber: String
     public let name: String

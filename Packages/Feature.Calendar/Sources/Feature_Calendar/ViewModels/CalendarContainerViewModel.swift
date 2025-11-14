@@ -2,11 +2,15 @@ import SwiftUI
 import Combine
 import SwiftData // Import SwiftData
 import Data
+import Core
 
 @MainActor
 public final class CalendarContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    private var modelContext: ModelContext
+    private let sessionsRepository: SessionsRepository
+    private let clientsRepository: ClientsRepository
+    private let clientServicesRepository: ClientServicesRepository
+    private let addressRepository: AddressRepository
     @Published private(set) var calendarViewModel: CalendarViewModel
     @Published var calendarSearchText: String = ""
     @Published var showDatePicker: Bool = false
@@ -18,14 +22,27 @@ public final class CalendarContainerViewModel: ObservableObject {
     private var isUpdatingFromContainer = false
     
     // MARK: - Initializer
-    public init(modelContext: ModelContext) {
-        self.modelContext = modelContext
-        // The actual EventKitSyncService will be injected into CalendarViewModel by the parent view
-        // Here, we use a placeholder; the real service will be set in the view
+    public init(
+        sessionsRepository: SessionsRepository,
+        clientsRepository: ClientsRepository,
+        clientServicesRepository: ClientServicesRepository,
+        addressRepository: AddressRepository,
+        modelContext: ModelContext
+    ) {
+        self.sessionsRepository = sessionsRepository
+        self.clientsRepository = clientsRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.addressRepository = addressRepository
+        let eventKitService = EventKitSyncService.shared
+        let calendarDataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
         self.calendarViewModel = CalendarViewModel(
-            context: modelContext,
-            eventKitService: EventKitSyncService.shared,
-            dataManager: CalendarDataManager(context: modelContext, eventKitService: EventKitSyncService.shared)
+            sessionsRepository: sessionsRepository,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            eventKitService: eventKitService,
+            dataManager: calendarDataManager,
+            modelContext: modelContext, // Needed for EventKit external changes handling
+            addressRepository: addressRepository
         )
         // Synchronize all properties with the calendar view model
         synchronizeProperties()
@@ -34,12 +51,21 @@ public final class CalendarContainerViewModel: ObservableObject {
     }
 
     public func updateContextIfNeeded(_ newContext: ModelContext) {
-        guard modelContext !== newContext else { return }
-        modelContext = newContext
+        // Update repository instances with new context
+        let newSessionsRepository = SessionsRepositorySwiftData(modelContext: newContext)
+        let newClientsRepository = ClientsRepositorySwiftData(modelContext: newContext)
+        let newClientServicesRepository = ClientServicesRepositorySwiftData(modelContext: newContext)
+        let newAddressRepository = AddressRepositorySwiftData(modelContext: newContext)
+        let eventKitService = EventKitSyncService.shared
+        let calendarDataManager = CalendarDataManager(sessionsRepository: newSessionsRepository, eventKitService: eventKitService)
         calendarViewModel = CalendarViewModel(
-            context: newContext,
-            eventKitService: EventKitSyncService.shared,
-            dataManager: CalendarDataManager(context: newContext, eventKitService: EventKitSyncService.shared)
+            sessionsRepository: newSessionsRepository,
+            clientsRepository: newClientsRepository,
+            clientServicesRepository: newClientServicesRepository,
+            eventKitService: eventKitService,
+            dataManager: calendarDataManager,
+            modelContext: newContext, // Needed for EventKit external changes handling
+            addressRepository: newAddressRepository
         )
         // Synchronize all properties with the new calendar view model
         synchronizeProperties()

@@ -6,17 +6,14 @@
 //
 
 import SwiftUI
-import SwiftData // Import SwiftData
 import AppKit  // Add this import for NSScreen
 import PDFKit
-import Data
 import Core
 import SharedUI
 
 struct InvoicesView: View {
-    @Environment(\.modelContext) private var modelContext // Change to modelContext
     @Binding var searchText: String
-    @Binding var selectedInvoice: InvoiceEntity?
+    @Binding var selectedInvoice: Invoice?
 
     // Bindings for filter and sort state, controlled by the parent container
     @Binding var filterStatus: Set<String> // Changed to Set<String> for multi-selection
@@ -30,22 +27,26 @@ struct InvoicesView: View {
     // Use @Binding for groupBy from container
     @Binding var groupBy: GroupBy
     @State private var isMultiSelectMode = false
-    @State private var selectedInvoices: Set<InvoiceEntity> = []
+    @State private var selectedInvoices: Set<Invoice> = []
     @Binding var sortField: SortField
     @Binding var sortDirection: SortDirection
     
     // Add state variables for confirmation dialog
     @State private var showingDeleteConfirmation = false
-    @State private var invoicesToDelete: Set<InvoiceEntity> = []
+    @State private var invoicesToDelete: Set<Invoice> = []
     @State private var expandedGroups: Set<String> = []
     @Namespace private var namespace
     
     // Tree items for hierarchical list
     @State private var treeItems: [TreeItem] = []
     
-    @Query(sort: \InvoiceEntity.date, order: .reverse) var invoices: [InvoiceEntity]
+    // Use invoices from container ViewModel (domain models)
+    private var invoices: [Invoice] {
+        containerViewModel.allInvoices
+    }
+    
     // Computed property for filtered invoices
-    private var filteredInvoices: [InvoiceEntity] {
+    private var filteredInvoices: [Invoice] {
         var filtered = invoices
 
         // Apply search filter across multiple fields
@@ -54,7 +55,7 @@ struct InvoicesView: View {
             filtered = filtered.filter { invoice in
                 let haystack = [
                     invoice.invoiceNumber,
-                    invoice.clientName ?? invoice.client?.fullName ?? "",
+                    invoice.clientName ?? "",
                     invoice.billToName ?? "",
                     invoice.billToEmail ?? "",
                     invoice.notes ?? ""
@@ -65,7 +66,7 @@ struct InvoicesView: View {
 
         // Apply status filter
         if !filterStatus.isEmpty {
-            filtered = filtered.filter { filterStatus.contains($0.status?.rawValue ?? "") }
+            filtered = filtered.filter { filterStatus.contains($0.status ?? "") }
         }
 
         // Future enhancement: Add date range and amount range filters in toolbar controls
@@ -87,7 +88,7 @@ struct InvoicesView: View {
             case .amountAsc:
                 return first.totalAmount < second.totalAmount
             case .clientName:
-                return (first.clientName ?? first.client?.fullName ?? "") < (second.clientName ?? second.client?.fullName ?? "")
+                return (first.clientName ?? "") < (second.clientName ?? "")
             case .invoiceNumber:
                 return first.invoiceNumber < second.invoiceNumber
             case .numberAsc:
@@ -95,9 +96,9 @@ struct InvoicesView: View {
             case .numberDesc:
                 return first.invoiceNumber > second.invoiceNumber
             case .statusAsc:
-                return (first.status?.rawValue ?? "") < (second.status?.rawValue ?? "")
+                return (first.status ?? "") < (second.status ?? "")
             case .statusDesc:
-                return (first.status?.rawValue ?? "") > (second.status?.rawValue ?? "")
+                return (first.status ?? "") > (second.status ?? "")
             }
         })
     }
@@ -106,10 +107,10 @@ struct InvoicesView: View {
     
 
     
-    // Initializer with the properly configured fetch request
+    // Initializer
     init(searchText: Binding<String>, 
-         selectedInvoice: Binding<InvoiceEntity?>,
-         filterStatus: Binding<Set<String>>, // Re-added filterStatus
+         selectedInvoice: Binding<Invoice?>,
+         filterStatus: Binding<Set<String>>,
          groupBy: Binding<GroupBy>,
          sortField: Binding<SortField>,
          sortDirection: Binding<SortDirection>,
@@ -117,17 +118,14 @@ struct InvoicesView: View {
     ) {
         self._searchText = searchText
         self._selectedInvoice = selectedInvoice
-        self._filterStatus = filterStatus // Initialize the binding
+        self._filterStatus = filterStatus
         self._groupBy = groupBy
         self._sortField = sortField
         self._sortDirection = sortDirection
         self.containerViewModel = containerViewModel
-
-        // Initialize FetchRequest with the initial predicate
-
         
-        // Initialize selectedInvoiceId (UUID?) from selectedInvoice's id property (UUID?)
-        let initialInvoice: InvoiceEntity? = selectedInvoice.wrappedValue
+        // Initialize selectedInvoiceId from selectedInvoice's id property
+        let initialInvoice: Invoice? = selectedInvoice.wrappedValue
         let initialId: UUID? = initialInvoice?.id
         self._selectedInvoiceId = State(initialValue: initialId)
     }
@@ -143,25 +141,21 @@ struct InvoicesView: View {
             updateTreeItems()
         }
         .onChange(of: searchText) { _, _ in 
-            updateFetchRequest()
             updateTreeItems()
         }
         .onChange(of: filterStatus) { _, _ in 
-            updateFetchRequest()
             updateTreeItems()
         }
         .onChange(of: sortField) { _, _ in
-            updateFetchRequest()
             updateTreeItems()
         }
         .onChange(of: sortDirection) { _, _ in
-            updateFetchRequest()
             updateTreeItems()
         }
         .onChange(of: groupBy) { _, _ in
             updateTreeItems()
         }
-        .onChange(of: invoices) { _, _ in
+        .onChange(of: containerViewModel.allInvoices) { _, _ in
             updateTreeItems()
         }
         .onChange(of: selectedInvoiceId) { _, newIdUUID in
@@ -169,6 +163,10 @@ struct InvoicesView: View {
         }
         .onChange(of: selectedInvoice) { _, newInvoice in
             syncSelectedIdFromInvoice(newInvoice)
+        }
+        .task {
+            // Refresh invoices when view appears
+            await containerViewModel.fetchAllInvoices()
         }
         .modifier(ConfirmationDialogModifier(
             showingDeleteConfirmation: $showingDeleteConfirmation,
@@ -180,7 +178,6 @@ struct InvoicesView: View {
     // MARK: - Helper Methods
     
     private func setupInitialState() {
-        updateFetchRequest()
         // Sync ID selection if external selection exists and differs
         if let selectedInvoiceUUID = selectedInvoice?.id,
            selectedInvoiceId != selectedInvoiceUUID {
@@ -208,7 +205,7 @@ struct InvoicesView: View {
         }
     }
     
-    private func syncSelectedIdFromInvoice(_ newInvoice: InvoiceEntity?) {
+    private func syncSelectedIdFromInvoice(_ newInvoice: Invoice?) {
         let newInvoiceUUID = newInvoice?.id
         if newInvoiceUUID != selectedInvoiceId {
             selectedInvoiceId = newInvoiceUUID
@@ -271,7 +268,7 @@ struct InvoicesView: View {
     }
     
     // MARK: - Invoice Group View
-    private func invoiceGroupView(key: String, invoicesInGroup: [InvoiceEntity]) -> some View {
+    private func invoiceGroupView(key: String, invoicesInGroup: [Invoice]) -> some View {
         GlassEffectContainer(spacing: 10.0) {
             VStack(spacing: 10.0) {
                 groupHeaderView(key: key, invoicesInGroup: invoicesInGroup)
@@ -284,7 +281,7 @@ struct InvoicesView: View {
     }
     
     // MARK: - Group Header View
-    private func groupHeaderView(key: String, invoicesInGroup: [InvoiceEntity]) -> some View {
+    private func groupHeaderView(key: String, invoicesInGroup: [Invoice]) -> some View {
         HStack(spacing: 12) {
             groupIconView(key: key)
             groupTitleView(key: key, count: invoicesInGroup.count)
@@ -354,14 +351,14 @@ struct InvoicesView: View {
     }
     
     // MARK: - Expanded Invoices View
-    private func expandedInvoicesView(invoicesInGroup: [InvoiceEntity]) -> some View {
+    private func expandedInvoicesView(invoicesInGroup: [Invoice]) -> some View {
         ForEach(Array(invoicesInGroup.enumerated()), id: \.element.id) { index, invoice in
             invoiceRowView(invoice: invoice)
         }
     }
     
     // MARK: - Invoice Row View
-    private func invoiceRowView(invoice: InvoiceEntity) -> some View {
+    private func invoiceRowView(invoice: Invoice) -> some View {
         HStack(spacing: 12) {
             HStack {
                 Text(invoice.invoiceNumber)
@@ -371,7 +368,7 @@ struct InvoicesView: View {
 
                 Spacer()
 
-                Text(invoice.status?.rawValue ?? "Draft")
+                Text(invoice.status ?? "Draft")
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -405,13 +402,13 @@ struct InvoicesView: View {
 
     
     // Computed property for grouped invoices
-    private var groupedInvoices: [String: [InvoiceEntity]] {
+    private var groupedInvoices: [String: [Invoice]] {
         Dictionary(grouping: filteredInvoices) { invoice in
             switch groupBy {
             case .status:
-                return invoice.status?.rawValue ?? "Draft"
+                return invoice.status ?? "Draft"
             case .client:
-                return invoice.clientName ?? invoice.client?.fullName ?? "No Client"
+                return invoice.clientName ?? "No Client"
             case .month:
                 let date = invoice.date
                 let dateFormatter = DateFormatter()
@@ -451,12 +448,6 @@ struct InvoicesView: View {
         }
     }
     
-    // Update the fetch request when filters change
-    private func updateFetchRequest() {
-        // No longer needed - @Query handles this automatically
-        // The filteredInvoices computed property handles filtering and sorting
-    }
-    
     // Update tree items for hierarchical list
     private func updateTreeItems() {
         var items: [TreeItem] = []
@@ -469,7 +460,7 @@ struct InvoicesView: View {
                     TreeItem(
                         id: "invoice_\(invoice.id)",
                         title: invoice.invoiceNumber,
-                        subtitle: invoice.clientName ?? invoice.client?.fullName ?? "No Client",
+                        subtitle: invoice.clientName ?? "No Client",
                         children: nil,
                         entityId: invoice.id.uuidString,
                         entityType: "invoice"
@@ -489,7 +480,7 @@ struct InvoicesView: View {
                 TreeItem(
                     id: "invoice_\(invoice.id)",
                     title: invoice.invoiceNumber,
-                    subtitle: invoice.clientName ?? invoice.client?.fullName ?? "No Client",
+                    subtitle: invoice.clientName ?? "No Client",
                     children: nil,
                     entityId: invoice.id.uuidString,
                     entityType: "invoice"
@@ -527,50 +518,59 @@ struct InvoicesView: View {
 
     // MARK: - Bulk Operations
     private func bulkExportSelectedInvoices() {
-        let invoicesArray = Array(selectedInvoices)
-        for inv in invoicesArray {
-            if let url = temporaryPDFURL(for: inv) {
-                // Already written by temporaryPDFURL
-                _ = url
+        Task {
+            let invoicesArray = Array(selectedInvoices)
+            for inv in invoicesArray {
+                if let url = await temporaryPDFURL(for: inv) {
+                    // Already written by temporaryPDFURL
+                    _ = url
+                }
+            }
+            // Optionally, reveal temp directory
+            await MainActor.run {
+                NSWorkspace.shared.open(FileManager.default.temporaryDirectory)
             }
         }
-        // Optionally, reveal temp directory
-        NSWorkspace.shared.open(FileManager.default.temporaryDirectory)
     }
 
     private func bulkEmailSelectedInvoices() {
-        let invoicesArray = Array(selectedInvoices)
-        guard !invoicesArray.isEmpty else { return }
+        Task {
+            let invoicesArray = Array(selectedInvoices)
+            guard !invoicesArray.isEmpty else { return }
 
-        var items: [Any] = ["Please find attached the selected invoices." as NSString]
-        for inv in invoicesArray {
-            if let url = temporaryPDFURL(for: inv) {
-                items.append(url as NSURL)
+            var items: [Any] = ["Please find attached the selected invoices." as NSString]
+            for inv in invoicesArray {
+                if let url = await temporaryPDFURL(for: inv) {
+                    items.append(url as NSURL)
+                }
             }
-        }
 
-        // If nothing could be generated, bail
-        guard items.count > 1 else { return }
+            // If nothing could be generated, bail
+            guard items.count > 1 else { return }
 
-        if let service = NSSharingService(named: .composeEmail) {
-            service.subject = "Invoices"
-            service.perform(withItems: items)
+            await MainActor.run {
+                if let service = NSSharingService(named: .composeEmail) {
+                    service.subject = "Invoices"
+                    service.perform(withItems: items)
+                }
+            }
         }
     }
 
     // Generate PDF data for a given invoice using the same sheet view used elsewhere
-    private func temporaryPDFURL(for invoice: InvoiceEntity) -> URL? {
-        var business: BusinessEntity? = invoice.business
-        if business == nil {
-            let descriptor = FetchDescriptor<BusinessEntity>()
-            business = (try? modelContext.fetch(descriptor))?.first
+    private func temporaryPDFURL(for invoice: Invoice) async -> URL? {
+        // Fetch invoice items for PDF generation
+        do {
+            let invoiceItems = try await containerViewModel.invoicesRepository.fetchItems(by: invoice.id)
+            return InvoiceSharingService.temporaryPDFURL(invoice: invoice, invoiceItems: invoiceItems)
+        } catch {
+            print("❌ [InvoicesView] Error fetching invoice items for PDF: \(error)")
+            return nil
         }
-        guard let biz = business else { return nil }
-        return InvoiceSharingService.temporaryPDFURL(invoice: invoice, business: biz, context: modelContext)
     }
     
     // Add handler functions for tap gestures
-    private func handleInvoiceTap(invoice: InvoiceEntity) {
+    private func handleInvoiceTap(invoice: Invoice) {
         if isMultiSelectMode {
             // In multi-select mode, toggle selection
             if selectedInvoices.contains(invoice) {
@@ -593,7 +593,7 @@ struct InvoicesView: View {
         }
     }
     
-    private func handleCommandTap(invoice: InvoiceEntity) {
+    private func handleCommandTap(invoice: Invoice) {
         // Command+click always activates multi-select mode
         withAnimation(.easeInOut(duration: StyleGuide.Animations.durationMedium)) {
             if !isMultiSelectMode {
@@ -615,23 +615,15 @@ struct InvoicesView: View {
     
     // Add a function to perform the actual deletion after confirmation
     private func performDeleteInvoices() {
-        for invoice in invoicesToDelete {
-            modelContext.delete(invoice)
-        }
-        do {
-            try modelContext.save()
-            if let selectedInvoice = selectedInvoice, invoicesToDelete.contains(selectedInvoice) {
-                self.selectedInvoice = nil
-            }
+        let invoiceIds = invoicesToDelete.map { $0.id }
+        Task {
+            await containerViewModel.deleteInvoices(invoiceIds)
             selectedInvoices.removeAll()
             isMultiSelectMode = false
-            // Success toast (simple)
+            // Success toast
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-        } catch {
-            // Error toast (simple)
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            invoicesToDelete.removeAll()
         }
-        invoicesToDelete.removeAll()
     }
 
     // MARK: - Invoice List
@@ -751,7 +743,7 @@ struct InvoicesView: View {
 
 struct ConfirmationDialogModifier: ViewModifier {
     @Binding var showingDeleteConfirmation: Bool
-    let invoicesToDelete: Set<InvoiceEntity>
+    let invoicesToDelete: Set<Invoice>
     let performDeleteInvoices: () -> Void
     
     func body(content: Content) -> some View {
@@ -772,306 +764,8 @@ struct ConfirmationDialogModifier: ViewModifier {
     }
 }
 
-// All of the InvoiceEditor and its direct helpers will be replaced.
-// The helper views used by A4InvoiceSheetView and other parts of the app will be kept.
-
-// MARK: - A4 Invoice Sheet View
-struct A4InvoiceSheetView: View {
-    @Bindable var invoice: InvoiceEntity
-    var business: BusinessEntity? // Passed from InvoiceEditor or preview
-
-    // Replicate AppStorage properties needed for the A4 sheet
-    @AppStorage("companyName") private var companyName: String = "Your Business Name Pty Ltd"
-    @AppStorage("companyABN") private var companyABN: String = "ABN: 12 345 678 901"
-    @AppStorage("companyPhone") private var companyPhone: String = "0400 000 000"
-    @AppStorage("companyEmail") private var companyEmail: String = "contact@yourbusiness.com.au"
-    @AppStorage("companyAddress") private var companyAddress: String = ""
-    @AppStorage("defaultPaymentTerms") private var defaultPaymentTerms: String = "Payment due within 14 days."
-
-            let darkText = Color("A4Text", bundle: .sharedUI)
-        let mediumGrayText = Color("A4Text", bundle: .sharedUI)
-    let tableBorderColor = Color("A4TableBorder", bundle: .sharedUI)
-    let headerBackgroundColor = Color("A4TableBorder", bundle: .sharedUI)
-    let indigoButtonBackground = Color("A4IndigoButton", bundle: .sharedUI)
-    let indigoButtonText = Color("A4Text", bundle: .sharedUI)
-    let hoverIndigoButtonBackground = Color("A4IndigoButtonHover", bundle: .sharedUI)
-
-    // MARK: - Section: Business Info Header
-    private var businessInfoHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading) {
-                Text("TAX INVOICE")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(companyName)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    .lineLimit(1)
-                Text(business?.abn ?? "ABN: N/A")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                Text(companyEmail)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-        }
-        .padding(EdgeInsets(top: 12, leading: 24, bottom: 10, trailing: 24))
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Color("A4LightBlueBackground", bundle: .sharedUI))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8))
-        .padding(.bottom, 8)
-    }
-
-    // Computed properties for summary
-    private var subtotal: Double {
-                        invoice.items.reduce(0) { $0 + ($1.rate * $1.quantity) }
-    }
-    private var discountAmount: Double {
-        subtotal * (invoice.discount / 100.0)
-    }
-    private var taxAmount: Double {
-        let taxableSubtotal = subtotal
-        let taxableSubtotalAfterDiscount = taxableSubtotal * (1.0 - (invoice.discount / 100.0))
-        return taxableSubtotalAfterDiscount * (invoice.taxRate / 100.0)
-    }
-    private var appliedCreditAmountFromEntity: Double {
-        invoice.creditApplied
-    }
-    private var total: Double {
-        subtotal - discountAmount + taxAmount - appliedCreditAmountFromEntity
-    }
-
-    // MARK: - Section: Invoice Reference & Dates
-    private var invoiceReferenceAndDatesSection: some View {
-        InfoSection(title: "Invoice Reference & Dates") {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow {
-                    Text("Invoice No.:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    Text(invoice.invoiceNumber)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.leading)
-                }
-                GridRow {
-                    Text("Issue Date:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    Text(invoice.issueDate, style: .date)
-                        .font(.system(size: 10))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.leading)
-                }
-                GridRow {
-                    Text("Due Date:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    Text(invoice.dueDate ?? Date(), style: .date)
-                        .font(.system(size: 10))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.leading)
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    // MARK: - Section: Participant
-    private var participantSection: some View {
-        InfoSection(title: "Participant") {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow {
-                    Text("Name:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                                            Text(invoice.clientName ?? invoice.client?.fullName ?? "N/A")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                }
-                if let ndisNumber = invoice.client?.ndisNumber, !ndisNumber.isEmpty {
-                    GridRow {
-                        Text("NDIS No.:")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            .gridColumnAlignment(.trailing)
-                        Text(ndisNumber)
-                            .font(.system(size: 10))
-                            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Section: Bill To
-    private var billToSection: some View {
-        let client = invoice.client
-        let billingAuthString = client?.billingAuthority
-        var billToTitle = "Bill To"
-        var name: String? = ""
-        var email: String? = ""
-        var addressDisplayString: String? = nil
-        
-        if billingAuthString == .parentGuardian, let payee = client?.payee {
-            billToTitle = "Bill To: Parent/Guardian"
-            name = payee.fullName
-            email = payee.email
-            if let address = payee.address {
-                addressDisplayString = address.fullFormattedAddress
-            }
-        } else if billingAuthString == .client, let participant = client {
-            billToTitle = "Bill To: Participant"
-            name = participant.fullName
-            email = participant.email
-            if let address = participant.address {
-                addressDisplayString = address.fullFormattedAddress
-            }
-        } else {
-            return AnyView(InfoSection(title: "Bill To") {
-                Text("Participant/billing details not fully specified.")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            })
-        }
-        return AnyView(InfoSection(title: billToTitle) {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow { Text("Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(name ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                GridRow { Text("Email:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(email ?? "N/A").multilineTextAlignment(.leading).lineLimit(nil).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                GridRow(alignment: .top) { Text("Address:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(addressDisplayString ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .font(.system(size: 10))
-            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-        })
-    }
-
-    // MARK: - Section: Line Items
-    private var lineItemsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Spacer()
-            Text("Line Items")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                .padding(.top, 4)
-            AdaptedLineItemsTable(
-                invoice: invoice,
-                currentInvoiceItems: invoice.itemsArray,
-                onDeleteItem: { _ in /* Read-only in A4InvoiceSheetView */ },
-                onItemDataChanged: {},
-                isEditing: false
-            )
-        }
-    }
-
-    // MARK: - Section: Invoice Summary
-    private var invoiceSummarySection: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack { Text("Subtotal").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(subtotal.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-            if discountAmount > 0 {
-                HStack {
-                    Text("Discount (" + String(format: "%.2f", invoice.discount) + "%").foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    Spacer()
-                    Text("-" + discountAmount.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                }
-            }
-            HStack { Text("Tax (" + String(format: "%.2f", invoice.taxRate) + "%").foregroundColor(Color("A4Text", bundle: .sharedUI))
-                Spacer()
-                Text(taxAmount.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-            if appliedCreditAmountFromEntity > 0 { HStack { Text("Credit Applied").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text("-" + appliedCreditAmountFromEntity.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) } }
-            Divider().padding(.vertical, 2)
-            HStack { Text("TOTAL").fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(total.formatted(.currency(code: "AUD"))).fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-        }
-        .font(.system(size: 10))
-        .foregroundColor(darkText)
-        .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-        .background(Color("A4TableBackground", bundle: .sharedUI))
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
-        .overlay(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall).stroke(Color("A4TableBorder", bundle: .sharedUI), lineWidth: 1))
-    }
-
-    // MARK: - Section: Payment Details
-    private var paymentDetailsSection: some View {
-        InfoSection(title: "Payment Details") {
-            if let biz = business {
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                    GridRow { Text("Bank Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(biz.bankName ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("Account Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(biz.bankAccountName ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("BSB:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(biz.bankBSB ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("Account No.:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(biz.bankAccountNumber ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                }
-                .font(.system(size: 10))
-                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            } else {
-                Text("Business payment details not available.").font(.system(size: 10)).foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-        }
-    }
-
-    // MARK: - Section: Payment Terms
-    private var paymentTermsSection: some View {
-        InfoSection(title: "Payment Terms") {
-            Text(invoice.paymentTerms ?? defaultPaymentTerms)
-                 .font(.system(size: 10))
-                 .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                 .frame(maxWidth: .infinity, alignment: .leading)
-                 .padding(StyleGuide.Dimensions.paddingXSmall)
-        }
-    }
-
-
-
-    var body: some View {
-        VStack(spacing: 0) {
-            businessInfoHeader
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: 12) {
-                    invoiceReferenceAndDatesSection
-                    VStack(alignment: .leading, spacing: 12) {
-                        participantSection
-                        billToSection
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .padding(.bottom, 12)
-
-                Rectangle().fill(Color.clear)
-
-                VStack(alignment: .trailing, spacing: 0) {
-                    lineItemsSection
-                    HStack(alignment: .top) {
-                        Spacer()
-                        invoiceSummarySection
-                            .frame(width: 280)
-                    }
-                    .padding(.top, 10)
-                }
-
-                Rectangle().fill(Color.clear)
-
-                Grid(horizontalSpacing: 12) {
-                    GridRow(alignment: .top) {
-                        paymentDetailsSection
-                        paymentTermsSection
-                    }
-                }
-                .padding(.top, 12)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .frame(maxHeight: .infinity)
-        }
-        .background(Color("A4White", bundle: .sharedUI))
-    }
-}
+// Note: A4InvoiceSheetView functionality is provided by SharedUI.A4InvoiceSheetView
+// which is used for PDF rendering and printing via InvoiceSharingService
 
 // MARK: - Form Field Style Modifier
 struct FormFieldStyleModifier: ViewModifier {
@@ -1230,7 +924,6 @@ struct PickerOptionsList<Item: Hashable, ItemLabel: View>: View {
 
 
 struct InvoiceEditor: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
     // The ViewModel is now the source of truth for the view
@@ -1250,12 +943,10 @@ struct InvoiceEditor: View {
     @State private var showingDeleteConfirmation = false
     @State private var showingCancelConfirmation = false
     
-    // Fetch required entities using @Query
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
-    @Query(sort: \BusinessEntity.name) private var businesses: [BusinessEntity]
-    
-    // Computed property for business
-    private var business: BusinessEntity? { businesses.first }
+    // Business info from invoice snapshot
+    private var businessInfo: BusinessInfo {
+        BusinessInfo.from(invoice: viewModel.invoice)
+    }
     
     // Structure to store geometry information
     struct ViewGeometry {
@@ -1293,14 +984,14 @@ struct InvoiceEditor: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(viewModel.invoice.businessName ?? business?.name ?? "Your Business Name")
+                Text(businessInfo.name ?? "Your Business Name")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(darkText)
                     .lineLimit(1)
-                Text(viewModel.invoice.businessABN ?? business?.abn ?? "ABN: N/A")
+                Text(businessInfo.abn ?? "ABN: N/A")
                     .font(.system(size: 11))
                     .foregroundColor(mediumGrayText)
-                Text(viewModel.invoice.businessEmail ?? business?.email ?? "contact@yourbusiness.com.au")
+                Text(businessInfo.email ?? "contact@yourbusiness.com.au")
                     .font(.system(size: 11))
                     .foregroundColor(mediumGrayText)
             }
@@ -1321,13 +1012,13 @@ struct InvoiceEditor: View {
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         .gridColumnAlignment(.trailing)
                     if isEditing {
-                        TextField("Auto-generated when client selected", text: $viewModel.invoice.invoiceNumber)
+                        TextField("Auto-generated when client selected", text: $viewModel.invoiceNumber)
                             .font(.system(size: 11))
                             .foregroundColor(darkText)
                             .textFieldStyle(PlainTextFieldStyle())
                             .gridColumnAlignment(.leading)
                     } else {
-                        Text(viewModel.invoice.invoiceNumber)
+                        Text(viewModel.invoiceNumber)
                             .font(.system(size: 11))
                             .foregroundColor(darkText)
                             .gridColumnAlignment(.leading)
@@ -1339,7 +1030,7 @@ struct InvoiceEditor: View {
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         .gridColumnAlignment(.trailing)
                     if isEditing {
-                        DatePicker("", selection: $viewModel.invoice.issueDate, displayedComponents: .date)
+                        DatePicker("", selection: $viewModel.issueDate, displayedComponents: .date)
                             .labelsHidden()
                             .font(.system(size: 10))
                             .foregroundColor(darkText)
@@ -1347,7 +1038,7 @@ struct InvoiceEditor: View {
                             .accentColor(darkText)
                             .gridColumnAlignment(.leading)
                     } else {
-                        Text(viewModel.invoice.issueDate, style: .date)
+                        Text(viewModel.issueDate, style: .date)
                             .font(.system(size: 10))
                             .foregroundColor(darkText)
                             .gridColumnAlignment(.leading)
@@ -1359,7 +1050,7 @@ struct InvoiceEditor: View {
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         .gridColumnAlignment(.trailing)
                     if isEditing {
-                        DatePicker("", selection: Binding(get: { viewModel.invoice.dueDate ?? Date() }, set: { viewModel.invoice.dueDate = $0 }), displayedComponents: .date)
+                        DatePicker("", selection: Binding(get: { viewModel.dueDate ?? Date() }, set: { viewModel.dueDate = $0 }), displayedComponents: .date)
                             .labelsHidden()
                             .font(.system(size: 10))
                             .foregroundColor(darkText)
@@ -1367,7 +1058,7 @@ struct InvoiceEditor: View {
                             .accentColor(darkText)
                             .gridColumnAlignment(.leading)
                     } else {
-                        Text(viewModel.invoice.dueDate ?? Date(), style: .date)
+                        Text(viewModel.dueDate ?? Date(), style: .date)
                             .font(.system(size: 10))
                             .foregroundColor(darkText)
                             .gridColumnAlignment(.leading)
@@ -1388,26 +1079,26 @@ struct InvoiceEditor: View {
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         .gridColumnAlignment(.trailing)
                     if isEditing {
-                        Picker("Client", selection: $viewModel.invoice.client) {
-                            Text("Select Client").tag(nil as ClientEntity?)
-                            ForEach(clients) { client in
-                                Text(client.fullName).tag(client as ClientEntity?)
+                        Picker("Client", selection: $viewModel.selectedClientId) {
+                            Text("Select Client").tag(nil as UUID?)
+                            ForEach(viewModel.allClients) { client in
+                                Text(client.fullName).tag(client.id as UUID?)
                             }
                         }
                         .colorScheme(.light)
                         .labelsHidden()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: viewModel.invoice.client) { _, newClient in
-                            viewModel.onClientChanged(to: newClient)
+                        .onChange(of: viewModel.selectedClientId) { _, newClientId in
+                            viewModel.onClientChanged(to: newClientId)
                         }
                     } else {
-                        Text(viewModel.invoice.clientName ?? viewModel.invoice.client?.fullName ?? "N/A")
+                        Text(viewModel.invoice.clientName ?? viewModel.selectedClient?.fullName ?? "N/A")
                             .font(.system(size: 10))
                             .foregroundColor(Color("A4Text", bundle: .sharedUI))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                if let ndisNumber = viewModel.invoice.clientNDISNumber ?? viewModel.invoice.client?.ndisNumber, !ndisNumber.isEmpty {
+                if let ndisNumber = viewModel.invoice.clientNDISNumber ?? viewModel.selectedClient?.ndisNumber, !ndisNumber.isEmpty {
                     GridRow {
                         Text("NDIS No.:")
                             .font(.system(size: 10, weight: .medium))
@@ -1424,8 +1115,8 @@ struct InvoiceEditor: View {
     }
 
     private var billToSection: some View {
-        // Use snapshot data if available, otherwise fall back to relationships
-        let billingAuthString = viewModel.invoice.billingAuthority ?? viewModel.invoice.client?.billingAuthority
+        // Use snapshot data from invoice domain model
+        let billingAuthString = viewModel.invoice.billingAuthority
         let billToName = viewModel.invoice.billToName
         let billToEmail = viewModel.invoice.billToEmail
         let billToAddress = viewModel.invoice.billToAddress
@@ -1435,16 +1126,16 @@ struct InvoiceEditor: View {
         var email: String? = ""
         var addressDisplayString: String? = nil
 
-        if billingAuthString == .parentGuardian {
+        if billingAuthString == "parent_guardian" || billingAuthString == "Parent/Guardian" {
             billToTitle = "Bill To: Parent/Guardian"
-            name = billToName ?? viewModel.invoice.payeeName ?? viewModel.invoice.client?.payee?.fullName
-            email = billToEmail ?? viewModel.invoice.payeeEmail ?? viewModel.invoice.client?.payee?.email
-            addressDisplayString = billToAddress ?? viewModel.invoice.payeeAddress ?? viewModel.invoice.client?.payee?.address?.fullFormattedAddress
-        } else if billingAuthString == .client {
+            name = billToName ?? viewModel.invoice.payeeName
+            email = billToEmail ?? viewModel.invoice.payeeEmail
+            addressDisplayString = billToAddress ?? viewModel.invoice.payeeAddress
+        } else if billingAuthString == "client" || billingAuthString == "Client" {
             billToTitle = "Bill To: Participant"
-            name = billToName ?? viewModel.invoice.clientName ?? viewModel.invoice.client?.fullName
-            email = billToEmail ?? viewModel.invoice.clientEmail ?? viewModel.invoice.client?.email
-            addressDisplayString = billToAddress ?? viewModel.invoice.clientAddress ?? viewModel.invoice.client?.address?.fullFormattedAddress
+            name = billToName ?? viewModel.invoice.clientName
+            email = billToEmail ?? viewModel.invoice.clientEmail
+            addressDisplayString = billToAddress ?? viewModel.invoice.clientAddress
         } else {
             return AnyView(InfoSection(title: "Bill To") {
                 Text("Select Participant to determine billing details.")
@@ -1473,14 +1164,27 @@ struct InvoiceEditor: View {
                 .padding(.top, 4)
             AdaptedLineItemsTable(
                 invoice: viewModel.invoice,
-                currentInvoiceItems: viewModel.invoice.itemsArray,
+                currentInvoiceItems: viewModel.invoiceItems,
+                clientId: viewModel.invoice.clientId,
+                clientServicesRepository: viewModel.clientServicesRepository,
                 onDeleteItem: { offsets in
                     viewModel.deleteInvoiceItems(at: offsets)
                 },
-                onItemDataChanged: { },
+                onUpdateItem: { updatedItem in
+                    viewModel.updateInvoiceItem(
+                        updatedItem,
+                        description: updatedItem.itemDescription,
+                        quantity: updatedItem.quantity,
+                        rate: updatedItem.rate,
+                        clientServiceId: updatedItem.clientServiceId
+                    )
+                },
+                onItemDataChanged: { 
+                    viewModel.recomputeTotals()
+                },
                 isEditing: isEditing
             )
-            .id(viewModel.invoice.client?.id)
+            .id(viewModel.invoice.clientId)
             
             if isEditing {
                 HStack {
@@ -1511,13 +1215,13 @@ struct InvoiceEditor: View {
     private var paymentTermsSection: some View {
         InfoSection(title: "Payment Terms") {
             if isEditing {
-                TextField("Payment Terms", text: Binding(get: { viewModel.invoice.paymentTerms ?? "" }, set: { viewModel.invoice.paymentTerms = $0 }), axis: .vertical)
+                TextField("Payment Terms", text: Binding(get: { viewModel.paymentTerms ?? "" }, set: { viewModel.paymentTerms = $0 }), axis: .vertical)
                     .font(.system(size: 10))
                     .foregroundColor(Color("A4Text", bundle: .sharedUI))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(StyleGuide.Dimensions.paddingXSmall)
             } else {
-                Text(viewModel.invoice.paymentTerms ?? "")
+                Text(viewModel.paymentTerms ?? "")
                     .font(.system(size: 10))
                     .foregroundColor(Color("A4Text", bundle: .sharedUI))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1528,18 +1232,18 @@ struct InvoiceEditor: View {
 
     private var invoiceSummarySection: some View {
         VStack(alignment: .trailing, spacing: 5) {
-             HStack { Text("Subtotal").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.invoice.subtotal.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-            if viewModel.invoice.discountAmount > 0 {
+             HStack { Text("Subtotal").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.subtotal.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
+            if viewModel.discountAmount > 0 {
                  HStack {
-                     Text("Discount (\(viewModel.invoice.discount, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI))
+                     Text("Discount (\(viewModel.discount, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI))
                      Spacer()
-                     Text("-\(viewModel.invoice.discountAmount.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI))
+                     Text("-\(viewModel.discountAmount.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI))
                 }
             }
-             HStack { Text("Tax (\(viewModel.invoice.taxRate, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.invoice.taxAmount.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-             if viewModel.invoice.creditApplied > 0 { HStack { Text("Credit Applied").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text("-\(viewModel.invoice.creditApplied.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI)) } }
+             HStack { Text("Tax (\(viewModel.taxRate, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.taxAmount.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
+             if viewModel.creditApplied > 0 { HStack { Text("Credit Applied").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text("-\(viewModel.creditApplied.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI)) } }
              Divider().padding(.vertical, 2)
-             HStack { Text("TOTAL").fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.invoice.calculatedTotal.formatted(.currency(code: "AUD"))).fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
+             HStack { Text("TOTAL").fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.calculatedTotal.formatted(.currency(code: "AUD"))).fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
         }
         .font(.system(size: 10))
         .foregroundColor(darkText)
@@ -1551,11 +1255,11 @@ struct InvoiceEditor: View {
 
     private var paymentDetailsSection: some View {
         InfoSection(title: "Payment Details") {
-            // Use snapshot data if available, otherwise fall back to business relationship
-            let bankName = viewModel.invoice.bankName ?? business?.bankName
-            let bankAccountName = viewModel.invoice.bankAccountName ?? business?.bankAccountName
-            let bankBSB = viewModel.invoice.bankBSB ?? business?.bankBSB
-            let bankAccountNumber = viewModel.invoice.bankAccountNumber ?? business?.bankAccountNumber
+            // Use snapshot data from invoice domain model
+            let bankName = businessInfo.bankName
+            let bankAccountName = businessInfo.bankAccountName
+            let bankBSB = businessInfo.bankBSB
+            let bankAccountNumber = businessInfo.bankAccountNumber
             
             if bankName != nil || bankAccountName != nil || bankBSB != nil || bankAccountNumber != nil {
                 Grid(alignment: .bottomLeading, horizontalSpacing: 10, verticalSpacing: 4) {
@@ -1658,17 +1362,15 @@ struct InvoiceEditor: View {
         }
         .font(.system(size: 10))
         // toolbar consolidated in InvoicesContainerView
-        .onChange(of: viewModel.invoice.status) { _, newStatus in
+        .onChange(of: viewModel.status) { _, newStatus in
             // Sync paidDate with status changes
-            if (newStatus?.rawValue ?? "") == AppConstants.invoiceStatusPaid {
-                viewModel.invoice.paidDate = Date()
-            } else {
-                viewModel.invoice.paidDate = nil
+            if newStatus == AppConstants.invoiceStatusPaid {
+                // Note: paidDate is updated when saving invoice
             }
         }
-        .onChange(of: viewModel.invoice.discount) { _, _ in viewModel.recomputeTotals() }
-        .onChange(of: viewModel.invoice.taxRate) { _, _ in viewModel.recomputeTotals() }
-        .onChange(of: viewModel.invoice.creditApplied) { _, _ in viewModel.recomputeTotals() }
+        .onChange(of: viewModel.discount) { _, _ in viewModel.recomputeTotals() }
+        .onChange(of: viewModel.taxRate) { _, _ in viewModel.recomputeTotals() }
+        .onChange(of: viewModel.creditApplied) { _, _ in viewModel.recomputeTotals() }
         .confirmationDialogs(
             showingDeleteConfirmation: $showingDeleteConfirmation,
             showingCancelConfirmation: $showingCancelConfirmation,
@@ -1822,7 +1524,7 @@ struct InvoiceInspectorView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Discount %").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            TextField("0", value: $viewModel.invoice.discount, formatter: NumberFormatter.twoDecimal)
+                            TextField("0", value: $viewModel.discount, formatter: NumberFormatter.twoDecimal)
                                 .controlSize(.small)
                                 .textFieldStyle(.roundedBorder)
                                 .disabled(!isEditing)
@@ -1830,7 +1532,7 @@ struct InvoiceInspectorView: View {
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("GST %").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            TextField("0", value: $viewModel.invoice.taxRate, formatter: NumberFormatter.twoDecimal)
+                            TextField("0", value: $viewModel.taxRate, formatter: NumberFormatter.twoDecimal)
                                 .controlSize(.small)
                                 .textFieldStyle(.roundedBorder)
                                 .disabled(!isEditing)
@@ -1839,7 +1541,7 @@ struct InvoiceInspectorView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Credit Applied").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
                             HStack(spacing: 6) {
-                                TextField("0", value: $viewModel.invoice.creditApplied, formatter: NumberFormatter.twoDecimal)
+                                TextField("0", value: $viewModel.creditApplied, formatter: NumberFormatter.twoDecimal)
                                     .controlSize(.small)
                                     .textFieldStyle(.roundedBorder)
                                     .disabled(!isEditing)
@@ -1852,8 +1554,8 @@ struct InvoiceInspectorView: View {
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Status").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            Picker("Status", selection: $viewModel.invoice.status) {
-                                ForEach(AppConstants.invoiceStatusOptions, id: \.self) { Text($0).tag($0) }
+                            Picker("Status", selection: $viewModel.status) {
+                                ForEach(AppConstants.invoiceStatusOptions, id: \.self) { Text($0).tag($0 as String?) }
                             }
                             .labelsHidden()
                             .pickerStyle(.menu)
@@ -1888,7 +1590,7 @@ extension NumberFormatter {
 
 // MARK: - Enhanced Invoice Row View
 struct InvoiceRowView: View {
-    let invoice: InvoiceEntity
+    let invoice: Invoice
     let isSelected: Bool
     let isMultiSelectMode: Bool
     let onSelect: () -> Void
@@ -1949,7 +1651,7 @@ struct InvoiceRowView: View {
                     
                     Spacer()
                     
-                    StatusBadge(status: invoice.status?.rawValue ?? AppConstants.invoiceStatusDraft)
+                    StatusBadge(status: invoice.status ?? AppConstants.invoiceStatusDraft)
                 }
                 
 
@@ -1989,34 +1691,36 @@ struct InvoiceRowView: View {
 
 // MARK: - Adapted Line Items Table
 struct AdaptedLineItemsTable: View {
-    @Bindable var invoice: InvoiceEntity
-    var currentInvoiceItems: [InvoiceItemEntity]
+    let invoice: Invoice
+    var currentInvoiceItems: [InvoiceItem]
+    let clientId: UUID?
+    let clientServicesRepository: ClientServicesRepository
     let onDeleteItem: (IndexSet) -> Void
+    let onUpdateItem: (InvoiceItem) -> Void
     let onItemDataChanged: () -> Void
     let isEditing: Bool
-
-    @Environment(\.modelContext) private var modelContext
     
-    // Query for client services
-    @Query private var allClientServices: [ClientServiceEntity]
+    @State private var availableClientServices: [ClientService] = []
+    @State private var serviceDateMap: [UUID: Date] = [:] // Track service dates for each item
     
-    // Computed property for available client services, filtered by current invoice's client
-    private var availableClientServices: [ClientServiceEntity] {
-        guard let clientID = invoice.client?.id else { return [] }
-        return allClientServices
-            .filter { $0.client?.id == clientID && $0.isActive }
-            .sorted { $0.serviceName < $1.serviceName }
-}
-
-    init(invoice: InvoiceEntity, currentInvoiceItems: [InvoiceItemEntity], onDeleteItem: @escaping (IndexSet) -> Void, onItemDataChanged: @escaping () -> Void, isEditing: Bool) {
+    init(invoice: Invoice, currentInvoiceItems: [InvoiceItem], clientId: UUID?, clientServicesRepository: ClientServicesRepository, onDeleteItem: @escaping (IndexSet) -> Void, onUpdateItem: @escaping (InvoiceItem) -> Void, onItemDataChanged: @escaping () -> Void, isEditing: Bool) {
         self.invoice = invoice
         self.currentInvoiceItems = currentInvoiceItems
+        self.clientId = clientId
+        self.clientServicesRepository = clientServicesRepository
         self.onDeleteItem = onDeleteItem
+        self.onUpdateItem = onUpdateItem
         self.onItemDataChanged = onItemDataChanged
         self.isEditing = isEditing
         
-        // Initialize the query for client services
-        _allClientServices = Query(sort: \ClientServiceEntity.serviceName)
+        // Initialize service dates from current items
+        // Note: InvoiceItem domain model doesn't include serviceDate, so we initialize with current date
+        // In the future, serviceDate should be added to InvoiceItem domain model to preserve this data
+        var dates: [UUID: Date] = [:]
+        for item in currentInvoiceItems {
+            dates[item.id] = Date() // Default to current date - serviceDate not available in domain model
+        }
+        self._serviceDateMap = State(initialValue: dates)
     }
 
     var body: some View {
@@ -2089,15 +1793,50 @@ struct AdaptedLineItemsTable: View {
             ForEach(currentInvoiceItems, id: \.id) { item in
                 LineItemRowView(
                     item: item,
+                    serviceDate: Binding(
+                        get: { serviceDateMap[item.id] ?? Date() },
+                        set: { serviceDateMap[item.id] = $0 }
+                    ),
                     availableClientServices: availableClientServices,
+                    onItemChanged: { updatedItem in
+                        onUpdateItem(updatedItem)
+                        onItemDataChanged()
+                    },
                     onItemDataChanged: onItemDataChanged,
-                    onDeleteItem: { itemToDelete in
-                        if let index = currentInvoiceItems.firstIndex(where: { $0.id == itemToDelete.id }) {
+                    onDeleteItem: {
+                        if let index = currentInvoiceItems.firstIndex(where: { $0.id == item.id }) {
                             onDeleteItem(IndexSet(integer: index))
                         }
                     },
                     isEditing: isEditing
                 )
+            }
+            .task {
+                // Fetch client services when clientId is available
+                if let clientId = clientId {
+                    do {
+                        availableClientServices = try await clientServicesRepository.fetch(for: clientId)
+                            .filter { $0.isActive }
+                            .sorted { $0.serviceName < $1.serviceName }
+                    } catch {
+                        print("❌ [AdaptedLineItemsTable] Error fetching client services: \(error)")
+                    }
+                }
+            }
+            .onChange(of: clientId) { _, newClientId in
+                Task {
+                    if let clientId = newClientId {
+                        do {
+                            availableClientServices = try await clientServicesRepository.fetch(for: clientId)
+                                .filter { $0.isActive }
+                                .sorted { $0.serviceName < $1.serviceName }
+                        } catch {
+                            print("❌ [AdaptedLineItemsTable] Error fetching client services: \(error)")
+                        }
+                    } else {
+                        availableClientServices = []
+                    }
+                }
             }
             
             // Empty state placeholder
@@ -2123,19 +1862,30 @@ struct AdaptedLineItemsTable: View {
 
 // MARK: - Line Item Row View
 struct LineItemRowView: View {
-    @Bindable var item: InvoiceItemEntity
-    let availableClientServices: [ClientServiceEntity]
+    let item: InvoiceItem
+    @Binding var serviceDate: Date
+    let availableClientServices: [ClientService]
+    let onItemChanged: (InvoiceItem) -> Void
     let onItemDataChanged: () -> Void
-    let onDeleteItem: (InvoiceItemEntity) -> Void
+    let onDeleteItem: () -> Void
     let isEditing: Bool
-
-    @Environment(\.modelContext) private var modelContext
+    
+    @State private var selectedClientServiceId: UUID?
+    
+    private var selectedClientService: ClientService? {
+        guard let serviceId = selectedClientServiceId ?? item.clientServiceId else { return nil }
+        return availableClientServices.first { $0.id == serviceId }
+    }
+    
+    private var itemUnit: String {
+        selectedClientService?.unit ?? ""
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             // Service Date Cell
             EditableServiceDateView(
-                serviceDate: $item.serviceDate,
+                serviceDate: $serviceDate,
                 isEditing: isEditing
             )
             .frame(width: 80)
@@ -2146,13 +1896,13 @@ struct LineItemRowView: View {
             // Description Cell
             Group {
                 if isEditing {
-                    Picker("Service", selection: $item.clientService) {
+                    Picker("Service", selection: $selectedClientServiceId) {
                         Text("Select Service")
-                            .tag(nil as ClientServiceEntity?)
+                            .tag(nil as UUID?)
                             .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        ForEach(availableClientServices, id: \.self) {
-                            Text($0.serviceName)
-                                .tag($0 as ClientServiceEntity?)
+                        ForEach(availableClientServices, id: \.id) { service in
+                            Text(service.serviceName)
+                                .tag(service.id as UUID?)
                                 .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         }
                     }
@@ -2160,21 +1910,39 @@ struct LineItemRowView: View {
                     .labelsHidden()
                     .pickerStyle(.automatic)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .onChange(of: item.clientService) { _, selectedService in
-                        if let service = selectedService {
-                            item.itemDescription = service.computedServiceName
-                            item.rate = service.computedRate
-                            item.unit = service.computedUnit
+                    .onChange(of: selectedClientServiceId) { _, selectedServiceId in
+                        if let serviceId = selectedServiceId, let service = availableClientServices.first(where: { $0.id == serviceId }) {
+                            onItemChanged(InvoiceItem(
+                                id: item.id,
+                                invoiceId: item.invoiceId,
+                                sessionId: item.sessionId,
+                                clientServiceId: serviceId,
+                                itemDescription: service.serviceName,
+                                quantity: item.quantity,
+                                rate: service.rate,
+                                position: item.position
+                            ))
                             onItemDataChanged()
                         } else {
-                            item.itemDescription = ""
-                            item.rate = 0.0
-                            item.unit = nil
+                            onItemChanged(InvoiceItem(
+                                id: item.id,
+                                invoiceId: item.invoiceId,
+                                sessionId: item.sessionId,
+                                clientServiceId: nil,
+                                itemDescription: item.itemDescription,
+                                quantity: item.quantity,
+                                rate: item.rate,
+                                position: item.position
+                            ))
                             onItemDataChanged()
                         }
                     }
+                    .onAppear {
+                        selectedClientServiceId = item.clientServiceId
+                    }
                 } else {
-                    Text("\(item.itemDescription)\(item.clientService?.ndisCode.map { " (\($0))" } ?? "")")
+                    let ndisCode = selectedClientService?.ndisCode
+                    Text("\(item.itemDescription)\(ndisCode.map { " (\($0))" } ?? "")")
                         .fontWeight(.bold)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
@@ -2191,7 +1959,16 @@ struct LineItemRowView: View {
                         get: { String(describing: item.quantity) },
                         set: { newValue in
                             if let newQuantity = Double(newValue), newQuantity > 0 {
-                                item.quantity = newQuantity
+                                onItemChanged(InvoiceItem(
+                                    id: item.id,
+                                    invoiceId: item.invoiceId,
+                                    sessionId: item.sessionId,
+                                    clientServiceId: item.clientServiceId,
+                                    itemDescription: item.itemDescription,
+                                    quantity: newQuantity,
+                                    rate: item.rate,
+                                    position: item.position
+                                ))
                                 onItemDataChanged()
                             }
                         }
@@ -2215,13 +1992,13 @@ struct LineItemRowView: View {
             // Rate Cell
             Group {
                 if isEditing {
-                    if item.clientService?.computedUnit.lowercased() == "hour" {
+                    if itemUnit.lowercased() == "hour" {
                         Text(String(format: "$%.2f/h", item.rate))
                             .font(.system(size: 10))
                             .foregroundColor(Color("A4Text", bundle: .sharedUI))
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .textFieldStyle(PlainTextFieldStyle())
-                    } else if item.clientService != nil {
+                    } else if selectedClientService != nil {
                         Text(String(format: "$%.2f", item.rate))
                             .font(.system(size: 10))
                             .foregroundColor(Color("A4Text", bundle: .sharedUI))
@@ -2232,20 +2009,29 @@ struct LineItemRowView: View {
                             get: { String(format: "$%.2f", item.rate) },
                             set: { newValue in
                                 let cleanRateString = newValue.replacingOccurrences(of: "$", with: "")
-                                if item.clientService == nil, let rateValue = Double(cleanRateString), rateValue >= 0 {
-                                    item.rate = rateValue
+                                if selectedClientService == nil, let rateValue = Double(cleanRateString), rateValue >= 0 {
+                                    onItemChanged(InvoiceItem(
+                                        id: item.id,
+                                        invoiceId: item.invoiceId,
+                                        sessionId: item.sessionId,
+                                        clientServiceId: item.clientServiceId,
+                                        itemDescription: item.itemDescription,
+                                        quantity: item.quantity,
+                                        rate: rateValue,
+                                        position: item.position
+                                    ))
                                     onItemDataChanged()
                                 }
                             }
                         ))
-                        .disabled(item.clientService != nil)
+                        .disabled(selectedClientService != nil)
                         .font(.system(size: 10))
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .textFieldStyle(PlainTextFieldStyle())
                     }
                 } else {
-                    if item.clientService?.computedUnit.lowercased() == "hour" {
+                    if itemUnit.lowercased() == "hour" {
                         Text(String(format: "$%.2f/h", item.rate))
                             .font(.system(size: 10))
                             .foregroundColor(Color("A4Text", bundle: .sharedUI))
@@ -2266,7 +2052,7 @@ struct LineItemRowView: View {
             Divider().background(Color("A4Text", bundle: .sharedUI))
 
             // Amount Cell
-            Text((Double(item.quantity) * item.rate).formatted(.currency(code: "AUD")))
+            Text(item.lineTotal.formatted(.currency(code: "AUD")))
                 .font(.system(size: 10))
                 .foregroundColor(Color("A4Text", bundle: .sharedUI))
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -2277,16 +2063,14 @@ struct LineItemRowView: View {
             // Actions Cell (if editing)
             if isEditing {
                 Divider().background(Color("A4Text", bundle: .sharedUI))
-                                        Button(action: {
-                                            onDeleteItem(item)
-                                        }) {
-                            Image(systemName: "trash")
-                                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        }
-                        .buttonStyle(.plain)
-                        .appInteractiveCursor()
-                        .frame(width: 20)
-                        .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                Button(action: onDeleteItem) {
+                    Image(systemName: "trash")
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                }
+                .buttonStyle(.plain)
+                .appInteractiveCursor()
+                .frame(width: 20)
+                .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
             }
         }
         .background(Color("A4White", bundle: .sharedUI))
@@ -2330,6 +2114,97 @@ struct EditableServiceDateView: View {
                 .font(.system(size: 10))
                 .foregroundColor(Color("A4Text", bundle: .sharedUI))
         }
+    }
+}
+
+// MARK: - Simple Read-Only Line Items Table
+// Used for displaying invoice items in a read-only format
+struct SimpleLineItemsTable: View {
+    let invoiceItems: [InvoiceItem]
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header row
+            HStack(spacing: 0) {
+                Text("DESCRIPTION")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                Divider().background(Color("A4White", bundle: .sharedUI))
+                Text("QTY")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                    .frame(width: 40)
+                    .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                Divider().background(Color("A4White", bundle: .sharedUI))
+                Text("RATE")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                    .frame(width: 60)
+                    .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                Divider().background(Color("A4White", bundle: .sharedUI))
+                Text("AMOUNT")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                    .frame(width: 60)
+                    .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+            }
+            .background(Color("A4TableBorder", bundle: .sharedUI))
+            
+            // Data rows
+            ForEach(invoiceItems, id: \.id) { item in
+                HStack(spacing: 0) {
+                    Text(item.itemDescription)
+                        .font(.system(size: 10))
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                    Divider().background(Color("A4Text", bundle: .sharedUI))
+                    Text(String(describing: item.quantity))
+                        .font(.system(size: 10))
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .frame(width: 40, alignment: .center)
+                        .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                    Divider().background(Color("A4Text", bundle: .sharedUI))
+                    Text(String(format: "$%.2f", item.rate))
+                        .font(.system(size: 10))
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .frame(width: 60, alignment: .trailing)
+                        .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                    Divider().background(Color("A4Text", bundle: .sharedUI))
+                    Text(item.lineTotal.formatted(.currency(code: "AUD")))
+                        .font(.system(size: 10))
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .frame(width: 60, alignment: .trailing)
+                        .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
+                }
+                .background(Color("A4White", bundle: .sharedUI))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(Color("A4Text", bundle: .sharedUI)), alignment: .bottom)
+            }
+            
+            if invoiceItems.isEmpty {
+                HStack {
+                    Spacer()
+                    Text("No line items")
+                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .padding()
+                    Spacer()
+                }
+                .background(Color("A4White", bundle: .sharedUI))
+                .overlay(Rectangle().frame(height: 1).foregroundColor(Color("A4Text", bundle: .sharedUI)), alignment: .bottom)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color("A4TableBorder", bundle: .sharedUI), lineWidth: 1))
     }
 }
 

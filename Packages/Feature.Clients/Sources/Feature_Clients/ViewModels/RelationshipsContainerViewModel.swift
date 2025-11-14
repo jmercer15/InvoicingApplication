@@ -16,9 +16,12 @@ enum DetailState: Hashable {
     case selectEntityType
 }
 
-public final class RelationshipsContainerViewModel: ObservableObject, @unchecked Sendable {
+@MainActor
+public final class RelationshipsContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    private var modelContext: ModelContext
+    public let clientsRepository: ClientsRepository
+    public let payeesRepository: PayeeRepository
+    public let planManagersRepository: PlanManagerRepository
     private let navigationManager: AppNavigationManager
     private var requestRelationshipDelete: (UUID) -> Void
     private let pageSize = 50
@@ -45,33 +48,37 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
     @Published var clientFilter: ClientFilter = .all
     @Published var payeeFilter: PayeeFilter = .all
 
-    // Data lists for the view
-    @Published private(set) var clients: [ClientEntity] = []
-    @Published private(set) var payees: [PayeeEntity] = []
-    @Published private(set) var planManagers: [PlanManagerEntity] = []
+    // Data lists for the view (Domain Models)
+    @Published private(set) var clients: [Client] = []
+    @Published private(set) var payees: [Payee] = []
+    @Published private(set) var planManagers: [PlanManager] = []
     
     // Pagination
     @Published private(set) var hasMoreToLoad = false
-
-
     
-    // All fetched data
-    private var allFilteredClients: [ClientEntity] = []
-    private var allFilteredPayees: [PayeeEntity] = []
-    private var allFilteredPlanManagers: [PlanManagerEntity] = []
+    // All fetched data (Domain Models)
+    private var allFilteredClients: [Client] = []
+    private var allFilteredPayees: [Payee] = []
+    private var allFilteredPlanManagers: [PlanManager] = []
 
     // MARK: - Initializer
     public init(
-        context: ModelContext,
+        clientsRepository: ClientsRepository,
+        payeesRepository: PayeeRepository,
+        planManagersRepository: PlanManagerRepository,
         navigationManager: AppNavigationManager,
         requestRelationshipDelete: @escaping (UUID) -> Void = { _ in }
     ) {
-        self.modelContext = context
+        self.clientsRepository = clientsRepository
+        self.payeesRepository = payeesRepository
+        self.planManagersRepository = planManagersRepository
         self.navigationManager = navigationManager
         self.requestRelationshipDelete = requestRelationshipDelete
         
         setupBindings()
-        fetchAllDataAndFilter()
+        Task {
+            await fetchAllDataAndFilter()
+        }
         syncSelectionFromParent()
         // Handle initial navigation context directly to avoid data races
         // await handleInitialNavigationContext()
@@ -87,10 +94,10 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
     }
 
     @MainActor
-    public func updateContextIfNeeded(_ newContext: ModelContext) {
-        guard modelContext !== newContext else { return }
-        modelContext = newContext
-        fetchAllDataAndFilter()
+    public func refreshData() {
+        Task {
+            await fetchAllDataAndFilter()
+        }
     }
 
     public func updateDeleteHandler(_ handler: @escaping (UUID) -> Void) {
@@ -155,8 +162,8 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
         filterTrigger
             .sink { [weak self] _ in
                 guard let self = self else { return }
-                DispatchQueue.main.async {
-                    self.fetchAllDataAndFilter()
+                Task { @MainActor in
+                    await self.fetchAllDataAndFilter()
                 }
             }
             .store(in: &cancellables)
@@ -173,7 +180,9 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.detailState = .none
-                self?.fetchAllDataAndFilter()
+                Task { @MainActor in
+                    await self?.fetchAllDataAndFilter()
+                }
             }
             .store(in: &cancellables)
 
@@ -183,43 +192,48 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
             .sink { [weak self] _ in
                 // Re-fetch data when the store changes (e.g., after imports)
                 guard let self = self else { return }
-                DispatchQueue.main.async {
-                    self.fetchAllDataAndFilter()
+                Task { @MainActor in
+                    await self.fetchAllDataAndFilter()
                 }
             }
             .store(in: &cancellables)
     }
 
-    private func fetchAllDataAndFilter() {
+    private func fetchAllDataAndFilter() async {
         // Capture filter/search values
         let searchText = relationshipSearchText
         let clientFilterRawValue = clientFilter.rawValue
         let payeeFilterRawValue = payeeFilter.rawValue
 
-        // Fetch all entities without filtering
-        let clientDescriptor = FetchDescriptor<ClientEntity>(sortBy: clientSortOrder.clientSortDescriptors())
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>(sortBy: payeeSortOrder.payeeSortDescriptors())
-        let planManagerDescriptor = FetchDescriptor<PlanManagerEntity>(sortBy: planManagerSortOrder.planManagerSortDescriptors())
-
         do {
-            let allClients = try modelContext.fetch(clientDescriptor)
-            let allPayees = try modelContext.fetch(payeeDescriptor)
-            let allPlanManagers = try modelContext.fetch(planManagerDescriptor)
+            // Fetch all data using repositories
+            async let allClientsTask = clientsRepository.fetchAll()
+            async let allPayeesTask = payeesRepository.fetchAll()
+            async let allPlanManagersTask = planManagersRepository.fetchAll()
+            
+            let allClients = try await allClientsTask
+            let allPayees = try await allPayeesTask
+            let allPlanManagers = try await allPlanManagersTask
+
+            // Apply sorting
+            let sortedClients = clientSortOrder.sortClients(allClients)
+            let sortedPayees = payeeSortOrder.sortPayees(allPayees)
+            let sortedPlanManagers = planManagerSortOrder.sortPlanManagers(allPlanManagers)
 
             // In-memory filtering for clients
-            allFilteredClients = allClients.filter { client in
+            allFilteredClients = sortedClients.filter { client in
                 let matchesSearch = searchText.isEmpty ||
                     client.fullName.localizedStandardContains(searchText) ||
                     (client.email ?? "").localizedStandardContains(searchText) ||
                     client.ndisNumber.localizedStandardContains(searchText)
                 
-                let matchesFilter = clientFilterRawValue == "All" || client.status.rawValue == clientFilterRawValue
+                let matchesFilter = clientFilterRawValue == "All" || client.status == clientFilterRawValue
                 
                 return matchesSearch && matchesFilter
             }
 
             // In-memory filtering for payees
-            allFilteredPayees = allPayees.filter { payee in
+            allFilteredPayees = sortedPayees.filter { payee in
                 (searchText.isEmpty ||
                     payee.fullName.localizedStandardContains(searchText) ||
                     (payee.email ?? "").localizedStandardContains(searchText)
@@ -228,15 +242,18 @@ public final class RelationshipsContainerViewModel: ObservableObject, @unchecked
             }
 
             // In-memory filtering for plan managers
-            allFilteredPlanManagers = allPlanManagers.filter { planManager in
+            allFilteredPlanManagers = sortedPlanManagers.filter { planManager in
                 (searchText.isEmpty ||
-                    (planManager.name ?? "").localizedStandardContains(searchText) ||
+                    planManager.name.localizedStandardContains(searchText) ||
                     (planManager.email ?? "").localizedStandardContains(searchText) ||
-                    (planManager.abn).localizedStandardContains(searchText)
+                    planManager.abn.localizedStandardContains(searchText)
                 )
             }
         } catch {
-            print("Failed to fetch data: \(error)")
+            print("❌ [RelationshipsContainerViewModel] Failed to fetch data: \(error)")
+            allFilteredClients = []
+            allFilteredPayees = []
+            allFilteredPlanManagers = []
         }
         
         clients = Array(allFilteredClients.prefix(pageSize))
@@ -298,28 +315,30 @@ extension RelationshipsContainerViewModel {
         case dateAddedAsc = "Date Added (Oldest)"
         var id: String { self.rawValue }
         
-        func clientSortDescriptors() -> [SortDescriptor<ClientEntity>] {
+        func sortClients(_ clients: [Client]) -> [Client] {
             switch self {
-            case .nameAsc: return [SortDescriptor(\ClientEntity.fullName)]
-            case .nameDesc: return [SortDescriptor(\ClientEntity.fullName, order: .reverse)]
-            case .dateAddedDesc: return [SortDescriptor(\ClientEntity.id, order: .reverse)]
-            case .dateAddedAsc: return [SortDescriptor(\ClientEntity.id)]
+            case .nameAsc: return clients.sorted { $0.fullName < $1.fullName }
+            case .nameDesc: return clients.sorted { $0.fullName > $1.fullName }
+            case .dateAddedDesc: return clients.sorted { $0.id.uuidString > $1.id.uuidString }
+            case .dateAddedAsc: return clients.sorted { $0.id.uuidString < $1.id.uuidString }
             }
         }
-        func payeeSortDescriptors() -> [SortDescriptor<PayeeEntity>] {
+        
+        func sortPayees(_ payees: [Payee]) -> [Payee] {
             switch self {
-            case .nameAsc: return [SortDescriptor(\PayeeEntity.fullName)]
-            case .nameDesc: return [SortDescriptor(\PayeeEntity.fullName, order: .reverse)]
-            case .dateAddedDesc: return [SortDescriptor(\PayeeEntity.id, order: .reverse)]
-            case .dateAddedAsc: return [SortDescriptor(\PayeeEntity.id)]
+            case .nameAsc: return payees.sorted { $0.fullName < $1.fullName }
+            case .nameDesc: return payees.sorted { $0.fullName > $1.fullName }
+            case .dateAddedDesc: return payees.sorted { $0.id.uuidString > $1.id.uuidString }
+            case .dateAddedAsc: return payees.sorted { $0.id.uuidString < $1.id.uuidString }
             }
         }
-        func planManagerSortDescriptors() -> [SortDescriptor<PlanManagerEntity>] {
+        
+        func sortPlanManagers(_ planManagers: [PlanManager]) -> [PlanManager] {
             switch self {
-            case .nameAsc: return [SortDescriptor(\PlanManagerEntity.name)]
-            case .nameDesc: return [SortDescriptor(\PlanManagerEntity.name, order: .reverse)]
-            case .dateAddedDesc: return [SortDescriptor(\PlanManagerEntity.id, order: .reverse)]
-            case .dateAddedAsc: return [SortDescriptor(\PlanManagerEntity.id)]
+            case .nameAsc: return planManagers.sorted { $0.name < $1.name }
+            case .nameDesc: return planManagers.sorted { $0.name > $1.name }
+            case .dateAddedDesc: return planManagers.sorted { $0.id.uuidString > $1.id.uuidString }
+            case .dateAddedAsc: return planManagers.sorted { $0.id.uuidString < $1.id.uuidString }
             }
         }
     }

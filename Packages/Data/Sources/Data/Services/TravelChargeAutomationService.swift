@@ -2,6 +2,7 @@ import Foundation
 import SwiftData // Use SwiftData
 @preconcurrency import MapKit
 @preconcurrency import Dispatch
+import Core
 
 struct ClientDayKey: Hashable {
     let clientId: UUID
@@ -71,7 +72,39 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         self.testingMode = testingMode
     }
     
-    /// Main entry point: Automate travel charges for a batch of sessions
+    // MARK: - Domain Model Methods (Preferred)
+    
+    /// Automate travel charges using domain models (preferred over entity-based method)
+    /// This method accepts Session domain models and fetches entities internally
+    public func automateTravelCharges(for sessions: [Session], dateRange: ClosedRange<Date>? = nil, completion: @escaping () -> Void = {}) throws {
+        // Fetch SessionEntity instances from database for the given session IDs
+        let sessionEntities = try fetchSessionEntities(for: sessions.map { $0.id })
+        
+        guard sessionEntities.count == sessions.count else {
+            throw TravelChargeError.invalidSession
+        }
+        
+        // Call the entity-based method
+        automateTravelCharges(for: sessionEntities, dateRange: dateRange, completion: completion)
+    }
+    
+    /// Fetch SessionEntity instances by IDs (internal helper)
+    private func fetchSessionEntities(for sessionIds: [UUID]) throws -> [SessionEntity] {
+        var entities: [SessionEntity] = []
+        for sessionId in sessionIds {
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == sessionId })
+            guard let entity = try? context.fetch(descriptor).first else {
+                continue // Skip missing sessions rather than failing
+            }
+            entities.append(entity)
+        }
+        return entities
+    }
+    
+    // MARK: - Entity-Based Methods (Legacy)
+    
+    /// Main entry point: Automate travel charges for a batch of sessions (legacy - use domain model version)
+    /// This method is kept for backward compatibility but prefer `automateTravelCharges(for:dateRange:completion:)` with domain models
     public func automateTravelCharges(for sessions: [SessionEntity], dateRange: ClosedRange<Date>? = nil, completion: @escaping () -> Void = {}) {
         print("DEBUG: Starting travel charge automation for \(sessions.count) sessions")
         

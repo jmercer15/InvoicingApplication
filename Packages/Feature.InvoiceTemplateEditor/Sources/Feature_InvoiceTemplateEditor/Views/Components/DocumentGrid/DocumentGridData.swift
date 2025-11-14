@@ -1,12 +1,11 @@
 import SwiftUI
-import SwiftData
 
 // MARK: - Document Grid Data Generation
 
 @MainActor
 struct DocumentGridDataGenerator {
     let component: InvoiceComponent
-    let modelContext: ModelContext
+    let templateDataService: TemplateDataService
     let clientId: UUID?
     let invoiceId: UUID?
     
@@ -22,11 +21,6 @@ struct DocumentGridDataGenerator {
     
     /// Generates sample data for the document grid component
     func generateSampleData() -> [[DocumentTableItem]] {
-        // Initialize shared instance if not already done
-        if TemplateDataService.shared == nil {
-            TemplateDataService.initializeShared(with: modelContext)
-        }
-        
         var data: [[DocumentTableItem]] = []
         
         // Check if this is a section component that should use section-specific data
@@ -114,150 +108,216 @@ struct DocumentGridDataGenerator {
     }
     
     private func generateBillToData() -> [[DocumentTableItem]] {
-        let payeeData = TemplateDataService.getShared().getPayeeData(for: clientId)
-        
-        // Match Invoices feature: Name, Email, Address only
+        let payeeData = templateDataService.getPayeeData(for: clientId)
         let fields = [
             ("Name", payeeData.name),
             ("Email", payeeData.email),
             ("Address", payeeData.address)
         ]
-        
-        var data: [[DocumentTableItem]] = []
-        for (index, field) in fields.enumerated() {
-            data.append([
-                DocumentTableItem(content: field.0, alignment: nil, isHeader: true, rowIndex: index, columnIndex: 0),
-                DocumentTableItem(content: field.1, alignment: nil, isHeader: false, rowIndex: index, columnIndex: 1)
-            ])
-        }
-        return data
+        return keyValueGrid(for: fields)
     }
     
     private func generateParticipantData() -> [[DocumentTableItem]] {
-        let clientData = TemplateDataService.getShared().getClientData(for: clientId)
-        
-        // Match Invoices feature: Name and NDIS No. (if available)
+        let clientData = templateDataService.getClientData(for: clientId)
         var fields: [(String, String)] = [
             ("Name", clientData.name)
         ]
-        
-        // Only add NDIS Number if it's not empty (matching Invoices feature behavior)
         if !clientData.ndisNumber.isEmpty {
             fields.append(("NDIS No.", clientData.ndisNumber))
         }
-        
-        var data: [[DocumentTableItem]] = []
-        for (index, field) in fields.enumerated() {
-            data.append([
-                DocumentTableItem(content: field.0, alignment: nil, isHeader: true, rowIndex: index, columnIndex: 0),
-                DocumentTableItem(content: field.1, alignment: nil, isHeader: false, rowIndex: index, columnIndex: 1)
-            ])
-        }
-        return data
+        return keyValueGrid(for: fields)
     }
     
     private func generateInvoiceDatesData() -> [[DocumentTableItem]] {
-        let invoiceData = TemplateDataService.getShared().getInvoiceData(for: invoiceId)
-        
+        let invoiceData = templateDataService.getInvoiceData(for: invoiceId)
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
-        
         let fields = [
             ("Invoice #", invoiceData.invoiceNumber),
             ("Date", formatter.string(from: invoiceData.issueDate)),
             ("Due Date", formatter.string(from: invoiceData.dueDate))
         ]
-        
-        var data: [[DocumentTableItem]] = []
-        for (index, field) in fields.enumerated() {
-            data.append([
-                DocumentTableItem(content: field.0, alignment: nil, isHeader: true, rowIndex: index, columnIndex: 0),
-                DocumentTableItem(content: field.1, alignment: nil, isHeader: false, rowIndex: index, columnIndex: 1)
-            ])
-        }
-        return data
+        return keyValueGrid(for: fields)
     }
     
     private func generatePaymentDetailsData() -> [[DocumentTableItem]] {
-        let businessData = TemplateDataService.getShared().getBusinessData()
-        
-        // Match Invoices feature: Bank Name, Account Name, BSB, Account No.
+        let businessData = templateDataService.getBusinessData()
         let fields = [
             ("Bank Name", businessData.bankName),
             ("Account Name", businessData.bankAccountName),
             ("BSB", businessData.bankBSB),
             ("Account No.", businessData.bankAccountNumber)
         ]
-        
-        var data: [[DocumentTableItem]] = []
-        for (index, field) in fields.enumerated() {
-            data.append([
-                DocumentTableItem(content: field.0, alignment: nil, isHeader: true, rowIndex: index, columnIndex: 0),
-                DocumentTableItem(content: field.1, alignment: nil, isHeader: false, rowIndex: index, columnIndex: 1)
-            ])
-        }
-        return data
+        return keyValueGrid(for: fields)
     }
     
     private func generateServicesTableData() -> [[DocumentTableItem]] {
-        // Services table uses horizontal layout (headers as first row)
-        var data: [[DocumentTableItem]] = []
-        
-        // Header row
-        if component.style.showTableHeader {
-            data.append([
-                DocumentTableItem(content: "Service", alignment: nil, isHeader: true, rowIndex: 0, columnIndex: 0),
-                DocumentTableItem(content: "Quantity", alignment: nil, isHeader: true, rowIndex: 0, columnIndex: 1),
-                DocumentTableItem(content: "Rate", alignment: nil, isHeader: true, rowIndex: 0, columnIndex: 2),
-                DocumentTableItem(content: "Amount", alignment: nil, isHeader: true, rowIndex: 0, columnIndex: 3)
-            ])
-        }
-        
-        // Service data rows - use real data from TemplateDataService
-        let services = TemplateDataService.getShared().getServiceData(for: clientId)
-        
+        let services = templateDataService.getServiceData(for: clientId)
         let serviceData = services.map { service in
             (service.name, "\(service.quantity) \(service.unit)", String(format: "$%.2f", service.rate), String(format: "$%.2f", service.amount))
         }
-        
-        let startRow = component.style.showTableHeader ? 1 : 0
-        for (index, service) in serviceData.enumerated() {
-            data.append([
-                DocumentTableItem(content: service.0, alignment: nil, isHeader: false, rowIndex: startRow + index, columnIndex: 0),
-                DocumentTableItem(content: service.1, alignment: nil, isHeader: false, rowIndex: startRow + index, columnIndex: 1),
-                DocumentTableItem(content: service.2, alignment: nil, isHeader: false, rowIndex: startRow + index, columnIndex: 2),
-                DocumentTableItem(content: service.3, alignment: nil, isHeader: false, rowIndex: startRow + index, columnIndex: 3)
-            ])
-        }
-        
-        // Totals rows (appear in the last two columns) - use real invoice data
-        let invoiceData = TemplateDataService.getShared().getInvoiceData(for: invoiceId)
+        let invoiceData = templateDataService.getInvoiceData(for: invoiceId)
         let totalsData = [
             ("Subtotal", String(format: "$%.2f", invoiceData.subtotal)),
             ("Tax (\(Int(invoiceData.taxRate * 100))%)", String(format: "$%.2f", invoiceData.totalAmount - invoiceData.subtotal)),
             ("Total", String(format: "$%.2f", invoiceData.totalAmount))
         ]
         
+        switch component.style.tableDirection {
+        case .horizontal:
+            return generateServicesHorizontalData(serviceData: serviceData, totalsData: totalsData)
+        case .vertical:
+            return generateServicesVerticalData(serviceData: serviceData, totalsData: totalsData)
+        }
+    }
+    
+    private func generateDefaultSectionData() -> [[DocumentTableItem]] {
+        return keyValueGrid(for: [("Label", "Value")])
+    }
+    
+    private func keyValueGrid(for pairs: [(String, String)]) -> [[DocumentTableItem]] {
+        switch component.style.tableDirection {
+        case .horizontal:
+            var rows: [[DocumentTableItem]] = []
+            if component.style.showTableHeader {
+                let headerRow = pairs.enumerated().map { index, pair in
+                    DocumentTableItem(
+                        content: pair.0,
+                        isHeader: true,
+                        rowIndex: 0,
+                        columnIndex: index
+                    )
+                }
+                rows.append(headerRow)
+            }
+            
+            let rowIndex = rows.count
+            let valueRow = pairs.enumerated().map { index, pair in
+                DocumentTableItem(
+                    content: pair.1,
+                    rowIndex: rowIndex,
+                    columnIndex: index
+                )
+            }
+            rows.append(valueRow)
+            return rows
+            
+        case .vertical:
+            return pairs.enumerated().map { index, pair in
+                [
+                    DocumentTableItem(
+                        content: pair.0,
+                        isHeader: component.style.showTableHeader,
+                        rowIndex: index,
+                        columnIndex: 0
+                    ),
+                    DocumentTableItem(
+                        content: pair.1,
+                        rowIndex: index,
+                        columnIndex: 1
+                    )
+                ]
+            }
+        }
+    }
+    
+    private func generateServicesHorizontalData(
+        serviceData: [(String, String, String, String)],
+        totalsData: [(String, String)]
+    ) -> [[DocumentTableItem]] {
+        var data: [[DocumentTableItem]] = []
+        
+        if component.style.showTableHeader {
+            data.append([
+                DocumentTableItem(content: "Service", isHeader: true, rowIndex: 0, columnIndex: 0),
+                DocumentTableItem(content: "Quantity", isHeader: true, rowIndex: 0, columnIndex: 1),
+                DocumentTableItem(content: "Rate", isHeader: true, rowIndex: 0, columnIndex: 2),
+                DocumentTableItem(content: "Amount", isHeader: true, rowIndex: 0, columnIndex: 3)
+            ])
+        }
+        
+        let startRow = component.style.showTableHeader ? 1 : 0
+        for (index, service) in serviceData.enumerated() {
+            data.append([
+                DocumentTableItem(content: service.0, rowIndex: startRow + index, columnIndex: 0),
+                DocumentTableItem(content: service.1, rowIndex: startRow + index, columnIndex: 1),
+                DocumentTableItem(content: service.2, rowIndex: startRow + index, columnIndex: 2),
+                DocumentTableItem(content: service.3, rowIndex: startRow + index, columnIndex: 3)
+            ])
+        }
+        
         let totalsStartRow = startRow + serviceData.count
         for (index, total) in totalsData.enumerated() {
             data.append([
-                DocumentTableItem(content: " ", alignment: nil, isHeader: false, rowIndex: totalsStartRow + index, columnIndex: 0, isTransparent: true), // Empty first column - transparent
-                DocumentTableItem(content: " ", alignment: nil, isHeader: false, rowIndex: totalsStartRow + index, columnIndex: 1, isTransparent: true), // Empty second column - transparent
-                DocumentTableItem(content: total.0, alignment: nil, isHeader: true, rowIndex: totalsStartRow + index, columnIndex: 2), // Label in Rate column
-                DocumentTableItem(content: total.1, alignment: nil, isHeader: false, rowIndex: totalsStartRow + index, columnIndex: 3)  // Value in Amount column
+                DocumentTableItem(content: " ", rowIndex: totalsStartRow + index, columnIndex: 0, isTransparent: true),
+                DocumentTableItem(content: " ", rowIndex: totalsStartRow + index, columnIndex: 1, isTransparent: true),
+                DocumentTableItem(content: total.0, isHeader: true, rowIndex: totalsStartRow + index, columnIndex: 2),
+                DocumentTableItem(content: total.1, rowIndex: totalsStartRow + index, columnIndex: 3)
             ])
         }
         
         return data
     }
     
-    private func generateDefaultSectionData() -> [[DocumentTableItem]] {
-        return [
-            [
-                DocumentTableItem(content: "Label", alignment: nil, isHeader: true, rowIndex: 0, columnIndex: 0),
-                DocumentTableItem(content: "Value", alignment: nil, isHeader: false, rowIndex: 0, columnIndex: 1)
+    private func generateServicesVerticalData(
+        serviceData: [(String, String, String, String)],
+        totalsData: [(String, String)]
+    ) -> [[DocumentTableItem]] {
+        let displayedServices = serviceData.isEmpty ? [("—", "—", "—", "—")] : serviceData
+        var rows: [[DocumentTableItem]] = []
+        let columnCount = displayedServices.count
+        
+        func paddedValues(from values: [String]) -> [String] {
+            if values.count >= columnCount { return values }
+            var padded = values
+            while padded.count < columnCount { padded.append("") }
+            return padded
+        }
+        
+        func appendRow(label: String, values: [String], transparentValueIndices: Set<Int> = []) {
+            let currentIndex = rows.count
+            var row: [DocumentTableItem] = [
+                DocumentTableItem(
+                    content: label,
+                    isHeader: component.style.showTableHeader,
+                    rowIndex: currentIndex,
+                    columnIndex: 0
+                )
             ]
-        ]
+            
+            let padded = paddedValues(from: values)
+            for (valueIndex, value) in padded.enumerated() {
+                row.append(
+                    DocumentTableItem(
+                        content: value,
+                        rowIndex: currentIndex,
+                        columnIndex: valueIndex + 1,
+                        isTransparent: transparentValueIndices.contains(valueIndex) && value.isEmpty
+                    )
+                )
+            }
+            
+            rows.append(row)
+        }
+        
+        appendRow(label: "Service", values: displayedServices.map { $0.0 })
+        appendRow(label: "Quantity", values: displayedServices.map { $0.1 })
+        appendRow(label: "Rate", values: displayedServices.map { $0.2 })
+        appendRow(label: "Amount", values: displayedServices.map { $0.3 })
+        
+        let transparentIndices = Set(0..<max(columnCount - 1, 0))
+        let lastColumnIndex = max(columnCount - 1, 0)
+        
+        for total in totalsData {
+            var values = Array(repeating: "", count: columnCount)
+            values[lastColumnIndex] = total.1
+            appendRow(
+                label: total.0,
+                values: values,
+                transparentValueIndices: transparentIndices
+            )
+        }
+        
+        return rows
     }
 }
-

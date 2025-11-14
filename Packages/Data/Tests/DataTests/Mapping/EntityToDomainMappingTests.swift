@@ -279,7 +279,7 @@ final class EntityToDomainMappingTests: XCTestCase {
         try modelContext.save()
         
         // Test mapping
-        let session = Session(from: sessionEntity)
+        let session = Session.from(entity: sessionEntity)
         
         // Verify all properties are mapped correctly
         XCTAssertEqual(session.id, sessionEntity.id)

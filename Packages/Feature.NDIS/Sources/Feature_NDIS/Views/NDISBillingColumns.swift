@@ -7,12 +7,14 @@ import SharedUI
 public struct NDISBillingContentColumn: View {
     @ObservedObject private var viewModel: NDISBillingWorkspaceViewModel
     @Environment(\.modelContext) private var modelContext
+    @State private var sessionsForClient: [Session] = []
+    @State private var isLoadingSessions: Bool = false
 
     public init(viewModel: NDISBillingWorkspaceViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
     }
 
-    private var clients: [ClientEntity] { viewModel.filteredClients() }
+    private var clients: [Client] { viewModel.filteredClients() }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -61,12 +63,14 @@ public struct NDISBillingContentColumn: View {
                 .font(.headline)
 
             if let client = viewModel.selectedClient {
-                let sessions = viewModel.sessions(for: client)
-                if sessions.isEmpty {
+                if isLoadingSessions {
+                    ProgressView()
+                        .frame(minHeight: 240)
+                } else if sessionsForClient.isEmpty {
                     Text("No sessions available for the selected client.")
                         .foregroundColor(.secondary)
                 } else {
-                    List(sessions, id: \.id) { session in
+                    List(sessionsForClient, id: \.id) { session in
                         Button {
                             viewModel.toggleSession(session)
                         } label: {
@@ -81,20 +85,44 @@ public struct NDISBillingContentColumn: View {
                     .foregroundColor(.secondary)
             }
         }
+        .onChange(of: viewModel.selectedClient) { _, client in
+            if let client = client {
+                loadSessions(for: client)
+            } else {
+                sessionsForClient = []
+            }
+        }
+    }
+    
+    private func loadSessions(for client: Client) {
+        isLoadingSessions = true
+        Task {
+            do {
+                let sessions = try await viewModel.sessions(for: client)
+                await MainActor.run {
+                    self.sessionsForClient = sessions
+                    self.isLoadingSessions = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingSessions = false
+                }
+            }
+        }
     }
 
-    private func sessionRow(_ session: SessionEntity) -> some View {
+    private func sessionRow(_ session: Session) -> some View {
         HStack {
             VStack(alignment: .leading) {
                 if let start = session.startTime {
                     Text(start, style: .date)
                         .font(.subheadline)
                 }
-                if let code = session.clientService?.ndisCode {
-                    Text(code)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // Note: NDIS code would come from ClientService in domain model
+                // For now, display session title or ID
+                Text(session.title ?? "Session")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             Spacer()
             if viewModel.selectedSessions.contains(where: { $0.id == session.id }) {
@@ -144,12 +172,12 @@ public struct NDISBillingDetailColumn: View {
             if let invoice = viewModel.generatedInvoice {
                 GeneratedInvoiceSummaryView(invoice: invoice)
             } else if let session = viewModel.selectedSessions.first {
-                NDISBillingContextView(
+                NDISBillingContextViewWrapper(
                     billingContext: viewModel.contextBinding(for: session),
                     session: session,
-                    shouldAutoDetermine: viewModel.shouldAutoDetermine
+                    shouldAutoDetermine: viewModel.shouldAutoDetermine,
+                    modelContext: modelContext
                 )
-                .environment(\.modelContext, modelContext)
             } else {
                 EmptyStateView(
                     icon: "doc.text",
@@ -165,8 +193,52 @@ public struct NDISBillingDetailColumn: View {
     }
 }
 
+// Wrapper view that fetches entity for NDISBillingContextView
+private struct NDISBillingContextViewWrapper: View {
+    @Binding var billingContext: NDISBillingContext
+    let session: Session
+    let shouldAutoDetermine: Bool
+    let modelContext: ModelContext
+    @State private var sessionEntity: SessionEntity?
+    
+    var body: some View {
+        Group {
+            if let sessionEntity = sessionEntity {
+                NDISBillingContextView(
+                    billingContext: $billingContext,
+                    session: sessionEntity,
+                    shouldAutoDetermine: shouldAutoDetermine
+                )
+                .environment(\.modelContext, modelContext)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task {
+            // Fetch entity for the session when view appears
+            await fetchSessionEntity()
+        }
+    }
+    
+    private func fetchSessionEntity() async {
+        do {
+            let predicate = #Predicate<SessionEntity> { $0.id == session.id }
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+            let entity = try await MainActor.run {
+                try modelContext.fetch(descriptor).first
+            }
+            await MainActor.run {
+                self.sessionEntity = entity
+            }
+        } catch {
+            print("Failed to fetch session entity: \(error)")
+        }
+    }
+}
+
 private struct GeneratedInvoiceSummaryView: View {
-    let invoice: InvoiceEntity
+    let invoice: Invoice
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -175,7 +247,7 @@ private struct GeneratedInvoiceSummaryView: View {
                 .fontWeight(.semibold)
             Text("Invoice #: \(invoice.invoiceNumber)")
                 .font(.body)
-            Text("Date: \(invoice.date, style: .date)")
+            Text("Date: \(invoice.issueDate, style: .date)")
                 .font(.caption)
                 .foregroundColor(.secondary)
             Text("Total: $\(String(format: "%.2f", invoice.totalAmount))")

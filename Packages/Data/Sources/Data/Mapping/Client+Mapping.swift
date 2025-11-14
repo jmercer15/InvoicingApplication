@@ -32,12 +32,38 @@ extension Address {
     init(from entity: AddressEntity) {
         self.init(
             id: entity.id,
-            street: "\(entity.streetNumber) \(entity.streetName)".trimmingCharacters(in: .whitespaces),
+            unitNumber: entity.unitNumber,
+            streetNumber: entity.streetNumber,
+            streetName: entity.streetName,
+            suburb: entity.suburb,
             city: entity.city,
             state: entity.state,
             postcode: entity.postcode,
-            country: entity.country
+            country: entity.country,
+            poBox: entity.poBox,
+            latitude: entity.latitude,
+            longitude: entity.longitude
         )
+    }
+}
+
+extension AddressEntity {
+    /// Update entity from domain model
+    func update(from address: Address) {
+        self.id = address.id
+        self.unitNumber = address.unitNumber
+        self.streetNumber = address.streetNumber
+        self.streetName = address.streetName
+        self.suburb = address.suburb
+        self.city = address.city
+        self.state = address.state
+        self.postcode = address.postcode
+        self.country = address.country
+        self.poBox = address.poBox
+        self.latitude = address.latitude
+        self.longitude = address.longitude
+        // Update fullAddressText to match the formatted address
+        self.fullAddressText = address.fullFormattedAddress
     }
 }
 
@@ -64,7 +90,8 @@ extension Payee {
             email: entity.email,
             phone: entity.phone,
             address: entity.address.map { Address(from: $0) },
-            status: entity.status
+            status: entity.status,
+            relationToClient: entity.relationToClient
         )
     }
 }
@@ -86,5 +113,41 @@ extension ClientEntity {
         self.sendInvoicesToClient = client.sendInvoicesToClient
         self.sendInvoicesToPayee = client.sendInvoicesToPayee
         self.sendInvoicesToPlanManager = client.sendInvoicesToPlanManager
+        
+        // Handle address update if provided
+        if let address = client.address {
+            if let existingAddress = self.address {
+                // Update existing address using domain model
+                existingAddress.update(from: address)
+            } else {
+                // Create new address
+                let addressEntity = AddressEntity()
+                addressEntity.update(from: address)
+                self.address = addressEntity
+            }
+        } else {
+            // Remove address if client.address is nil
+            self.address = nil
+        }
     }
+}
+
+// MARK: - Public Helper Functions for Cross-Module Conversion
+
+/// Public helper to convert ClientEntity to Client domain model
+/// Use this from Feature packages to avoid Codable init(from:) conflicts
+public func clientFromEntity(_ entity: ClientEntity) -> Client {
+    return Client(from: entity)
+}
+
+/// Public helper to convert PayeeEntity to Payee domain model
+/// Use this from Feature packages to avoid Codable init(from:) conflicts
+public func payeeFromEntity(_ entity: PayeeEntity) -> Payee {
+    return Payee(from: entity)
+}
+
+/// Public helper to convert PlanManagerEntity to PlanManager domain model
+/// Use this from Feature packages to avoid Codable init(from:) conflicts
+public func planManagerFromEntity(_ entity: PlanManagerEntity) -> PlanManager {
+    return PlanManager(from: entity)
 }

@@ -259,6 +259,15 @@ struct AllDataImportService {
                     existing.email = clientDict["email"] as? String
                     existing.planManagementType = clientDict["planManagementType"] as? String
                     
+                    // Set or clear payee relationship if available (stored as UUID string)
+                    if let payeeUUID = clientDict["payee"] as? String,
+                       let payee = entityMapping[payeeUUID] as? PayeeEntity {
+                        existing.payee = payee
+                    } else {
+                        // Explicitly clear payee relationship if not provided
+                        existing.payee = nil
+                    }
+                    
                     client = existing
                 } else {
                     // Create new client
@@ -397,10 +406,13 @@ struct AllDataImportService {
             client.address = address
         }
         
-        // Set payee relationship if available (stored as UUID string)
+        // Set or clear payee relationship if available (stored as UUID string)
         if let payeeUUID = dict["payee"] as? String,
            let payee = entityMapping[payeeUUID] as? PayeeEntity {
             client.payee = payee
+        } else {
+            // Explicitly clear payee relationship if not provided
+            client.payee = nil
         }
         
         // Set plan manager relationship if available (stored as UUID string)
@@ -1240,13 +1252,35 @@ struct AllDataImportService {
         if let clientId = dict["client"] as? String,
            let client = entityMapping[clientId] as? ClientEntity {
             invoice.client = client
-        }
         
-        // Set payee relationship if available
+            // Set payee relationship based on client's billing authority
+            // If billing authority is parent/guardian and client has a payee, link invoice to that payee
+            // This ensures invoices inherit the correct payee from their client
+            if client.billingAuthority == .parentGuardian, let clientPayee = client.payee {
+                invoice.payee = clientPayee
+            } else {
+                // If explicit payee ID provided, use that instead
         if let payeeId = dict["payee"] as? String,
            let payee = entityMapping[payeeId] as? PayeeEntity {
             invoice.payee = payee
+                } else {
+                    // Explicitly clear payee relationship if not applicable
+                    invoice.payee = nil
+                }
+            }
+        } else {
+            // Client not found, but still try to set payee if explicitly provided
+            if let payeeId = dict["payee"] as? String,
+               let payee = entityMapping[payeeId] as? PayeeEntity {
+                invoice.payee = payee
+            } else {
+                invoice.payee = nil
+            }
+            invoice.client = nil
         }
+        
+        // Populate snapshot fields from relationships after setting them
+        invoice.snapshotRelatedData()
         
         // Set invoice items array if available (stored as array of UUID strings)
         if let invoiceItemUUIDs = dict["invoiceItems"] as? [String] {

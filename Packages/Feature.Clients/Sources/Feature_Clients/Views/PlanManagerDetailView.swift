@@ -6,84 +6,39 @@ import Core
 import Data
 import SharedUI
 
+// MARK: - Helper Functions
+
+// Import helper function from Data package to avoid Codable conflicts
+// Helper functions defined in Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
+
 // MARK: - PlanManagerDetailView
 
 struct PlanManagerDetailView: View {
-    @Bindable var planManager: PlanManagerEntity
-    let isCreatingNew: Bool
-    let onSave: (() -> Void)?
-    
-    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     
-    // For real-time data fetching
-    @Query private var allClients: [ClientEntity]
-    @Query private var relatedInvoices: [InvoiceEntity]
+    // ViewModel manages all state
+    @StateObject private var viewModel: PlanManagerDetailViewModel
     
-    // State variables
-    @State private var editableBusinessName: String = ""
-    @State private var editableAbn: String = ""
-    @State private var editableEmail: String = ""
-    @State private var editablePhone: String = ""
-    
-    // Address editing state
-    @State private var isEditingAddress: Bool = false
-    @State private var addressSearchText: String = ""
-    @State private var selectedSearchAddress: AddressData?
-    @State private var editableUnitNumber: String = ""
-    @State private var editableStreetNumber: String = ""
-    @State private var editableStreetName: String = ""
-    @State private var editableSuburb: String = ""
-    @State private var editablePostcode: String = ""
-    @State private var editableState: String = ""
-    @State private var editableCountry: String = ""
-    @State private var editablePoBox: String = ""
-    
-    // Alert state
-    @State private var showAlert: Bool = false
-    @State private var alertTitle: String = ""
-    @State private var alertMessage: String = ""
+    // UI state only
     @State private var showingMapSheet: Bool = false
     @State private var showingAddressEditingSheet: Bool = false
-    
-    // Formatters and validators
-    @StateObject private var emailValidator = EmailValidator()
-    @StateObject private var phoneFormatter = PhoneNumberFormatter()
     
     // Sorting state
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
     
-    // Computed properties
-    private var managedClients: [ClientEntity] {
-        allClients.filter { $0.planManager?.id == planManager.id }
+    // Computed properties from ViewModel
+    private var managedClients: [Client] {
+        viewModel.managedClients
     }
     
-    private var filteredInvoices: [InvoiceEntity] {
-        let managedClientIDs = Set(managedClients.map { $0.id })
-        return relatedInvoices.filter { invoice in
-            guard let clientID = invoice.client?.id else { return false }
-            return managedClientIDs.contains(clientID)
-        }
-    }
-    
-    private var businessNameError: String? {
-        if editableBusinessName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Business name is required"
-        }
-        return nil
-    }
-    
-    private var abnError: String? {
-        if !isValidABN(editableAbn) {
-            return "Please enter a valid ABN"
-        }
-        return nil
+    private var filteredInvoices: [Invoice] {
+        viewModel.relatedInvoices
     }
     
     // MARK: - Computed Properties
     
-    private var sortedClients: [ClientEntity] {
+    private var sortedClients: [Client] {
         switch clientsSortOrder {
         case .nameAsc:
             return managedClients.sorted { $0.fullName < $1.fullName }
@@ -94,14 +49,13 @@ struct PlanManagerDetailView: View {
         case .ndisDesc:
             return managedClients.sorted { $0.ndisNumber > $1.ndisNumber }
         case .statusAsc:
-            return managedClients.sorted { $0.status.rawValue < $1.status.rawValue }
+            return managedClients.sorted { $0.status < $1.status }
         case .statusDesc:
-            return managedClients.sorted { $0.status.rawValue > $1.status.rawValue }
-
+            return managedClients.sorted { $0.status > $1.status }
         }
     }
     
-    private var sortedInvoices: [InvoiceEntity] {
+    private var sortedInvoices: [Invoice] {
         switch invoicesSortOrder {
         case .dateAsc:
             return filteredInvoices.sorted { $0.issueDate < $1.issueDate }
@@ -118,35 +72,89 @@ struct PlanManagerDetailView: View {
         case .amountDesc:
             return filteredInvoices.sorted { $0.totalAmount > $1.totalAmount }
         case .clientName:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") < (invoice2.status ?? "")
+            }
         case .numberAsc:
             return filteredInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .numberDesc:
             return filteredInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
         case .statusAsc:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") < ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") < (invoice2.status ?? "")
+            }
         case .statusDesc:
-            return filteredInvoices.sorted { ($0.status?.rawValue ?? "") > ($1.status?.rawValue ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") > (invoice2.status ?? "")
+            }
         }
     }
 
     // Initializer for existing plan managers
+    // Initializer for existing plan managers (entity-based - for compatibility)
     init(planManager: PlanManagerEntity, context: ModelContext, onSave: (() -> Void)? = nil) {
-        self.planManager = planManager
-        self.isCreatingNew = false
-        self.onSave = onSave
-        self._allClients = Query()
-        self._relatedInvoices = Query()
+        // Convert entity to domain model
+        // Note: Using extension from Data.Mapping module
+        let planManagerDomain = planManagerFromEntity(planManager)
+        // Create temporary repositories for initialization
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
+            planManager: planManagerDomain,
+            planManagersRepository: planManagersRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: false
+        ))
+        viewModel.dismiss = onSave ?? {}
+    }
+    
+    // Convenience initializer for domain model (preferred)
+    init(planManager: PlanManager, context: ModelContext, onSave: (() -> Void)? = nil) {
+        // Create temporary repositories for initialization
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
+            planManager: planManager,
+            planManagersRepository: planManagersRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: false
+        ))
+        viewModel.dismiss = onSave ?? {}
     }
 
     // Initializer for creating a new plan manager
     init(context: ModelContext, onSave: (() -> Void)? = nil) {
-        let newPlanManager = PlanManagerEntity(id: UUID(), abn: "")
-        self.planManager = newPlanManager
-        self.isCreatingNew = true
-        self.onSave = onSave
-        self._allClients = Query()
-        self._relatedInvoices = Query()
+        // Create new plan manager domain model
+        let newPlanManager = PlanManager(
+            id: UUID(),
+            name: "",
+            email: nil,
+            phone: nil,
+            address: nil,
+            abn: ""
+        )
+        // Create temporary repositories for initialization
+        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        
+        self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
+            planManager: newPlanManager,
+            planManagersRepository: planManagersRepository,
+            clientsRepository: clientsRepository,
+            invoicesRepository: invoicesRepository,
+            modelContext: context,
+            isCreating: true
+        ))
+        viewModel.dismiss = onSave ?? {}
     }
 
     var body: some View {
@@ -189,205 +197,27 @@ struct PlanManagerDetailView: View {
             .padding(24)
             }
         }
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
-        .foregroundColor(Color("White", bundle: .sharedUI))
-        .alert(alertTitle, isPresented: $showAlert) {
+        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .foregroundColor(Color(NSColor.labelColor))
+        .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
             .appInteractiveCursor()
         } message: {
-            Text(alertMessage)
-        }
-
-        .onAppear {
-            loadPlanManagerDetails()
+            Text(viewModel.alertMessage)
         }
         .sheet(isPresented: $showingMapSheet) {
-            InteractiveMapView(address: getCurrentAddressString())
+            if let address = viewModel.planManager.address {
+                InteractiveMapView(address: viewModel.formattedAddressString(from: address))
+            }
         }
         .sheet(isPresented: $showingAddressEditingSheet) {
-            PlanManagerAddressEditingSheet(
-                planManager: planManager,
-                isPresented: $showingAddressEditingSheet
-            )
+            PlanManagerAddressEditingSheetView(viewModel: viewModel, isPresented: $showingAddressEditingSheet)
         }
         
     }
     
     // MARK: - Helper Functions
-    
-    private func loadPlanManagerDetails() {
-        editableBusinessName = planManager.name ?? ""
-        editableAbn = planManager.abn
-        editableEmail = planManager.email ?? ""
-        editablePhone = planManager.phone ?? ""
-        
-        // Initialize formatters
-        emailValidator.email = editableEmail
-        phoneFormatter.phoneNumber = editablePhone
-        
-        // Load address details if editing
-        if isEditingAddress {
-            loadAddressDetails()
-        }
-        
-        // Load existing address data into state variables
-        if let address = planManager.address {
-            editableUnitNumber = address.unitNumber
-            editableStreetNumber = address.streetNumber
-            editableStreetName = address.streetName
-            editableSuburb = address.suburb
-            editablePostcode = address.postcode
-            editableState = address.state
-            editableCountry = address.country
-            editablePoBox = address.poBox
-            addressSearchText = formattedAddressString(address)
-        }
-    }
-    
-    private func updateAndSavePlanManager() {
-        planManager.name = editableBusinessName
-        planManager.abn = editableAbn
-        planManager.email = editableEmail.isEmpty ? nil : editableEmail
-        planManager.phone = editablePhone.isEmpty ? nil : editablePhone
-        
-        _ = saveContext()
-    }
-    
-    private func createPlanManagerAndDismiss() {
-        updateAndSavePlanManager()
-        if isCreatingNew && onSave != nil {
-            onSave?()
-        } else {
-            dismiss()
-        }
-    }
-    
-    private func deletePlanManagerAndDismiss() {
-        context.delete(planManager)
-        _ = saveContext()
-        dismiss()
-    }
-    
-
-    
-    private func saveContext() -> Bool {
-        do {
-            try context.save()
-            return true
-        } catch {
-            alertTitle = "Save Error"
-            alertMessage = "Failed to save changes: \(error.localizedDescription)"
-            showAlert = true
-            return false
-        }
-    }
-    
-    private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-    
-    private func loadAddressDetails() {
-        guard let address = planManager.address else { return }
-        editableUnitNumber = address.unitNumber
-        editableStreetNumber = address.streetNumber
-        editableStreetName = address.streetName
-        editableSuburb = address.suburb
-        editablePostcode = address.postcode
-        editableState = address.state
-        editableCountry = address.country
-        editablePoBox = address.poBox
-    }
-    
-    private func commitAddressChanges() {
-        let address = planManager.address ?? AddressEntity()
-        address.unitNumber = editableUnitNumber
-        address.streetNumber = editableStreetNumber
-        address.streetName = editableStreetName
-        address.suburb = editableSuburb
-        address.postcode = editablePostcode
-        address.state = editableState
-        address.country = editableCountry
-        address.poBox = editablePoBox
-        
-        planManager.address = address
-        _ = saveContext()
-        isEditingAddress = false
-    }
-    
-    private func openInMaps() {
-        guard let address = planManager.address else { return }
-        let addressString = formattedAddressString(address)
-        let encodedAddress = addressString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "http://maps.apple.com/?address=\(encodedAddress)"
-        
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    private func formattedAddressString(_ address: AddressEntity) -> String {
-        var components: [String] = []
-        
-        if !address.unitNumber.isEmpty {
-            components.append("Unit \(address.unitNumber)")
-        }
-        if !address.streetNumber.isEmpty {
-            components.append(address.streetNumber)
-        }
-        if !address.streetName.isEmpty {
-            components.append(address.streetName)
-        }
-        if !address.suburb.isEmpty {
-            components.append(address.suburb)
-        }
-        if !address.state.isEmpty {
-            components.append(address.state)
-        }
-        if !address.postcode.isEmpty {
-            components.append(address.postcode)
-        }
-        if !address.country.isEmpty {
-            components.append(address.country)
-        }
-        
-        return components.joined(separator: " ")
-    }
-    
-    private func getCurrentAddressString() -> String {
-        // If we have existing address data, use that
-        if let address = planManager.address, !address.fullAddressText.isEmpty {
-            return address.formattedAddress
-        }
-        
-        // Otherwise use the state variables for compact address
-        return formatAddressForDisplay()
-    }
-    
-    private func formatAddressForDisplay() -> String {
-        var parts: [String] = []
-        
-        if !editablePoBox.isEmpty {
-            parts.append("PO Box \(editablePoBox)")
-        } else {
-            if !editableUnitNumber.isEmpty { parts.append("Unit \(editableUnitNumber)") }
-            if !editableStreetNumber.isEmpty { parts.append(editableStreetNumber) }
-            if !editableStreetName.isEmpty { parts.append(editableStreetName) }
-        }
-        
-        if !editableSuburb.isEmpty { parts.append(editableSuburb) }
-        if !editableState.isEmpty { parts.append(editableState) }
-        if !editablePostcode.isEmpty { parts.append(editablePostcode) }
-        if !editableCountry.isEmpty { parts.append(editableCountry) }
-        
-        return parts.joined(separator: ", ")
-    }
-    
-    private func isValidABN(_ abn: String) -> Bool {
-        let cleaned = abn.replacingOccurrences(of: " ", with: "")
-        return cleaned.count == 11 && cleaned.allSatisfy { $0.isNumber }
-    }
+    // Note: Most helper functions moved to ViewModel
     
     // MARK: - Label Width Calculation
     
@@ -419,7 +249,7 @@ struct PlanManagerDetailView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI).opacity(0.9))
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(planManager.name?.isEmpty == false ? planManager.name! : "New Plan Manager")
+                    Text(viewModel.planManager.name.isEmpty ? "New Plan Manager" : viewModel.planManager.name)
                         .font(.largeTitle.weight(.regular))
                         .kerning(5.0)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -465,24 +295,24 @@ struct PlanManagerDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter business name", text: $editableBusinessName)
+                                TextField("Enter business name", text: $viewModel.editableBusinessName)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(businessNameError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                    .accentColor(businessNameError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                    .onChange(of: editableBusinessName) { updateAndSavePlanManager() }
+                                    .foregroundColor(viewModel.businessNameError != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.businessNameError != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.editableBusinessName) { _, _ in viewModel.updateAndSavePlanManager() }
                                 
-                                    Button(action: { copyToClipboard(editableBusinessName) }) {
+                                    Button(action: { viewModel.copyToClipboard(viewModel.editableBusinessName) }) {
                                         Image(systemName: "doc.on.doc")
-                                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                            .foregroundColor(Color(NSColor.secondaryLabelColor))
                                     }
                                     .buttonStyle(.plain)
-                            }
-                            
-                            if let error = businessNameError {
-                                Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
-                                    .font(.caption)
-                            }
+                                }
+                                
+                                if let error = viewModel.businessNameError {
+                                    Text(error)
+                                        .foregroundColor(Color(NSColor.systemRed))
+                                        .font(.caption)
+                                }
                         }
                     }
                     
@@ -494,22 +324,22 @@ struct PlanManagerDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter ABN", text: $editableAbn)
+                                TextField("Enter ABN", text: $viewModel.editableAbn)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(abnError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                    .accentColor(abnError != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                    .onChange(of: editableAbn) { updateAndSavePlanManager() }
+                                    .foregroundColor(viewModel.abnError != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.abnError != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.editableAbn) { _, _ in viewModel.updateAndSavePlanManager() }
                                 
-                                Button(action: { copyToClipboard(editableAbn) }) {
+                                Button(action: { viewModel.copyToClipboard(viewModel.editableAbn) }) {
                                     Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
                                 .buttonStyle(.plain)
                             }
                             
-                            if let error = abnError {
+                            if let error = viewModel.abnError {
                                 Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
                             }
                         }
@@ -523,25 +353,26 @@ struct PlanManagerDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter email address", text: $emailValidator.email)
+                                TextField("Enter email address", text: $viewModel.emailValidator.email)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(emailValidator.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                    .accentColor(emailValidator.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                    .onChange(of: emailValidator.email) { 
-                                        editableEmail = emailValidator.email
-                                        if emailValidator.isValid { updateAndSavePlanManager() } 
+                                    .foregroundColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.emailValidator.email) { _, _ in 
+                                        if viewModel.emailValidator.isValid { 
+                                            viewModel.updateAndSavePlanManager() 
+                                        } 
                                     }
                                 
-                                Button(action: { copyToClipboard(emailValidator.email) }) {
+                                Button(action: { viewModel.copyToClipboard(viewModel.emailValidator.email) }) {
                                     Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
                                 .buttonStyle(.plain)
                             }
                             
-                            if let error = emailValidator.validationMessage {
+                            if let error = viewModel.emailValidator.validationMessage {
                                 Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
                             }
                         }
@@ -555,27 +386,28 @@ struct PlanManagerDetailView: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                TextField("Enter phone number", text: $phoneFormatter.phoneNumber)
+                                TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
                                     .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(phoneFormatter.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Text", bundle: .sharedUI))
-                                    .accentColor(phoneFormatter.validationMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Primary", bundle: .sharedUI))
-                                    .onChange(of: phoneFormatter.phoneNumber) { 
-                                        editablePhone = phoneFormatter.phoneNumber
-                                        if phoneFormatter.isValid { updateAndSavePlanManager() } 
+                                    .foregroundColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                    .accentColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                    .onChange(of: viewModel.phoneFormatter.phoneNumber) { _, _ in 
+                                        if viewModel.phoneFormatter.isValid { 
+                                            viewModel.updateAndSavePlanManager() 
+                                        }
                                     }
                                 
-                                Button(action: { copyToClipboard(phoneFormatter.phoneNumber) }) {
+                                Button(action: { viewModel.copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
                                     Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
                                 .buttonStyle(.plain)
                             }
                             
-                            if let error = phoneFormatter.validationMessage {
+                            if let error = viewModel.phoneFormatter.validationMessage {
                                 Text(error)
-                                    .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                                    .foregroundColor(Color(NSColor.systemRed))
                                     .font(.caption)
-                        }
+                            }
                     }
                 }
                 
@@ -597,15 +429,8 @@ struct PlanManagerDetailView: View {
     // MARK: - Address Helper Methods
     
     private var hasAddressData: Bool {
-        // Check state variables (for editing)
-        let hasStateData = !editableUnitNumber.isEmpty || !editableStreetNumber.isEmpty || !editableStreetName.isEmpty || 
-        !editableSuburb.isEmpty || !editableState.isEmpty || !editablePostcode.isEmpty || 
-        !editableCountry.isEmpty || !editablePoBox.isEmpty
-        
-        // Check existing address from entity
-        let hasExistingAddress = planManager.address != nil && !planManager.address!.fullAddressText.isEmpty
-        
-        return hasStateData || hasExistingAddress
+        // Check existing address from domain model
+        return viewModel.planManager.address != nil
     }
     
     private var compactAddressView: some View {
@@ -615,10 +440,10 @@ struct PlanManagerDetailView: View {
                 .foregroundColor(Color("Text", bundle: .sharedUI))
             
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if hasAddressData {
-                    Text(formatAddressForDisplay())
+                if hasAddressData, let address = viewModel.planManager.address {
+                    Text(viewModel.formattedAddressString(from: address))
                         .font(.system(size: 14))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .foregroundColor(Color(NSColor.labelColor))
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
@@ -710,7 +535,7 @@ struct PlanManagerDetailView: View {
                 if !managedClients.isEmpty {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedClients) { client in
+                            ForEach(sortedClients, id: \.id) { client in
                                 CompactClientRowView(client: client)
                             }
                         }
@@ -769,7 +594,7 @@ struct PlanManagerDetailView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedInvoices) { invoice in
+                            ForEach(sortedInvoices, id: \.id) { invoice in
                                 CompactInvoiceRowView(invoice: invoice)
                             }
                         }
@@ -792,25 +617,17 @@ struct PlanManagerDetailView: View {
 
 
 
-// MARK: - Plan Manager Address Editing Sheet
+// MARK: - Plan Manager Address Editing Sheet (ViewModel-based)
 
-struct PlanManagerAddressEditingSheet: View {
-    @Bindable var planManager: PlanManagerEntity
+struct PlanManagerAddressEditingSheetView: View {
+    @ObservedObject var viewModel: PlanManagerDetailViewModel
     @Binding var isPresented: Bool
     
     @State private var isManualMode = false
     
-    // Address editing state (matching NativeSessionFormView)
+    // Address search state
     @State private var addressSearchText: String = ""
     @State private var selectedAddress: AddressData?
-    @State private var unitNumber: String = ""
-    @State private var streetNumber: String = ""
-    @State private var streetName: String = ""
-    @State private var suburb: String = ""
-    @State private var postcode: String = ""
-    @State private var state: String = ""
-    @State private var country: String = ""
-    @State private var poBox: String = ""
     
     var body: some View {
         VStack(spacing: 16) {
@@ -838,19 +655,19 @@ struct PlanManagerAddressEditingSheet: View {
                             NativeAddressSearchField(
                                 searchText: $addressSearchText,
                                 selectedAddress: $selectedAddress,
-                                unitNumber: $unitNumber,
-                                streetNumber: $streetNumber,
-                                streetName: $streetName,
-                                suburb: $suburb,
-                                postcode: $postcode,
-                                state: $state,
-                                country: $country,
-                                poBox: $poBox
+                                unitNumber: $viewModel.editableUnitNumber,
+                                streetNumber: $viewModel.editableStreetNumber,
+                                streetName: $viewModel.editableStreetName,
+                                suburb: $viewModel.editableSuburb,
+                                postcode: $viewModel.editablePostcode,
+                                state: $viewModel.editableState,
+                                country: $viewModel.editableCountry,
+                                poBox: $viewModel.editablePoBox
                             )
                             .onChange(of: selectedAddress) { _, newValue in
                                 if newValue != nil {
                                     // Auto-commit the selected address and close the sheet
-                                    commitAddressChanges()
+                                    viewModel.commitAddressChanges(autosave: true)
                                     isPresented = false
                                 }
                             }
@@ -906,7 +723,7 @@ struct PlanManagerAddressEditingSheet: View {
                 
                 if hasAddressData {
                     Button("Done") {
-                        commitAddressChanges()
+                        viewModel.commitAddressChanges(autosave: true)
                         isPresented = false
                     }
                     .buttonStyle(.glassProminent)
@@ -928,32 +745,23 @@ struct PlanManagerAddressEditingSheet: View {
         )
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
-            loadExistingAddressData()
-        }
-    }
-    
-    private func loadExistingAddressData() {
-        if let address = planManager.address {
-            unitNumber = address.unitNumber
-            streetNumber = address.streetNumber
-            streetName = address.streetName
-            suburb = address.suburb
-            postcode = address.postcode
-            state = address.state
-            country = address.country
-            poBox = address.poBox
-            addressSearchText = address.fullFormattedAddress
+            // Load existing address data from ViewModel
+            viewModel.loadAddressDetails()
+            if let address = viewModel.planManager.address {
+                addressSearchText = viewModel.formattedAddressString(from: address)
+            }
         }
     }
     
     private var hasAddressData: Bool {
-        // Check state variables (for editing)
-        let hasStateData = !unitNumber.isEmpty || !streetNumber.isEmpty || !streetName.isEmpty || 
-        !suburb.isEmpty || !state.isEmpty || !postcode.isEmpty || 
-        !country.isEmpty || !poBox.isEmpty
+        // Check ViewModel's editable address fields
+        let hasStateData = !viewModel.editableUnitNumber.isEmpty || !viewModel.editableStreetNumber.isEmpty || 
+        !viewModel.editableStreetName.isEmpty || !viewModel.editableSuburb.isEmpty || 
+        !viewModel.editableState.isEmpty || !viewModel.editablePostcode.isEmpty || 
+        !viewModel.editableCountry.isEmpty || !viewModel.editablePoBox.isEmpty
         
-        // Check existing address from entity
-        let hasExistingAddress = planManager.address != nil && !planManager.address!.fullAddressText.isEmpty
+        // Check existing address from domain model
+        let hasExistingAddress = viewModel.planManager.address != nil
         
         return hasStateData || hasExistingAddress
     }
@@ -969,11 +777,20 @@ struct PlanManagerAddressEditingSheet: View {
                 Spacer()
                 
                 Button("Clear") {
-                    clearAddressData()
+                    viewModel.editableUnitNumber = ""
+                    viewModel.editableStreetNumber = ""
+                    viewModel.editableStreetName = ""
+                    viewModel.editableSuburb = ""
+                    viewModel.editableState = ""
+                    viewModel.editablePostcode = ""
+                    viewModel.editableCountry = ""
+                    viewModel.editablePoBox = ""
+                    addressSearchText = ""
+                    selectedAddress = nil
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
-                .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                .foregroundColor(Color(NSColor.systemRed))
             }
             .padding(.bottom, 4)
             
@@ -981,31 +798,31 @@ struct PlanManagerAddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Unit:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("Unit number (optional)", text: $unitNumber)
+                TextField("Unit number (optional)", text: $viewModel.editableUnitNumber)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // Street Number and Name
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Street:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    TextField("Number", text: $streetNumber)
+                    TextField("Number", text: $viewModel.editableStreetNumber)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                         .frame(width: 80)
                     
-                    TextField("Street name", text: $streetName)
+                    TextField("Street name", text: $viewModel.editableStreetName)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1014,30 +831,30 @@ struct PlanManagerAddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Suburb:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("Enter suburb", text: $suburb)
+                TextField("Enter suburb", text: $viewModel.editableSuburb)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // State and Postcode
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("State:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    TextField("State", text: $state)
+                    TextField("State", text: $viewModel.editableState)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                     
-                    TextField("Postcode", text: $postcode)
+                    TextField("Postcode", text: $viewModel.editablePostcode)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .accentColor(Color(NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1046,53 +863,26 @@ struct PlanManagerAddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Country:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("Enter country", text: $country)
+                TextField("Enter country", text: $viewModel.editableCountry)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
             
             // PO Box
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("PO Box:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
-                TextField("PO Box number (optional)", text: $poBox)
+                TextField("PO Box number (optional)", text: $viewModel.editablePoBox)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .accentColor(Color(NSColor.systemBlue))
             }
         }
-    }
-    
-    private func clearAddressData() {
-        unitNumber = ""
-        streetNumber = ""
-        streetName = ""
-        suburb = ""
-        state = ""
-        postcode = ""
-        country = ""
-        poBox = ""
-        addressSearchText = ""
-        selectedAddress = nil
-    }
-    
-    private func commitAddressChanges() {
-        let address = planManager.address ?? AddressEntity()
-        address.unitNumber = unitNumber
-        address.streetNumber = streetNumber
-        address.streetName = streetName
-        address.suburb = suburb
-        address.postcode = postcode
-        address.state = state
-        address.country = country
-        address.poBox = poBox
-        
-        planManager.address = address
     }
 }
 

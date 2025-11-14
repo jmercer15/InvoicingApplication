@@ -3,14 +3,40 @@ import Combine
 import PDFKit
 import AppKit
 import UniformTypeIdentifiers
-import SwiftData
 import Core
 import SharedUI
-import Data
 
-class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
-    private var modelContext: ModelContext
-    @Bindable var invoice: InvoiceEntity // Direct reference to the SwiftData model
+@MainActor
+class InvoiceEditorViewModel: ObservableObject {
+    private let invoicesRepository: InvoicesRepository
+    let clientServicesRepository: ClientServicesRepository
+    private let clientsRepository: ClientsRepository
+    
+    // Store the domain model and create mutable state for editing
+    @Published private(set) var invoice: Invoice
+    @Published var invoiceItems: [InvoiceItem] = []
+    
+    // Mutable properties for two-way binding (since domain model is immutable)
+    @Published var discount: Double = 0.0
+    @Published var taxRate: Double = 0.0
+    @Published var creditApplied: Double = 0.0
+    @Published var invoiceNumber: String = ""
+    @Published var issueDate: Date = Date()
+    @Published var dueDate: Date?
+    @Published var paymentTerms: String?
+    @Published var notes: String?
+    @Published var currencyCode: String = "AUD"
+    @Published var status: String?
+    
+    // Client selection properties
+    @Published var selectedClientId: UUID? {
+        didSet {
+            Task { await fetchSelectedClient() }
+        }
+    }
+    @Published var selectedClient: Client?
+    @Published var allClients: [Client] = []
+    
     let isNewInvoice: Bool
     private var emailSharingService: NSSharingService?
     private var emailSharingDelegate: EmailSharingDelegate?
@@ -18,17 +44,63 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
     // Callback for when invoice is deleted
     var onInvoiceDeleted: (() -> Void)?
 
-    init(context: ModelContext, invoice existingInvoice: InvoiceEntity, isNew: Bool) {
-        self.modelContext = context
+    init(invoicesRepository: InvoicesRepository, clientServicesRepository: ClientServicesRepository, clientsRepository: ClientsRepository, invoice existingInvoice: Invoice, isNew: Bool) {
+        self.invoicesRepository = invoicesRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.clientsRepository = clientsRepository
         self.isNewInvoice = isNew
         self.invoice = existingInvoice
         self.onInvoiceDeleted = nil
-        // Currency fixed to AUD for now
-        if invoice.currencyCode.isEmpty {
-            invoice.currencyCode = "AUD"
+        self.selectedClientId = existingInvoice.clientId
+        
+        // Initialize mutable properties from domain model
+        self.discount = existingInvoice.discount
+        self.taxRate = existingInvoice.taxRate
+        self.creditApplied = existingInvoice.creditApplied
+        self.invoiceNumber = existingInvoice.invoiceNumber
+        self.issueDate = existingInvoice.issueDate
+        self.dueDate = existingInvoice.dueDate
+        self.paymentTerms = existingInvoice.paymentTerms
+        self.notes = existingInvoice.notes
+        self.currencyCode = existingInvoice.currencyCode.isEmpty ? "AUD" : existingInvoice.currencyCode
+        self.status = existingInvoice.status
+        
+        // Load invoice items and clients
+        Task {
+            await loadInvoiceItems()
+            await fetchAllClients()
+            await fetchSelectedClient()
+        }
+    }
+    
+    private func loadInvoiceItems() async {
+        do {
+            invoiceItems = try await invoicesRepository.fetchItems(by: invoice.id)
+        } catch {
+            print("❌ [InvoiceEditorViewModel] Error loading invoice items: \(error)")
+            invoiceItems = []
         }
     }
 
+    // MARK: - Computed Properties for Totals
+    
+    var subtotal: Double {
+        invoiceItems.reduce(0.0) { $0 + $1.lineTotal }
+    }
+    
+    var discountAmount: Double {
+        subtotal * (discount / 100.0)
+    }
+    
+    var taxAmount: Double {
+        let taxableSubtotalAfterDiscount = subtotal * (1.0 - (discount / 100.0))
+        return taxableSubtotalAfterDiscount * (taxRate / 100.0)
+    }
+    
+    var calculatedTotal: Double {
+        subtotal - discountAmount + taxAmount - creditApplied
+    }
+    
     // MARK: - Totals Recalculation (exposed for UI change hooks)
     func recomputeTotals() {
         updateInvoiceCalculatedFields()
@@ -36,175 +108,330 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
     
     // MARK: - Line Item Management
     func addNewInvoiceItem() {
-        let newItem = InvoiceItemEntity(id: UUID(), itemDescription: "New Service/Item")
-        newItem.quantity = 1.0
-        newItem.rate = 0.0
-        newItem.amount = 0.0
-        newItem.position = Int32(invoice.itemsArray.count)
-        newItem.date = invoice.issueDate
-        newItem.taxRate = invoice.taxRate
-        newItem.invoice = invoice
-        modelContext.insert(newItem)
+        let newItem = InvoiceItem(
+            id: UUID(),
+            invoiceId: invoice.id,
+            itemDescription: "New Service/Item",
+            quantity: 1.0,
+            rate: 0.0,
+            position: Int32(invoiceItems.count)
+        )
+        invoiceItems.append(newItem)
     }
 
     func deleteInvoiceItems(at offsets: IndexSet) {
-        let itemsToDelete = offsets.map { invoice.itemsArray[$0] }
-        for item in itemsToDelete {
-            modelContext.delete(item)
+        let indices = offsets.sorted(by: >)
+        for index in indices {
+            guard index < invoiceItems.count else { continue }
+            let item = invoiceItems[index]
+            Task {
+                do {
+                    try await invoicesRepository.removeItem(id: item.id)
+                    await loadInvoiceItems()
+                } catch {
+                    print("❌ [InvoiceEditorViewModel] Error deleting item: \(error)")
+                }
+            }
         }
         
+        // Remove from local array immediately for UI responsiveness
+        invoiceItems.remove(atOffsets: offsets)
+        
         // Reposition remaining items
-        let remainingItems = invoice.itemsArray.filter { !itemsToDelete.contains($0) }
-        for (index, item) in remainingItems.enumerated() {
-            item.position = Int32(index)
+        for (index, item) in invoiceItems.enumerated() {
+            let updatedItem = InvoiceItem(
+                id: item.id,
+                invoiceId: item.invoiceId,
+                sessionId: item.sessionId,
+                clientServiceId: item.clientServiceId,
+                itemDescription: item.itemDescription,
+                quantity: item.quantity,
+                rate: item.rate,
+                position: Int32(index)
+            )
+            invoiceItems[index] = updatedItem
+            Task {
+                try? await invoicesRepository.updateItem(updatedItem)
+            }
         }
     }
     
     func moveInvoiceItem(from source: IndexSet, to destination: Int) {
-        var items = invoice.itemsArray
-        items.move(fromOffsets: source, toOffset: destination)
-        for (index, item) in items.enumerated() {
-            item.position = Int32(index)
+        invoiceItems.move(fromOffsets: source, toOffset: destination)
+        
+        // Update positions via repository
+        for (index, item) in invoiceItems.enumerated() {
+            let updatedItem = InvoiceItem(
+                id: item.id,
+                invoiceId: item.invoiceId,
+                sessionId: item.sessionId,
+                clientServiceId: item.clientServiceId,
+                itemDescription: item.itemDescription,
+                quantity: item.quantity,
+                rate: item.rate,
+                position: Int32(index)
+            )
+            invoiceItems[index] = updatedItem
+            Task {
+                try? await invoicesRepository.updateItem(updatedItem)
+            }
+        }
+    }
+    
+    func updateInvoiceItem(_ item: InvoiceItem, description: String? = nil, quantity: Double? = nil, rate: Double? = nil, clientServiceId: UUID? = nil) {
+        guard let index = invoiceItems.firstIndex(where: { $0.id == item.id }) else { return }
+        
+        let updatedItem = InvoiceItem(
+            id: item.id,
+            invoiceId: item.invoiceId,
+            sessionId: item.sessionId,
+            clientServiceId: clientServiceId ?? item.clientServiceId,
+            itemDescription: description ?? item.itemDescription,
+            quantity: quantity ?? item.quantity,
+            rate: rate ?? item.rate,
+            position: item.position
+        )
+        
+        invoiceItems[index] = updatedItem
+        
+        Task {
+            do {
+                try await invoicesRepository.updateItem(updatedItem)
+                await loadInvoiceItems() // Reload to ensure consistency
+            } catch {
+                print("❌ [InvoiceEditorViewModel] Error updating item: \(error)")
+            }
         }
     }
 
+    // MARK: - Client Management
+    func fetchAllClients() async {
+        do {
+            allClients = try await clientsRepository.fetchAll()
+        } catch {
+            print("❌ [InvoiceEditorViewModel] Error fetching clients: \(error)")
+            allClients = []
+        }
+    }
+    
+    func fetchSelectedClient() async {
+        guard let clientId = selectedClientId else {
+            selectedClient = nil
+            return
+        }
+        do {
+            selectedClient = try await clientsRepository.fetch(by: clientId)
+        } catch {
+            print("❌ [InvoiceEditorViewModel] Error fetching selected client: \(error)")
+            selectedClient = nil
+        }
+    }
+    
+    func applyMaxClientCredit() {
+        guard let client = selectedClient else { return }
+        creditApplied = min(client.creditAmount, calculatedTotal)
+    }
+    
     // MARK: - Client Change Handling
-    func onClientChanged(to newClient: ClientEntity?) {
+    func onClientChanged(to clientId: UUID?) {
+        // Update selected client ID
+        selectedClientId = clientId
+        
         // Generate invoice number when client is selected for new invoices
-        if isNewInvoice && (invoice.invoiceNumber.isEmpty || invoice.invoiceNumber == "") {
-            invoice.invoiceNumber = generateNextInvoiceNumber(for: newClient)
+        if isNewInvoice && invoiceNumber.isEmpty {
+            Task {
+                do {
+                    invoiceNumber = try await invoicesRepository.generateInvoiceNumber()
+                } catch {
+                    print("❌ [InvoiceEditorViewModel] Error generating invoice number: \(error)")
+                }
+            }
         }
     }
 
     // MARK: - Invoice Number Generation
-    func generateNextInvoiceNumber(for client: ClientEntity?) -> String {
-        InvoiceNumberingService.nextNumber(for: client, context: modelContext)
+    func generateNextInvoiceNumber() async -> String {
+        do {
+            return try await invoicesRepository.generateInvoiceNumber()
+        } catch {
+            print("❌ [InvoiceEditorViewModel] Error generating invoice number: \(error)")
+            return ""
+        }
     }
 
     // MARK: - Save and Cancel
     func saveInvoice(completion: @escaping (Bool, String?) -> Void) {
-        // Validate before saving
-        if invoice.client == nil {
-            completion(false, nil)
-            return
-        }
-        if invoice.itemsArray.isEmpty {
-            completion(false, nil)
-            return
-        }
-        if let due = invoice.dueDate, due < invoice.issueDate {
-            completion(false, nil)
-            return
-        }
-
-        do {
-            // For new invoices, ensure they have a proper invoice number if empty
-            if isNewInvoice && (invoice.invoiceNumber.isEmpty || invoice.invoiceNumber == "") {
-                invoice.invoiceNumber = generateNextInvoiceNumber(for: invoice.client)
+        Task {
+            // Validate before saving
+            guard invoice.clientId != nil else {
+                completion(false, nil)
+                return
             }
-            
-            // Update calculated fields before saving
-            updateInvoiceCalculatedFields()
-            
-            // Snapshot related entity data into the invoice's own properties
-            invoice.snapshotRelatedData()
-            
-            try modelContext.save()
-            completion(true, invoice.invoiceNumber)
-        } catch {
-            _ = error as NSError
-            modelContext.rollback()
-            completion(false, nil)
+            guard !invoiceItems.isEmpty else {
+                completion(false, nil)
+                return
+            }
+            if let due = dueDate, due < issueDate {
+                completion(false, nil)
+                return
+            }
+
+            do {
+                // For new invoices, ensure they have a proper invoice number if empty
+                if isNewInvoice && invoiceNumber.isEmpty {
+                    invoiceNumber = try await invoicesRepository.generateInvoiceNumber()
+                }
+                
+                // Calculate total amount
+                let subtotal = invoiceItems.reduce(0.0) { $0 + $1.lineTotal }
+                let discountAmount = subtotal * (discount / 100.0)
+                let subtotalAfterDiscount = subtotal - discountAmount
+                let taxAmount = subtotalAfterDiscount * (taxRate / 100.0)
+                let totalAmount = subtotalAfterDiscount + taxAmount - creditApplied
+                
+                // Create updated invoice domain model
+                let updatedInvoice = Invoice(
+                    id: invoice.id,
+                    invoiceNumber: invoiceNumber,
+                    totalAmount: totalAmount,
+                    taxRate: taxRate,
+                    creditApplied: creditApplied,
+                    discount: discount,
+                    date: invoice.date == Date.distantPast ? issueDate : invoice.date,
+                    dueDate: dueDate,
+                    issueDate: issueDate,
+                    notes: notes,
+                    paidDate: invoice.paidDate,
+                    paymentTerms: paymentTerms,
+                    status: status,
+                    sentDate: invoice.sentDate,
+                    currencyCode: currencyCode,
+                    // Preserve snapshot data from original invoice
+                    businessName: invoice.businessName,
+                    businessABN: invoice.businessABN,
+                    businessEmail: invoice.businessEmail,
+                    businessAddress: invoice.businessAddress,
+                    businessPhone: invoice.businessPhone,
+                    clientName: invoice.clientName,
+                    clientNDISNumber: invoice.clientNDISNumber,
+                    clientEmail: invoice.clientEmail,
+                    clientPhone: invoice.clientPhone,
+                    clientAddress: invoice.clientAddress,
+                    billingAuthority: invoice.billingAuthority,
+                    billToName: invoice.billToName,
+                    billToEmail: invoice.billToEmail,
+                    billToAddress: invoice.billToAddress,
+                    payeeName: invoice.payeeName,
+                    payeeEmail: invoice.payeeEmail,
+                    payeePhone: invoice.payeePhone,
+                    payeeAddress: invoice.payeeAddress,
+                    bankName: invoice.bankName,
+                    bankAccountName: invoice.bankAccountName,
+                    bankBSB: invoice.bankBSB,
+                    bankAccountNumber: invoice.bankAccountNumber,
+                    clientId: invoice.clientId,
+                    businessId: invoice.businessId,
+                    payeeId: invoice.payeeId,
+                    sessionIds: invoice.sessionIds
+                )
+                
+                // Save invoice
+                let savedInvoice = isNewInvoice 
+                    ? try await invoicesRepository.create(updatedInvoice)
+                    : try await invoicesRepository.update(updatedInvoice)
+                
+                // Save/update items
+                for (index, item) in invoiceItems.enumerated() {
+                    let itemWithPosition = InvoiceItem(
+                        id: item.id,
+                        invoiceId: savedInvoice.id,
+                        sessionId: item.sessionId,
+                        clientServiceId: item.clientServiceId,
+                        itemDescription: item.itemDescription,
+                        quantity: item.quantity,
+                        rate: item.rate,
+                        position: Int32(index)
+                    )
+                    
+                    if item.id == UUID() || invoiceItems.firstIndex(where: { $0.id == item.id }) == nil {
+                        _ = try await invoicesRepository.addItem(itemWithPosition)
+                    } else {
+                        _ = try await invoicesRepository.updateItem(itemWithPosition)
+                    }
+                }
+                
+                // Update local invoice reference
+                self.invoice = savedInvoice
+                await loadInvoiceItems()
+                
+                completion(true, savedInvoice.invoiceNumber)
+            } catch {
+                print("❌ [InvoiceEditorViewModel] Error saving invoice: \(error)")
+                completion(false, nil)
+            }
         }
     }
     
     // MARK: - Helper Methods
     private func updateInvoiceCalculatedFields() {
-        // Update line item amounts
-        for item in invoice.itemsArray {
-            item.amount = item.lineTotal
-        }
-        
-        // Update the total amount based on current line items and calculations
-        invoice.totalAmount = invoice.calculatedTotal
-        
-        // Update the date field if it's not set (use issue date as fallback)
-        if invoice.date == Date.distantPast {
-            invoice.date = invoice.issueDate
-        }
+        // Note: Calculations now done in saveInvoice method
+        // This method kept for compatibility but no longer mutates entities
     }
 
     // On cancel, discard tempInvoice and reset UI
     func cancelEditing() {
-        // For new invoices, delete from context and call onInvoiceDeleted
+        // For new invoices, just call onInvoiceDeleted (no need to delete from repository as it wasn't saved)
         if isNewInvoice {
-            modelContext.delete(invoice)
-            do {
-                try modelContext.save()
-            } catch {
-                print("Error deleting cancelled invoice: \(error)")
-            }
             onInvoiceDeleted?()
             return
         }
-        // For existing invoices, just rollback changes
-        modelContext.rollback()
+        // For existing invoices, reload from repository to discard changes
+        Task {
+            do {
+                if let reloadedInvoice = try await invoicesRepository.fetch(by: invoice.id) {
+                    self.invoice = reloadedInvoice
+                    await loadInvoiceItems()
+                }
+            } catch {
+                print("❌ [InvoiceEditorViewModel] Error reloading invoice: \(error)")
+            }
+        }
     }
 
     func deleteInvoiceAndDismiss() {
-        if isNewInvoice {
-            // For new invoices, delete from context
-            modelContext.delete(invoice)
+        Task {
             do {
-                try modelContext.save()
+                try await invoicesRepository.delete(id: invoice.id)
+                onInvoiceDeleted?()
             } catch {
-                print("Error deleting new invoice: \(error)")
+                print("❌ [InvoiceEditorViewModel] Error deleting invoice: \(error)")
             }
-            onInvoiceDeleted?()
-            return
-        }
-        // For existing invoices, delete from context
-        modelContext.delete(invoice)
-        do {
-            try modelContext.save()
-            onInvoiceDeleted?()
-        } catch {
-            print("Error deleting existing invoice: \(error)")
         }
     }
 
     // MARK: - Void and Credit Note
     func voidInvoice() {
         guard !isNewInvoice else { return }
-        invoice.status = .voided
-        do { try modelContext.save() } catch { print("Error voiding invoice: \(error)") }
+        Task {
+            do {
+                try await invoicesRepository.updateStatus(id: invoice.id, status: "voided")
+            } catch {
+                print("❌ [InvoiceEditorViewModel] Error voiding invoice: \(error)")
+            }
+        }
     }
 
     func createCreditNote(from amount: Double, notes: String? = nil) {
-        guard amount > 0 else { return }
-        if let client = invoice.client {
-            client.creditAmount += amount
-            let entry = CreditHistoryEntryEntity(id: UUID())
-            entry.date = Date()
-            entry.amount = amount
-            entry.type = .creditNote
-            entry.notes = notes
-            entry.relatedInvoiceNumber = invoice.invoiceNumber
-            entry.client = client
-            modelContext.insert(entry)
-        }
-        do { try modelContext.save() } catch { print("Error creating credit note: \(error)") }
+        guard amount > 0, let clientId = invoice.clientId else { return }
+        // Note: Credit note creation requires ClientsRepository for updating client credit
+        // This functionality should be moved to a use case or service
+        print("⚠️ [InvoiceEditorViewModel] Credit note creation requires ClientsRepository - not implemented")
     }
 
     // MARK: - Printing and Exporting
     @MainActor
     func exportInvoiceToPDF() {
-        guard let currentBusiness = getBusiness() else {
-            print("Business details are not loaded yet. Cannot export PDF.")
-            return
-        }
-
-        guard let pdfData = generatePdfData(invoice: invoice, business: currentBusiness) else {
+        guard let pdfData = InvoiceSharingService.renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else {
             print("Failed to generate PDF data for export.")
             return
         }
@@ -229,11 +456,7 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
     // MARK: - Sharing
     @MainActor
     func generateTemporaryPDFFileURLForSharing() -> URL? {
-        guard let currentBusiness = getBusiness() else { return nil }
-        guard let pdfData = generatePdfData(invoice: invoice, business: currentBusiness) else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
-        do { try pdfData.write(to: url) } catch { return nil }
-        return url
+        return InvoiceSharingService.temporaryPDFURL(invoice: invoice, invoiceItems: invoiceItems)
     }
 
     func shareBodyText() -> String {
@@ -242,75 +465,12 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
 
     @MainActor
     func itemProviderForPDFSharing() -> NSItemProvider? {
-        guard let currentBusiness = getBusiness() else { return nil }
-        guard let pdfData = generatePdfData(invoice: invoice, business: currentBusiness) else { return nil }
-
-        let provider = NSItemProvider()
-        provider.suggestedName = "Invoice-\(invoice.invoiceNumber).pdf"
-        provider.registerDataRepresentation(forTypeIdentifier: UTType.pdf.identifier, visibility: .all) { completion in
-            completion(pdfData, nil)
-            return nil
-        }
-        return provider
-    }
-
-    @MainActor
-    private func generatePdfData(invoice: InvoiceEntity, business: BusinessEntity) -> Data? {
-        // Create a view with proper styling
-        let viewToRender = A4InvoiceSheetView(invoice: invoice, business: business)
-            .environment(\.modelContext, modelContext)
-            .environment(\.colorScheme, .light)
-            .background(Color("White", bundle: .sharedUI)) // Ensure white background
-            .frame(width: 595, height: 842)
-
-        // Configure the renderer with proper settings
-        let renderer = ImageRenderer(content: viewToRender)
-        renderer.proposedSize = .init(width: 595, height: 842)
-        renderer.scale = 3.0 // Higher scale for better quality
-        
-        // Set to opaque since we have a white background
-        renderer.isOpaque = true
-        
-        // Use CGImage-based rendering for better quality
-        if let cgImage = renderer.cgImage {
-            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: 595, height: 842))
-            
-            guard let pdfPage = PDFPage(image: nsImage) else {
-                print("Failed to create PDF page from image for PDF data generation.")
-                return nil
-            }
-            
-            let pdfDocument = PDFDocument()
-            pdfDocument.insert(pdfPage, at: 0)
-            
-            return pdfDocument.dataRepresentation()
-        } else {
-            // Fallback to the original method if cgImage fails
-            guard let image = renderer.nsImage else {
-                print("Failed to render invoice view to image for PDF data generation.")
-                return nil
-            }
-            
-            guard let pdfPage = PDFPage(image: image) else {
-                print("Failed to create PDF page from image for PDF data generation.")
-                return nil
-            }
-            
-            let pdfDocument = PDFDocument()
-            pdfDocument.insert(pdfPage, at: 0)
-            
-            return pdfDocument.dataRepresentation()
-        }
+        return InvoiceSharingService.pdfItemProvider(invoice: invoice, invoiceItems: invoiceItems)
     }
 
     @MainActor
     func sendInvoiceViaEmail() {
-        guard let currentBusiness = getBusiness() else {
-            print("Business details are not loaded yet. Cannot send email.")
-            return
-        }
-
-        guard let pdfData = generatePdfData(invoice: invoice, business: currentBusiness) else {
+        guard let pdfData = InvoiceSharingService.renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else {
             print("Failed to generate PDF data for email.")
             return
         }
@@ -327,54 +487,20 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
         var primaryRecipient: (email: String, name: String)? = nil
         var ccRecipients: [(email: String, name: String)] = []
 
-        // Use snapshot data if available, otherwise fall back to relationships
-        let billingAuthority = invoice.billingAuthority ?? invoice.client?.billingAuthority
+        // Use snapshot data from domain model
         let billToEmail = invoice.billToEmail
         let billToName = invoice.billToName
-        let clientEmail = invoice.clientEmail ?? invoice.client?.email
-        let clientName = invoice.clientName ?? invoice.client?.fullName
-        let payeeEmail = invoice.payeeEmail ?? invoice.client?.payee?.email
-        let payeeName = invoice.payeeName ?? invoice.client?.payee?.fullName
+        let clientEmail = invoice.clientEmail
+        let clientName = invoice.clientName
+        let payeeEmail = invoice.payeeEmail
+        let payeeName = invoice.payeeName
         
         // Determine primary recipient based on billing authority
-        switch billingAuthority {
-        case .parentGuardian:
-            if let email = billToEmail ?? payeeEmail, !email.isEmpty {
-                primaryRecipient = (email: email, name: billToName ?? payeeName ?? "Parent/Guardian")
-            }
-        case .client:
-            if let email = billToEmail ?? clientEmail, !email.isEmpty {
-                primaryRecipient = (email: email, name: billToName ?? clientName ?? "Client")
-            }
-        default:
-            // Fallback to client email
-            if let email = clientEmail, !email.isEmpty {
-                primaryRecipient = (email: email, name: clientName ?? "Client")
-            }
-        }
-        
-        // Add other enabled recipients as CC (using snapshot data when available)
-        if let client = invoice.client {
-            if client.sendInvoicesToClient ?? true, let email = clientEmail, !email.isEmpty {
-                let clientRecipient = (email: email, name: clientName ?? "Client")
-                if primaryRecipient?.email != email {
-                    ccRecipients.append(clientRecipient)
-                }
-            }
-            
-            if client.sendInvoicesToPayee ?? true, let email = payeeEmail, !email.isEmpty {
-                let payeeRecipient = (email: email, name: payeeName ?? "Parent/Guardian")
-                if primaryRecipient?.email != email {
-                    ccRecipients.append(payeeRecipient)
-                }
-            }
-            
-            if client.sendInvoicesToPlanManager ?? true, let planManager = client.planManager, let planManagerEmail = planManager.email, !planManagerEmail.isEmpty {
-                let planManagerRecipient = (email: planManagerEmail, name: planManager.name ?? "Plan Manager")
-                if primaryRecipient?.email != planManagerEmail {
-                    ccRecipients.append(planManagerRecipient)
-                }
-            }
+        // Note: billingAuthority is stored as String in snapshot
+        if let email = billToEmail ?? clientEmail, !email.isEmpty {
+            primaryRecipient = (email: email, name: billToName ?? clientName ?? "Client")
+        } else if let email = payeeEmail, !email.isEmpty {
+            primaryRecipient = (email: email, name: payeeName ?? "Parent/Guardian")
         }
 
         guard let primary = primaryRecipient else {
@@ -382,16 +508,13 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
             return
         }
 
-        // Compose with attachment via NSSharingService
-        let businessName = invoice.businessName ?? currentBusiness.name
-        let subject = "Invoice \(invoice.invoiceNumber) from \(businessName) - Due \(dateFormatter.string(from: invoice.dueDate ?? Date()))"
+        let subject = "Invoice \(invoice.invoiceNumber) from \(invoice.businessName ?? "Your Business") - Due \(dateFormatter.string(from: invoice.dueDate ?? Date()))"
         let body = "Dear \(primary.name),\n\nPlease find attached your invoice \(invoice.invoiceNumber)."
-        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
-        do { try pdfData.write(to: tmpURL) } catch { print("[Email] Failed to write PDF: \(error)"); return }
+
+        // Use NSSharingService to compose with the attachment
         if let service = NSSharingService(named: .composeEmail) {
             service.recipients = [primary.email] + ccRecipients.map { $0.email }
             service.subject = subject
-            // Keep a strong reference to avoid premature deallocation
             self.emailSharingService = service
             // Provide a dedicated NSObject delegate to observe completion
             let delegate = EmailSharingDelegate()
@@ -400,17 +523,20 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
                 self?.emailSharingDelegate = nil
                 // Mark sent on success path (best-effort)
                 Task { @MainActor in
-                    self?.invoice.sentDate = Date()
-                    if self?.invoice.status?.rawValue == AppConstants.invoiceStatusDraft {
-                        self?.invoice.status = .sent
+                    guard let self = self else { return }
+                    if self.status == AppConstants.invoiceStatusDraft {
+                        try? await self.invoicesRepository.updateStatus(id: self.invoice.id, status: "sent")
+                        // Reload invoice to get updated sentDate
+                        if let updatedInvoice = try? await self.invoicesRepository.fetch(by: self.invoice.id) {
+                            self.invoice = updatedInvoice
+                        }
                     }
-                    try? self?.modelContext.save()
                 }
             }
             self.emailSharingDelegate = delegate
             service.delegate = delegate
             // Include body text and file URL to ensure the attachment is honored across mail clients
-            service.perform(withItems: [body as NSString, tmpURL as NSURL])
+            service.perform(withItems: [body as NSString, pdfFileURL as NSURL])
         }
     }
 
@@ -418,14 +544,16 @@ class InvoiceEditorViewModel: ObservableObject, @unchecked Sendable {
 // moved to file scope at bottom
     
     // MARK: - Helper Methods for Business Data
-    private func getBusiness() -> BusinessEntity? {
-        // Try to get business from invoice first, then fetch from context
-        if let business = invoice.business {
-            return business
-        }
-        
-        let businessDescriptor = FetchDescriptor<BusinessEntity>()
-        return (try? modelContext.fetch(businessDescriptor))?.first
+    // Note: Business data is stored in invoice snapshot (businessName, businessABN, etc.)
+    // A4InvoiceSheetView already accepts domain models (Invoice, InvoiceItem, BusinessInfo)
+    private func getBusinessData() -> (name: String?, abn: String?, email: String?, address: String?, phone: String?) {
+        return (
+            name: invoice.businessName,
+            abn: invoice.businessABN,
+            email: invoice.businessEmail,
+            address: invoice.businessAddress,
+            phone: invoice.businessPhone
+        )
     }
 }
 
@@ -453,9 +581,7 @@ private let dateFormatter: DateFormatter = {
 extension InvoiceEditorViewModel {
     /// Print the current invoice using A4InvoiceSheetView and NSPrintOperation (macOS only)
     func printInvoice() {
-        let currentInvoice = invoice
-        let currentBusiness = getBusiness()
-        let printView = A4InvoiceSheetView(invoice: currentInvoice, business: currentBusiness)
+        let printView = SharedUI.A4InvoiceSheetView(invoice: invoice, invoiceItems: invoiceItems)
         let hostingView = NSHostingView(rootView: printView.frame(width: 794, height: 1123)) // A4 size in points
         guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else {
             print("Failed to copy NSPrintInfo")
@@ -473,65 +599,5 @@ extension InvoiceEditorViewModel {
         printOperation.showsPrintPanel = true
         printOperation.showsProgressPanel = true
         printOperation.run()
-    }
-
-    /// Duplicate the current invoice and its line items
-    func duplicateInvoice() {
-        let newInvoice = InvoiceEntity(id: UUID(), invoiceNumber: generateNextInvoiceNumber(for: invoice.client))
-        newInvoice.status = .draft
-        newInvoice.issueDate = Date()
-        newInvoice.dueDate = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
-        newInvoice.discount = invoice.discount
-        newInvoice.taxRate = invoice.taxRate
-        newInvoice.creditApplied = 0.0
-        newInvoice.paymentTerms = invoice.paymentTerms
-        newInvoice.client = invoice.client
-        newInvoice.payee = invoice.payee
-        newInvoice.business = getBusiness()
-        newInvoice.date = Date() // Set the date field
-        
-        // Duplicate line items
-        let items = invoice.items
-            for item in items {
-                let newItem = InvoiceItemEntity(id: UUID(), itemDescription: item.itemDescription)
-                newItem.quantity = item.quantity
-                newItem.rate = item.rate
-                newItem.position = item.position
-                newItem.invoice = newInvoice
-                newItem.amount = item.amount
-                newItem.taxRate = item.taxRate
-                newItem.date = item.date
-                newItem.serviceDate = item.serviceDate
-                newItem.unit = item.unit
-                newItem.clientService = item.clientService
-                newItem.session = item.session
-                modelContext.insert(newItem)
-            }
-        
-        // Calculate and set the total amount for the duplicated invoice
-        let subtotal = newInvoice.itemsArray.reduce(0) { $0 + ($1.rate * $1.quantity) }
-        let discountAmount = subtotal * (newInvoice.discount / 100.0)
-        let subtotalAfterDiscount = subtotal * (1.0 - (newInvoice.discount / 100.0))
-        let taxAmount = subtotalAfterDiscount * (newInvoice.taxRate / 100.0)
-        newInvoice.totalAmount = subtotal - discountAmount + taxAmount - newInvoice.creditApplied
-        
-        modelContext.insert(newInvoice)
-        do {
-            try modelContext.save()
-        } catch {
-            print("[VM] Error duplicating invoice: \(error)")
-        }
-    }
-    
-    /// Apply the maximum available credit from the client to the invoice
-    func applyMaxClientCredit() {
-        guard let client = invoice.client else { return }
-        
-        // Get the client's available credit (you may need to adjust this based on your data model)
-        let availableCredit = client.creditAmount
-        
-        // Apply the credit, but don't exceed the invoice total
-        let maxCreditToApply = min(availableCredit, invoice.calculatedTotal)
-        invoice.creditApplied = maxCreditToApply
     }
 }

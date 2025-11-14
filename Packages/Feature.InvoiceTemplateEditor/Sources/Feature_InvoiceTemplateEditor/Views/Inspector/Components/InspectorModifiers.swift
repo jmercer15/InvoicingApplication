@@ -90,55 +90,28 @@ extension InspectorFontLevel {
 struct ControlRowContainer<Content: View>: View {
     let content: Content
     let level: InspectorFontLevel
-    let unionBase: String?
-    let uniqueID: String?
 
-    @Environment(\.inspectorGlassNamespace) private var glassNamespace
-    @Environment(\.inspectorGlassUnionBase) private var inheritedGlassUnionBase
-
-    @State private var isHovered = false
+    private let cornerRadius: CGFloat = 8
     private let hoverScale: CGFloat = 1.02
     private let hoverAnimation: Animation = .easeOut(duration: 0.12)
+    @State private var isHovered = false
 
     init(
-        unionBase: String? = nil,
-        uniqueID: String? = nil,
         level: InspectorFontLevel = .controlLabel,
         @ViewBuilder content: () -> Content
     ) {
         self.level = level
-        self.unionBase = unionBase
-        self.uniqueID = uniqueID
         self.content = content()
     }
 
     var body: some View {
-        let unionID = unionBase ?? inheritedGlassUnionBase ?? "inspector.unified"
-        let effectID = "\(unionID).control.\(uniqueID ?? "default")"
-        let rowBase = content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, leadingInset(for: level))
-            .padding(.vertical, 4)
-
-        let glassedRow: AnyView
-        let glassed = rowBase
-            .glassEffect(
-                glassStyle(for: level, interactive: false),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .glassEffectTransition(glassTransition(for: level))
-
-        if let namespace = glassNamespace {
-            glassedRow = AnyView(
-                glassed
-                    .glassEffectID(effectID, in: namespace)
-                    .glassEffectUnion(id: unionID, namespace: namespace)
-            )
-        } else {
-            glassedRow = AnyView(glassed)
-        }
-
-        return glassedRow
+        content
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            //.glassEffect(.regular.interactive(true), in: .rect(cornerRadius: cornerRadius))
+            //.glassEffectTransition(.materialize)
             .scaleEffect(isHovered ? hoverScale : 1.0)
             .onHover { hovering in
                 withAnimation(hoverAnimation) {
@@ -158,83 +131,6 @@ struct ControlRowContainer<Content: View>: View {
         case .controlLabel, .controlValue, .controlValueNumeric:
             return 42
         }
-    }
-}
-
-private struct InspectorGlassNamespaceKey: EnvironmentKey {
-    static let defaultValue: Namespace.ID? = nil
-}
-
-private struct InspectorGlassUnionBaseKey: EnvironmentKey {
-    static let defaultValue: String? = nil
-}
-
-extension EnvironmentValues {
-    var inspectorGlassNamespace: Namespace.ID? {
-        get { self[InspectorGlassNamespaceKey.self] }
-        set { self[InspectorGlassNamespaceKey.self] = newValue }
-    }
-
-    var inspectorGlassUnionBase: String? {
-        get { self[InspectorGlassUnionBaseKey.self] }
-        set { self[InspectorGlassUnionBaseKey.self] = newValue }
-    }
-}
-
-// MARK: - Glass helpers
-
-private func glassTint(for level: InspectorFontLevel, parentExpanded: Bool) -> Color? {
-    let baseOpacity: CGFloat
-
-    switch level {
-    case .l2SectionHeader:
-        baseOpacity = 0.35
-    case .l3Subsection:
-        baseOpacity = 0.25
-    case .l4SubSubsection:
-        baseOpacity = 0.2
-    case .controlLabel, .controlValue, .controlValueNumeric:
-        baseOpacity = 0.2
-    case .l1MainHeader:
-        return nil
-    }
-
-    let opacity = parentExpanded ? baseOpacity : 0
-
-    switch level {
-    case .l2SectionHeader, .l3Subsection:
-        return Color(NSColor.controlAccentColor).opacity(opacity)
-    case .l4SubSubsection:
-        return Color(NSColor.secondaryLabelColor).opacity(opacity)
-    case .controlLabel, .controlValue, .controlValueNumeric:
-        return Color(NSColor.windowBackgroundColor).opacity(opacity)
-    case .l1MainHeader:
-        return nil
-    }
-}
-
-private func glassStyle(for level: InspectorFontLevel, interactive: Bool, parentExpanded: Bool = true) -> Glass {
-    var glass = Glass.regular
-
-    if let tint = glassTint(for: level, parentExpanded: parentExpanded) {
-        glass = glass.tint(tint)
-    }
-
-    if interactive {
-        glass = glass.interactive()
-    }
-
-    return glass
-}
-
-private func glassTransition(for level: InspectorFontLevel) -> GlassEffectTransition {
-    switch level {
-    case .l1MainHeader, .l2SectionHeader:
-        // Section headers sit farther apart, so use materialize to avoid
-        // stretching artifacts when collapsing/expanding.
-        return .materialize
-    default:
-        return .matchedGeometry
     }
 }
 

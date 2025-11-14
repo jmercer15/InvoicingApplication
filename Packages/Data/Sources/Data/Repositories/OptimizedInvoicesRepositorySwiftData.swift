@@ -39,7 +39,7 @@ public final class OptimizedInvoicesRepositorySwiftData: InvoicesRepository, Opt
         return result
     }
     
-    public func fetch(by clientId: UUID) async throws -> [Invoice] {
+    public func fetch(byClientId clientId: UUID) async throws -> [Invoice] {
         let cacheKey = "fetchByClientId_\(clientId.uuidString)"
         
         // Check cache first
@@ -544,6 +544,34 @@ extension OptimizedInvoicesRepositorySwiftData {
             modelContext.delete(entity)
             try modelContext.save()
         }
+    }
+    
+    public func fetchItems(by invoiceId: UUID) async throws -> [InvoiceItem] {
+        let cacheKey = "fetchItems_\(invoiceId.uuidString)"
+        
+        // Check cache first
+        if let cached: [InvoiceItem] = cache.get(cacheKey) {
+            return cached
+        }
+        
+        // Execute optimized query with monitoring
+        let (result, metrics) = try QueryOptimizationGuide.monitorQuery("fetchItems_\(invoiceId.uuidString)") {
+            let predicate = #Predicate<InvoiceItemEntity> { item in
+                item.invoice?.id == invoiceId
+            }
+            let descriptor = FetchDescriptor<InvoiceItemEntity>(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\.position, order: .forward)]
+            )
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { InvoiceItem(from: $0) }
+        }
+        
+        // Cache result and store metrics
+        cache.set(cacheKey, value: result)
+        queryMetrics.append(metrics)
+        
+        return result
     }
     
     public func search(query: String) async throws -> [Invoice] {

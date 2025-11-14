@@ -258,9 +258,10 @@ class CalendarSettingsViewModel: ObservableObject {
         var currentPreferences = preferences.perCalendarPreferences
         var calendarSettings = currentPreferences[calendarIdentifier] ?? CalendarPreferences.PerCalendarSettings(colorHex: nil, isMonitored: false, customSyncDirection: nil)
         
-        // Store color using the new color system instead of hex
-        // Note: This will need to be updated when CalendarPreferences is refactored
-        let hexString = color.toHex() // Temporary - will be replaced with color system
+        // Store color as hex for backward compatibility
+        // Note: Calendar colors support arbitrary user selections, so we store hex values
+        // The color system is used primarily for client/domain entity colors, not user-customizable calendar colors
+        let hexString = color.toHex()
         calendarSettings.colorHex = hexString
         
         currentPreferences[calendarIdentifier] = calendarSettings

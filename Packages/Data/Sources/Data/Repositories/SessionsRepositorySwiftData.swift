@@ -14,20 +14,37 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         let descriptor = FetchDescriptor<SessionEntity>(
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(from startDate: Date, to endDate: Date) async throws -> [Session] {
+        // Note: SwiftData predicates don't support forced unwrapping (!)
+        // We need to fetch with a simpler predicate and filter in memory
+        // Fetch sessions where startTime is not nil and could be in range
+        // We use a wider range to catch sessions that might have instances in the desired range
+        let extendedStartDate = startDate.addingTimeInterval(-86400 * 365) // One year before
+        let extendedEndDate = endDate.addingTimeInterval(86400 * 365) // One year after
+        
         let predicate = #Predicate<SessionEntity> { session in
-            session.startTime != nil && session.startTime! >= startDate && session.startTime! <= endDate
+            // Only check that startTime exists - actual date filtering happens in memory
+            session.startTime != nil
         }
         let descriptor = FetchDescriptor<SessionEntity>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.startTime, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            // Filter in memory to avoid forced unwrap in predicate
+            let filteredEntities = entities.filter { entity in
+                guard let startTime = entity.startTime else { return false }
+                return startTime >= startDate && startTime <= endDate
+            }
+            return filteredEntities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(byClientId clientId: UUID) async throws -> [Session] {
@@ -38,8 +55,10 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             predicate: predicate,
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(byStatus status: String) async throws -> [Session] {
@@ -50,8 +69,10 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             predicate: predicate,
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(byBillingStatus billingStatus: BillingStatus) async throws -> [Session] {
@@ -67,8 +88,10 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             predicate: predicate,
             sortBy: [SortDescriptor(\.groupedPosition, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(byId id: UUID) async throws -> Session? {
@@ -76,41 +99,79 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             session.id == id
         }
         let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
-        guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return Session(from: entity)
+        return try await MainActor.run {
+            guard let entity = try modelContext.fetch(descriptor).first else { return nil }
+            return Session.from(entity: entity)
+        }
     }
     
     public func create(_ session: Session) async throws -> Session {
-        let entity = SessionEntity(id: session.id)
-        entity.update(from: session)
-        modelContext.insert(entity)
-        try modelContext.save()
-        return Session(from: entity)
+        return try await MainActor.run {
+            let entity = SessionEntity(id: session.id)
+            entity.update(from: session)
+            if entity.modelContext == nil {
+                modelContext.insert(entity)
+            }
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return Session.from(entity: entity)
+        }
     }
     
     public func update(_ session: Session) async throws -> Session {
-        guard let entity = try await fetchEntity(by: session.id) else {
-            throw RepositoryError.entityNotFound
+        return try await MainActor.run {
+            let predicate = #Predicate<SessionEntity> { s in s.id == session.id }
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.update(from: session)
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return Session.from(entity: entity)
         }
-        entity.update(from: session)
-        try modelContext.save()
-        return Session(from: entity)
     }
     
     public func delete(id: UUID) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<SessionEntity> { s in s.id == id }
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            modelContext.delete(entity)
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        modelContext.delete(entity)
-        try modelContext.save()
     }
     
     public func updateStatus(id: UUID, status: String) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<SessionEntity> { s in s.id == id }
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.status = SessionStatus(rawValue: status) ?? .scheduled
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        entity.status = SessionStatus(rawValue: status) ?? .scheduled
-        try modelContext.save()
     }
     
     public func updateBillingStatus(id: UUID, status: BillingStatus) async throws {
@@ -118,38 +179,74 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
     }
     
     public func groupSessions(_ sessionIds: [UUID], groupId: UUID) async throws {
-        for (index, sessionId) in sessionIds.enumerated() {
-            guard let entity = try await fetchEntity(by: sessionId) else { continue }
-            entity.groupID = groupId
-            entity.groupedPosition = Int32(index)
+        try await MainActor.run {
+            for (index, sessionId) in sessionIds.enumerated() {
+                let predicate = #Predicate<SessionEntity> { s in s.id == sessionId }
+                let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+                guard let entity = try modelContext.fetch(descriptor).first else { continue }
+                entity.groupID = groupId
+                entity.groupedPosition = Int32(index)
+            }
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        try modelContext.save()
     }
     
     public func ungroupSessions(_ sessionIds: [UUID]) async throws {
-        for sessionId in sessionIds {
-            guard let entity = try await fetchEntity(by: sessionId) else { continue }
-            entity.groupID = nil
-            entity.groupedPosition = 0
+        try await MainActor.run {
+            for sessionId in sessionIds {
+                let predicate = #Predicate<SessionEntity> { s in s.id == sessionId }
+                let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+                guard let entity = try modelContext.fetch(descriptor).first else { continue }
+                entity.groupID = nil
+                entity.groupedPosition = 0
+            }
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        try modelContext.save()
     }
     
     public func updateGroupedPosition(id: UUID, position: Int32) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<SessionEntity> { s in s.id == id }
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.groupedPosition = position
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        entity.groupedPosition = position
-        try modelContext.save()
     }
     
     public func reorderSessions(_ sessionIds: [UUID], in groupId: UUID?) async throws {
-        for (index, sessionId) in sessionIds.enumerated() {
-            guard let entity = try await fetchEntity(by: sessionId) else { continue }
-            entity.groupID = groupId
-            entity.groupedPosition = Int32(index)
+        try await MainActor.run {
+            for (index, sessionId) in sessionIds.enumerated() {
+                let predicate = #Predicate<SessionEntity> { s in s.id == sessionId }
+                let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+                guard let entity = try modelContext.fetch(descriptor).first else { continue }
+                entity.groupID = groupId
+                entity.groupedPosition = Int32(index)
+            }
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        try modelContext.save()
     }
     
     public func search(query: String) async throws -> [Session] {
@@ -165,8 +262,10 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             predicate: predicate,
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func fetch(limit: Int, offset: Int) async throws -> [Session] {
@@ -176,13 +275,17 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         descriptor.fetchLimit = limit
         descriptor.fetchOffset = offset
         
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Session(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Session.from(entity: $0) }
+        }
     }
     
     public func count() async throws -> Int {
         let descriptor = FetchDescriptor<SessionEntity>()
-        return try modelContext.fetchCount(descriptor)
+        return try await MainActor.run {
+            try modelContext.fetchCount(descriptor)
+        }
     }
     
     public func count(by status: String) async throws -> Int {
@@ -190,18 +293,14 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
             session.status?.rawValue == status
         }
         let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
-        return try modelContext.fetchCount(descriptor)
+        return try await MainActor.run {
+            try modelContext.fetchCount(descriptor)
+        }
     }
     
     // MARK: - Private Helpers
-    
-    private func fetchEntity(by id: UUID) async throws -> SessionEntity? {
-        let predicate = #Predicate<SessionEntity> { session in
-            session.id == id
-        }
-        let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
-        return try modelContext.fetch(descriptor).first
-    }
+    // Note: fetchEntity helper removed - all entity operations now happen directly within MainActor.run blocks
+    // to avoid Sendable conformance issues with SessionEntity
 }
 
 /// Repository errors

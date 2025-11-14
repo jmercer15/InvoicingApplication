@@ -164,6 +164,36 @@ struct SessionFormModel {
         }
     }
     
+    /// Initialize from a Session domain model
+    init(from session: Session) {
+        self.title = session.title
+        self.isAllDay = session.isAllDay
+        self.startTime = session.startTime ?? Date()
+        self.endTime = session.endTime ?? Date().addingTimeInterval(3600)
+        self.status = session.status ?? String.sessionStatusPlanned
+        self.location = session.location ?? ""
+        self.notes = session.notes ?? ""
+        
+        self.selectedClientID = session.clientId
+        self.selectedClientServiceID = session.clientServiceId
+        
+        // Session domain model has addressId but not full address details
+        // Address details should be fetched using AddressRepository when needed
+        // For now, use session coordinates which are sufficient for most cases
+        // Address details can be loaded when editing if needed by fetching from SessionEntity or AddressRepository
+        self.sessionLatitude = session.sessionLatitude
+        self.sessionLongitude = session.sessionLongitude
+        
+        self.googleCalendarColorId = session.googleColorId
+        self.useGoogleColor = session.googleColorId != nil
+        
+        // Load recurrence settings if present
+        if let ruleData = session.recurrenceRuleData,
+           let rule = RecurrenceRuleManager.shared.deserialize(ruleData) {
+            populateRecurrenceSettings(from: rule)
+        }
+    }
+    
     /// Initialize from an EKEvent
     init(from event: EKEvent) {
         self.title = event.title ?? "New Session"

@@ -136,18 +136,26 @@ private struct HierarchyDemoTab: View {
 
     var body: some View {
         ScrollView {
-            GlassEffectContainer(spacing: 12) {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach($sections) { $section in
-                        HierarchySectionView(
+                        DemoHierarchySectionView(
                             section: $section,
-                            namespace: hierarchyNamespace
+                            namespace: hierarchyNamespace,
+                            onExpand: { collapseMainSections(except: $0) }
                         )
                     }
                 }
             }
-        }
         .background(Color("Background", bundle: .sharedUI))
+    }
+}
+
+private extension HierarchyDemoTab {
+    func collapseMainSections(except id: UUID) {
+        for index in sections.indices where sections[index].id != id {
+            sections[index].isExpanded = false
+            sections[index].collapseDescendants()
+        }
     }
 }
 
@@ -156,6 +164,15 @@ private struct DemoSection: Identifiable {
     var title: String
     var items: [DemoItem]
     var isExpanded: Bool = true
+
+    mutating func collapseDescendants() {
+        for index in items.indices {
+            guard var child = items[index].section else { continue }
+            child.isExpanded = false
+            child.collapseDescendants()
+            items[index].section = child
+        }
+    }
 }
 
 private struct DemoItem: Identifiable {
@@ -167,67 +184,66 @@ private struct DemoItem: Identifiable {
     static func section(_ section: DemoSection) -> DemoItem { DemoItem(section: section) }
 }
 
-private struct HierarchySectionView: View {
+private struct DemoHierarchySectionView: View {
     @Binding var section: DemoSection
     let namespace: Namespace.ID
+    var wrapInGlassEffect: Bool = true
+    var onExpand: ((UUID) -> Void)? = nil
+
+    @State private var hoveredItemID: UUID?
+    @State private var isAddChildHovered = false
+    private let hoverScale: CGFloat = 1.02
+    private let hoverAnimation: Animation = .easeOut(duration: 0.12)
+    private let childIndent: CGFloat = 20
 
     var body: some View {
-        //GlassEffectContainer(spacing: 12) {
-        Group {
-            headerButton
-                .glassEffect(.regular, in: .rect(cornerRadius: 10))
-                .glassEffectID("\(section.id.uuidString)-header", in: namespace)
-
-            if section.isExpanded {
-                Group {
-                    ForEach($section.items) { $item in
-                        if let text = item.text {
-                            itemRow(for: text)
-                        } else if hasSection(item) {
-                            HierarchySectionView(
-                                section: sectionBinding(for: $item),
-                                namespace: namespace
-                            )
-                            .padding(.leading, 16)
-                        }
-                    }
-                    addChildButton
+        HierarchySectionCard(
+            title: section.title,
+            isExpanded: $section.isExpanded,
+            appearance: wrapInGlassEffect ? .glass : .plain,
+            childSpacing: childIndent,
+            namespace: namespace,
+            glassIDPrefix: section.id.uuidString,
+            glassUnionID: section.id.uuidString,
+            onExpand: { onExpand?(section.id) },
+            onCollapse: { section.collapseDescendants() }
+        ) {
+            ForEach($section.items) { $item in
+                let itemID = item.id
+                if let text = item.text {
+                    itemRow(text: text, id: itemID)
+                } else if hasSection($item) {
+                    DemoHierarchySectionView(
+                        section: sectionBinding(for: $item),
+                        namespace: namespace,
+                        wrapInGlassEffect: false,
+                        onExpand: { collapseChildSections(except: $0) }
+                    )
                 }
-                //.transition(.opacity.combined(with: .move(edge: .top)))
             }
+            addChildButton
         }
     }
 
-    private var headerButton: some View {
-        Button(action: {
-            withAnimation {
-                section.isExpanded.toggle()
-            }
-        }) {
-            HStack {
-                Text(section.title)
-                    .font(.headline)
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .rotationEffect(.degrees(section.isExpanded ? 0 : -90))
-                    .font(.subheadline.weight(.semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-
-    }
-
-    private func itemRow(for item: String) -> some View {
-        Text(item)
+    private func itemRow(text: String, id: UUID) -> some View {
+        Text(text)
             .font(.body)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
             .glassEffect(.regular, in: .rect(cornerRadius: 8))
-            .glassEffectID("\(section.id.uuidString)-item-\(item)", in: namespace)
+            .scaleEffect(hoveredItemID == id ? hoverScale : 1.0)
+            .glassEffectID("\(section.id.uuidString)-item-\(text)", in: namespace)
+            .onHover { hovering in
+                withAnimation(hoverAnimation) {
+                    if hovering {
+                        hoveredItemID = id
+                    } else if hoveredItemID == id {
+                        hoveredItemID = nil
+                    }
+                }
+            }
     }
 
     private var addChildButton: some View {
@@ -239,8 +255,15 @@ private struct HierarchySectionView: View {
                 .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 8))
         .glassEffect(.regular.tint(.accentColor.opacity(0.5)), in: .rect(cornerRadius: 8))
+        .scaleEffect(isAddChildHovered ? hoverScale : 1.0)
         .glassEffectID("\(section.id.uuidString)-add-child", in: namespace)
+        .onHover { hovering in
+            withAnimation(hoverAnimation) {
+                isAddChildHovered = hovering
+            }
+        }
     }
 
     private func addChildSection() {
@@ -263,5 +286,15 @@ private struct HierarchySectionView: View {
             get: { item.section.wrappedValue ?? DemoSection(title: "Untitled", items: []) },
             set: { item.section.wrappedValue = $0 }
         )
+    }
+
+    private func collapseChildSections(except id: UUID) {
+        for index in section.items.indices {
+            guard var child = section.items[index].section else { continue }
+            if child.id == id { continue }
+            child.isExpanded = false
+            child.collapseDescendants()
+            section.items[index].section = child
+        }
     }
 }

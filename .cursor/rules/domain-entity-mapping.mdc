@@ -38,6 +38,7 @@ extension ClientEntity {
 ```
 
 **Guidelines**:
+
 - Always use `{ModelName}+Mapping.swift` format
 - Place in `Packages/Data/Sources/Data/Mapping/`
 - Contains both domain and entity extensions
@@ -78,6 +79,7 @@ extension Client {
 ```
 
 **Key Points**:
+
 - Method signature: `init(from entity: {EntityName})`
 - Converts all entity properties to domain model
 - Handles optional relationships with `.map { DomainModel(from: $0) }`
@@ -128,6 +130,7 @@ extension ClientEntity {
 ```
 
 **Key Points**:
+
 - Method signature: `func update(from domainModel: {DomainModel})`
 - Updates entity properties from domain model
 - Preserves entity identity (ID not updated)
@@ -150,27 +153,67 @@ public struct Invoice {
     // ...
 }
 
-// ✅ Correct: Mapping with ID extraction
+// ✅ Correct: Mapping with ID extraction and snapshot fallback
 extension Invoice {
-    init(from entity: InvoiceEntity) {
+    init(fromEntity entity: InvoiceEntity) {
         self.init(
             id: entity.id,
             clientId: entity.client?.id,  // Extract ID only
-            invoiceNumber: entity.invoiceNumber
+            invoiceNumber: entity.invoiceNumber,
+            // Snapshot fields with fallback to relationships
+            clientName: entity.clientName ?? entity.client?.fullName,
+            clientEmail: entity.clientEmail ?? entity.client?.email,
+            // ... other snapshot fields with fallbacks
         )
     }
 }
 ```
 
 **When to Flatten**:
+
 - One-to-many relationships: Store array of IDs
 - Optional relationships: Store optional ID
 - Many-to-many relationships: Store array of IDs
 
 **When NOT to Flatten**:
+
 - Simple value objects (e.g., `Address`)
 - Small, frequently accessed related objects
 - Embedded data that's always needed together
+
+### Snapshot Field Fallback Pattern
+
+For entities with snapshot fields (e.g., `InvoiceEntity` with `clientName`, `clientEmail`), always provide fallback to relationships when mapping to domain models:
+
+```swift
+// ✅ Correct: Snapshot fields with relationship fallback
+extension Invoice {
+    init(fromEntity entity: InvoiceEntity) {
+        self.init(
+            // Snapshot fields with fallback to relationships
+            clientName: entity.clientName ?? entity.client?.fullName,
+            clientNDISNumber: entity.clientNDISNumber ?? entity.client?.ndisNumber,
+            clientEmail: entity.clientEmail ?? entity.client?.email,
+            clientPhone: entity.clientPhone ?? entity.client?.phone,
+            clientAddress: entity.clientAddress ?? entity.client?.address?.fullFormattedAddress,
+            // Business snapshot with fallback
+            businessName: entity.businessName ?? entity.business?.name,
+            businessEmail: entity.businessEmail ?? entity.business?.email,
+            // Payee snapshot with fallback
+            payeeName: entity.payeeName ?? entity.payee?.fullName,
+            payeeEmail: entity.payeeEmail ?? entity.payee?.email,
+            // ... other fields
+        )
+    }
+}
+```
+
+**Why This Pattern**:
+
+- Snapshot fields may not be populated for existing data
+- Relationships are the source of truth when snapshots are missing
+- Ensures domain models always have data even when snapshots weren't created
+- Backwards compatible with existing invoices that may not have snapshots
 
 ## Type Conversions
 

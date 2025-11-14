@@ -7,15 +7,17 @@
 
 import Foundation
 import Core
+import SwiftUI
 
 /// Model representing a split section that can be recursively subdivided
-struct SectionSplit {
+struct SectionSplit: Codable {
     let direction: SplitDirection
     let splitCount: Int
     var splitRatios: [CGFloat] // For custom sizing - now mutable
     var children: [SectionSplit?] // Nested subsections
     var childComponents: [Int: [InvoiceComponent]] = [:] // Components per child index (for leaf children)
     var childLabels: [Int: String] = [:] // Labels for each child section
+    var childAlignments: [Int: LeafAlignment] = [:] // Alignment for each leaf child section
     let id: UUID
     
     // Grid-specific properties
@@ -383,6 +385,59 @@ struct SectionSplit {
         childLabels.removeValue(forKey: childIndex)
     }
     
+    // MARK: - Alignment Management
+    
+    /// Alignment configuration for leaf node content
+    struct LeafAlignment: Codable, Equatable {
+        var horizontal: HorizontalAlignment
+        var vertical: VerticalAlignment
+        
+        static let `default` = LeafAlignment(horizontal: .leading, vertical: .top)
+        
+        enum HorizontalAlignment: String, Codable, CaseIterable {
+            case leading
+            case center
+            case trailing
+            
+            var swiftUIAlignment: SwiftUI.HorizontalAlignment {
+                switch self {
+                case .leading: return .leading
+                case .center: return .center
+                case .trailing: return .trailing
+                }
+            }
+        }
+        
+        enum VerticalAlignment: String, Codable, CaseIterable {
+            case top
+            case center
+            case bottom
+            
+            var swiftUIAlignment: SwiftUI.VerticalAlignment {
+                switch self {
+                case .top: return .top
+                case .center: return .center
+                case .bottom: return .bottom
+                }
+            }
+        }
+    }
+    
+    /// Set alignment for a specific leaf child section
+    mutating func setAlignment(_ alignment: LeafAlignment, forChild childIndex: Int) {
+        childAlignments[childIndex] = alignment
+    }
+    
+    /// Get the alignment for a specific leaf child section
+    func getAlignment(forChild childIndex: Int) -> LeafAlignment {
+        return childAlignments[childIndex] ?? .default
+    }
+    
+    /// Remove alignment for a specific child section (reset to default)
+    mutating func removeAlignment(forChild childIndex: Int) {
+        childAlignments.removeValue(forKey: childIndex)
+    }
+    
     // MARK: - Validation
     
     /// Validate the split configuration
@@ -453,7 +508,7 @@ struct SectionSplit {
         )
     }
     
-    enum SplitDirection: CaseIterable {
+    enum SplitDirection: String, CaseIterable, Codable {
         case horizontal
         case vertical
         case grid // For grid splits

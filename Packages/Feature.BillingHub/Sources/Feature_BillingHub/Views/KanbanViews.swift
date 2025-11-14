@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SharedUI
-import Data
 
 // (PointerStyle available on target; no conditional wrappers needed)
 

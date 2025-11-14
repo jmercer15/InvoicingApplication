@@ -31,34 +31,35 @@ The repository pattern provides an abstraction layer between domain logic and da
 public protocol ClientsRepository: Sendable {
     /// Fetch all clients
     func fetchAll() async throws -> [Client]
-    
+
     /// Fetch active clients only
     func fetchActive() async throws -> [Client]
-    
+
     /// Fetch a single client by ID
     func fetch(by id: UUID) async throws -> Client?
-    
+
     /// Fetch client by NDIS number
     func fetch(by ndisNumber: String) async throws -> Client?
-    
+
     /// Create a new client
     func create(_ client: Client) async throws -> Client
-    
+
     /// Update an existing client
     func update(_ client: Client) async throws -> Client
-    
+
     /// Delete a client
     func delete(id: UUID) async throws
-    
+
     /// Archive a client
     func archive(id: UUID) async throws
-    
+
     /// Search clients by query
     func search(query: String) async throws -> [Client]
 }
 ```
 
 **Key Points**:
+
 - Protocol named `{Model}Repository`
 - Conforms to `Sendable` for thread safety
 - All methods are `async throws`
@@ -78,16 +79,17 @@ import Core
 
 public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sendable {
     private let modelContext: ModelContext
-    
+
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
-    
+
     // Implement all protocol methods...
 }
 ```
 
 **Key Points**:
+
 - Class named `{Model}RepositorySwiftData`
 - Conforms to repository protocol
 - Uses `@unchecked Sendable` with careful context management
@@ -131,6 +133,7 @@ public func fetchActive() async throws -> [Client] {
 ```
 
 **Patterns**:
+
 - Use `FetchDescriptor` with `#Predicate`
 - Always map entities to domain models: `entities.map { DomainModel(from: $0) }`
 - Use `SortDescriptor` for ordering
@@ -139,29 +142,40 @@ public func fetchActive() async throws -> [Client] {
 ### Create Operations
 
 ```swift
-// ✅ Correct: Create with mapping
-public func create(_ client: Client) async throws -> Client {
-    let entity = ClientEntity(
-        id: client.id,
-        ndisNumber: client.ndisNumber,
-        fullName: client.fullName,
-        status: ClientStatus(rawValue: client.status) ?? .active
-    )
-    entity.update(from: client)
-    modelContext.insert(entity)
-    do {
+// ✅ Correct: Create with mapping and relationship setup
+public func create(_ invoice: Invoice) async throws -> Invoice {
+    return try await MainActor.run {
+        let entity = InvoiceEntity(id: invoice.id, invoiceNumber: invoice.invoiceNumber)
+        entity.update(from: invoice)
+
+        // Set relationships if IDs are provided
+        if let clientId = invoice.clientId {
+            let clientPredicate = #Predicate<ClientEntity> { $0.id == clientId }
+            let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: clientPredicate)
+            if let clientEntity = try modelContext.fetch(clientDescriptor).first {
+                entity.client = clientEntity
+            }
+        }
+
+        // Always populate snapshot fields from relationships after setting them
+        // This ensures snapshot data is available even if domain model snapshot fields are nil
+        entity.snapshotRelatedData()
+
+        if entity.modelContext == nil {
+            modelContext.insert(entity)
+        }
         try modelContext.save()
-    } catch {
-        modelContext.rollback()
-        throw RepositoryError.saveFailed(error)
+        return Invoice(fromEntity: entity)
     }
-    return Client(from: entity)
 }
 ```
 
 **Patterns**:
+
 - Create entity with required properties
 - Call `entity.update(from:)` for full mapping
+- Set relationships from domain model IDs
+- Call `entity.snapshotRelatedData()` to populate snapshot fields from relationships
 - Insert into context: `modelContext.insert(entity)`
 - Save with error handling and rollback
 - Return domain model created from entity
@@ -169,19 +183,31 @@ public func create(_ client: Client) async throws -> Client {
 ### Update Operations
 
 ```swift
-// ✅ Correct: Update with error handling
-public func update(_ client: Client) async throws -> Client {
-    guard let entity = try await fetchEntity(by: client.id) else {
-        throw RepositoryError.entityNotFound
-    }
-    entity.update(from: client)
-    do {
+// ✅ Correct: Update with relationship setup and snapshot refresh
+public func update(_ invoice: Invoice) async throws -> Invoice {
+    return try await MainActor.run {
+        let predicate = #Predicate<InvoiceEntity> { i in i.id == invoice.id }
+        let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
+        guard let entity = try modelContext.fetch(descriptor).first else {
+            throw RepositoryError.entityNotFound
+        }
+        entity.update(from: invoice)
+
+        // Set relationships if IDs are provided (in case they changed)
+        if let clientId = invoice.clientId {
+            let clientPredicate = #Predicate<ClientEntity> { $0.id == clientId }
+            let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: clientPredicate)
+            if let clientEntity = try modelContext.fetch(clientDescriptor).first {
+                entity.client = clientEntity
+            }
+        }
+
+        // Always refresh snapshot fields from relationships after updating
+        entity.snapshotRelatedData()
+
         try modelContext.save()
-    } catch {
-        modelContext.rollback()
-        throw RepositoryError.saveFailed(error)
+        return Invoice(fromEntity: entity)
     }
-    return Client(from: entity)
 }
 
 // Helper method for internal entity fetching
@@ -193,9 +219,12 @@ private func fetchEntity(by id: UUID) async throws -> ClientEntity? {
 ```
 
 **Patterns**:
+
 - Fetch existing entity first
 - Throw error if entity not found
 - Call `entity.update(from:)` for mapping
+- Set relationships from domain model IDs (if changed)
+- Call `entity.snapshotRelatedData()` to refresh snapshot fields
 - Save with error handling
 - Return updated domain model
 
@@ -218,6 +247,7 @@ public func delete(id: UUID) async throws {
 ```
 
 **Patterns**:
+
 - Fetch entity first
 - Throw error if not found
 - Delete from context: `modelContext.delete(entity)`
@@ -239,7 +269,7 @@ let descriptor = FetchDescriptor<ClientEntity>(
 ```swift
 // ✅ Correct: Predicate with filtering
 let predicate = #Predicate<ClientEntity> { client in
-    client.status.rawValue == "Active" && 
+    client.status.rawValue == "Active" &&
     client.hasNdisPlan == true
 }
 let descriptor = FetchDescriptor<ClientEntity>(

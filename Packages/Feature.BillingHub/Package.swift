@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Feature.BillingHub",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "Feature_BillingHub", targets: ["Feature_BillingHub"])
     ],

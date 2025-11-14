@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Feature.Calendar",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "Feature_Calendar", targets: ["Feature_Calendar"])
     ],

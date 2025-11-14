@@ -2,15 +2,17 @@ import SwiftUI
 import SwiftData
 import SharedUI
 import Data
+import Core
 
 struct RelationshipsView: View {
     @Environment(\.modelContext) private var modelContext
     @ObservedObject var viewModel: RelationshipsContainerViewModel
     
-    // SwiftData queries for real-time updates
-    @Query(sort: \ClientEntity.fullName) private var clients: [ClientEntity]
-    @Query(sort: \PayeeEntity.fullName) private var payees: [PayeeEntity]
-    @Query(sort: \PlanManagerEntity.name) private var planManagers: [PlanManagerEntity]
+    // Use domain models from ViewModel instead of @Query
+    // The ViewModel loads data via repositories and provides domain models
+    private var clients: [Client] { viewModel.clients }
+    private var payees: [Payee] { viewModel.payees }
+    private var planManagers: [PlanManager] { viewModel.planManagers }
     
     // Search and filter state (bound to container)
     @Binding var searchText: String
@@ -125,7 +127,7 @@ struct RelationshipsView: View {
                                                 
                                                 Spacer()
                                                 
-                                                Text(client.status.rawValue)
+                                                Text(client.status)
                                                     .font(.caption)
                                                     .fontWeight(.medium)
                                                     .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -382,21 +384,23 @@ struct RelationshipsView: View {
     }
     
     // MARK: - Computed Properties
-    private var filteredClients: [ClientEntity] {
+    // Note: Filtering is now handled by the ViewModel via repositories
+    // These computed properties provide backward compatibility for the view
+    private var filteredClients: [Client] {
         clients.filter { client in
             let matchesSearch = searchText.isEmpty || 
                 client.fullName.localizedCaseInsensitiveContains(searchText) ||
                 client.ndisNumber.localizedCaseInsensitiveContains(searchText)
             
             let matchesStatus = selectedStatus == .all || 
-                (selectedStatus == .active && client.status == .active) ||
-                (selectedStatus == .inactive && client.status == .inactive)
+                (selectedStatus == .active && client.status == "Active") ||
+                (selectedStatus == .inactive && client.status == "Inactive")
             
             return matchesSearch && matchesStatus
         }
     }
     
-    private var filteredPayees: [PayeeEntity] {
+    private var filteredPayees: [Payee] {
         payees.filter { payee in
             let matchesSearch = searchText.isEmpty || 
                 payee.fullName.localizedCaseInsensitiveContains(searchText)
@@ -409,11 +413,11 @@ struct RelationshipsView: View {
         }
     }
     
-    private var filteredPlanManagers: [PlanManagerEntity] {
+    private var filteredPlanManagers: [PlanManager] {
         planManagers.filter { planManager in
             let matchesSearch = searchText.isEmpty || 
-                (planManager.name?.localizedCaseInsensitiveContains(searchText) ?? false) ||
-                planManager.abn.localizedCaseInsensitiveContains(searchText)
+                planManager.name.localizedCaseInsensitiveContains(searchText) ||
+                (planManager.abn ?? "").localizedCaseInsensitiveContains(searchText)
             
             return matchesSearch
         }
@@ -428,15 +432,15 @@ struct RelationshipsView: View {
         }
     }
     
-    private func selectClient(_ client: ClientEntity) {
+    private func selectClient(_ client: Client) {
         viewModel.detailState = .client(client.id)
     }
     
-    private func selectPayee(_ payee: PayeeEntity) {
+    private func selectPayee(_ payee: Payee) {
         viewModel.detailState = .payee(payee.id)
     }
     
-    private func selectPlanManager(_ planManager: PlanManagerEntity) {
+    private func selectPlanManager(_ planManager: PlanManager) {
         viewModel.detailState = .planManager(planManager.id)
     }
 }
@@ -458,7 +462,7 @@ extension View {
 
 // MARK: - Row Views
 struct ClientRowView: View {
-    let client: ClientEntity
+    let client: Client
     let isSelected: Bool
     let isMultiSelectMode: Bool
     let onSelect: () -> Void
@@ -486,7 +490,7 @@ struct ClientRowView: View {
                 
                 Spacer()
                 
-                StatusBadge(status: client.status.rawValue)
+                StatusBadge(status: client.status)
             }
         }
         .padding(.vertical, 12)
@@ -511,7 +515,7 @@ struct ClientRowView: View {
 }
 
 struct PayeeRowView: View {
-    let payee: PayeeEntity
+    let payee: Payee
     let isSelected: Bool
     let isMultiSelectMode: Bool
     let onSelect: () -> Void
@@ -564,7 +568,7 @@ struct PayeeRowView: View {
 }
 
 struct PlanManagerRowView: View {
-    let planManager: PlanManagerEntity
+    let planManager: PlanManager
     let isSelected: Bool
     let isMultiSelectMode: Bool
     let onSelect: () -> Void

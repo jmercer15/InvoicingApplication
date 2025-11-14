@@ -8,29 +8,80 @@ import Foundation
 import SwiftData // Use SwiftData
 import Data
 import EventKit
+import Core
 
 /// Responsible for session creation, modification, and deletion business logic
 /// Extracted from NewSessionViewModel to isolate critical session management operations
 @MainActor
 class SessionModificationService {
     
-    private let context: ModelContext // Change to ModelContext
+    private let context: ModelContext // Needed for address operations and EventKit sync operations
+    private let sessionsRepository: SessionsRepository
+    private let addressRepository: AddressRepository
     private let eventKitService: EventKitSyncService
     private let recurrenceRuleBuilder: RecurrenceRuleBuilder
     
     init(
-        context: ModelContext, // Change to ModelContext
+        context: ModelContext, // Needed for address operations and EventKit sync operations
+        sessionsRepository: SessionsRepository? = nil,
+        addressRepository: AddressRepository? = nil,
         eventKitService: EventKitSyncService,
         recurrenceRuleBuilder: RecurrenceRuleBuilder = RecurrenceRuleBuilder()
     ) {
         self.context = context
+        // If repository provided, use it; otherwise create default implementation
+        self.sessionsRepository = sessionsRepository ?? SessionsRepositorySwiftData(modelContext: context)
+        self.addressRepository = addressRepository ?? AddressRepositorySwiftData(modelContext: context)
         self.eventKitService = eventKitService
         self.recurrenceRuleBuilder = recurrenceRuleBuilder
     }
     
     // MARK: - Session Creation
     
-    /// Creates a new session from form data
+    /// Creates a new session from form data (returns domain model)
+    func createSession(from formModel: SessionFormModel) async throws -> Session {
+        // Validate form data first
+        let validationErrors = formModel.validateForm()
+        if !validationErrors.isEmpty {
+            throw SessionModificationError.validationFailed(validationErrors.map { $0.localizedDescription })
+        }
+        
+        // Use SessionFactory for consistent initialization
+        let sessionFactory = SessionFactory(context: context)
+        let sessionEntity = sessionFactory.createNewSession(
+            startTime: formModel.startTime,
+            endTime: formModel.endTime
+        )
+        
+        // Apply form values to the session entity
+        do {
+            try applyFormModel(formModel, to: sessionEntity)
+        } catch {
+            throw SessionModificationError.dataApplicationFailed(error)
+        }
+        
+        // Save to Core Data
+        do {
+            try context.save()
+            print("[SessionModificationService] Created new session with id: \(sessionEntity.id.uuidString)")
+        } catch {
+            print("[SessionModificationService] Error saving new session to Core Data: \(error)")
+            throw SessionModificationError.saveFailed(error)
+        }
+        
+        // Sync with EventKit using domain model
+        Task { @MainActor in
+            // Use the extension from Data package that converts SessionEntity to Session
+            let sessionDomain = Session.from(entity: sessionEntity)
+            eventKitService.sync(session: sessionDomain, modelContext: context)
+        }
+        print("[SessionModificationService] Synced new session to EventKit")
+        
+        // Convert to domain model and return using Data package extension
+        return Session.from(entity: sessionEntity)
+    }
+    
+    /// Creates a new session from form data (legacy method returning entity)
     func createSession(from formModel: SessionFormModel) -> Result<SessionEntity, SessionModificationError> {
         // Validate form data first
         let validationErrors = formModel.validateForm()
@@ -72,7 +123,57 @@ class SessionModificationService {
     
     // MARK: - Session Modification
     
-    /// Modifies an existing session with support for recurring series modifications
+    /// Modifies an existing session with support for recurring series modifications (domain model version)
+    func modifySession(
+        _ session: Session,
+        with formModel: SessionFormModel,
+        mode: RecurringEditMode,
+        originalInstanceDate: Date? = nil
+    ) async throws -> Session {
+        // Fetch entity for modification
+        let sessionEntity: SessionEntity
+        do {
+            sessionEntity = try fetchEntity(by: session.id)
+        } catch {
+            throw SessionModificationError.dataApplicationFailed(NSError(domain: "SessionModificationService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Session not found"]))
+        }
+        
+        // Validate form data
+        let validationErrors = formModel.validateForm()
+        if !validationErrors.isEmpty {
+            throw SessionModificationError.validationFailed(validationErrors.map { $0.localizedDescription })
+        }
+        
+        // Handle different modification modes
+        let result: Result<SessionModificationResult, SessionModificationError>
+        switch mode {
+        case .thisOnly:
+            result = modifyThisInstanceOnly(sessionEntity, with: formModel, originalInstanceDate: originalInstanceDate)
+        case .thisAndFuture:
+            result = modifyThisAndFuture(sessionEntity, with: formModel, originalInstanceDate: originalInstanceDate)
+        case .all:
+            result = modifyAllInstances(sessionEntity, with: formModel)
+        }
+        
+        switch result {
+        case .success(let modificationResult):
+            // Extract the modified session entity and convert to domain model
+            let modifiedEntity: SessionEntity
+            switch modificationResult {
+            case .sessionModified(let entity):
+                modifiedEntity = entity
+            case .detachedInstanceCreated(let entity):
+                modifiedEntity = entity
+            case .seriesSplit(_, let newEntity):
+                modifiedEntity = newEntity
+            }
+            return Session.from(entity: modifiedEntity)
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    /// Modifies an existing session with support for recurring series modifications (legacy entity version)
     func modifySession(
         _ session: SessionEntity,
         with formModel: SessionFormModel,
@@ -125,7 +226,8 @@ class SessionModificationService {
         
         // Save changes
         Task { @MainActor in
-            eventKitService.sync(session: detachedSession, modelContext: context)
+            let sessionDomain = Session.from(entity: detachedSession)
+            eventKitService.sync(session: sessionDomain, modelContext: context)
         }
         return .success(.detachedInstanceCreated(detachedSession))
     }
@@ -186,9 +288,10 @@ class SessionModificationService {
             return .failure(.saveFailed(error))
         }
         
-        // Sync with EventKit
+        // Sync with EventKit using domain model
         Task { @MainActor in
-            eventKitService.sync(session: session, modelContext: context)
+            let sessionDomain = Session.from(entity: session)
+            eventKitService.sync(session: sessionDomain, modelContext: context)
         }
         
         return .success(.sessionModified(session))
@@ -196,7 +299,30 @@ class SessionModificationService {
     
     // MARK: - Session Deletion
     
-    /// Deletes a session with support for recurring series deletion modes
+    /// Deletes a session with support for recurring series deletion modes (domain model version)
+    func deleteSession(
+        _ session: Session,
+        mode: RecurringEditMode,
+        originalInstanceDate: Date? = nil
+    ) async throws {
+        // Fetch entity for deletion
+        let sessionEntity: SessionEntity
+        do {
+            sessionEntity = try fetchEntity(by: session.id)
+        } catch {
+            throw SessionModificationError.dataApplicationFailed(NSError(domain: "SessionModificationService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Session not found"]))
+        }
+        
+        let result = deleteSession(sessionEntity, mode: mode, originalInstanceDate: originalInstanceDate)
+        switch result {
+        case .success:
+            return
+        case .failure(let error):
+            throw error
+        }
+    }
+    
+    /// Deletes a session with support for recurring series deletion modes (legacy entity version)
     func deleteSession(
         _ session: SessionEntity,
         mode: RecurringEditMode,
@@ -232,7 +358,8 @@ class SessionModificationService {
         )
         
         Task { @MainActor in
-            eventKitService.sync(session: cancelledInstance, modelContext: context)
+            let sessionDomain = Session.from(entity: cancelledInstance)
+            eventKitService.sync(session: sessionDomain, modelContext: context)
         }
         return .success(.instanceCancelled(cancelledInstance))
     }
@@ -257,7 +384,8 @@ class SessionModificationService {
         )
         
         Task { @MainActor in
-            eventKitService.sync(session: cancelledInstance, modelContext: context)
+            let sessionDomain = Session.from(entity: cancelledInstance)
+            eventKitService.sync(session: sessionDomain, modelContext: context)
         }
         return .success(.instanceCancelled(cancelledInstance))
     }
@@ -288,6 +416,23 @@ class SessionModificationService {
         return .success(.sessionDeleted)
     }
     
+    // MARK: - Helper Methods
+    
+    /// Fetches SessionEntity by ID - Required for entity-level operations
+    /// Note: This service requires entity access for:
+    /// - Recurring series manipulation (split, truncate, detach instances)
+    /// - Relationship setting (client, clientService relationships)
+    /// - Direct property updates needed for complex session modifications
+    /// TODO: Future refactoring could introduce an EntityAdapter service in the Data layer
+    /// to handle entity fetching/creation while keeping domain model interfaces
+    private func fetchEntity(by id: UUID) throws -> SessionEntity {
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == id })
+        guard let entity = try? context.fetch(descriptor).first else {
+            throw SessionModificationError.dataApplicationFailed(NSError(domain: "SessionModificationService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Session entity not found"]))
+        }
+        return entity
+    }
+    
     // MARK: - Data Application
     
     /// Applies form model data to a session entity
@@ -308,6 +453,9 @@ class SessionModificationService {
         session.notes = formModel.notes
         
         // Client and service relationships
+        // Note: Direct entity fetching is required here to set SwiftData relationships.
+        // Repositories return domain models, but we need entity references for relationship assignment.
+        // TODO: Future refactoring could introduce an EntityResolver service to handle this conversion.
         if let clientID = formModel.selectedClientID {
             session.client = try context.fetch(FetchDescriptor<ClientEntity>(predicate: #Predicate { $0.id == clientID })).first
         }

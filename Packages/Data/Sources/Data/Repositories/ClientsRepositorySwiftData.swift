@@ -14,8 +14,10 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         let descriptor = FetchDescriptor<ClientEntity>(
             sortBy: [SortDescriptor(\.fullName, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Client(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
     }
     
     public func fetchActive() async throws -> [Client] {
@@ -26,8 +28,10 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             predicate: predicate,
             sortBy: [SortDescriptor(\.fullName, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Client(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
     }
     
     public func fetch(by id: UUID) async throws -> Client? {
@@ -35,8 +39,10 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             client.id == id
         }
         let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-        guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return Client(from: entity)
+        return try await MainActor.run {
+            guard let entity = try modelContext.fetch(descriptor).first else { return nil }
+            return Client(from: entity)
+        }
     }
     
     public func fetch(by ndisNumber: String) async throws -> Client? {
@@ -44,63 +50,210 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             client.ndisNumber == ndisNumber
         }
         let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-        guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return Client(from: entity)
+        return try await MainActor.run {
+            guard let entity = try modelContext.fetch(descriptor).first else { return nil }
+            return Client(from: entity)
+        }
     }
     
     public func create(_ client: Client) async throws -> Client {
-        let entity = ClientEntity(
-            id: client.id,
-            ndisNumber: client.ndisNumber,
-            fullName: client.fullName,
-            status: ClientStatus(rawValue: client.status) ?? .active,
-            // colorHex property removed - no longer supported
-        )
-        entity.update(from: client)
-        modelContext.insert(entity)
-        try modelContext.save()
-        return Client(from: entity)
+        // Check if entity already exists with this ID
+        return try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == client.id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            if let existingEntity = try? modelContext.fetch(descriptor).first {
+                // Entity already exists, update it instead
+                existingEntity.update(from: client)
+                
+                // Set or clear payee relationship
+                if let payeeId = client.payee?.id {
+                    let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
+                    let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
+                    if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
+                        existingEntity.payee = payeeEntity
+                    } else {
+                        existingEntity.payee = nil
+                    }
+                } else {
+                    existingEntity.payee = nil
+                }
+                
+                do {
+                try modelContext.save()
+                } catch {
+                    modelContext.rollback()
+                    throw RepositoryError.saveFailed
+                }
+                return Client(from: existingEntity)
+            }
+            
+            // Check if entity with same NDIS number already exists (NDIS number is unique)
+            let ndisPredicate = #Predicate<ClientEntity> { c in c.ndisNumber == client.ndisNumber }
+            let ndisDescriptor = FetchDescriptor<ClientEntity>(predicate: ndisPredicate)
+            if let existingByNDIS = try? modelContext.fetch(ndisDescriptor).first {
+                // Update existing entity instead of creating duplicate
+                existingByNDIS.update(from: client)
+                
+                // Set or clear payee relationship
+                if let payeeId = client.payee?.id {
+                    let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
+                    let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
+                    if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
+                        existingByNDIS.payee = payeeEntity
+                    } else {
+                        existingByNDIS.payee = nil
+                    }
+                } else {
+                    existingByNDIS.payee = nil
+                }
+                
+                do {
+                try modelContext.save()
+                } catch {
+                    modelContext.rollback()
+                    throw RepositoryError.saveFailed
+                }
+                return Client(from: existingByNDIS)
+            }
+            
+            // Create new entity
+            let entity = ClientEntity(
+                id: client.id,
+                ndisNumber: client.ndisNumber,
+                fullName: client.fullName,
+                status: ClientStatus(rawValue: client.status) ?? .active,
+                // colorHex property removed - no longer supported
+            )
+            entity.update(from: client)
+            
+            // Set or clear payee relationship
+            if let payeeId = client.payee?.id {
+                let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
+                let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
+                if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
+                    entity.payee = payeeEntity
+                } else {
+                    entity.payee = nil
+                }
+            } else {
+                entity.payee = nil
+            }
+            
+            // Only insert if not already in context
+            if entity.modelContext == nil {
+                modelContext.insert(entity)
+            }
+            
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return Client(from: entity)
+        }
     }
     
     public func update(_ client: Client) async throws -> Client {
-        guard let entity = try await fetchEntity(by: client.id) else {
-            throw RepositoryError.entityNotFound
+        return try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == client.id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.update(from: client)
+            
+            // Set or clear payee relationship
+            if let payeeId = client.payee?.id {
+                let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
+                let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
+                if let payeeEntity = try modelContext.fetch(payeeDescriptor).first {
+                    entity.payee = payeeEntity
+                } else {
+                    // Payee not found, clear relationship
+                    entity.payee = nil
+                }
+            } else {
+                // Explicitly clear relationship if no payee provided
+                entity.payee = nil
+            }
+            
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return Client(from: entity)
         }
-        entity.update(from: client)
-        try modelContext.save()
-        return Client(from: entity)
     }
     
     public func delete(id: UUID) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            modelContext.delete(entity)
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        modelContext.delete(entity)
-        try modelContext.save()
     }
     
     public func archive(id: UUID) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.status = .archived
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        entity.status = .archived
-        try modelContext.save()
     }
     
     public func reactivate(id: UUID) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.status = .active
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        entity.status = .active
-        try modelContext.save()
     }
     
     public func updateStatus(id: UUID, status: String) async throws {
-        guard let entity = try await fetchEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<ClientEntity> { c in c.id == id }
+            let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            entity.status = ClientStatus(rawValue: status) ?? .active
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        entity.status = ClientStatus(rawValue: status) ?? .active
-        try modelContext.save()
     }
     
     public func search(query: String) async throws -> [Client] {
@@ -116,8 +269,10 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             predicate: predicate,
             sortBy: [SortDescriptor(\.fullName, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Client(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
     }
     
     public func fetch(limit: Int, offset: Int) async throws -> [Client] {
@@ -127,13 +282,17 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         descriptor.fetchLimit = limit
         descriptor.fetchOffset = offset
         
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { Client(from: $0) }
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
     }
     
     public func count() async throws -> Int {
         let descriptor = FetchDescriptor<ClientEntity>()
-        return try modelContext.fetchCount(descriptor)
+        return try await MainActor.run {
+            try modelContext.fetchCount(descriptor)
+        }
     }
     
     public func countActive() async throws -> Int {
@@ -141,16 +300,40 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             client.status.rawValue == "Active"
         }
         let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-        return try modelContext.fetchCount(descriptor)
+        return try await MainActor.run {
+            try modelContext.fetchCount(descriptor)
+        }
+    }
+    
+    public func fetch(byPayeeId payeeId: UUID) async throws -> [Client] {
+        let predicate = #Predicate<ClientEntity> { client in
+            client.payee?.id == payeeId
+        }
+        let descriptor = FetchDescriptor<ClientEntity>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.fullName, order: .forward)]
+        )
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
+    }
+    
+    public func fetch(byPlanManagerId planManagerId: UUID) async throws -> [Client] {
+        let predicate = #Predicate<ClientEntity> { client in
+            client.planManager?.id == planManagerId
+        }
+        let descriptor = FetchDescriptor<ClientEntity>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.fullName, order: .forward)]
+        )
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { Client(from: $0) }
+        }
     }
     
     // MARK: - Private Helpers
-    
-    private func fetchEntity(by id: UUID) async throws -> ClientEntity? {
-        let predicate = #Predicate<ClientEntity> { client in
-            client.id == id
-        }
-        let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-        return try modelContext.fetch(descriptor).first
-    }
+    // Note: fetchEntity helper removed - all entity operations now happen directly within MainActor.run blocks
+    // to avoid Sendable conformance issues with ClientEntity
 }

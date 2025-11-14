@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "SharedUI",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS("26.1")],
     products: [
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],

@@ -1,20 +1,38 @@
 import SwiftUI
 import SwiftData
+import Core
 import Data
 import SharedUI
 
 struct BulkOperationsView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
     let selectedClients: [ClientEntity]
     let selectedPayees: [PayeeEntity]
     let selectedPlanManagers: [PlanManagerEntity]
     
+    // Repositories - should be injected, but using environment for now
+    @Environment(\.modelContext) private var modelContext
+    
     @State private var showingStatusChange = false
     @State private var showingDeleteConfirmation = false
     @State private var newStatus = "Active"
     @State private var isProcessing = false
+    @State private var errorMessage: String?
+    @State private var showingError = false
+    
+    // Lazy repositories (created from modelContext)
+    private var clientsRepository: ClientsRepository {
+        ClientsRepositorySwiftData(modelContext: modelContext)
+    }
+    
+    private var payeesRepository: PayeeRepository {
+        PayeeRepositorySwiftData(modelContext: modelContext)
+    }
+    
+    private var planManagersRepository: PlanManagerRepository {
+        PlanManagerRepositorySwiftData(modelContext: modelContext)
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -57,6 +75,20 @@ struct BulkOperationsView: View {
             Button("Delete", role: .destructive) { deleteSelected() }
         } message: {
             Text("Are you sure you want to delete \(totalSelectedCount) selected items? This action cannot be undone.")
+        }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred")
+        }
+        .overlay {
+            if isProcessing {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .padding()
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+                    .cornerRadius(8)
+            }
         }
     }
     
@@ -143,24 +175,66 @@ struct BulkOperationsView: View {
     private func changeStatus() {
         isProcessing = true
         
-        // Change status for all selected entities
-        for client in selectedClients {
-            client.status = ClientStatus(rawValue: newStatus) ?? .active
+        Task {
+            do {
+                // Update clients using repository
+                for clientEntity in selectedClients {
+                    let clientDomain = clientFromEntity(clientEntity)
+                    // Create updated client with new status
+                    let updatedClient = Client(
+                        id: clientDomain.id,
+                        ndisNumber: clientDomain.ndisNumber,
+                        fullName: clientDomain.fullName,
+                        status: newStatus,
+                        email: clientDomain.email,
+                        notes: clientDomain.notes,
+                        phone: clientDomain.phone,
+                        creditAmount: clientDomain.creditAmount,
+                        isMinor: clientDomain.isMinor,
+                        hasNdisPlan: clientDomain.hasNdisPlan,
+                        planManagementType: clientDomain.planManagementType,
+                        billingAuthority: clientDomain.billingAuthority,
+                        address: clientDomain.address,
+                        planManager: clientDomain.planManager,
+                        payee: clientDomain.payee,
+                        sendInvoicesToClient: clientDomain.sendInvoicesToClient,
+                        sendInvoicesToPayee: clientDomain.sendInvoicesToPayee,
+                        sendInvoicesToPlanManager: clientDomain.sendInvoicesToPlanManager
+                    )
+                    try await clientsRepository.update(updatedClient)
+                }
+                
+                // Update payees using repository
+                for payeeEntity in selectedPayees {
+                    let payeeDomain = payeeFromEntity(payeeEntity)
+                    // Create updated payee with new status
+                    let updatedPayee = Payee(
+                        id: payeeDomain.id,
+                        fullName: payeeDomain.fullName,
+                        email: payeeDomain.email,
+                        phone: payeeDomain.phone,
+                        address: payeeDomain.address,
+                        status: newStatus,
+                        relationToClient: payeeDomain.relationToClient
+                    )
+                    try await payeesRepository.update(updatedPayee)
+                }
+                
+                // Note: Plan managers don't have a status field in the domain model
+                // If status changes are needed for plan managers, add status field to PlanManager domain model
+                
+                await MainActor.run {
+                    isProcessing = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Error saving status changes: \(error.localizedDescription)"
+                    showingError = true
+                    isProcessing = false
+                }
+            }
         }
-        
-        for payee in selectedPayees {
-            payee.status = newStatus
-        }
-        
-        // Save changes
-        do {
-            try modelContext.save()
-            dismiss()
-        } catch {
-            print("Error saving status changes: \(error)")
-        }
-        
-        isProcessing = false
     }
     
     private func exportSelected() {
@@ -221,28 +295,35 @@ struct BulkOperationsView: View {
     private func deleteSelected() {
         isProcessing = true
         
-        // Delete all selected entities
-        for client in selectedClients {
-            modelContext.delete(client)
+        Task {
+            do {
+                // Delete clients using repository
+                for clientEntity in selectedClients {
+                    try await clientsRepository.delete(id: clientEntity.id)
+                }
+                
+                // Delete payees using repository
+                for payeeEntity in selectedPayees {
+                    try await payeesRepository.delete(id: payeeEntity.id)
+                }
+                
+                // Delete plan managers using repository
+                for planManagerEntity in selectedPlanManagers {
+                    try await planManagersRepository.delete(id: planManagerEntity.id)
+                }
+                
+                await MainActor.run {
+                    isProcessing = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Error deleting entities: \(error.localizedDescription)"
+                    showingError = true
+                    isProcessing = false
+                }
+            }
         }
-        
-        for payee in selectedPayees {
-            modelContext.delete(payee)
-        }
-        
-        for planManager in selectedPlanManagers {
-            modelContext.delete(planManager)
-        }
-        
-        // Save changes
-        do {
-            try modelContext.save()
-            dismiss()
-        } catch {
-            print("Error deleting entities: \(error)")
-        }
-        
-        isProcessing = false
     }
 }
 

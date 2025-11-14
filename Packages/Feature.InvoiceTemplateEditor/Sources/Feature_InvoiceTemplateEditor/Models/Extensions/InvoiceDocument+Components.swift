@@ -9,6 +9,7 @@ extension InvoiceDocument {
         for i in 0..<components.count {
             if components[i].id == id {
                 update(&components[i])
+                objectWillChange.send()
                 return
             }
         }
@@ -17,7 +18,10 @@ extension InvoiceDocument {
         for sectionIndex in sectionSplits.keys {
             if var split = sectionSplits[sectionIndex] {
                 if split.updateComponent(id: id, update: update) {
+                    // Update synchronously - we're called from SwiftUI views which are on main actor
+                    // This ensures immediate UI updates and proper binding propagation
                     sectionSplits[sectionIndex] = split
+                    objectWillChange.send()
                     return
                 }
             }
@@ -154,6 +158,21 @@ extension InvoiceDocument {
             return true
         }
         return false
+    }
+    
+    // MARK: - Section Split Alignment Management
+    
+    /// Update alignment for a leaf node in a section split
+    func updateSplitAlignment(forSection sectionIndex: Int, childIndex: Int, alignment: SectionSplit.LeafAlignment) {
+        guard var split = sectionSplits[sectionIndex] else { return }
+        split.setAlignment(alignment, forChild: childIndex)
+        sectionSplits[sectionIndex] = split
+    }
+    
+    /// Get alignment for a leaf node in a section split
+    func getSplitAlignment(forSection sectionIndex: Int, childIndex: Int) -> SectionSplit.LeafAlignment {
+        guard let split = sectionSplits[sectionIndex] else { return .default }
+        return split.getAlignment(forChild: childIndex)
     }
 }
 

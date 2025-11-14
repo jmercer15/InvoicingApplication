@@ -18,27 +18,27 @@ extension Invoice {
             notes: entity.notes,
             paidDate: entity.paidDate,
             paymentTerms: entity.paymentTerms,
-            status: entity.status?.rawValue,
+            status: entity.status?.rawValue ?? nil,
             sentDate: entity.sentDate,
             currencyCode: entity.currencyCode,
-            businessName: entity.businessName,
-            businessABN: entity.businessABN,
-            businessEmail: entity.businessEmail,
-            businessAddress: entity.businessAddress,
-            businessPhone: entity.businessPhone,
-            clientName: entity.clientName,
-            clientNDISNumber: entity.clientNDISNumber,
-            clientEmail: entity.clientEmail,
-            clientPhone: entity.clientPhone,
-            clientAddress: entity.clientAddress,
-            billingAuthority: entity.billingAuthority?.rawValue,
+            businessName: entity.businessName ?? entity.business?.name,
+            businessABN: entity.businessABN ?? entity.business?.abn,
+            businessEmail: entity.businessEmail ?? entity.business?.email,
+            businessAddress: entity.businessAddress ?? entity.business?.address?.fullFormattedAddress,
+            businessPhone: entity.businessPhone ?? entity.business?.phone,
+            clientName: entity.clientName ?? entity.client?.fullName,
+            clientNDISNumber: entity.clientNDISNumber ?? entity.client?.ndisNumber,
+            clientEmail: entity.clientEmail ?? entity.client?.email,
+            clientPhone: entity.clientPhone ?? entity.client?.phone,
+            clientAddress: entity.clientAddress ?? entity.client?.address?.fullFormattedAddress,
+            billingAuthority: entity.billingAuthority?.rawValue ?? entity.client?.billingAuthority?.rawValue,
             billToName: entity.billToName,
             billToEmail: entity.billToEmail,
             billToAddress: entity.billToAddress,
-            payeeName: entity.payeeName,
-            payeeEmail: entity.payeeEmail,
-            payeePhone: entity.payeePhone,
-            payeeAddress: entity.payeeAddress,
+            payeeName: entity.payeeName ?? entity.payee?.fullName,
+            payeeEmail: entity.payeeEmail ?? entity.payee?.email,
+            payeePhone: entity.payeePhone ?? entity.payee?.phone,
+            payeeAddress: entity.payeeAddress ?? entity.payee?.address?.fullFormattedAddress,
             bankName: entity.bankName,
             bankAccountName: entity.bankAccountName,
             bankBSB: entity.bankBSB,
@@ -46,7 +46,24 @@ extension Invoice {
             clientId: entity.client?.id,
             businessId: entity.business?.id,
             payeeId: entity.payee?.id,
-            sessionIds: entity.sessions?.map { $0.id } ?? []
+            sessionIds: {
+                // Safely access sessions relationship to avoid lazy-loading EXC_BAD_ACCESS
+                // NOTE: This mapping is called from repositories that wrap operations in MainActor.run
+                // However, when entities come from @Query results, lazy-loaded relationships
+                // may not be accessible and will return nil, resulting in empty sessionIds.
+                // If sessions are required, fetch them separately using SessionsRepository.
+                
+                // Access sessions relationship - may be nil if entity is from @Query and not materialized
+                guard let sessions = entity.sessions else { return [] }
+                
+                // Force materialization by iterating to create concrete array
+                // This avoids lazy evaluation issues that could cause EXC_BAD_ACCESS
+                var ids: [UUID] = []
+                for session in sessions {
+                    ids.append(session.id)
+                }
+                return ids
+            }()
         )
     }
 }
@@ -108,4 +125,12 @@ extension InvoiceEntity {
         self.bankBSB = invoice.bankBSB
         self.bankAccountNumber = invoice.bankAccountNumber
     }
+}
+
+// MARK: - Public Helper Functions for Cross-Module Conversion
+
+/// Public helper to convert InvoiceEntity to Invoice domain model
+/// Use this from Feature packages to avoid Codable init(from:) conflicts
+public func invoiceFromEntity(_ entity: InvoiceEntity) -> Invoice {
+    return Invoice(fromEntity: entity)
 }

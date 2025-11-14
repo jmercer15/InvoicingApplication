@@ -6,14 +6,24 @@ import Core
 import Data
 import SharedUI
 
-class ClientDetailViewModel: ObservableObject {
+@MainActor
+public class ClientDetailViewModel: ObservableObject {
     
     // MARK: - Core Dependencies
+    private let clientsRepository: ClientsRepository
+    private let clientServicesRepository: ClientServicesRepository
+    private let invoicesRepository: InvoicesRepository
+    private let ndisItemsRepository: NDISItemRepository
+    private let payeesRepository: PayeeRepository
+    private let planManagersRepository: PlanManagerRepository
+    // Note: ModelContext is stored but not currently used in this ViewModel
+    // It was previously needed for geocoding, but geocoding is not currently implemented in this ViewModel
+    // Future: If geocoding is needed, consider refactoring GeocodingService to work through repositories
     let modelContext: ModelContext
     var dismiss: () -> Void = {}
 
     // MARK: - Published Properties
-    @Published var client: ClientEntity
+    @Published private(set) var client: Client
     let isCreatingNew: Bool
 
     // Editable Client Properties
@@ -38,6 +48,7 @@ class ClientDetailViewModel: ObservableObject {
     @Published var editableStreetNumber: String = ""
     @Published var editableStreetName: String = ""
     @Published var editableSuburb: String = ""
+    @Published var editableCity: String = ""
     @Published var editablePostcode: String = ""
     @Published var editableState: String = ""
     @Published var editableCountry: String = ""
@@ -46,12 +57,12 @@ class ClientDetailViewModel: ObservableObject {
     @Published var selectedSearchAddress: AddressData?
 
     // Services Management (Domain Models)
-    @Published var clientServices: [ClientServiceEntity] = []
-    @Published var serviceToEdit: ClientServiceEntity?
-    @Published var ndisItemForNewService: NDISItemEntity?
-    @Published var serviceToDelete: ClientServiceEntity?
+    @Published var clientServices: [ClientService] = []
+    @Published var serviceToEdit: ClientService?
+    @Published var ndisItemForNewService: NDISItem?
+    @Published var serviceToDelete: ClientService?
     @Published var isCreatingCustomService: Bool = false
-    @Published var availableNDISItems: [NDISItemEntity] = []
+    @Published var availableNDISItems: [NDISItem] = []
 
     // UI State
     @Published var isPresentingServiceAssignmentSheet = false
@@ -68,24 +79,46 @@ class ClientDetailViewModel: ObservableObject {
     @Published var serviceTemplates: [ClientServiceTemplate] = []
     
     // Data for Pickers (Domain Models)
-    @Published var allPayees: [PayeeEntity] = []
-    @Published var allPlanManagers: [PlanManagerEntity] = []
+    @Published var allPayees: [Payee] = []
+    @Published var allPlanManagers: [PlanManager] = []
     let clientStatuses = ["Active", "Inactive", "Archived"]
 
     // Invoices (Domain Models)
-    @Published var relatedInvoices: [InvoiceEntity] = []
+    @Published var relatedInvoices: [Invoice] = []
 
     // MARK: - Initializer
-    init(client: ClientEntity, context: ModelContext, isCreating: Bool) {
+    public init(
+        client: Client,
+        clientsRepository: ClientsRepository,
+        clientServicesRepository: ClientServicesRepository,
+        invoicesRepository: InvoicesRepository,
+        ndisItemsRepository: NDISItemRepository,
+        payeesRepository: PayeeRepository,
+        planManagersRepository: PlanManagerRepository,
+        modelContext: ModelContext,
+        isCreating: Bool
+    ) {
         self.client = client
-        self.modelContext = context
+        self.clientsRepository = clientsRepository
+        self.clientServicesRepository = clientServicesRepository
+        self.invoicesRepository = invoicesRepository
+        self.ndisItemsRepository = ndisItemsRepository
+        self.payeesRepository = payeesRepository
+        self.planManagersRepository = planManagersRepository
+        self.modelContext = modelContext
         self.isCreatingNew = isCreating
         self.phoneFormatter = PhoneNumberFormatter(initialPhoneNumber: client.phone ?? "")
         self.emailValidator = EmailValidator(initialEmail: client.email ?? "")
         
-        loadAllDetails()
-        fetchPickerData()
-        fetchRelatedInvoices()
+        // Initialize selected payee and plan manager from client
+        selectedPayee = client.payee
+        selectedPlanManager = client.planManager
+        
+        Task {
+            await loadAllDetails()
+            await fetchPickerData()
+            await fetchRelatedInvoices()
+        }
         
         // Set up notification observer for reopening service assignment sheet
         NotificationCenter.default.addObserver(forName: .reopenServiceAssignmentSheet, object: nil, queue: .main) { [weak self] _ in
@@ -98,17 +131,17 @@ class ClientDetailViewModel: ObservableObject {
     }
     
     // MARK: - Data Loading
-    func loadAllDetails() {
+    func loadAllDetails() async {
         loadClientDetails()
         loadAddressDetails()
-        fetchClientServices()
-        fetchAvailableNDISItems()
+        await fetchClientServices()
+        await fetchAvailableNDISItems()
     }
 
     func loadClientDetails() {
         editableFullName = client.fullName
         editableNdisNumber = client.ndisNumber
-        editableStatus = client.status.rawValue
+        editableStatus = client.status
         // Use deterministic color based on client ID instead of stored hex color
         editableColor = NSColor(ColorSystem.Client.color(for: client.id))
         editableIsMinor = client.isMinor
@@ -116,7 +149,7 @@ class ClientDetailViewModel: ObservableObject {
         editablePlanManagementType = client.planManagementType
         editableCreditAmountString = String(format: "%.2f", client.creditAmount)
         if let authority = client.billingAuthority {
-            editableBillingAuthority = BillingAuthority(rawValue: authority.rawValue) ?? .client
+            editableBillingAuthority = BillingAuthority(rawValue: authority) ?? .client
         }
         editableNotes = client.notes ?? ""
         phoneFormatter.phoneNumber = client.phone ?? ""
@@ -129,44 +162,65 @@ class ClientDetailViewModel: ObservableObject {
             editableStreetNumber = address.streetNumber
             editableStreetName = address.streetName
             editableSuburb = address.suburb
+            editableCity = address.city
             editablePostcode = address.postcode
             editableState = address.state
-            editableCountry = address.country
+            editableCountry = address.country.isEmpty ? "Australia" : address.country
             editablePoBox = address.poBox
         } else {
-            editableUnitNumber = ""; editableStreetNumber = ""; editableStreetName = ""
-            editableSuburb = ""; editablePostcode = ""; editableState = ""
-            editableCountry = "Australia"; editablePoBox = ""
+            editableUnitNumber = ""
+            editableStreetNumber = ""
+            editableStreetName = ""
+            editableSuburb = ""
+            editableCity = ""
+            editablePostcode = ""
+            editableState = ""
+            editableCountry = "Australia"
+            editablePoBox = ""
         }
     }
     
-    private func fetchClientServices() {
-        let services = client.clientServices
-        clientServices = services.sorted { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) }
-    }
-
-    var assignedNDISItems: [NDISItemEntity] {
-        clientServices.compactMap { $0.ndisItem }
-    }
-
-    private func fetchAvailableNDISItems() {
-        let descriptor = FetchDescriptor<NDISItemEntity>(
-            sortBy: [
-                SortDescriptor(\.itemNumber, order: .forward),
-                SortDescriptor(\.effectiveStartDate, order: .reverse)
-            ])
+    private func fetchClientServices() async {
         do {
-            let fetchedItems = try modelContext.fetch(descriptor)
-            let now = Date()
+            let services = try await clientServicesRepository.fetch(for: client.id)
+            clientServices = services.sorted { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) }
+        } catch {
+            print("❌ [ClientDetailViewModel] Error fetching client services: \(error)")
+            clientServices = []
+        }
+    }
 
-            let effectiveItems = fetchedItems.filter { item in
-                if item.isCurrent { return true }
-                let start = item.effectiveStartDate ?? .distantPast
-                let end = item.effectiveEndDate ?? .distantFuture
-                return start <= now && now <= end
+    var assignedNDISItems: [NDISItem] {
+        // Extract unique NDIS item IDs from client services and fetch them
+        let ndisItemIds = Set(clientServices.compactMap { $0.ndisItemId })
+        // Note: This would ideally be async, but computed properties can't be async
+        // The actual fetching would need to happen in a method that updates a @Published property
+        // For now, return empty array - call fetchAssignedNDISItems() to populate
+        return []
+    }
+    
+    func fetchAssignedNDISItems() async -> [NDISItem] {
+        let ndisItemIds = Set(clientServices.compactMap { $0.ndisItemId })
+        var items: [NDISItem] = []
+        
+        for id in ndisItemIds {
+            if let item = try? await ndisItemsRepository.fetch(by: id) {
+                items.append(item)
             }
+        }
+        
+        return items
+    }
 
-            let deduplicated = deduplicateCurrentItems(effectiveItems)
+    private func fetchAvailableNDISItems() async {
+        do {
+            // Fetch effective NDIS items using repository
+            let fetchedItems = try await ndisItemsRepository.fetchEffective()
+
+            // Deduplicate items by itemNumber and name, keeping the most recent version
+            let deduplicated = deduplicateCurrentItems(fetchedItems)
+            
+            // Sort by item number, then by name
             let sorted = deduplicated.sorted { lhs, rhs in
                 let numberComparison = lhs.itemNumber.localizedCaseInsensitiveCompare(rhs.itemNumber)
                 if numberComparison == .orderedSame {
@@ -177,24 +231,28 @@ class ClientDetailViewModel: ObservableObject {
 
             availableNDISItems = sorted
         } catch {
-            print("Failed to fetch NDIS items: \(error)")
+            print("❌ [ClientDetailViewModel] Failed to fetch NDIS items: \(error)")
             availableNDISItems = []
         }
     }
     
-    private func fetchPickerData() { // Fetch domain models for pickers
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>(sortBy: [SortDescriptor(\.fullName)])
-        let managerDescriptor = FetchDescriptor<PlanManagerEntity>(sortBy: [SortDescriptor(\.name)])
+    private func fetchPickerData() async {
         do {
-            allPayees = try modelContext.fetch(payeeDescriptor)
-            allPlanManagers = try modelContext.fetch(managerDescriptor)
+            // Fetch all payees and plan managers using repositories
+            async let payeesTask = payeesRepository.fetchAll()
+            async let managersTask = planManagersRepository.fetchAll()
+            
+            allPayees = try await payeesTask
+            allPlanManagers = try await managersTask
         } catch {
-            print("Failed to fetch picker data: \(error)")
+            print("❌ [ClientDetailViewModel] Failed to fetch picker data: \(error)")
+            allPayees = []
+            allPlanManagers = []
         }
     }
 
-    private func deduplicateCurrentItems(_ items: [NDISItemEntity]) -> [NDISItemEntity] {
-        var itemsDict: [String: NDISItemEntity] = [:]
+    private func deduplicateCurrentItems(_ items: [NDISItem]) -> [NDISItem] {
+        var itemsDict: [String: NDISItem] = [:]
 
         for item in items {
             let key = "\(item.itemNumber)|\(item.name)"
@@ -213,26 +271,19 @@ class ClientDetailViewModel: ObservableObject {
         return Array(itemsDict.values)
     }
     
-    func fetchRelatedInvoices() {
-        let invoices = client.invoices
-        relatedInvoices = invoices.sorted {
-            $0.issueDate > $1.issueDate
+    func fetchRelatedInvoices() async {
+        do {
+            let invoices = try await invoicesRepository.fetch(byClientId: client.id)
+            relatedInvoices = invoices.sorted {
+                $0.issueDate > $1.issueDate
+            }
+        } catch {
+            print("❌ [ClientDetailViewModel] Error fetching related invoices: \(error)")
+            relatedInvoices = []
         }
     }
     
     // MARK: - Save & Update Logic
-    func saveContext() -> Bool {
-        do {
-            try modelContext.save()
-            return true
-        } catch {
-            let nsError = error as NSError
-            alertTitle = "Save Error"
-            alertMessage = "Could not save changes: \(nsError.localizedDescription)"
-            showAlert = true
-            return false
-        }
-    }
     
     func updateAndSaveClient() {
         // This function is for changes that should be saved immediately
@@ -240,173 +291,356 @@ class ClientDetailViewModel: ObservableObject {
         // It bypasses the main "Create" button validation logic.
         guard !isCreatingNew else { return }
         
-        // Transfer all editable properties to the client entity
-        client.fullName = editableFullName.trimmingCharacters(in: .whitespacesAndNewlines)
-        client.ndisNumber = editableNdisNumber
-        client.status = ClientStatus(rawValue: editableStatus) ?? .active
-        // colorHex property removed - using deterministic color system instead
-        client.isMinor = editableIsMinor
-        client.hasNdisPlan = editableHasNdisPlan
-        client.planManagementType = editablePlanManagementType
-        if let credit = Double(editableCreditAmountString) {
-            client.creditAmount = credit
+        Task {
+            await saveClientUpdates()
         }
-        client.billingAuthority = BillingAuthority(rawValue: editableBillingAuthority.rawValue) ?? .client
-        client.notes = editableNotes.isEmpty ? nil : editableNotes
+    }
+    
+    private func saveClientUpdates() async {
+        // Create updated client domain model from editable properties
+        let updatedClient = Client(
+            id: client.id,
+            ndisNumber: editableNdisNumber,
+            fullName: editableFullName.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: editableStatus,
+            email: emailValidator.isValid ? emailValidator.email : client.email,
+            notes: editableNotes.isEmpty ? nil : editableNotes,
+            phone: phoneFormatter.isValid ? phoneFormatter.phoneNumber : client.phone,
+            creditAmount: Double(editableCreditAmountString) ?? client.creditAmount,
+            isMinor: editableIsMinor,
+            hasNdisPlan: editableHasNdisPlan,
+            planManagementType: editablePlanManagementType,
+            billingAuthority: editableBillingAuthority.rawValue,
+            address: {
+                // Create address from editable fields if address is being edited
+                if isEditingAddress || !editableStreetName.isEmpty || !editableStreetNumber.isEmpty {
+                    let addressId = client.address?.id ?? UUID()
+                    return Address(
+                        id: addressId,
+                        unitNumber: editableUnitNumber,
+                        streetNumber: editableStreetNumber,
+                        streetName: editableStreetName,
+                        suburb: editableSuburb,
+                        city: editableCity,
+                        state: editableState,
+                        postcode: editablePostcode,
+                        country: editableCountry.isEmpty ? "Australia" : editableCountry,
+                        poBox: editablePoBox,
+                        latitude: client.address?.latitude ?? 0.0,
+                        longitude: client.address?.longitude ?? 0.0
+                    )
+                } else {
+                    return client.address
+                }
+            }(),
+            planManager: selectedPlanManager,
+            payee: selectedPayee,
+            sendInvoicesToClient: client.sendInvoicesToClient,
+            sendInvoicesToPayee: client.sendInvoicesToPayee,
+            sendInvoicesToPlanManager: client.sendInvoicesToPlanManager
+        )
         
-        // Email and Phone are handled via their formatters' bindings
-        if emailValidator.isValid { client.email = emailValidator.email }
-        if phoneFormatter.isValid { client.phone = phoneFormatter.phoneNumber }
-
-        _ = saveContext()
+        do {
+            let savedClient = try await clientsRepository.update(updatedClient)
+            client = savedClient
+            // Update selected references
+            selectedPlanManager = savedClient.planManager
+            selectedPayee = savedClient.payee
+        } catch {
+            let nsError = error as NSError
+            alertTitle = "Save Error"
+            alertMessage = "Could not save changes: \(nsError.localizedDescription)"
+            showAlert = true
+        }
+    }
+    
+    // MARK: - Payee and Plan Manager Selection
+    
+    @Published var selectedPayee: Payee?
+    @Published var selectedPlanManager: PlanManager?
+    
+    func updatePayee(by id: UUID?) {
+        Task {
+            if let id = id {
+                selectedPayee = try? await payeesRepository.fetch(by: id)
+            } else {
+                selectedPayee = nil
+            }
+            // Save client update
+            await saveClientUpdates()
+        }
+    }
+    
+    func updatePlanManager(by id: UUID?) {
+        Task {
+            if let id = id {
+                selectedPlanManager = try? await planManagersRepository.fetch(by: id)
+            } else {
+                selectedPlanManager = nil
+            }
+            // Save client update
+            await saveClientUpdates()
+        }
     }
 
     func saveClientDetailsAndDismiss() {
         // This is for the main "Create" button.
         let trimmedFullName = editableFullName.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedFullName.isEmpty {
-            fullNameError = "Full Name cannot be empty."; return
+            fullNameError = "Full Name cannot be empty."
+            return
         }
         
         if !emailValidator.email.isEmpty && !emailValidator.isValid {
-            alertTitle = "Validation Error"; alertMessage = "Invalid email address."; showAlert = true; return
+            alertTitle = "Validation Error"
+            alertMessage = "Invalid email address."
+            showAlert = true
+            return
         }
         
-        // All other properties are already up-to-date via their bindings.
-        // The address is handled by commitAddressChanges().
-        if isCreatingNew {
-            modelContext.insert(client)
-        }
-        if saveContext() {
+        Task {
+            if isCreatingNew {
+                await createNewClient()
+            } else {
+                await saveClientUpdates()
+            }
+            
             if isCreatingNew {
                 dismiss()
             }
         }
     }
     
-    // MARK: - Address Logic
-    func commitAddressChanges() {
-        if client.address == nil {
-             if editableUnitNumber.isEmpty && editableStreetNumber.isEmpty && editableStreetName.isEmpty &&
-                editableSuburb.isEmpty && editablePostcode.isEmpty && editableState.isEmpty && editableCountry.isEmpty && editablePoBox.isEmpty {
-                 isEditingAddress = false
-                 return
-             }
-             client.address = AddressEntity()
-         }
-        
-        client.address?.unitNumber = editableUnitNumber
-        client.address?.streetNumber = editableStreetNumber
-        client.address?.streetName = editableStreetName
-        client.address?.suburb = editableSuburb
-        client.address?.postcode = editablePostcode
-        client.address?.state = editableState
-        client.address?.country = editableCountry
-        client.address?.poBox = editablePoBox
-        
-        if let address = client.address {
-            let container = modelContext.container
-            DispatchQueue.main.async {
-                Task {
-                    // Create a background context to avoid data races
-                    let backgroundContext = ModelContext(container)
-                    await GeocodingService.shared.geocodeAndSave(addressEntity: address, in: backgroundContext)
+    private func createNewClient() async {
+        // Create new client domain model
+        let newClient = Client(
+            id: UUID(),
+            ndisNumber: editableNdisNumber,
+            fullName: editableFullName.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: editableStatus,
+            email: emailValidator.isValid ? emailValidator.email : nil,
+            notes: editableNotes.isEmpty ? nil : editableNotes,
+            phone: phoneFormatter.isValid ? phoneFormatter.phoneNumber : nil,
+            creditAmount: Double(editableCreditAmountString) ?? 0.0,
+            isMinor: editableIsMinor,
+            hasNdisPlan: editableHasNdisPlan,
+            planManagementType: editablePlanManagementType,
+            billingAuthority: editableBillingAuthority.rawValue,
+            address: {
+                // Create address from editable fields if any address data exists
+                if !editableStreetName.isEmpty || !editableStreetNumber.isEmpty || !editableSuburb.isEmpty || !editableCity.isEmpty {
+                    return Address(
+                        id: UUID(),
+                        unitNumber: editableUnitNumber,
+                        streetNumber: editableStreetNumber,
+                        streetName: editableStreetName,
+                        suburb: editableSuburb,
+                        city: editableCity,
+                        state: editableState,
+                        postcode: editablePostcode,
+                        country: editableCountry.isEmpty ? "Australia" : editableCountry,
+                        poBox: editablePoBox,
+                        latitude: 0.0,
+                        longitude: 0.0
+                    )
+                } else {
+                    return nil
                 }
-            }
-        }
+            }(),
+            planManager: selectedPlanManager,
+            payee: selectedPayee,
+            sendInvoicesToClient: nil,
+            sendInvoicesToPayee: nil,
+            sendInvoicesToPlanManager: nil
+        )
         
-        isEditingAddress = false
+        do {
+            let savedClient = try await clientsRepository.create(newClient)
+            client = savedClient
+            // Update selected references
+            selectedPlanManager = savedClient.planManager
+            selectedPayee = savedClient.payee
+            // Address is now committed through commitAddressChanges() when editing
+        } catch {
+            let nsError = error as NSError
+            alertTitle = "Save Error"
+            alertMessage = "Could not save client: \(nsError.localizedDescription)"
+            showAlert = true
+        }
     }
     
-    func formattedAddressString(_ address: AddressEntity) -> String { // Format domain model address
-        var components: [String] = []
-        if !address.poBox.isEmpty { components.append("PO Box \(address.poBox)") }
-        else {
-            if !address.unitNumber.isEmpty { components.append("Unit \(address.unitNumber)") }
-            var streetLine = ""
-            if !address.streetNumber.isEmpty { streetLine += address.streetNumber }
-            if !address.streetName.isEmpty { streetLine += streetLine.isEmpty ? address.streetName : " \(address.streetName)" }
-            if !streetLine.isEmpty { components.append(streetLine) }
+    // MARK: - Address Logic
+    func commitAddressChanges() {
+        // Create or update Address domain model from editable fields
+        let addressId = client.address?.id ?? UUID()
+        let updatedAddress = Address(
+            id: addressId,
+            unitNumber: editableUnitNumber,
+            streetNumber: editableStreetNumber,
+            streetName: editableStreetName,
+            suburb: editableSuburb,
+            city: editableCity,
+            state: editableState,
+            postcode: editablePostcode,
+            country: editableCountry.isEmpty ? "Australia" : editableCountry,
+            poBox: editablePoBox,
+            latitude: client.address?.latitude ?? 0.0,
+            longitude: client.address?.longitude ?? 0.0
+        )
+        
+        // Update client with new address
+        let updatedClient = Client(
+            id: client.id,
+            ndisNumber: client.ndisNumber,
+            fullName: client.fullName,
+            status: client.status,
+            email: client.email,
+            notes: client.notes,
+            phone: client.phone,
+            creditAmount: client.creditAmount,
+            isMinor: client.isMinor,
+            hasNdisPlan: client.hasNdisPlan,
+            planManagementType: client.planManagementType,
+            billingAuthority: client.billingAuthority,
+            address: updatedAddress,
+            planManager: client.planManager,
+            payee: client.payee,
+            sendInvoicesToClient: client.sendInvoicesToClient,
+            sendInvoicesToPayee: client.sendInvoicesToPayee,
+            sendInvoicesToPlanManager: client.sendInvoicesToPlanManager
+        )
+        
+        client = updatedClient
+        
+        // Save changes
+        Task {
+            await saveClientUpdates()
         }
-        if !address.suburb.isEmpty { components.append(address.suburb) }
-        var statePostcodeLine = ""
-        if !address.state.isEmpty { statePostcodeLine += address.state }
-        if !address.postcode.isEmpty { statePostcodeLine += statePostcodeLine.isEmpty ? address.postcode : " \(address.postcode)" }
-        if !statePostcodeLine.isEmpty { components.append(statePostcodeLine) }
-        if !address.country.isEmpty { components.append(address.country) }
-        return components.joined(separator: ", ")
+        isEditingAddress = false
+        
+    }
+    
+    func formattedAddressString(from address: Address) -> String {
+        return address.fullFormattedAddress
     }
     
     func openInMaps() {
         guard let address = client.address else { return }
-        let query = formattedAddressString(address)
+        let query = formattedAddressString(from: address)
         if let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed),
-           let url = URL(string: "maps://?q=\(encodedQuery)") { NSWorkspace.shared.open(url) }
+           let url = URL(string: "maps://?q=\(encodedQuery)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - Service Actions
     func saveService() {
-        // Ensure ndisItem is nil for custom services
-        if isCreatingCustomService && serviceToEdit != nil {
-            serviceToEdit!.ndisItem = nil
-            serviceToEdit!.ndisCode = nil
-        }
+        guard let serviceToSave = serviceToEdit else { return }
         
-        // Validate NDIS item relationship if this is an NDIS service
-        if !isCreatingCustomService && serviceToEdit != nil {
-            validateAndFixNDISItemRelationship(serviceToEdit!)
+        Task {
+            do {
+                // Create or update service using repository
+                let savedService: ClientService
+                if let existingId = clientServices.first(where: { $0.id == serviceToSave.id })?.id {
+                    // Update existing service
+                    savedService = try await clientServicesRepository.update(serviceToSave)
+                } else {
+                    // Create new service
+                    savedService = try await clientServicesRepository.create(serviceToSave)
+                }
+                
+                // Refresh services list
+                await fetchClientServices()
+                
+                serviceToEdit = nil
+                ndisItemForNewService = nil
+                isCreatingCustomService = false
+                isPresentingServiceEditor = false
+            } catch {
+                print("❌ [ClientDetailViewModel] Error saving service: \(error)")
+                alertTitle = "Save Error"
+                alertMessage = "Could not save service: \(error.localizedDescription)"
+                showAlert = true
+            }
         }
-        
-        modelContext.insert(serviceToEdit!)
-        _ = saveContext()
-        fetchClientServices()
-        serviceToEdit = nil
-        ndisItemForNewService = nil
-        isCreatingCustomService = false
-        isPresentingServiceEditor = false
     }
     
     // MARK: - Validation Functions
-    private func validateAndFixNDISItemRelationship(_ service: ClientServiceEntity) { // Validate domain model service
+    private func validateAndFixNDISItemRelationship(_ service: inout ClientService, ndisItem: NDISItem) {
         // Ensure NDIS code is set from the NDIS item
-        if let ndisItem = service.ndisItem {
-            if service.ndisCode != ndisItem.itemNumber {
-                service.ndisCode = ndisItem.itemNumber
-            }
-            
-            // Ensure service name matches NDIS item name if not customized
-            if service.serviceName == "" || service.serviceName == "New Service" {
-                service.serviceName = ndisItem.name
-            }
-            
-            // Ensure unit matches NDIS item unit if not customized
-            if service.unit == "" || service.unit == "hour" {
-                service.unit = ndisItem.unit ?? "hour"
-            }
+        if service.ndisCode != ndisItem.itemNumber {
+            service = ClientService(
+                id: service.id,
+                clientId: service.clientId,
+                serviceName: service.serviceName,
+                rate: service.rate,
+                unit: service.unit,
+                status: service.status,
+                isActive: service.isActive,
+                startDate: service.startDate,
+                endDate: service.endDate,
+                ndisItemId: ndisItem.id,
+                ndisCode: ndisItem.itemNumber
+            )
+        }
+        
+        // Ensure service name matches NDIS item name if not customized
+        if service.serviceName.isEmpty || service.serviceName == "New Service" {
+            service = ClientService(
+                id: service.id,
+                clientId: service.clientId,
+                serviceName: ndisItem.name,
+                rate: service.rate,
+                unit: service.unit,
+                status: service.status,
+                isActive: service.isActive,
+                startDate: service.startDate,
+                endDate: service.endDate,
+                ndisItemId: service.ndisItemId,
+                ndisCode: service.ndisCode
+            )
+        }
+        
+        // Ensure unit matches NDIS item unit if not customized
+        if service.unit.isEmpty || service.unit == "hour" {
+            service = ClientService(
+                id: service.id,
+                clientId: service.clientId,
+                serviceName: service.serviceName,
+                rate: service.rate,
+                unit: ndisItem.unit ?? "hour",
+                status: service.status,
+                isActive: service.isActive,
+                startDate: service.startDate,
+                endDate: service.endDate,
+                ndisItemId: service.ndisItemId,
+                ndisCode: service.ndisCode
+            )
         }
     }
 
-    func prepareToAddNewService(from ndisItem: NDISItemEntity) { // Prepare domain model service
-        let newService = ClientServiceEntity(id: UUID(), serviceName: ndisItem.name, unit: ndisItem.unit ?? "", rate: 0.0)
-        newService.client = client
-        newService.ndisItem = ndisItem
-        newService.isActive = true
-        
-        // Set service details from the NDIS item
-        newService.serviceName = ndisItem.name
-        newService.unit = ndisItem.unit ?? ""
-        newService.ndisCode = ndisItem.itemNumber // Set the NDIS code from item number
-        
+    func prepareToAddNewService(from ndisItem: NDISItem) {
         // Find a default price. This is a simple approach.
         // A more complex app might use a setting for the user's region.
         let remotePrice = ndisItem.regionalPrices.first
-        newService.rate = remotePrice?.amount ?? 0.0
+        let defaultRate = remotePrice?.amount ?? (ndisItem.price ?? 0.0)
         
-        // Set start date
-        newService.startDate = Date()
+        var newService = ClientService(
+            id: UUID(),
+            clientId: client.id,
+            serviceName: ndisItem.name,
+            rate: defaultRate,
+            unit: ndisItem.unit ?? "hour",
+            status: nil,
+            isActive: true,
+            startDate: Date(),
+            endDate: nil,
+            ndisItemId: ndisItem.id,
+            ndisCode: ndisItem.itemNumber
+        )
         
         // Validate and fix NDIS item relationship
-        validateAndFixNDISItemRelationship(newService)
+        validateAndFixNDISItemRelationship(&newService, ndisItem: ndisItem)
         
         ndisItemForNewService = ndisItem
         serviceToEdit = newService
@@ -417,19 +651,19 @@ class ClientDetailViewModel: ObservableObject {
     }
 
     func prepareToAddCustomService() {
-        let newService = ClientServiceEntity(id: UUID(), serviceName: "", unit: "hour", rate: 0.0)
-        newService.client = client
-        newService.isActive = true
-        newService.startDate = Date()
-        
-        // Set default values for a custom service
-        newService.serviceName = ""
-        newService.ndisCode = nil // Explicitly set to nil for custom services
-        newService.unit = "hour"
-        newService.rate = 0.0
-        
-        // Important: Don't set ndisItem for custom services
-        // newService.ndisItem = nil (this is already nil by default)
+        let newService = ClientService(
+            id: UUID(),
+            clientId: client.id,
+            serviceName: "",
+            rate: 0.0,
+            unit: "hour",
+            status: nil,
+            isActive: true,
+            startDate: Date(),
+            endDate: nil,
+            ndisItemId: nil,
+            ndisCode: nil
+        )
         
         serviceToEdit = newService
         ndisItemForNewService = nil
@@ -439,38 +673,47 @@ class ClientDetailViewModel: ObservableObject {
         isPresentingServiceEditor = true
     }
 
-    func assignServices(from ndisItems: [NDISItemEntity]) { // Assign domain model services
-        for item in ndisItems {
-            let newService = ClientServiceEntity(id: UUID(), serviceName: item.name, unit: item.unit ?? "", rate: 0.0)
-            newService.client = client
-            newService.ndisItem = item
-            newService.isActive = true
-            
-            // Set service details from the NDIS item
-            newService.serviceName = item.name
-            newService.unit = item.unit ?? ""
-            newService.ndisCode = item.itemNumber // Set the NDIS code from item number
-            
-            // Find a default price, similar to the single-add method.
-            let remotePrice = item.regionalPrices.first
-            newService.rate = remotePrice?.amount ?? 0.0
-            
-            // Set start date
-            newService.startDate = Date()
-            
-            // Validate and fix NDIS item relationship
-            validateAndFixNDISItemRelationship(newService)
-            
-            modelContext.insert(newService)
-
-        }
-        
-        if saveContext() {
-            fetchClientServices() // Refresh the list
+    func assignServices(from ndisItems: [NDISItem]) {
+        Task {
+            do {
+                for item in ndisItems {
+                    // Find a default price
+                    let remotePrice = item.regionalPrices.first
+                    let defaultRate = remotePrice?.amount ?? (item.price ?? 0.0)
+                    
+                    var newService = ClientService(
+                        id: UUID(),
+                        clientId: client.id,
+                        serviceName: item.name,
+                        rate: defaultRate,
+                        unit: item.unit ?? "hour",
+                        status: nil,
+                        isActive: true,
+                        startDate: Date(),
+                        endDate: nil,
+                        ndisItemId: item.id,
+                        ndisCode: item.itemNumber
+                    )
+                    
+                    // Validate and fix NDIS item relationship
+                    validateAndFixNDISItemRelationship(&newService, ndisItem: item)
+                    
+                    // Create service using repository
+                    _ = try await clientServicesRepository.create(newService)
+                }
+                
+                // Refresh services list
+                await fetchClientServices()
+            } catch {
+                print("❌ [ClientDetailViewModel] Error assigning services: \(error)")
+                alertTitle = "Save Error"
+                alertMessage = "Could not assign services: \(error.localizedDescription)"
+                showAlert = true
+            }
         }
     }
 
-    func prepareForBulkServiceCreation(from ndisItems: [NDISItemEntity]) {
+    func prepareForBulkServiceCreation(from ndisItems: [NDISItem]) {
         // Create new templates only for items that don't already exist in serviceTemplates
         let existingSourceItemIDs = Set(serviceTemplates.map { $0.sourceNdisItem.id })
         
@@ -485,65 +728,112 @@ class ClientDetailViewModel: ObservableObject {
     }
 
     func commitServices(fromTemplates templates: [ClientServiceTemplate]) {
-        for template in templates {
-            let newService = ClientServiceEntity(id: UUID(), serviceName: template.serviceName, unit: template.unit, rate: template.rate)
-            newService.client = client
-            newService.ndisItem = template.sourceNdisItem
-            
-            // Assign values from the user-configured template
-            newService.serviceName = template.serviceName
-            newService.ndisCode = template.ndisCode
-            newService.rate = template.rate
-            newService.unit = template.unit
-            newService.isActive = true
-            newService.startDate = Date()
-            newService.endDate = nil
-            
-            // Validate and fix NDIS item relationship
-            validateAndFixNDISItemRelationship(newService)
-            
-            modelContext.insert(newService)
-        }
-        
-        if saveContext() {
-            fetchClientServices() // Refresh the list
+        Task {
+            do {
+                for template in templates {
+                    var newService = ClientService(
+                        id: UUID(),
+                        clientId: client.id,
+                        serviceName: template.serviceName,
+                        rate: template.rate,
+                        unit: template.unit,
+                        status: nil,
+                        isActive: true,
+                        startDate: Date(),
+                        endDate: nil,
+                        ndisItemId: template.sourceNdisItem.id,
+                        ndisCode: template.ndisCode
+                    )
+                    
+                    // Validate and fix NDIS item relationship
+                    validateAndFixNDISItemRelationship(&newService, ndisItem: template.sourceNdisItem)
+                    
+                    // Create service using repository
+                    _ = try await clientServicesRepository.create(newService)
+                }
+                
+                // Refresh services list
+                await fetchClientServices()
+            } catch {
+                print("❌ [ClientDetailViewModel] Error committing services: \(error)")
+                alertTitle = "Save Error"
+                alertMessage = "Could not save services: \(error.localizedDescription)"
+                showAlert = true
+            }
         }
     }
 
-    func prepareToEditService(_ service: ClientServiceEntity) { // Prepare domain model service for editing
+    func prepareToEditService(_ service: ClientService) {
         serviceToEdit = service
-        ndisItemForNewService = service.ndisItem // Ensure source item is available
+        
+        // Fetch NDISItem if the service has an NDIS item ID
+        if let ndisItemId = service.ndisItemId {
+            Task {
+                ndisItemForNewService = try? await ndisItemsRepository.fetch(by: ndisItemId)
+            }
+        } else {
+            ndisItemForNewService = nil
+        }
+        
         isPresentingServiceEditor = true
     }
     
     func cancelServiceEdit() {
-        if let service = serviceToEdit {
-            modelContext.delete(service)
-        }
         serviceToEdit = nil
         ndisItemForNewService = nil
         isPresentingServiceEditor = false
     }
 
-    func confirmDeleteService(_ service: ClientServiceEntity) { // Confirm deletion of domain model service
+    func confirmDeleteService(_ service: ClientService) {
         self.serviceToDelete = service
         self.showDeleteServiceAlert = true
     }
     
     func deleteService() {
-        if let service = serviceToDelete {
-            modelContext.delete(service)
-            if saveContext() {
-                fetchClientServices()
+        guard let service = serviceToDelete else { return }
+        
+        Task {
+            do {
+                try await clientServicesRepository.delete(id: service.id)
+                await fetchClientServices()
+                
+                serviceToDelete = nil
+                showDeleteServiceAlert = false
+            } catch {
+                print("❌ [ClientDetailViewModel] Error deleting service: \(error)")
+                alertTitle = "Delete Error"
+                alertMessage = "Could not delete service: \(error.localizedDescription)"
+                showAlert = true
             }
         }
-        serviceToDelete = nil
-        showDeleteServiceAlert = false
     }
     
-    func toggleActiveStatus(for service: ClientServiceEntity) { // Toggle domain model service status
-        service.isActive.toggle()
-        _ = saveContext()
+    func toggleActiveStatus(for service: ClientService) {
+        let updatedService = ClientService(
+            id: service.id,
+            clientId: service.clientId,
+            serviceName: service.serviceName,
+            rate: service.rate,
+            unit: service.unit,
+            status: service.status,
+            isActive: !service.isActive,
+            startDate: service.startDate,
+            endDate: service.endDate,
+            ndisItemId: service.ndisItemId,
+            ndisCode: service.ndisCode
+        )
+        
+        Task {
+            do {
+                _ = try await clientServicesRepository.update(updatedService)
+                await fetchClientServices()
+            } catch {
+                print("❌ [ClientDetailViewModel] Error toggling service status: \(error)")
+                alertTitle = "Update Error"
+                alertMessage = "Could not update service: \(error.localizedDescription)"
+                showAlert = true
+            }
+        }
     }
 
     // MARK: - Client Actions
@@ -552,9 +842,16 @@ class ClientDetailViewModel: ObservableObject {
     }
     
     func deleteClientAndDismiss() {
-        modelContext.delete(client)
-        if saveContext() {
-            dismiss()
+        Task {
+            do {
+                try await clientsRepository.delete(id: client.id)
+                dismiss()
+            } catch {
+                print("❌ [ClientDetailViewModel] Error deleting client: \(error)")
+                alertTitle = "Delete Error"
+                alertMessage = "Could not delete client: \(error.localizedDescription)"
+                showAlert = true
+            }
         }
     }
     

@@ -41,22 +41,17 @@ struct ModernTemplateEditor: View {
     }
 
     var body: some View {
-        let paletteTransition = AnyTransition.move(edge: .leading).combined(with: .opacity)
-        let inspectorTransition = AnyTransition.move(edge: .trailing).combined(with: .opacity)
-        let panelAnimation = Animation.easeInOut(duration: 0.25)
 
                 HStack(alignment: .top, spacing: 0) {
             if workspace.isPaletteVisible {
                 ModernComponentPalette()
                     .frame(width: 260)
                     .frame(maxHeight: .infinity)
-                    .background(Color("Background", bundle: .sharedUI))
+                    .background(Color(NSColor.windowBackgroundColor))
                     .contentShape(Rectangle())
                     .clipped()
-                    .transition(paletteTransition)
 
                 Divider()
-                    .transition(.opacity)
             }
 
             ModernCanvasView()
@@ -64,20 +59,16 @@ struct ModernTemplateEditor: View {
 
             if isInspectorVisible {
                 Divider()
-                    .transition(.opacity)
 
                 ModernInspectorView()
                     .frame(width: 320)
                     .frame(maxHeight: .infinity)
-                    .background(Color("Background", bundle: .sharedUI))
+                    .background(Color(NSColor.windowBackgroundColor))
                     .contentShape(Rectangle())
                     .clipped()
-                    .transition(inspectorTransition)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        .animation(panelAnimation, value: workspace.isPaletteVisible)
-        .animation(panelAnimation, value: isInspectorVisible)
         .toolbar {
 
             ToolbarItemGroup(placement: .status) {

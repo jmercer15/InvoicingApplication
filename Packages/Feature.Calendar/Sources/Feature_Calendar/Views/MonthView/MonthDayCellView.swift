@@ -154,7 +154,7 @@ struct MonthDayCellView: View {
                     ForEach(allItemsForDay, id: \DisplayableCalendarItem.id) { item in
                         switch item {
                         case .session(let session):
-                            MonthSessionItemView(session: session)
+                            MonthSessionItemView(session: session, viewModel: viewModel)
                                 .onTapGesture { 
                                     // Reset selection first to ensure onChange triggers even for same session
                                     viewModel.selectedSessionInfo = nil
@@ -168,7 +168,7 @@ struct MonthDayCellView: View {
                                     viewModel.convertEventToSession(event)
                                 }
                         case .recurringSessionInstance(let template, let instanceStartDate, let instanceEndDate, _):
-                            MonthSessionItemView(session: template)
+                            MonthSessionItemView(session: template, viewModel: viewModel)
                                 .onTapGesture { 
                                     // Reset selection first to ensure onChange triggers even for same session
                                     viewModel.selectedSessionInfo = nil
@@ -198,10 +198,12 @@ struct MonthDayCellView: View {
 // ─────────────────────────────────────────────────────────────
 
 struct MonthSessionItemView: View {
-    let session: SessionEntity
+    let session: Session
+    @ObservedObject var viewModel: CalendarViewModel
+    
     private var clientColor: Color {
-        if let client = session.client {
-            return ColorSystem.Client.color(for: client.id)
+        if let clientId = session.clientId {
+            return ColorSystem.Client.color(for: clientId)
         }
         return Color("Gray20", bundle: .sharedUI)
     }
@@ -218,11 +220,14 @@ struct MonthSessionItemView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .lineLimit(1)
                 
-                if let clientName = session.client?.fullName, !clientName.isEmpty {
-                    Text(clientName)
-                        .font(.system(size: 9))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                        .lineLimit(1)
+                if let clientId = session.clientId {
+                    ClientNameView(
+                        clientId: clientId,
+                        viewModel: viewModel
+                    )
+                    .font(.system(size: 9))
+                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .lineLimit(1)
                 }
             }
             Spacer()

@@ -13,6 +13,7 @@ struct SplittableRectangleView: View {
     let leafComponents: [InvoiceComponent] // Components for leaf sections (when split == nil)
     let containerSize: CGSize
     let childIndex: Int
+    let parentAlignment: SectionSplit.LeafAlignment // Alignment from parent split for leaf nodes
     let onDrop: (NSItemProvider, CGPoint) -> Bool
     let onSplitChild: (Int, SectionSplit.SplitDirection, Int, Int?, Int?) -> Void
     let onUnsplitChild: (Int) -> Void
@@ -29,11 +30,13 @@ struct SplittableRectangleView: View {
     @State private var selectedSplitDirection: SectionSplit.SplitDirection = .horizontal
     @State private var splitCount: Int = 2
     
-    init(split: SectionSplit?, leafComponents: [InvoiceComponent] = [], containerSize: CGSize, childIndex: Int = 0, onDrop: @escaping (NSItemProvider, CGPoint) -> Bool, onSplitChild: @escaping (Int, SectionSplit.SplitDirection, Int, Int?, Int?) -> Void, onUnsplitChild: @escaping (Int) -> Void, onResize: @escaping (Int, CGFloat) -> Void, onUpdateSplit: @escaping (SectionSplit) -> Void, onAddComponent: @escaping (Int, InvoiceComponent) -> Void, onSetLabel: ((Int, String?) -> Void)? = nil, onReorderChildren: ((Int, Int) -> Void)? = nil, onComponentSelect: @escaping (InvoiceComponent) -> Void) {
+    
+    init(split: SectionSplit?, leafComponents: [InvoiceComponent] = [], containerSize: CGSize, childIndex: Int = 0, parentAlignment: SectionSplit.LeafAlignment = .default, onDrop: @escaping (NSItemProvider, CGPoint) -> Bool, onSplitChild: @escaping (Int, SectionSplit.SplitDirection, Int, Int?, Int?) -> Void, onUnsplitChild: @escaping (Int) -> Void, onResize: @escaping (Int, CGFloat) -> Void, onUpdateSplit: @escaping (SectionSplit) -> Void, onAddComponent: @escaping (Int, InvoiceComponent) -> Void, onSetLabel: ((Int, String?) -> Void)? = nil, onReorderChildren: ((Int, Int) -> Void)? = nil, onComponentSelect: @escaping (InvoiceComponent) -> Void) {
         self.split = split
         self.leafComponents = leafComponents
         self.containerSize = containerSize
         self.childIndex = childIndex
+        self.parentAlignment = parentAlignment
         self.onDrop = onDrop
         self.onSplitChild = onSplitChild
         self.onUnsplitChild = onUnsplitChild
@@ -62,6 +65,7 @@ struct SplittableRectangleView: View {
                                 leafComponents: split.childComponents[subIndex] ?? [],
                                 containerSize: geometry.size,
                                 childIndex: subIndex,
+                                parentAlignment: split.getAlignment(forChild: subIndex),
                                 onDrop: onDrop,
                                 onSplitChild: { childIndex, direction, count, rows, columns in
                                     // Handle split locally at this level
@@ -90,13 +94,15 @@ struct SplittableRectangleView: View {
                                         case .horizontal:
                                             // Horizontal split controls width within this horizontal container
                                             let containerWidth = containerSize.width
-                                            let ratioChange = delta / containerWidth
-                                            
                                             let currentRatio = childSplit.splitRatios[childIndex]
                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                             
-                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                delta: delta,
+                                                containerSize: containerWidth,
+                                                currentRatio: currentRatio,
+                                                nextRatio: nextRatio
+                                            )
                                             
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex] = newCurrentRatio
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -104,13 +110,15 @@ struct SplittableRectangleView: View {
                                         case .vertical:
                                             // Vertical split controls height within this horizontal container
                                             let containerHeight = containerSize.height
-                                            let ratioChange = delta / containerHeight
-                                            
                                             let currentRatio = childSplit.splitRatios[childIndex]
                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                             
-                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                delta: delta,
+                                                containerSize: containerHeight,
+                                                currentRatio: currentRatio,
+                                                nextRatio: nextRatio
+                                            )
                                             
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex] = newCurrentRatio
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -125,7 +133,46 @@ struct SplittableRectangleView: View {
                                 },
                                 onUpdateSplit: { updatedChildSplit in
                                     var updatedSplit = split
-                                    updatedSplit.children[subIndex] = updatedChildSplit
+                                    // Check if this is an alignment-only update
+                                    // Criteria: splitCount is 1, all children are nil (leaf node), has alignment, and NO components
+                                    // The temporary split we create has empty childComponents to signal it's alignment-only
+                                    let hasNoRealChildren = updatedChildSplit.children.allSatisfy { $0 == nil }
+                                    let isAlignmentOnly = updatedChildSplit.splitCount == 1 && 
+                                                          hasNoRealChildren && 
+                                                          !updatedChildSplit.childAlignments.isEmpty && 
+                                                          updatedChildSplit.childComponents.isEmpty
+                                    
+                                    if isAlignmentOnly {
+                                        // This is an alignment-only update for the leaf child at subIndex
+                                        // The alignment is stored at index 0 in the temp split, but applies to subIndex in parent
+                                        let alignment = updatedChildSplit.getAlignment(forChild: 0)
+                                        // CRITICAL: Capture components BEFORE any operations
+                                        let existingComponents = updatedSplit.childComponents[subIndex] ?? []
+                                        // Update alignment only - this should not affect childComponents
+                                        updatedSplit.setAlignment(alignment, forChild: subIndex)
+                                        // ALWAYS restore components to ensure they're preserved
+                                        updatedSplit.childComponents[subIndex] = existingComponents
+                                    } else {
+                                        // Normal split update
+                                        // CRITICAL: If this was a leaf node (children[subIndex] == nil) and we're replacing it,
+                                        // we need to preserve the components from childComponents[subIndex] and move them into the new split
+                                        var childSplitToInsert = updatedChildSplit
+                                        if split.children[subIndex] == nil {
+                                            // This was a leaf, preserve its components
+                                            let preservedComponents = split.childComponents[subIndex] ?? []
+                                            if !preservedComponents.isEmpty {
+                                                // Move components to the first child of the new split (index 0)
+                                                if childSplitToInsert.children.count > 0 && childSplitToInsert.children[0] == nil {
+                                                    childSplitToInsert.childComponents[0] = preservedComponents
+                                                }
+                                            }
+                                        }
+                                        updatedSplit.children[subIndex] = childSplitToInsert
+                                        // Clear components from this level since they're now in the child split
+                                        if updatedSplit.children[subIndex] != nil {
+                                            updatedSplit.childComponents.removeValue(forKey: subIndex)
+                                        }
+                                    }
                                     onUpdateSplit(updatedSplit)
                                 },
                                 onAddComponent: { childIdx, component in
@@ -158,6 +205,7 @@ struct SplittableRectangleView: View {
                                 leafComponents: split.childComponents[subIndex] ?? [],
                                 containerSize: geometry.size,
                                 childIndex: subIndex,
+                                parentAlignment: split.getAlignment(forChild: subIndex),
                                 onDrop: onDrop,
                                 onSplitChild: { childIndex, direction, count, rows, columns in
                                     // Handle split locally at this level
@@ -186,13 +234,15 @@ struct SplittableRectangleView: View {
                                         case .horizontal:
                                             // Horizontal split controls width within this vertical container
                                             let containerWidth = containerSize.width
-                                            let ratioChange = delta / containerWidth
-                                            
                                             let currentRatio = childSplit.splitRatios[childIndex]
                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                             
-                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                delta: delta,
+                                                containerSize: containerWidth,
+                                                currentRatio: currentRatio,
+                                                nextRatio: nextRatio
+                                            )
                                             
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex] = newCurrentRatio
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -200,13 +250,15 @@ struct SplittableRectangleView: View {
                                         case .vertical:
                                             // Vertical split controls height within this vertical container
                                             let containerHeight = containerSize.height
-                                            let ratioChange = delta / containerHeight
-                                            
                                             let currentRatio = childSplit.splitRatios[childIndex]
                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                             
-                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                delta: delta,
+                                                containerSize: containerHeight,
+                                                currentRatio: currentRatio,
+                                                nextRatio: nextRatio
+                                            )
                                             
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex] = newCurrentRatio
                                             updatedSplit.children[subIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -221,7 +273,46 @@ struct SplittableRectangleView: View {
                                 },
                                 onUpdateSplit: { updatedChildSplit in
                                     var updatedSplit = split
-                                    updatedSplit.children[subIndex] = updatedChildSplit
+                                    // Check if this is an alignment-only update
+                                    // Criteria: splitCount is 1, all children are nil (leaf node), has alignment, and NO components
+                                    // The temporary split we create has empty childComponents to signal it's alignment-only
+                                    let hasNoRealChildren = updatedChildSplit.children.allSatisfy { $0 == nil }
+                                    let isAlignmentOnly = updatedChildSplit.splitCount == 1 && 
+                                                          hasNoRealChildren && 
+                                                          !updatedChildSplit.childAlignments.isEmpty && 
+                                                          updatedChildSplit.childComponents.isEmpty
+                                    
+                                    if isAlignmentOnly {
+                                        // This is an alignment-only update for the leaf child at subIndex
+                                        // The alignment is stored at index 0 in the temp split, but applies to subIndex in parent
+                                        let alignment = updatedChildSplit.getAlignment(forChild: 0)
+                                        // CRITICAL: Capture components BEFORE any operations
+                                        let existingComponents = updatedSplit.childComponents[subIndex] ?? []
+                                        // Update alignment only - this should not affect childComponents
+                                        updatedSplit.setAlignment(alignment, forChild: subIndex)
+                                        // ALWAYS restore components to ensure they're preserved
+                                        updatedSplit.childComponents[subIndex] = existingComponents
+                                    } else {
+                                        // Normal split update
+                                        // CRITICAL: If this was a leaf node (children[subIndex] == nil) and we're replacing it,
+                                        // we need to preserve the components from childComponents[subIndex] and move them into the new split
+                                        var childSplitToInsert = updatedChildSplit
+                                        if split.children[subIndex] == nil {
+                                            // This was a leaf, preserve its components
+                                            let preservedComponents = split.childComponents[subIndex] ?? []
+                                            if !preservedComponents.isEmpty {
+                                                // Move components to the first child of the new split (index 0)
+                                                if childSplitToInsert.children.count > 0 && childSplitToInsert.children[0] == nil {
+                                                    childSplitToInsert.childComponents[0] = preservedComponents
+                                                }
+                                            }
+                                        }
+                                        updatedSplit.children[subIndex] = childSplitToInsert
+                                        // Clear components from this level since they're now in the child split
+                                        if updatedSplit.children[subIndex] != nil {
+                                            updatedSplit.childComponents.removeValue(forKey: subIndex)
+                                        }
+                                    }
                                     onUpdateSplit(updatedSplit)
                                 },
                                 onAddComponent: { childIdx, component in
@@ -271,6 +362,7 @@ struct SplittableRectangleView: View {
                                                 leafComponents: split.childComponents[cellIndex] ?? [],
                                                 containerSize: geometry.size,
                                                 childIndex: cellIndex,
+                                                parentAlignment: split.getAlignment(forChild: cellIndex),
                                                 onDrop: onDrop,
                                                     onSplitChild: { childIndex, direction, count, rows, columns in
                                                         // Handle split locally at this level
@@ -299,13 +391,15 @@ struct SplittableRectangleView: View {
                                                         case .horizontal:
                                                             // Horizontal split controls width within this cell
                                                             let cellWidth = containerSize.width * split.widthRatios[columnIndex]
-                                                            let ratioChange = delta / cellWidth
-                                                            
                                                             let currentRatio = childSplit.splitRatios[childIndex]
                                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                                             
-                                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                                delta: delta,
+                                                                containerSize: cellWidth,
+                                                                currentRatio: currentRatio,
+                                                                nextRatio: nextRatio
+                                                            )
                                                             
                                                             updatedSplit.children[cellIndex]?.splitRatios[childIndex] = newCurrentRatio
                                                             updatedSplit.children[cellIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -313,13 +407,15 @@ struct SplittableRectangleView: View {
                                                         case .vertical:
                                                             // Vertical split controls height within this cell
                                                             let cellHeight = containerSize.height * split.heightRatios[rowIndex]
-                                                            let ratioChange = delta / cellHeight
-                                                            
                                                             let currentRatio = childSplit.splitRatios[childIndex]
                                                             let nextRatio = childSplit.splitRatios[childIndex + 1]
                                                             
-                                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                                delta: delta,
+                                                                containerSize: cellHeight,
+                                                                currentRatio: currentRatio,
+                                                                nextRatio: nextRatio
+                                                            )
                                                             
                                                             updatedSplit.children[cellIndex]?.splitRatios[childIndex] = newCurrentRatio
                                                             updatedSplit.children[cellIndex]?.splitRatios[childIndex + 1] = newNextRatio
@@ -334,7 +430,21 @@ struct SplittableRectangleView: View {
                                                 },
                                                 onUpdateSplit: { updatedChildSplit in
                                                     var updatedSplit = split
+                                                    // Check if this is an alignment-only update for grid cells
+                                                    let hasNoRealChildren = updatedChildSplit.children.allSatisfy { $0 == nil }
+                                                    if updatedChildSplit.splitCount == 1 && hasNoRealChildren && !updatedChildSplit.childAlignments.isEmpty && updatedChildSplit.childComponents.isEmpty {
+                                                        // Alignment-only update for grid cell
+                                                        let alignment = updatedChildSplit.getAlignment(forChild: 0)
+                                                        // CRITICAL: Capture components BEFORE any operations
+                                                        let existingComponents = updatedSplit.childComponents[cellIndex] ?? []
+                                                        // Update alignment only - this should not affect childComponents
+                                                        updatedSplit.setAlignment(alignment, forChild: cellIndex)
+                                                        // ALWAYS restore components to ensure they're preserved
+                                                        updatedSplit.childComponents[cellIndex] = existingComponents
+                                                    } else {
+                                                        // Normal split update
                                                     updatedSplit.children[cellIndex] = updatedChildSplit
+                                                    }
                                                     onUpdateSplit(updatedSplit)
                                                 },
                                                 onAddComponent: { childIdx, component in
@@ -384,13 +494,15 @@ struct SplittableRectangleView: View {
                                                             print("Grid horizontal resize: delta=\(delta), columnIndex=\(columnIndex)")
                                                             var updatedSplit = split
                                                             let containerWidth = containerSize.width
-                                                            let ratioChange = delta / containerWidth
-
                                                             let currentRatio = updatedSplit.widthRatios[columnIndex]
                                                             let nextRatio = updatedSplit.widthRatios[columnIndex + 1]
 
-                                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                                delta: delta,
+                                                                containerSize: containerWidth,
+                                                                currentRatio: currentRatio,
+                                                                nextRatio: nextRatio
+                                                            )
 
                                                             updatedSplit.widthRatios[columnIndex] = newCurrentRatio
                                                             updatedSplit.widthRatios[columnIndex + 1] = newNextRatio
@@ -410,13 +522,15 @@ struct SplittableRectangleView: View {
                                                             print("Grid vertical resize: delta=\(delta), rowIndex=\(rowIndex)")
                                                             var updatedSplit = split
                                                             let containerHeight = containerSize.height
-                                                            let ratioChange = delta / containerHeight
-
                                                             let currentRatio = updatedSplit.heightRatios[rowIndex]
                                                             let nextRatio = updatedSplit.heightRatios[rowIndex + 1]
 
-                                                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                                                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                                                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                                                delta: delta,
+                                                                containerSize: containerHeight,
+                                                                currentRatio: currentRatio,
+                                                                nextRatio: nextRatio
+                                                            )
 
                                                             updatedSplit.heightRatios[rowIndex] = newCurrentRatio
                                                             updatedSplit.heightRatios[rowIndex + 1] = newNextRatio
@@ -453,10 +567,14 @@ struct SplittableRectangleView: View {
                 let _ = print("      leafComponents.count: \(leafComponents.count)")
                 
                 // Leaf node - content area
+                // Use alignment from parent split
                 ContentRectangleView(
                     components: leafComponents,
                     containerSize: containerSize,
                     sectionLabel: nil, // TODO: Get label from parent split
+                    contentAlignment: parentAlignment,
+                    sectionIndex: nil, // TODO: Pass section index through recursion
+                    childIndex: childIndex,
                     onAddComponent: { component in
                         // Leaf node - pass childIndex with component
                         onAddComponent(childIndex, component)
@@ -471,6 +589,22 @@ struct SplittableRectangleView: View {
                     },
                     onSetLabel: { label in
                         onSetLabel?(childIndex, label)
+                    },
+                    onSetAlignment: { alignment in
+                        // When this is a leaf node (split == nil), we need to update the parent split's alignment
+                        // Create a temporary split with only alignment set to signal this is an alignment-only update
+                        // Key: Create a split that can be distinguished from a real split - it should have:
+                        // - splitCount = 1
+                        // - children = [nil] (one nil child, so it's technically a leaf structure)
+                        // - childAlignments with the alignment we want
+                        // - childComponents = empty (to distinguish from a real split with components)
+                        var alignmentOnlySplit = SectionSplit(direction: .horizontal, splitCount: 1)
+                        alignmentOnlySplit.setAlignment(alignment, forChild: 0)
+                        // Ensure childComponents is empty to signal this is alignment-only
+                        alignmentOnlySplit.childComponents = [:]
+                        // Store the actual childIndex in a way the parent can access it
+                        // The parent will check childAlignments to get the alignment
+                        onUpdateSplit(alignmentOnlySplit)
                     },
                     onComponentSelect: { component in
                         onComponentSelect(component)

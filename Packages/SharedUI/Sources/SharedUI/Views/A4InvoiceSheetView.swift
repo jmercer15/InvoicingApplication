@@ -5,17 +5,69 @@
 //  Created by AI Assistant for Refactoring Initiative
 //
 import SwiftUI
-import Data
 import Core
+
+/// Simple business information for invoice rendering
+public struct BusinessInfo {
+    public let name: String?
+    public let abn: String?
+    public let email: String?
+    public let phone: String?
+    public let address: String?
+    public let bankName: String?
+    public let bankAccountName: String?
+    public let bankBSB: String?
+    public let bankAccountNumber: String?
+    
+    public init(
+        name: String? = nil,
+        abn: String? = nil,
+        email: String? = nil,
+        phone: String? = nil,
+        address: String? = nil,
+        bankName: String? = nil,
+        bankAccountName: String? = nil,
+        bankBSB: String? = nil,
+        bankAccountNumber: String? = nil
+    ) {
+        self.name = name
+        self.abn = abn
+        self.email = email
+        self.phone = phone
+        self.address = address
+        self.bankName = bankName
+        self.bankAccountName = bankAccountName
+        self.bankBSB = bankBSB
+        self.bankAccountNumber = bankAccountNumber
+    }
+    
+    /// Create BusinessInfo from Invoice snapshot data
+    public static func from(invoice: Invoice) -> BusinessInfo {
+        BusinessInfo(
+            name: invoice.businessName,
+            abn: invoice.businessABN,
+            email: invoice.businessEmail,
+            phone: invoice.businessPhone,
+            address: invoice.businessAddress,
+            bankName: invoice.bankName,
+            bankAccountName: invoice.bankAccountName,
+            bankBSB: invoice.bankBSB,
+            bankAccountNumber: invoice.bankAccountNumber
+        )
+    }
+}
 
 /// A simplified A4 invoice sheet view for PDF rendering
 public struct A4InvoiceSheetView: View {
-    let invoice: InvoiceEntity
-    let business: BusinessEntity?
+    let invoice: Invoice
+    let invoiceItems: [InvoiceItem]
+    let business: BusinessInfo?
     
-    public init(invoice: InvoiceEntity, business: BusinessEntity?) {
+    public init(invoice: Invoice, invoiceItems: [InvoiceItem] = [], business: BusinessInfo? = nil) {
         self.invoice = invoice
-        self.business = business
+        self.invoiceItems = invoiceItems
+        // Use business parameter if provided, otherwise extract from invoice snapshot
+        self.business = business ?? BusinessInfo.from(invoice: invoice)
     }
     
     public var body: some View {
@@ -47,7 +99,7 @@ public struct A4InvoiceSheetView: View {
                 VStack(alignment: .trailing) {
                     Text("Bill To:")
                         .font(.system(size: 12, weight: .semibold))
-                    Text(invoice.client?.fullName ?? "Unknown Client")
+                    Text(invoice.clientName ?? invoice.billToName ?? "Unknown Client")
                         .font(.system(size: 12))
                 }
             }
@@ -75,7 +127,7 @@ public struct A4InvoiceSheetView: View {
                 .background(Color.gray.opacity(0.1))
                 
                 // Items
-                ForEach(Array(invoice.items.enumerated()), id: \.offset) { index, item in
+                ForEach(Array(invoiceItems.enumerated()), id: \.element.id) { index, item in
                     HStack {
                         Text(item.itemDescription)
                             .font(.system(size: 11))
@@ -86,7 +138,7 @@ public struct A4InvoiceSheetView: View {
                         Text("$\(item.rate, specifier: "%.2f")")
                             .font(.system(size: 11))
                             .frame(width: 80)
-                        Text("$\(item.amount, specifier: "%.2f")")
+                        Text("$\(item.lineTotal, specifier: "%.2f")")
                             .font(.system(size: 11))
                             .frame(width: 80)
                     }

@@ -120,7 +120,7 @@ struct ModernCanvasView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 // Background
-                Color("Background", bundle: .sharedUI)
+                Color(NSColor.windowBackgroundColor)
                 
                 // Canvas with drop zone and zoom
                 ScrollView([.horizontal, .vertical]) {
@@ -146,14 +146,17 @@ struct ModernCanvasView: View {
                             // Handle main section height resize logic
                             var newRatios = sectionHeightRatios
                             let containerHeight = A4.height
-                            let ratioChange = delta / containerHeight
-
-                            // Adjust the ratios of adjacent sections
+                            
+                            // Adjust the ratios of adjacent sections using safe resize logic
                             let currentRatio = newRatios[sectionIndex]
                             let nextRatio = newRatios[sectionIndex + 1]
-
-                            let newCurrentRatio = max(0.05, min(0.95, currentRatio + ratioChange))
-                            let newNextRatio = max(0.05, min(0.95, nextRatio - ratioChange))
+                            
+                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                delta: delta,
+                                containerSize: containerHeight,
+                                currentRatio: currentRatio,
+                                nextRatio: nextRatio
+                            )
 
                             newRatios[sectionIndex] = newCurrentRatio
                             newRatios[sectionIndex + 1] = newNextRatio
@@ -166,6 +169,7 @@ struct ModernCanvasView: View {
                                     leafComponents: [],
                                     containerSize: geometry.size,
                                     childIndex: index,
+                                    parentAlignment: document.sectionSplits[index]?.getAlignment(forChild: 0) ?? .default,
                                     onDrop: { _, _ in
                                         // Drops are now handled by individual ContentRectangleViews
                                         return false

@@ -18,75 +18,134 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
             predicate: predicate,
             sortBy: [SortDescriptor(\.serviceName, order: .forward)]
         )
-        let entities = try modelContext.fetch(descriptor)
+        let entities = try await MainActor.run {
+            try modelContext.fetch(descriptor)
+        }
         return entities.map { ClientService(from: $0) }
     }
     
-    public func create(_ clientService: ClientService) async throws -> ClientService {
-        guard let clientEntity = try await fetchClientEntity(by: clientService.clientId) else {
-            throw RepositoryError.entityNotFound
+    public func fetch(by id: UUID) async throws -> ClientService? {
+        let entity = try await MainActor.run {
+            let predicate = #Predicate<ClientServiceEntity> { clientService in
+                clientService.id == id
+            }
+            let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
+            return try modelContext.fetch(descriptor).first
         }
+        return entity.map { ClientService(from: $0) }
+    }
+    
+    public func create(_ clientService: ClientService) async throws -> ClientService {
+        // Fetch NDIS item outside MainActor.run since it's async
+        let ndisItem = try? await resolveNDISItem(for: clientService)
         
-        let entity = ClientServiceEntity(
-            id: clientService.id,
-            serviceName: clientService.serviceName,
-            unit: clientService.unit,
-            rate: clientService.rate
-        )
-        entity.client = clientEntity
-        entity.status = clientService.status
-        entity.isActive = clientService.isActive
-        entity.startDate = clientService.startDate
-        entity.endDate = clientService.endDate
-        entity.ndisCode = clientService.ndisCode
-        entity.ndisItem = try await resolveNDISItem(for: clientService)
-        
-        modelContext.insert(entity)
-        try modelContext.save()
-        return ClientService(from: entity)
+        return try await MainActor.run {
+            // Fetch client entity within MainActor context to avoid Sendable issues
+            let clientPredicate = #Predicate<ClientEntity> { client in
+                client.id == clientService.clientId
+            }
+            let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: clientPredicate)
+            guard let clientEntity = try modelContext.fetch(clientDescriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            
+            let entity = ClientServiceEntity(
+                id: clientService.id,
+                serviceName: clientService.serviceName,
+                unit: clientService.unit,
+                rate: clientService.rate
+            )
+            entity.client = clientEntity
+            entity.status = clientService.status
+            entity.isActive = clientService.isActive
+            entity.startDate = clientService.startDate
+            entity.endDate = clientService.endDate
+            entity.ndisCode = clientService.ndisCode
+            entity.ndisItem = ndisItem
+            
+            if entity.modelContext == nil {
+            modelContext.insert(entity)
+            }
+            
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return ClientService(from: entity)
+        }
     }
     
     public func update(_ clientService: ClientService) async throws -> ClientService {
-        guard let entity = try await fetchClientServiceEntity(by: clientService.id) else {
-            throw RepositoryError.entityNotFound
+        // Fetch NDIS item outside MainActor.run since it's async
+        let ndisItem = try? await resolveNDISItem(for: clientService)
+        
+        return try await MainActor.run {
+            // Fetch service entity within MainActor context
+            let servicePredicate = #Predicate<ClientServiceEntity> { service in
+                service.id == clientService.id
+            }
+            let serviceDescriptor = FetchDescriptor<ClientServiceEntity>(predicate: servicePredicate)
+            guard let entity = try modelContext.fetch(serviceDescriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            
+            entity.update(from: clientService)
+            
+            // Fetch client entity if needed, all within MainActor context
+            if entity.client?.id != clientService.clientId {
+                let clientPredicate = #Predicate<ClientEntity> { client in
+                    client.id == clientService.clientId
+                }
+                let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: clientPredicate)
+                if let newClient = try modelContext.fetch(clientDescriptor).first {
+                    entity.client = newClient
+                } else {
+                    // Client not found, clear relationship
+                    entity.client = nil
+                }
+            }
+            
+            entity.ndisItem = ndisItem
+            
+            do {
+            try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
+            return ClientService(from: entity)
         }
-        
-        entity.update(from: clientService)
-        
-        if entity.client?.id != clientService.clientId {
-            entity.client = try await fetchClientEntity(by: clientService.clientId)
-        }
-        
-        entity.ndisItem = try await resolveNDISItem(for: clientService)
-        
-        try modelContext.save()
-        return ClientService(from: entity)
     }
     
     public func delete(id: UUID) async throws {
-        guard let entity = try await fetchClientServiceEntity(by: id) else {
-            throw RepositoryError.entityNotFound
+        try await MainActor.run {
+            let predicate = #Predicate<ClientServiceEntity> { $0.id == id }
+            let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
+            guard let entity = try modelContext.fetch(descriptor).first else {
+                throw RepositoryError.entityNotFound
+            }
+            modelContext.delete(entity)
+            do {
+                try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw RepositoryError.saveFailed
+            }
         }
-        modelContext.delete(entity)
-        try modelContext.save()
     }
     
     // MARK: - Helpers
     
-    private func fetchClientEntity(by id: UUID) async throws -> ClientEntity? {
-        let predicate = #Predicate<ClientEntity> { client in
-            client.id == id
+    func fetchClientServiceEntity(by id: UUID) async throws -> ClientServiceEntity? {
+        return try await MainActor.run {
+            let predicate = #Predicate<ClientServiceEntity> { clientService in
+                clientService.id == id
+            }
+            let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
+            return try modelContext.fetch(descriptor).first
         }
-        let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-        return try modelContext.fetch(descriptor).first
-    }
-    
-    private func fetchClientServiceEntity(by id: UUID) async throws -> ClientServiceEntity? {
-        let predicate = #Predicate<ClientServiceEntity> { clientService in
-            clientService.id == id
-        }
-        let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
-        return try modelContext.fetch(descriptor).first
     }
     
     private func fetchNDISItemEntity(by id: UUID) async throws -> NDISItemEntity? {

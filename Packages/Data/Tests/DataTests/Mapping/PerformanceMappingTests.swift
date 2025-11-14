@@ -251,7 +251,7 @@ final class PerformanceMappingTests: XCTestCase {
         
         // Measure mapping performance
         measure {
-            let sessions = entities.map { Session(from: $0) }
+            let sessions = entities.map { Session.from(entity: $0) }
             XCTAssertEqual(sessions.count, 10000)
             
             // Verify some mappings are correct
@@ -402,7 +402,7 @@ final class PerformanceMappingTests: XCTestCase {
         measure {
             let clients = clientEntities.map { Client(from: $0) }
             let payees = payeeEntities.map { Payee(from: $0) }
-            let sessions = sessionEntities.map { Session(from: $0) }
+            let sessions = sessionEntities.map { Session.from(entity: $0) }
             
             XCTAssertEqual(clients.count, 1000)
             XCTAssertEqual(payees.count, 1000)

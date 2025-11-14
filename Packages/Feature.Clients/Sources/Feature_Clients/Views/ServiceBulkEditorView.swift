@@ -1,5 +1,5 @@
 import SwiftUI
-import Data
+import Core
 import SharedUI
 
 
@@ -18,7 +18,7 @@ enum BulkPriceMode: String, CaseIterable, Identifiable {
 // A temporary model to hold data for services being created in bulk.
 struct ClientServiceTemplate: Identifiable {
     let id = UUID()
-    let sourceNdisItem: NDISItemEntity
+    let sourceNdisItem: NDISItem
     
     // Editable properties
     var serviceName: String
@@ -32,7 +32,7 @@ struct ClientServiceTemplate: Identifiable {
     var selectedNdisPriceKey: String? // e.g., "Remote"
 
     // Initializer to create a template from an NDIS item
-    init(from ndisItem: NDISItemEntity) {
+    init(from ndisItem: NDISItem) {
         self.sourceNdisItem = ndisItem
         self.serviceName = ndisItem.name
         self.ndisCode = ndisItem.itemNumber
@@ -43,9 +43,7 @@ struct ClientServiceTemplate: Identifiable {
             self.priceMode = .ndis
             var priceDict: [String: Double] = [:]
             for price in ndisItem.regionalPrices {
-                if let key = price.regionIdentifier {
-                    priceDict[key] = price.amount
-                }
+                priceDict[price.regionIdentifier] = price.amount
             }
             self.availableNdisPrices = priceDict
             self.selectedNdisPriceKey = priceDict.keys.sorted().first
@@ -53,8 +51,8 @@ struct ClientServiceTemplate: Identifiable {
         } else {
             // No regional prices available - use custom mode with fallback
             self.priceMode = .custom
-            // Use the extracted price from the domain model if available, otherwise 0.0
-            self.rate = 0.0 // NDISItemEntity doesn't have rate property
+            // Use the price from the domain model if available, otherwise 0.0
+            self.rate = ndisItem.price ?? 0.0
         }
         
         // Ensure ndisCode is properly set from itemNumber

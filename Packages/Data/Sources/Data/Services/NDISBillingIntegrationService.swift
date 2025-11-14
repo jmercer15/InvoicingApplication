@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import Core
 
 /// Service that integrates existing application data with the NDIS billing algorithm
 public class NDISBillingIntegrationService {
@@ -18,6 +19,63 @@ public class NDISBillingIntegrationService {
         self.modelContext = modelContext
         self.billingService = NDISBillingService(modelContext: modelContext)
         self.configService = NDISBillingConfigService()
+    }
+    
+    // MARK: - Domain Model Methods (Preferred)
+    
+    /// Generate NDIS invoice using domain models (preferred over entity-based methods)
+    /// This method accepts domain models and handles entity fetching internally
+    public func generateNDISInvoice(for sessions: [Session], client: Client) throws -> Invoice {
+        // Fetch entities internally for billing service compatibility
+        let sessionEntities = try fetchSessionEntities(for: sessions.map { $0.id })
+        guard let clientEntity = fetchClientEntity(by: client.id) else {
+            throw NDISBillingIntegrationError.missingClient
+        }
+        
+        let invoiceEntity = try generateNDISInvoice(for: sessionEntities, client: clientEntity)
+        return invoiceFromEntity(invoiceEntity)
+    }
+    
+    /// Calculate billable amounts using domain models (preferred over entity-based methods)
+    public func calculateBillableAmounts(for session: Session) throws -> [NDISClaimableLineItem] {
+        guard let sessionEntity = fetchSessionEntity(by: session.id) else {
+            throw NDISBillingIntegrationError.invalidSessionData
+        }
+        return try calculateBillableAmounts(for: sessionEntity)
+    }
+    
+    /// Calculate billable amounts with billing context using domain models
+    public func calculateBillableAmounts(for session: Session, billingContext: NDISBillingContext) throws -> [NDISClaimableLineItem] {
+        guard let sessionEntity = fetchSessionEntity(by: session.id) else {
+            throw NDISBillingIntegrationError.invalidSessionData
+        }
+        return try calculateBillableAmounts(for: sessionEntity, billingContext: billingContext)
+    }
+    
+    // MARK: - Entity Fetching Helpers
+    
+    /// Fetch SessionEntity by ID (internal helper)
+    private func fetchSessionEntity(by id: UUID) -> SessionEntity? {
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == id })
+        return try? modelContext.fetch(descriptor).first
+    }
+    
+    /// Fetch SessionEntity instances by IDs (internal helper)
+    private func fetchSessionEntities(for sessionIds: [UUID]) throws -> [SessionEntity] {
+        var entities: [SessionEntity] = []
+        for sessionId in sessionIds {
+            let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == sessionId })
+            if let entity = try? modelContext.fetch(descriptor).first {
+                entities.append(entity)
+            }
+        }
+        return entities
+    }
+    
+    /// Fetch ClientEntity by ID (internal helper)
+    private func fetchClientEntity(by id: UUID) -> ClientEntity? {
+        let descriptor = FetchDescriptor<ClientEntity>(predicate: #Predicate { $0.id == id })
+        return try? modelContext.fetch(descriptor).first
     }
     
     /// Converts a session to NDIS billing input vector (legacy, without billingContext)
@@ -212,7 +270,10 @@ public class NDISBillingIntegrationService {
         }
     }
     
-    /// Enhanced invoice generation using NDIS billing algorithm
+    // MARK: - Entity-Based Methods (Legacy - Use Domain Model Methods Instead)
+    
+    /// Enhanced invoice generation using NDIS billing algorithm (legacy - use domain model version)
+    /// This method is kept for backward compatibility but prefer `generateNDISInvoice(for:client:)` with domain models
     public func generateNDISInvoice(for sessions: [SessionEntity], client: ClientEntity) throws -> InvoiceEntity {
         let invoice = InvoiceEntity(id: UUID(), invoiceNumber: generateInvoiceNumber())
         invoice.client = client

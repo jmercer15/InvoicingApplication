@@ -6,20 +6,18 @@
 //
 import Foundation
 import SwiftUI
-import SwiftData
 import PDFKit
 import UniformTypeIdentifiers
-import Data
+import Core
 import SharedUI
 
 // MARK: - Invoice PDF and Sharing Service
 public struct InvoiceSharingService {
     @MainActor
-    public static func renderPDFData(invoice: InvoiceEntity, business: BusinessEntity, context: ModelContext) -> Data? {
-        let sheet = A4InvoiceSheetView(invoice: invoice, business: business)
-            .environment(\.modelContext, context)
+    public static func renderPDFData(invoice: Invoice, invoiceItems: [InvoiceItem]) -> Data? {
+        let sheet = SharedUI.A4InvoiceSheetView(invoice: invoice, invoiceItems: invoiceItems)
             .environment(\.colorScheme, .light)
-            .background(Color("White", bundle: .sharedUI))
+            .background(Color(NSColor.windowBackgroundColor))
             .frame(width: 595, height: 842)
 
         let renderer = ImageRenderer(content: sheet)
@@ -42,16 +40,16 @@ public struct InvoiceSharingService {
     }
 
     @MainActor
-    public static func temporaryPDFURL(invoice: InvoiceEntity, business: BusinessEntity, context: ModelContext) -> URL? {
-        guard let data = renderPDFData(invoice: invoice, business: business, context: context) else { return nil }
+    public static func temporaryPDFURL(invoice: Invoice, invoiceItems: [InvoiceItem]) -> URL? {
+        guard let data = renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
         do { try data.write(to: url) } catch { return nil }
         return url
     }
 
     @MainActor
-    public static func pdfItemProvider(invoice: InvoiceEntity, business: BusinessEntity, context: ModelContext) -> NSItemProvider? {
-        guard let data = renderPDFData(invoice: invoice, business: business, context: context) else { return nil }
+    public static func pdfItemProvider(invoice: Invoice, invoiceItems: [InvoiceItem]) -> NSItemProvider? {
+        guard let data = renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else { return nil }
         let provider = NSItemProvider()
         provider.suggestedName = "Invoice-\(invoice.invoiceNumber).pdf"
         provider.registerDataRepresentation(forTypeIdentifier: UTType.pdf.identifier, visibility: .all) { completion in

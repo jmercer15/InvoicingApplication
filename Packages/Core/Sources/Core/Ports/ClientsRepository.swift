@@ -43,4 +43,10 @@ public protocol ClientsRepository: Sendable {
     
     /// Count active clients
     func countActive() async throws -> Int
+    
+    /// Fetch clients by payee ID
+    func fetch(byPayeeId payeeId: UUID) async throws -> [Client]
+    
+    /// Fetch clients by plan manager ID
+    func fetch(byPlanManagerId planManagerId: UUID) async throws -> [Client]
 }

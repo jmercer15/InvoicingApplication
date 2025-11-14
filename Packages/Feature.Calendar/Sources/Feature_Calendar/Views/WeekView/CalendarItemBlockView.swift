@@ -43,8 +43,8 @@ struct CalendarItemBlockView: View {
         switch item {
         case .session(let session):
             // For sessions, use client color if available
-            if let client = session.client {
-                return ColorSystem.Client.color(for: client.id)
+            if let clientId = session.clientId {
+                return ColorSystem.Client.color(for: clientId)
             }
             return item.displayColor
         case .event(let event):
@@ -56,8 +56,8 @@ struct CalendarItemBlockView: View {
             return Color(event.calendar.cgColor)
         case .recurringSessionInstance(let session, _, _, _):
             // For recurring sessions, use client color if available
-            if let client = session.client {
-                return ColorSystem.Client.color(for: client.id)
+            if let clientId = session.clientId {
+                return ColorSystem.Client.color(for: clientId)
             }
             return item.displayColor
         case .eventSegment(let originalEvent, _, _, _):
@@ -77,8 +77,8 @@ struct CalendarItemBlockView: View {
         switch item {
         case .session, .recurringSessionInstance:
             // For sessions, use client color if available, otherwise use status color
-            if let session = item.underlyingSession, let client = session.client {
-                return ColorSystem.Client.color(for: client.id)
+            if let session = item.underlyingSession, let clientId = session.clientId {
+                return ColorSystem.Client.color(for: clientId)
             }
             return statusColor
         case .event, .eventSegment:
@@ -100,11 +100,19 @@ struct CalendarItemBlockView: View {
     private var isEvent: Bool { item.isEvent }
 
     // Adapt status/state properties based on item type
-    private var isCompleted: Bool { item.isSession && item.underlyingSession?.status == .completed }
-    private var isCancelled: Bool { item.isSession && item.underlyingSession?.status == .cancelled }
+    private var isCompleted: Bool { 
+        item.isSession && item.underlyingSession?.status == SessionStatus.completed.rawValue 
+    }
+    private var isCancelled: Bool { 
+        item.isSession && item.underlyingSession?.status == SessionStatus.cancelled.rawValue 
+    }
     private var isPast: Bool { (item.endDate ?? .distantFuture) < Date() } // Common check
-    private var isConfirmed: Bool { item.isSession && item.underlyingSession?.status == .scheduled }
-    private var isPending: Bool { item.isSession && item.underlyingSession?.status == .scheduled }
+    private var isConfirmed: Bool { 
+        item.isSession && item.underlyingSession?.status == SessionStatus.scheduled.rawValue 
+    }
+    private var isPending: Bool { 
+        item.isSession && item.underlyingSession?.status == SessionStatus.scheduled.rawValue 
+    }
 
     // Adapt background opacity based on type and state
     private var backgroundOpacity: Double {
@@ -324,11 +332,13 @@ struct CalendarItemBlockView: View {
                 }
             }
             
-            if let client = item.underlyingSession?.client {
-                Text(client.fullName)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                    .lineLimit(1)
+            if let session = item.underlyingSession, let clientId = session.clientId {
+                ClientNameView(
+                    clientId: clientId,
+                    viewModel: viewModel
+                )
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
@@ -388,15 +398,18 @@ struct CalendarItemBlockView: View {
                 }
             }
              // --- Delete ---
+            // Delete via repository (TravelChargeView now accepts Session domain models)
             Button(role: .destructive, action: {
-                viewModel.handleDeleteFromEditor(
-                    with: .thisOnly,
-                    viewModel: NewSessionViewModel(
-                        context: modelContext,
-                        session: session,
-                        instanceDate: nil
-                    )
-                )
+                Task {
+                    do {
+                        try await viewModel.sessionsRepository.delete(id: session.id)
+                        await MainActor.run {
+                            viewModel.updateDisplayableItems()
+                        }
+                    } catch {
+                        print("[CalendarItemBlockView] Failed to delete session: \(error.localizedDescription)")
+                    }
+                }
             }) {
                 Label("Delete Session...", systemImage: "trash.fill")
             }
@@ -419,7 +432,7 @@ struct CalendarItemBlockView: View {
 
     // MARK: - Action Handlers
 
-    private func markSessionAs(_ status: SessionStatus, session: SessionEntity) {
+    private func markSessionAs(_ status: SessionStatus, session: Session) {
         let newStatus: String
         switch status {
         case .scheduled: newStatus = String.sessionStatusPlanned
@@ -436,11 +449,17 @@ struct CalendarItemBlockView: View {
         case .received: newStatus = "Received"
         }
         
-        session.status = SessionStatus(rawValue: newStatus) ?? .scheduled
-        
-        // No need for try-catch as saveContext() doesn't throw
-        viewModel.saveContext()
-        // The view will update via Combine publishers
+        // Update session status via repository
+        Task {
+            do {
+                try await viewModel.sessionsRepository.updateStatus(id: session.id, status: newStatus)
+                await MainActor.run {
+                    viewModel.updateDisplayableItems()
+                }
+            } catch {
+                print("[CalendarItemBlockView] Failed to update session status: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Content Detail Builders
@@ -474,31 +493,21 @@ struct CalendarItemBlockView: View {
 
     @ViewBuilder
     private func makeClientInfo() -> some View {
-        if let session = item.underlyingSession, let client = session.client {
-            HStack(spacing: 4) {
-                Image(systemName: "person.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                Text(client.fullName)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .lineLimit(1)
-            }
+        if let session = item.underlyingSession, let clientId = session.clientId {
+            ClientNameView(
+                clientId: clientId,
+                viewModel: viewModel
+            )
         }
     }
 
     @ViewBuilder
     private func makeServiceInfo() -> some View {
-        if let session = item.underlyingSession, let clientService = session.clientService {
-            HStack(spacing: 4) {
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                Text(clientService.serviceName)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .lineLimit(1)
-            }
+        if let session = item.underlyingSession, let serviceId = session.clientServiceId {
+            ServiceNameView(
+                serviceId: serviceId,
+                viewModel: viewModel
+            )
         }
     }
 

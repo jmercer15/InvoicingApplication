@@ -208,11 +208,19 @@ struct ComponentStyle: Codable, Hashable {
     mutating func updateColumnIsFlexible(for index: Int, isFlexible: Bool) {
         var config = columnConfiguration(for: index)
         config.isFlexible = isFlexible
+        // Enforce mutual exclusivity: if flexible, disable auto-sizing
+        if isFlexible {
+            config.isAutoSized = false
+        }
         setColumnConfiguration(for: index, configuration: config)
     }
     mutating func updateColumnAutoSizing(for index: Int, isAutoSized: Bool) {
         var config = columnConfiguration(for: index)
         config.isAutoSized = isAutoSized
+        // Enforce mutual exclusivity: if auto-sized, disable flexible
+        if isAutoSized {
+            config.isFlexible = false
+        }
         setColumnConfiguration(for: index, configuration: config)
     }
     mutating func updateColumnAlignment(for index: Int, alignment: TextAlignment) {

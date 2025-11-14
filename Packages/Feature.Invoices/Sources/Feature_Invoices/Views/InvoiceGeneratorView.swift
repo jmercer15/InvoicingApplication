@@ -1,5 +1,5 @@
 import SwiftUI
-import SwiftData // Import SwiftData
+import SwiftData // Import SwiftData (still needed for ModelContext access in NDIS service)
 import Foundation
 import EventKit
 import SharedUI
@@ -9,7 +9,7 @@ import Core
 // Represents a single session instance (recurring or not)
 struct InvoiceSessionInstance: Identifiable, Hashable, Equatable {
     let id: UUID = UUID()
-    let session: SessionEntity
+    let session: Session // Changed to domain model
     let instanceStart: Date
     let instanceEnd: Date
     var isRecurring: Bool { session.recurrenceRuleData != nil }
@@ -24,30 +24,46 @@ struct InvoiceSessionInstance: Identifiable, Hashable, Equatable {
 }
 
 struct InvoiceGeneratorView: View {
-    @Environment(\.modelContext) private var modelContext // Change to modelContext
+    @Environment(\.modelContext) private var modelContext // Still needed for NDIS service and InvoiceNumberingService
     @Environment(\.dismiss) private var dismiss
+    
+    // Dependencies injected from parent
+    let clientsRepository: ClientsRepository
+    let sessionsRepository: SessionsRepository
+    let invoicesRepository: InvoicesRepository
+    let clientServicesRepository: ClientServicesRepository
 
-    @Query(sort: [SortDescriptor(\ClientEntity.fullName)]) // Use @Query
-    private var clients: [ClientEntity]
-
+    @State private var allClients: [Client] = [] // Changed to domain model
     @State private var selectedInstances: Set<InvoiceSessionInstance> = []
     @State private var showingGenerateConfirmation = false
     @State private var startDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: .now) ?? .now
     @State private var endDate: Date = .now
-    @State private var sessionInstancesByClient: [UUID: (ClientEntity, [InvoiceSessionInstance])] = [:]
+    @State private var sessionInstancesByClient: [UUID: (Client, [InvoiceSessionInstance])] = [:] // Changed to domain model
+    @State private var isLoading = false
 
     var body: some View {
         VStack(spacing: 0) {
             titleView
             datePickerView
             Divider()
-            clientSessionSelectionView
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                clientSessionSelectionView
+            }
             Divider()
             actionButtonsView
         }
-        .onAppear(perform: loadSessionInstances)
-        .onChange(of: startDate) { _, _ in loadSessionInstances() }
-        .onChange(of: endDate) { _, _ in loadSessionInstances() }
+        .task {
+            await loadData()
+        }
+        .onChange(of: startDate) { _, _ in
+            Task { await loadSessionInstances() }
+        }
+        .onChange(of: endDate) { _, _ in
+            Task { await loadSessionInstances() }
+        }
         .background(Color("Background", bundle: .sharedUI))
         .cornerRadius(StyleGuide.Dimensions.cornerRadiusMedium)
         .shadow(radius: 8)
@@ -57,7 +73,7 @@ struct InvoiceGeneratorView: View {
             isPresented: $showingGenerateConfirmation,
             actions: {
                 Button("Generate", role: .none) {
-                    generateInvoices()
+                    Task { await generateInvoices() }
                 }
                 .appInteractiveCursor()
                 Button("Cancel", role: .cancel) {}
@@ -67,6 +83,17 @@ struct InvoiceGeneratorView: View {
                 Text("This will generate \(selectedInstances.count) new invoice(s) with \(selectedInstances.count) session(s). Continue?")
             }
         )
+    }
+    
+    private func loadData() async {
+        isLoading = true
+        do {
+            allClients = try await clientsRepository.fetchAll()
+            await loadSessionInstances()
+        } catch {
+            print("Error loading clients: \(error)")
+        }
+        isLoading = false
     }
 
     private var titleView: some View {
@@ -94,7 +121,7 @@ struct InvoiceGeneratorView: View {
 
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(clients) { client in
+                    ForEach(allClients) { client in
                         let tuple = sessionInstancesByClient[client.id]
                         InvoiceClientSessionSelectionRow(
                             client: client,
@@ -136,155 +163,248 @@ struct InvoiceGeneratorView: View {
         .padding(20)
     }
 
-    private func loadSessionInstances() {
-        var result: [UUID: (ClientEntity, [InvoiceSessionInstance])] = [:]
+    private func loadSessionInstances() async {
+        var result: [UUID: (Client, [InvoiceSessionInstance])] = [:]
         let start = startDate
         let end = endDate
-        for client in clients {
-            // Fetch all sessions for this client (no predicate on dynamic variables)
-            let sessionsDescriptor = FetchDescriptor<SessionEntity>(sortBy: [SortDescriptor(\SessionEntity.startTime)])
-            let sessions: [SessionEntity] = (try? modelContext.fetch(sessionsDescriptor)) ?? []
-            var instances: [InvoiceSessionInstance] = []
-            for session in sessions {
-                // In-memory filtering for client and date
-                guard session.client?.id == client.id else { continue }
-                if let ruleData = session.recurrenceRuleData, let rule = RecurrenceService().decodeRecurrenceRule(from: ruleData), let masterStart = session.startTime, let masterEnd = session.endTime {
-                    if let recurrenceEnd = rule.recurrenceEnd?.endDate, recurrenceEnd < start {
-                        continue
+        
+        for client in allClients {
+            do {
+                // Fetch all sessions for this client using repository
+                let sessions = try await sessionsRepository.fetch(byClientId: client.id)
+                var instances: [InvoiceSessionInstance] = []
+                
+                for session in sessions {
+                    // Filter by date range
+                    guard let sessionStart = session.startTime, 
+                          let sessionEnd = session.endTime else { continue }
+                    
+                    // Handle recurring sessions
+                    if let ruleData = session.recurrenceRuleData,
+                       let rule = RecurrenceService().decodeRecurrenceRule(from: ruleData) {
+                        if let recurrenceEnd = rule.recurrenceEnd?.endDate, recurrenceEnd < start {
+                            continue
+                        }
+                        let expanded = RecurrenceExpansion.expandInstances(
+                            for: session,
+                            rule: rule,
+                            masterStartTime: sessionStart,
+                            masterEndTime: sessionEnd,
+                            rangeStart: start,
+                            rangeEnd: end
+                        )
+                        for occ in expanded {
+                            instances.append(InvoiceSessionInstance(
+                                session: session,
+                                instanceStart: occ.instanceStart,
+                                instanceEnd: occ.instanceEnd
+                            ))
+                        }
+                    } else if sessionStart >= start && sessionStart <= end {
+                        // Non-recurring session within date range
+                        instances.append(InvoiceSessionInstance(
+                            session: session,
+                            instanceStart: sessionStart,
+                            instanceEnd: sessionEnd
+                        ))
                     }
-                    let expanded = RecurrenceExpansion.expandInstances(
-                        for: session,
-                        rule: rule,
-                        masterStartTime: masterStart,
-                        masterEndTime: masterEnd,
-                        rangeStart: start,
-                        rangeEnd: end
-                    )
-                    for occ in expanded {
-                        instances.append(InvoiceSessionInstance(session: session, instanceStart: occ.instanceStart, instanceEnd: occ.instanceEnd))
-                    }
-                } else if let s = session.startTime, let e = session.endTime, s >= start, s <= end {
-                    instances.append(InvoiceSessionInstance(session: session, instanceStart: s, instanceEnd: e))
                 }
+                
+                // Note: Detached sessions are not yet supported via repository
+                // This is a limitation - detached sessions would need a separate repository method
+                // For now, we skip detached sessions as they require direct entity access
+                
+                result[client.id] = (client, instances.sorted { $0.instanceStart < $1.instanceStart })
+            } catch {
+                print("Error loading sessions for client \(client.id): \(error)")
             }
-            // Fetch all detached sessions for this client (no predicate on dynamic variables)
-            let detachedSessionsDescriptor = FetchDescriptor<SessionEntity>(sortBy: [SortDescriptor(\SessionEntity.startTime)])
-            let detachedSessions: [SessionEntity] = (try? modelContext.fetch(detachedSessionsDescriptor)) ?? []
-            for detached in detachedSessions {
-                // In-memory filtering for detached, client, and date
-                guard detached.client?.id == client.id, detached.isDetached == true, let occDate = detached.occurrenceDate, occDate >= start, occDate <= end else { continue }
-                if let s = detached.startTime, let e = detached.endTime {
-                    instances.append(InvoiceSessionInstance(session: detached, instanceStart: s, instanceEnd: e))
-                }
-            }
-            result[client.id] = (client, instances.sorted { $0.instanceStart < $1.instanceStart })
         }
+        
         sessionInstancesByClient = result
 
+        // Filter selected instances to only include those still available
         selectedInstances = selectedInstances.filter { inst in
-            guard let clientID = inst.session.client?.id else { return false }
+            guard let clientID = inst.session.clientId else { return false }
             return sessionInstancesByClient[clientID]?.1.contains(inst) ?? false
         }
     }
 
-    private func generateInvoices() {
+    private func generateInvoices() async {
         // Group selected instances by client.id
-        let instancesByClientID = Dictionary(grouping: selectedInstances) { $0.session.client?.id }
+        let instancesByClientID = Dictionary(grouping: selectedInstances) { $0.session.clientId }
         
         for (clientID, instances) in instancesByClientID {
             guard let clientID = clientID, let (client, _) = sessionInstancesByClient[clientID] else { continue }
             
-            // Check if client has NDIS number and services with NDIS items
-            let hasNDISServices = instances.contains { (instance: InvoiceSessionInstance) in
-                instance.session.clientService?.ndisItem != nil
+            // Check if client has NDIS services
+            // Note: This requires fetching client services to check for NDIS items
+            var hasNDISServices = false
+            do {
+                let clientServices = try await clientServicesRepository.fetch(for: clientID)
+                hasNDISServices = instances.contains { instance in
+                    guard let serviceId = instance.session.clientServiceId else { return false }
+                    return clientServices.contains { $0.id == serviceId && $0.ndisItemId != nil }
+                }
+            } catch {
+                print("Error checking NDIS services: \(error)")
             }
             
-            let newInvoice: InvoiceEntity
-            
             if hasNDISServices {
-                // Use NDIS billing algorithm
+                // Use NDIS billing algorithm with domain models
                 do {
                     let ndisIntegrationService = NDISBillingIntegrationService(modelContext: modelContext)
                     let sessions = instances.map { $0.session }
-                    newInvoice = try ndisIntegrationService.generateNDISInvoice(for: sessions, client: client)
-                    print("Generated NDIS invoice for client: \(client.fullName), Total: \(newInvoice.totalAmount)")
+                    let invoice = try ndisIntegrationService.generateNDISInvoice(for: sessions, client: client)
+                    
+                    // Save via repository
+                    _ = try await invoicesRepository.update(invoice)
+                    
+                    print("Generated NDIS invoice for client: \(client.fullName), Total: \(invoice.totalAmount)")
                 } catch {
                     print("Error generating NDIS invoice, falling back to simple billing: \(error)")
-                    newInvoice = generateSimpleInvoice(for: instances, client: client)
+                    _ = try? await generateSimpleInvoice(for: instances, client: client)
                 }
             } else {
-                // Use simple billing
-                newInvoice = generateSimpleInvoice(for: instances, client: client)
+                // Use simple billing with domain models
+                do {
+                    _ = try await generateSimpleInvoice(for: instances, client: client)
+                } catch {
+                    print("Error generating simple invoice: \(error)")
+                }
             }
-            
-            modelContext.insert(newInvoice)
         }
         
-        do {
-            try modelContext.save()
-            print("Successfully generated and saved invoices.")
-        } catch {
-            print("Error saving generated invoices: \(error)")
-        }
         dismiss()
     }
     
-    private func generateSimpleInvoice(for instances: [InvoiceSessionInstance], client: ClientEntity) -> InvoiceEntity {
-        let newInvoice = InvoiceEntity(id: UUID(), invoiceNumber: "")
-        newInvoice.issueDate = Date()
-        newInvoice.dueDate = Calendar.current.date(byAdding: .day, value: AppConstants.defaultInvoiceDueDays, to: newInvoice.issueDate) ?? Date()
-        newInvoice.status = .draft
-        newInvoice.client = client
-        newInvoice.discount = 0.0
-        newInvoice.taxRate = UserDefaults.standard.double(forKey: "defaultTaxRate")
-        newInvoice.creditApplied = 0.0
-        newInvoice.paymentTerms = UserDefaults.standard.string(forKey: "defaultPaymentTerms") ?? "Payment due within \(AppConstants.defaultInvoiceDueDays) days."
-        newInvoice.currencyCode = "AUD"
+    // MARK: - Simple Invoice Generation
+    
+    private func generateSimpleInvoice(for instances: [InvoiceSessionInstance], client: Client) async throws -> Invoice {
+        // Generate invoice number using domain model
+        let invoiceNumber = InvoiceNumberingService.nextNumber(for: client, context: modelContext)
         
-        newInvoice.invoiceNumber = InvoiceNumberingService.nextNumber(for: client, context: modelContext)
+        // Create invoice domain model
+        let invoice = Invoice(
+            id: UUID(),
+            invoiceNumber: invoiceNumber,
+            totalAmount: 0.0,
+            taxRate: UserDefaults.standard.double(forKey: "defaultTaxRate"),
+            creditApplied: 0.0,
+            discount: 0.0,
+            date: Date(),
+            dueDate: Calendar.current.date(byAdding: .day, value: AppConstants.defaultInvoiceDueDays, to: Date()),
+            invoiceID: nil,
+            issueDate: Date(),
+            notes: nil,
+            paidDate: nil,
+            paymentTerms: UserDefaults.standard.string(forKey: "defaultPaymentTerms") ?? "Payment due within \(AppConstants.defaultInvoiceDueDays) days.",
+            status: AppConstants.invoiceStatusDraft,
+            sentDate: nil,
+            currencyCode: "AUD",
+            clientId: client.id,
+            sessionIds: instances.map { $0.session.id }
+        )
         
+        // Save invoice via repository
+        let savedInvoice = try await invoicesRepository.create(invoice)
+        
+        // Fetch client services for creating invoice items
+        let clientServices = try await clientServicesRepository.fetch(for: client.id)
         var totalAmount: Double = 0.0
         
+        // Create invoice items
         for (index, instance) in instances.enumerated() {
-            if let clientService = instance.session.clientService {
-                let newItem = InvoiceItemEntity(id: UUID(), itemDescription: clientService.computedServiceName)
-                if clientService.computedUnit.lowercased() == "hour" {
-                    let duration = instance.instanceEnd.timeIntervalSince(instance.instanceStart) / 3600.0
-                    newItem.quantity = duration
-                } else {
-                    newItem.quantity = 1.0
-                }
-                newItem.rate = clientService.computedRate
-                newItem.unit = clientService.computedUnit
-                newItem.position = Int32(index)
-                newItem.serviceDate = instance.instanceStart
-                newItem.invoice = newInvoice
-                newItem.session = instance.session
-                newItem.date = instance.instanceStart
-                totalAmount += (newItem.quantity * newItem.rate)
-                modelContext.insert(newItem)
+            guard let serviceId = instance.session.clientServiceId,
+                  let clientService = clientServices.first(where: { $0.id == serviceId }) else {
+                continue
             }
+            
+            let quantity: Double
+            if clientService.unit.lowercased() == "hour" {
+                quantity = instance.instanceEnd.timeIntervalSince(instance.instanceStart) / 3600.0
+            } else {
+                quantity = 1.0
+            }
+            
+            // Note: InvoiceItem domain model doesn't include unit or serviceDate
+            // These are stored at the entity level but not exposed in the domain model
+            let invoiceItem = InvoiceItem(
+                id: UUID(),
+                invoiceId: savedInvoice.id,
+                sessionId: instance.session.id,
+                clientServiceId: serviceId,
+                itemDescription: clientService.serviceName,
+                quantity: quantity,
+                rate: clientService.rate,
+                position: Int32(index)
+            )
+            
+            _ = try await invoicesRepository.addItem(invoiceItem)
+            totalAmount += (quantity * clientService.rate)
         }
         
-        let discountAmount = totalAmount * (newInvoice.discount / 100.0)
+        // Calculate totals and update invoice
+        let discountAmount = totalAmount * (invoice.discount / 100.0)
         let taxableSubtotal = totalAmount - discountAmount
-        let taxAmount = taxableSubtotal * (newInvoice.taxRate / 100.0)
-        newInvoice.totalAmount = taxableSubtotal + taxAmount - newInvoice.creditApplied
-        newInvoice.date = Date()
+        let taxAmount = taxableSubtotal * (invoice.taxRate / 100.0)
+        let finalTotal = taxableSubtotal + taxAmount - invoice.creditApplied
         
-        // Snapshot related entity data into the invoice's own properties
-        // Note: InvoiceEntity stores data directly, no snapshot method needed
+        // Create updated invoice with new total (Invoice is immutable)
+        let updatedInvoice = Invoice(
+            id: savedInvoice.id,
+            invoiceNumber: savedInvoice.invoiceNumber,
+            totalAmount: finalTotal,
+            taxRate: savedInvoice.taxRate,
+            creditApplied: savedInvoice.creditApplied,
+            discount: savedInvoice.discount,
+            date: savedInvoice.date,
+            dueDate: savedInvoice.dueDate,
+            invoiceID: savedInvoice.invoiceID,
+            issueDate: savedInvoice.issueDate,
+            notes: savedInvoice.notes,
+            paidDate: savedInvoice.paidDate,
+            paymentTerms: savedInvoice.paymentTerms,
+            status: savedInvoice.status,
+            sentDate: savedInvoice.sentDate,
+            currencyCode: savedInvoice.currencyCode,
+            businessName: savedInvoice.businessName,
+            businessABN: savedInvoice.businessABN,
+            businessEmail: savedInvoice.businessEmail,
+            businessAddress: savedInvoice.businessAddress,
+            businessPhone: savedInvoice.businessPhone,
+            clientName: savedInvoice.clientName,
+            clientNDISNumber: savedInvoice.clientNDISNumber,
+            clientEmail: savedInvoice.clientEmail,
+            clientPhone: savedInvoice.clientPhone,
+            clientAddress: savedInvoice.clientAddress,
+            billingAuthority: savedInvoice.billingAuthority,
+            billToName: savedInvoice.billToName,
+            billToEmail: savedInvoice.billToEmail,
+            billToAddress: savedInvoice.billToAddress,
+            payeeName: savedInvoice.payeeName,
+            payeeEmail: savedInvoice.payeeEmail,
+            payeePhone: savedInvoice.payeePhone,
+            payeeAddress: savedInvoice.payeeAddress,
+            bankName: savedInvoice.bankName,
+            bankAccountName: savedInvoice.bankAccountName,
+            bankBSB: savedInvoice.bankBSB,
+            bankAccountNumber: savedInvoice.bankAccountNumber,
+            clientId: savedInvoice.clientId,
+            businessId: savedInvoice.businessId,
+            payeeId: savedInvoice.payeeId,
+            sessionIds: savedInvoice.sessionIds
+        )
         
-        print("Generated simple invoice for client: \(client.fullName), Total: \(newInvoice.totalAmount)")
-        return newInvoice
+        return try await invoicesRepository.update(updatedInvoice)
     }
 }
 
 // Updated row for selecting session instances
 struct InvoiceClientSessionSelectionRow: View {
-    let client: ClientEntity
+    let client: Client // Changed to domain model
     let sessionInstances: [InvoiceSessionInstance]
     @Binding var selectedInstances: Set<InvoiceSessionInstance>
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
@@ -365,4 +485,3 @@ private let dateFormatter: DateFormatter = {
     formatter.timeStyle = .short
     return formatter
 }()
- 

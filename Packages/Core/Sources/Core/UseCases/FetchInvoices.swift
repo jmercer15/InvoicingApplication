@@ -15,7 +15,7 @@ public struct FetchInvoices: Sendable {
     
     /// Fetch invoices by client ID
     public func callAsFunction(by clientId: UUID) async throws -> [Invoice] {
-        try await repository.fetch(by: clientId)
+        try await repository.fetch(byClientId: clientId)
     }
     
     /// Fetch invoices by status
