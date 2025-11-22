@@ -54,6 +54,8 @@ struct InvoicingApplicationApp: App {
                 .environmentObject(appAssembly)
             // Attach the app delegate adapter
                 .background(NSApplicationDelegateAdapter(appDelegate: appDelegateHandler.appDelegate))
+                .toolbarBackgroundVisibility(.hidden)
+
             // No titlebar: handled via window style below
                 // .task {
                 //     // Load sample data if no data exists
@@ -61,8 +63,8 @@ struct InvoicingApplicationApp: App {
                 // }
         }
         .modelContainer(appAssembly.modelContainer)
-        .windowStyle(.automatic)
-        .windowToolbarStyle(.expanded)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
     }
     
     // MARK: - Sample Data Loading

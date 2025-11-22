@@ -27,86 +27,50 @@ struct ModernTemplateManagementView: View {
         guard let highlightedTemplateID else { return nil }
         return workspace.templates.first(where: { $0.id == highlightedTemplateID })
     }
+
+    private var isEditorActive: Bool {
+        workspace.activeTemplate != nil || !navigationPath.isEmpty
+    }
     
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            GeometryReader { geometry in
-                VStack(alignment: .leading, spacing: 0) {
-                    header(for: geometry.size)
-
-                    ScrollView {
-                        LazyVGrid(
-                            columns: adaptiveGridColumns(for: geometry.size.width),
-                            spacing: adaptiveGridSpacing(for: geometry.size.width)
-                        ) {
-                            ForEach(filteredTemplates, id: \.id) { template in
-                                ModernTemplateCard(
-                                    template: template,
-                                    isSelected: highlightedTemplateID == template.id,
-                                    onSelect: { highlightedTemplateID = template.id },
-                                    onOpen: { handleTemplateSelection(template) },
-                                    onDuplicate: template.isPersisted ? { duplicateTemplate(template) } : nil,
-                                    onEdit: template.isPersisted ? { beginEditingTemplate(template) } : nil,
-                                    onDelete: template.isPersisted ? { promptDeleteTemplate(template) } : nil,
-                                    isDisabled: isProcessingAction
-                                )
-                            }
-                        }
-                        .padding(adaptivePadding(for: geometry.size.width))
-
-                        VStack(spacing: 8) {
-                            if workspace.isLoadingTemplates {
-                                ProgressView("Loading templates...")
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.vertical, 12)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                                    .tint(Color.accentColor)
-                            }
-
-                            if workspace.isOpeningTemplate {
-                                ProgressView("Opening template...")
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.vertical, 12)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                                    .tint(Color.accentColor)
-                            }
-
-                            if let error = workspace.templateLoadError {
-                                Text(error)
-                                    .font(.footnote)
-                                    .foregroundColor(Color.warningColor)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, adaptivePadding(for: geometry.size.width))
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-
-                            if isProcessingAction {
-                                ProgressView("Working...")
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.vertical, 12)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                                    .tint(Color.accentColor)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .clipped()
-                    }
+        ZStack {
+            AppMeshBackdrop()
+            NavigationStack(path: $navigationPath) {
+                VStack(alignment: .leading, spacing: 18) {
+                    headerView
+                    TemplateLibraryGrid(
+                        templates: filteredTemplates,
+                        selectedID: $highlightedTemplateID,
+                        isProcessingAction: isProcessingAction,
+                        isLoadingTemplates: workspace.isLoadingTemplates,
+                        isOpeningTemplate: workspace.isOpeningTemplate,
+                        loadError: workspace.templateLoadError,
+                        onOpen: handleTemplateSelection,
+                        onDuplicate: duplicateTemplate,
+                        onEdit: beginEditingTemplate,
+                        onDelete: promptDeleteTemplate
+                    )
                 }
                 .foregroundColor(Color.primaryText)
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
             }
             .navigationDestination(for: TemplateItem.self) { template in
-                ModernTemplateEditor(
-                    template: template,
-                    workspace: workspace,
-                    onBackToTemplates: handleBackToTemplates,
-                    isInspectorVisible: $isInspectorVisible
-                )
+                ZStack {
+                    AppMeshBackdrop()
+                    ModernTemplateEditor(
+                        template: template,
+                        workspace: workspace,
+                        onBackToTemplates: handleBackToTemplates,
+                        isInspectorVisible: $isInspectorVisible
+                    )
+                    .environmentObject(workspace)
+                    .environmentObject(workspace.editorViewModel)
+                    .environmentObject(workspace.editorViewModel.document)
+                    .environmentObject(templateDataService)
+                }
                 .onAppear { highlightedTemplateID = workspace.activeTemplate?.id ?? template.id }
                 .onDisappear { highlightedTemplateID = nil }
-                .environmentObject(workspace)
-                .environmentObject(workspace.editorViewModel)
-                .environmentObject(workspace.editorViewModel.document)
-                .environmentObject(templateDataService)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: navigationPath)
@@ -152,79 +116,13 @@ struct ModernTemplateManagementView: View {
     // MARK: - Navigation Helpers
 
     @ViewBuilder
-    private func header(for size: CGSize) -> some View {
-        let horizontalPadding = adaptivePadding(for: size.width)
-
+    private var headerView: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 12) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Template Library")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(Color.primaryText)
-                        Text("Manage, create, and organise your templates")
-                            .font(.footnote)
-                    .fontWeight(.semibold)
-                .foregroundColor(Color.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.title3)
-                        .foregroundStyle(Color.accentColor)
-                }
-                .labelStyle(.titleAndIcon)
-
-                Spacer()
-
-                Button(action: handleCreateNewSelection) {
-                    Label("New Template", systemImage: "plus")
-                        .foregroundColor(Color.accentText)
-                }
-                .pointerStyle(.link)
-                .buttonStyle(.borderedProminent)
-                .tint(Color.accentColor)
-                .controlSize(.large)
-                .disabled(isProcessingAction)
-            }
+            headerTopBar
 
             VStack(alignment: .leading, spacing: 14) {
-                // Search field
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                .fontWeight(.semibold)
-                .foregroundColor(Color.secondary)
-                    TextField("Search templates", text: $searchText)
-                        .pointerStyle(.horizontalText)
-                        .textFieldStyle(.plain)
-                        .font(.callout)
-                        .foregroundColor(Color.primaryText)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.elevatedSurface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.primaryOutline)
-                        )
-                )
-
-                // Category chips
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(TemplateCategory.allCases, id: \.self) { category in
-                            CategoryChip(
-                                category: category,
-                                isSelected: selectedCategory == category
-                            ) {
-                                selectedCategory = category
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                }
+                searchField
+                categoryPicker
             }
 
             if let currentSelection = selectedTemplate {
@@ -242,19 +140,7 @@ struct ModernTemplateManagementView: View {
                 .clipped()
             }
         }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.primarySurface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(Color.primaryOutline)
-                )
-                .shadow(color: Color.subtleShadow, radius: 18, x: 0, y: 12)
-        )
-        .padding(.horizontal, horizontalPadding)
-        .padding(.top, 18)
+        .padding(.vertical, 16)
         .animation(.easeInOut(duration: 0.25), value: highlightedTemplateID)
         .animation(.easeInOut(duration: 0.25), value: workspace.isLoadingTemplates)
         .animation(.easeInOut(duration: 0.25), value: workspace.isOpeningTemplate)
@@ -375,43 +261,99 @@ struct ModernTemplateManagementView: View {
         }
     }
 
-    // MARK: - Adaptive Layout Functions
-    
-    private func adaptiveSpacing(for width: CGFloat) -> CGFloat {
-        switch width {
-        case 0..<300: return 8
-        case 300..<400: return 12
-        default: return 16
+
+    private var headerTopBar: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Template Library")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color.primaryText)
+                    Text("Manage, create, and organise your templates")
+                        .font(.footnote)
+                        .foregroundColor(Color.secondary)
+                }
+            } icon: {
+                Image(systemName: "square.grid.2x2")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .labelStyle(.titleAndIcon)
+
+            Spacer()
+
+            Button(action: handleCreateNewSelection) {
+                Label("New Template", systemImage: "plus")
+                    .foregroundColor(Color.accentText)
+            }
+            .pointerStyle(.link)
+            .buttonStyle(.borderedProminent)
+            .tint(Color.accentColor)
+            .controlSize(.large)
+            .disabled(isProcessingAction)
         }
     }
-    
-    private func adaptivePadding(for width: CGFloat) -> CGFloat {
-        switch width {
-        case 0..<300: return 8
-        case 300..<400: return 12
-        default: return 16
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .fontWeight(.semibold)
+                .foregroundColor(Color.secondary)
+            TextField("Search templates", text: $searchText)
+                .pointerStyle(.horizontalText)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .foregroundColor(Color.primaryText)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.primarySurface.opacity(0.95),
+                            Color.secondarySurface.opacity(0.9)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.18),
+                                    Color.primaryOutline.opacity(0.2)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+        )
+        .shadow(color: Color.primaryShadow.opacity(0.08), radius: 4, x: 0, y: 2)
+    }
+
+    private var categoryPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(TemplateCategory.allCases, id: \.self) { category in
+                    CategoryChip(
+                        category: category,
+                        isSelected: selectedCategory == category
+                    ) {
+                        selectedCategory = category
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
         }
     }
-    
-    private func adaptiveGridColumns(for width: CGFloat) -> [GridItem] {
-        let columnCount: Int
-        switch width {
-        case 0..<300: columnCount = 1
-        case 300..<500: columnCount = 2
-        default: columnCount = 3
-        }
-        
-        return Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount)
-    }
-    
-    private func adaptiveGridSpacing(for width: CGFloat) -> CGFloat {
-        switch width {
-        case 0..<300: return 6
-        case 300..<400: return 8
-        default: return 12
-        }
-    }
-    
+
     private var filteredTemplates: [TemplateItem] {
         let templates = workspace.templates
         
@@ -429,6 +371,79 @@ struct ModernTemplateManagementView: View {
             }
         }
     }
+
+}
+
+private struct TemplateLibraryGrid: View {
+    let templates: [TemplateItem]
+    @Binding var selectedID: UUID?
+    let isProcessingAction: Bool
+    let isLoadingTemplates: Bool
+    let isOpeningTemplate: Bool
+    let loadError: String?
+    let onOpen: (TemplateItem) -> Void
+    let onDuplicate: (TemplateItem) -> Void
+    let onEdit: (TemplateItem) -> Void
+    let onDelete: (TemplateItem) -> Void
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 260, maximum: 380), spacing: 18, alignment: .top)]
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 18) {
+                ForEach(templates, id: \.id) { template in
+                    ModernTemplateCard(
+                        template: template,
+                        isSelected: selectedID == template.id,
+                        onSelect: { selectedID = template.id },
+                        onOpen: { onOpen(template) },
+                        onDuplicate: template.isPersisted ? { onDuplicate(template) } : nil,
+                        onEdit: template.isPersisted ? { onEdit(template) } : nil,
+                        onDelete: template.isPersisted ? { onDelete(template) } : nil,
+                        isDisabled: isProcessingAction
+                    )
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 6)
+
+            VStack(spacing: 10) {
+                if isLoadingTemplates {
+                    statusProgress("Loading templates…")
+                }
+                if isOpeningTemplate {
+                    statusProgress("Opening template…")
+                }
+                if let error = loadError {
+                    statusMessage(error)
+                }
+                if isProcessingAction {
+                    statusProgress("Working…")
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func statusProgress(_ text: String) -> some View {
+        ProgressView(text)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 12)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .tint(Color.accentColor)
+    }
+
+    private func statusMessage(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundColor(Color.warningColor)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
 }
 
 
@@ -513,13 +528,8 @@ private struct TemplateSelectionToolbar: View {
                     .foregroundColor(Color.secondaryText)
             }
         }
-        .padding(12)
-        .background(Color.elevatedSurface)
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primarySeparator)
-        )
+        .padding(14)
+        .background(Color.clear)
     }
 }
 

@@ -15,7 +15,10 @@ let package = Package(
     targets: [
         .target(
             name: "Feature_InvoiceTemplateEditor",
-            dependencies: ["Core", "Data", "SharedUI"]
+            dependencies: ["Core", "Data", "SharedUI"],
+            resources: [
+                .process("Assets")
+            ]
         )
     ]
 )

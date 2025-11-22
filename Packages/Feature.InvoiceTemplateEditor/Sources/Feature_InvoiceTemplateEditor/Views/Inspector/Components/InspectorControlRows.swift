@@ -225,11 +225,21 @@ struct InspectorPickerRow<Selection: Hashable, Options: RandomAccessCollection, 
 
     var body: some View {
         ControlRowContainer {
-            Picker(label, selection: $selection) {
-                ForEach(options, id: \.self) { option in
-                    makeLabel(option)
-                        .tag(option)
+            LabeledContent {
+                Picker("", selection: $selection) {
+                    ForEach(options, id: \.self) { option in
+                        makeLabel(option)
+                            .tag(option)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(minWidth: 140, maxWidth: .infinity, alignment: .trailing)
+            } label: {
+                Text(label)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .controlLabelStyle()
             }
         }
     }

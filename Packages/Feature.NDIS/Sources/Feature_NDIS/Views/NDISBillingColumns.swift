@@ -23,7 +23,7 @@ public struct NDISBillingContentColumn: View {
             generateInvoiceSection
         }
         .padding()
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.ultraThinMaterial)
         .toolbar { toolbarContent }
         .onAppear { viewModel.updateContextIfNeeded(modelContext) }
     }
@@ -189,7 +189,7 @@ public struct NDISBillingDetailColumn: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }
 

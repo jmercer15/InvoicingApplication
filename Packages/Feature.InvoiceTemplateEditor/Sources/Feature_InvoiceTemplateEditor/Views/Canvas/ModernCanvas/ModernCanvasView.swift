@@ -7,7 +7,6 @@
 
 import SwiftUI
 import Core
-import UniformTypeIdentifiers
 
 private struct PageFramePreferenceKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
@@ -39,7 +38,7 @@ struct ModernCanvasView: View {
     @State private var pageFrame: CGRect = .zero
     
     // Track split configuration for each rectangle section
-    @State private var sectionHeightRatios: [CGFloat] = [0.2, 0.2, 0.2, 0.2, 0.2] // Equal distribution initially
+    @State private var sectionHeightRatios: [CGFloat] = [1.0] // Single root section initially
     
     // Helper function for smooth boundary resistance with exponential decay
     nonisolated private func constrainWithResistance(_ value: CGFloat, min: CGFloat, max: CGFloat, resistance: CGFloat) -> CGFloat {
@@ -120,18 +119,19 @@ struct ModernCanvasView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 // Background
-                Color(NSColor.windowBackgroundColor)
-                
+                Rectangle()
+                    .fill(.windowBackground)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Canvas with drop zone and zoom
-                ScrollView([.horizontal, .vertical]) {
-                    ZStack {
+                ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                    ZStack(alignment: .topLeading) {
                         // Layer 1: Page background with shadow
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.canvasBackground)
+                        Rectangle()
+                            .fill(Color.white)
                             .frame(width: A4.width, height: A4.height)
                             .shadow(color: Color.subtleShadow, radius: 8, x: 0, y: 4)
                         
-                        // Layer 2: Margin fill overlay (background only)
+                        // Layer 2: Margin fill overlay (background only - visual indicator, does not affect layout)
                         if workspace.showMargins {
                             MarginFillOverlay(
                                 pageSize: CGSize(width: A4.width, height: A4.height),
@@ -142,40 +142,42 @@ struct ModernCanvasView: View {
                         }
                         
                         // Layer 3: Interactive sections (highest priority for interactions)
-                        MainSectionLayout(heightRatios: sectionHeightRatios, containerHeight: A4.height, onResize: { sectionIndex, delta in
-                            // Handle main section height resize logic
-                            var newRatios = sectionHeightRatios
-                            let containerHeight = A4.height
-                            
-                            // Adjust the ratios of adjacent sections using safe resize logic
-                            let currentRatio = newRatios[sectionIndex]
-                            let nextRatio = newRatios[sectionIndex + 1]
-                            
-                            let (newCurrentRatio, newNextRatio) = safeResizeRatios(
-                                delta: delta,
-                                containerSize: containerHeight,
-                                currentRatio: currentRatio,
-                                nextRatio: nextRatio
-                            )
-
-                            newRatios[sectionIndex] = newCurrentRatio
-                            newRatios[sectionIndex + 1] = newNextRatio
-
-                            sectionHeightRatios = newRatios
-                        }) { index in
-                            GeometryReader { geometry in
-                                SplittableRectangleView(
-                                    split: document.sectionSplits[index],
-                                    leafComponents: [],
-                                    containerSize: geometry.size,
-                                    childIndex: index,
-                                    parentAlignment: document.sectionSplits[index]?.getAlignment(forChild: 0) ?? .default,
-                                    onDrop: { _, _ in
-                                        // Drops are now handled by individual ContentRectangleViews
-                                        return false
-                                    },
+                        let margins = document.margins
+                        let contentSize = CGSize(
+                            width: A4.width - margins.left - margins.right,
+                            height: A4.height - margins.top - margins.bottom
+                        )
+                        
+                        RatioBasedLayout(
+                            ratios: sectionHeightRatios,
+                            direction: .vertical,
+                            containerSize: contentSize,
+                            onResize: { sectionIndex, delta in
+                                guard sectionIndex < sectionHeightRatios.count - 1 else { return }
+                                var updatedRatios = sectionHeightRatios
+                                let (newCurrentRatio, newNextRatio) = safeResizeRatios(
+                                    delta: delta,
+                                    containerSize: contentSize.height,
+                                    currentRatio: updatedRatios[sectionIndex],
+                                    nextRatio: updatedRatios[sectionIndex + 1]
+                                )
+                                updatedRatios[sectionIndex] = newCurrentRatio
+                                updatedRatios[sectionIndex + 1] = newNextRatio
+                                sectionHeightRatios = updatedRatios
+                            }
+                        ) { index, sectionSize in
+                            SplittableRectangleView(
+                                split: document.sectionSplits[index],
+                                leafComponents: [],
+                                containerSize: sectionSize,
+                                sectionIndex: index,
+                                nodePath: [],
+                                childIndex: index,
+                                childPadding: .zero,
+                                parentAlignment: document.sectionSplits[index]?.getAlignment(forChild: 0) ?? .default,
+                                context: SplitInteractionContext(
+                                    onDrop: { _, _ in false },
                                     onSplitChild: { childIndex, direction, count, rows, columns in
-                                        // Handle splitting a child of the main section
                                         if var split = document.sectionSplits[index] {
                                             if direction == .grid, let rows = rows, let columns = columns {
                                                 split.splitChild(at: childIndex, direction: direction, splitCount: count, gridRows: rows, gridColumns: columns)
@@ -184,7 +186,6 @@ struct ModernCanvasView: View {
                                             }
                                             document.sectionSplits[index] = split
                                         } else {
-                                            // Create a new split for this section
                                             if direction == .grid, let rows = rows, let columns = columns {
                                                 let newSplit = SectionSplit(gridRows: rows, gridColumns: columns)
                                                 document.sectionSplits[index] = newSplit
@@ -195,57 +196,81 @@ struct ModernCanvasView: View {
                                         }
                                     },
                                     onUnsplitChild: { childIndex in
-                                        // Handle unsplitting a child
                                         if var split = document.sectionSplits[index] {
                                             split.unsplitChild(at: childIndex)
                                             document.sectionSplits[index] = split
                                         }
                                     },
                                     onResize: { childIndex, delta in
-                                        // Handle resizing children of the main section
-                                        if var split = document.sectionSplits[index] {
-                                            split.updateRatio(at: childIndex, newRatio: split.splitRatios[childIndex] + delta / geometry.size.width)
-                                            document.sectionSplits[index] = split
-                                        }
+                                        // Top-level resize is handled by RatioBasedLayout above
                                     },
                                     onUpdateSplit: { updatedSplit in
                                         document.sectionSplits[index] = updatedSplit
                                     },
                                     onAddComponent: { childIndex, component in
-                                        print("   🏠 Main canvas: onAddComponent received for section \(index), childIndex \(childIndex)")
-                                        print("      Component: \(component.id) of type \(component.type)")
-                                        print("      ⚠️ This should NOT be called if nested splits handle it themselves!")
-                                        
                                         if var split = document.sectionSplits[index] {
-                                            print("      Section \(index) has split, this is a direct child drop...")
                                             split.addComponent(component, toChild: childIndex)
                                             document.sectionSplits[index] = split
-                                            print("      ✅ Section \(index) child \(childIndex) updated with new component")
                                         } else {
-                                            print("      Section \(index) has NO split - this is a LEAF section")
-                                            print("      Creating a new split to hold the component...")
-                                            // Create a new split to hold the component
-                                            let newSplit = SectionSplit(direction: .vertical, splitCount: 1)
-                                            var updatedSplit = newSplit
-                                            updatedSplit.addComponent(component, toChild: 0)
-                                            document.sectionSplits[index] = updatedSplit
-                                            print("      ✅ Created new split for section \(index) with component")
+                                            var newSplit = SectionSplit(direction: .horizontal, splitCount: 1)
+                                            newSplit.addComponent(component, toChild: 0)
+                                            document.sectionSplits[index] = newSplit
                                         }
                                     },
+                                    onSetLabel: { childIndex, label in
+                                        if var split = document.sectionSplits[index] {
+                                            if let label = label {
+                                                split.setLabel(label, forChild: childIndex)
+                                            } else {
+                                                split.removeLabel(forChild: childIndex)
+                                            }
+                                            document.sectionSplits[index] = split
+                                        }
+                                    },
+                                    onReorderChildren: nil,
                                     onComponentSelect: { component in
-                                        // Set the selected component in the document
-                                        document.selectedComponentID = component.id
-                                        print("🎯 Component selected: \(component.id) of type \(component.type)")
+                                        document.selectComponent(component.id)
+                                    },
+                                    onLeafSelect: { selection in
+                                        document.selectSplitSelection(selection)
+                                    },
+                                    onSetWidthSizingMode: { childIndex, mode in
+                                        if var split = document.sectionSplits[index] {
+                                            split.setWidthSizingMode(mode, forChild: childIndex)
+                                            document.sectionSplits[index] = split
+                                        }
+                                    },
+                                    onSetHeightSizingMode: { childIndex, mode in
+                                        if var split = document.sectionSplits[index] {
+                                            split.setHeightSizingMode(mode, forChild: childIndex)
+                                            document.sectionSplits[index] = split
+                                        }
+                                    },
+                                    onSetGridSizingMode: { childIndex, isRow, mode in
+                                        if var split = document.sectionSplits[index] {
+                                            let (row, column) = split.rowColumn(for: childIndex)
+                                            if isRow {
+                                                split.setRowSizingMode(mode, forRow: row)
+                                            } else {
+                                                split.setColumnSizingMode(mode, forColumn: column)
+                                            }
+                                            document.sectionSplits[index] = split
+                                        }
                                     }
                                 )
-                            }
+                            )
+                            .frame(width: sectionSize.width, height: sectionSize.height)
                         }
-                        .frame(width: A4.width, height: A4.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .frame(width: contentSize.width, height: contentSize.height, alignment: .topLeading)
+                        .padding(.leading, margins.left)
+                        .padding(.trailing, margins.right)
+                        .padding(.top, margins.top)
+                        .padding(.bottom, margins.bottom)
+                        .clipShape(Rectangle())
                         .zIndex(1) // Ensure sections are above background but below components
                         
                         
-                        // Layer 4: Margin guide overlay (visual guides only)
+                        // Layer 4: Margin guide overlay (visual guides only - does not affect layout)
                         if workspace.showMargins {
                             MarginGuideOverlay(
                                 pageSize: CGSize(width: A4.width, height: A4.height),
@@ -254,13 +279,6 @@ struct ModernCanvasView: View {
                             .allowsHitTesting(false)
                             .zIndex(3) // Visual guides on top
                         }
-                        
-                        // Layer 5: Page outline
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(isDropTargeted ? Color.accentColor : Color.canvasOutline, lineWidth: isDropTargeted ? 2 : 1)
-                            .animation(.easeInOut(duration: 0.2), value: isDropTargeted)
-                            .allowsHitTesting(false)
-                            .zIndex(4) // Outline on top but non-interactive
                     }
                     .frame(width: A4.width, height: A4.height)
                     .scaleEffect(zoomScale, anchor: .center)
@@ -432,7 +450,7 @@ struct ModernCanvasView: View {
                         )
                     )
                 }
-                .background(Color.primarySurface)
+                .background(Color.clear)
                 
                 // Pan indicator overlay (subtle visual feedback)
                 if isPanning {
@@ -444,7 +462,7 @@ struct ModernCanvasView: View {
                         .fontWeight(.semibold)
                 .foregroundColor(Color.secondary)
                                 .padding(8)
-                                .background(Color.primarySurface.opacity(0.8))
+                                .background(Color.clear)
                                 .cornerRadius(6)
                             Spacer()
                         }
@@ -494,7 +512,9 @@ struct ModernCanvasView: View {
             }
             .coordinateSpace(name: "canvasSpace")
             .onPreferenceChange(PageFramePreferenceKey.self) { frame in
-                self.pageFrame = frame
+                DispatchQueue.main.async {
+                    self.pageFrame = frame
+                }
             }
         }
     }
@@ -513,46 +533,7 @@ struct ModernCanvasView: View {
         String(format: "%.0f", value)
     }
     
-    private func handleDrop(providers: [NSItemProvider], at location: CGPoint) -> Bool {
-        return handleDrop(providers: providers, at: location, inSection: nil)
-    }
-    
-    private func handleDrop(providers: [NSItemProvider], at location: CGPoint, inSection sectionIndex: Int?) -> Bool {
-        guard let provider = providers.first else { return false }
-        
-        // Check if we can load data of the invoice component type
-        if provider.hasItemConformingToTypeIdentifier(UTType.invoiceComponent.identifier) {
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.invoiceComponent.identifier) { data, error in
-                DispatchQueue.main.async {
-                    if let data = data {
-                        do {
-                            let decoder = JSONDecoder()
-                            let component = try decoder.decode(InvoiceComponent.self, from: data)
-                            
-                            // Create a new component at the drop location
-                            var newComponent = component
-                            newComponent.id = UUID() // Generate new ID
-                            newComponent.position = location // Use relative position within section/subsection
-                            
-                            // Note: Component position is now relative to its container section/subsection,
-                            // not absolute canvas position. The section will handle rendering it correctly.
-                            
-                            // Components are now added to sections, not the document
-                            // This is handled by the onAddComponent callback in each section
-                            print("Component dropped at location: \(location), section: \(sectionIndex ?? -1)")
-                        } catch {
-                            print("Failed to decode component: \(error)")
-                        }
-                    }
-                }
-            }
-            return true
-        }
-        
-        return false
-    }
 }
-
 
 private struct MarginFillOverlay: View {
     let pageSize: CGSize
@@ -803,12 +784,14 @@ private struct MarginHandlesOverlay: View {
     let margins: InvoiceDocument.DocumentMargins
     let onMarginChange: (InvoiceDocument.MarginEdge, CGFloat, Bool) -> Void
     
-    @State private var leftStart: CGFloat?
-    @State private var rightStart: CGFloat?
-    @State private var topStart: CGFloat?
-    @State private var bottomStart: CGFloat?
+    @State private var dragStart: [InvoiceDocument.MarginEdge: CGFloat] = [:]
     
     private let handleSize: CGFloat = 14
+    
+    private enum HandleAxis {
+        case horizontal
+        case vertical
+    }
     
     var body: some View {
         ZStack {
@@ -824,49 +807,21 @@ private struct MarginHandlesOverlay: View {
         let yPosition = pageFrame.minY - handleSize / 2 - 2
         
         return ZStack {
-            MarginHandle(direction: .down)
-                .frame(width: handleSize, height: handleSize)
-                .position(x: leftPosition, y: yPosition)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if leftStart == nil {
-                                leftStart = margins.left
-                            }
-                            
-                            let initial = leftStart ?? margins.left
-                            let delta = value.translation.width / zoomScale
-                            onMarginChange(.left, initial + delta, false)
-                        }
-                        .onEnded { value in
-                            let initial = leftStart ?? margins.left
-                            let delta = value.translation.width / zoomScale
-                            onMarginChange(.left, initial + delta, true)
-                            leftStart = nil
-                        }
-                )
+            marginHandle(
+                edge: .left,
+                direction: .down,
+                position: CGPoint(x: leftPosition, y: yPosition),
+                axis: .horizontal,
+                multiplier: 1
+            )
             
-            MarginHandle(direction: .down)
-                .frame(width: handleSize, height: handleSize)
-                .position(x: rightPosition, y: yPosition)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if rightStart == nil {
-                                rightStart = margins.right
-                            }
-                            
-                            let initial = rightStart ?? margins.right
-                            let delta = value.translation.width / zoomScale
-                            onMarginChange(.right, initial - delta, false)
-                        }
-                        .onEnded { value in
-                            let initial = rightStart ?? margins.right
-                            let delta = value.translation.width / zoomScale
-                            onMarginChange(.right, initial - delta, true)
-                            rightStart = nil
-                        }
-                )
+            marginHandle(
+                edge: .right,
+                direction: .down,
+                position: CGPoint(x: rightPosition, y: yPosition),
+                axis: .horizontal,
+                multiplier: -1
+            )
         }
     }
     
@@ -876,49 +831,76 @@ private struct MarginHandlesOverlay: View {
         let bottomPosition = pageFrame.maxY - margins.bottom * zoomScale
         
         return ZStack {
-            MarginHandle(direction: .right)
-                .frame(width: handleSize, height: handleSize)
-                .position(x: xPosition, y: topPosition)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if topStart == nil {
-                                topStart = margins.top
-                            }
-                            
-                            let initial = topStart ?? margins.top
-                            let delta = value.translation.height / zoomScale
-                            onMarginChange(.top, initial + delta, false)
-                        }
-                        .onEnded { value in
-                            let initial = topStart ?? margins.top
-                            let delta = value.translation.height / zoomScale
-                            onMarginChange(.top, initial + delta, true)
-                            topStart = nil
-                        }
-                )
+            marginHandle(
+                edge: .top,
+                direction: .right,
+                position: CGPoint(x: xPosition, y: topPosition),
+                axis: .vertical,
+                multiplier: 1
+            )
             
-            MarginHandle(direction: .right)
-                .frame(width: handleSize, height: handleSize)
-                .position(x: xPosition, y: bottomPosition)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if bottomStart == nil {
-                                bottomStart = margins.bottom
-                            }
-                            
-                            let initial = bottomStart ?? margins.bottom
-                            let delta = value.translation.height / zoomScale
-                            onMarginChange(.bottom, initial - delta, false)
-                        }
-                        .onEnded { value in
-                            let initial = bottomStart ?? margins.bottom
-                            let delta = value.translation.height / zoomScale
-                            onMarginChange(.bottom, initial - delta, true)
-                            bottomStart = nil
-                        }
-                )
+            marginHandle(
+                edge: .bottom,
+                direction: .right,
+                position: CGPoint(x: xPosition, y: bottomPosition),
+                axis: .vertical,
+                multiplier: -1
+            )
+        }
+    }
+    
+    private func marginHandle(
+        edge: InvoiceDocument.MarginEdge,
+        direction: MarginHandle.Direction,
+        position: CGPoint,
+        axis: HandleAxis,
+        multiplier: CGFloat
+    ) -> some View {
+        MarginHandle(direction: direction)
+            .frame(width: handleSize, height: handleSize)
+            .position(position)
+            .gesture(dragGesture(for: edge, axis: axis, multiplier: multiplier))
+    }
+    
+    private func dragGesture(
+        for edge: InvoiceDocument.MarginEdge,
+        axis: HandleAxis,
+        multiplier: CGFloat
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let initial = dragStart[edge] ?? marginValue(for: edge)
+                dragStart[edge] = initial
+                let delta = translation(for: value.translation, axis: axis) * multiplier / zoomScale
+                onMarginChange(edge, initial + delta, false)
+            }
+            .onEnded { value in
+                let initial = dragStart[edge] ?? marginValue(for: edge)
+                let delta = translation(for: value.translation, axis: axis) * multiplier / zoomScale
+                onMarginChange(edge, initial + delta, true)
+                dragStart[edge] = nil
+            }
+    }
+    
+    private func marginValue(for edge: InvoiceDocument.MarginEdge) -> CGFloat {
+        switch edge {
+        case .left:
+            return margins.left
+        case .right:
+            return margins.right
+        case .top:
+            return margins.top
+        case .bottom:
+            return margins.bottom
+        }
+    }
+    
+    private func translation(for value: CGSize, axis: HandleAxis) -> CGFloat {
+        switch axis {
+        case .horizontal:
+            return value.width
+        case .vertical:
+            return value.height
         }
     }
 }
@@ -962,4 +944,3 @@ private struct TriangleHandleShape: Shape {
         }
     }
 }
-

@@ -41,97 +41,7 @@ struct ModernTemplateEditor: View {
     }
 
     var body: some View {
-
-                HStack(alignment: .top, spacing: 0) {
-            if workspace.isPaletteVisible {
-                ModernComponentPalette()
-                    .frame(width: 260)
-                    .frame(maxHeight: .infinity)
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .contentShape(Rectangle())
-                    .clipped()
-
-                Divider()
-            }
-
-            ModernCanvasView()
-                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-
-            if isInspectorVisible {
-                Divider()
-
-                ModernInspectorView()
-                    .frame(width: 320)
-                    .frame(maxHeight: .infinity)
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .contentShape(Rectangle())
-                    .clipped()
-            }
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        .toolbar {
-
-            ToolbarItemGroup(placement: .status) {
-                if let statusMessage {
-                    Text(statusMessage)
-                        .font(.system(size: 11, weight: .medium, design: .default))
-                .fontWeight(.semibold)
-                .foregroundColor(Color.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(Color.secondaryText.opacity(0.08))
-                        )
-                }
-            }
-
-            ToolbarItemGroup(placement: .automatic) {
-                ToolbarButton(image: "arrow.uturn.backward", action: undo, isDisabled: !canUndo, help: "Undo")
-                ToolbarButton(image: "arrow.uturn.forward", action: redo, isDisabled: !canRedo, help: "Redo")
-            }
-
-            ToolbarItemGroup(placement: .automatic) {
-                ToolbarButton(image: "square.and.arrow.down", action: saveTemplate, isDisabled: isBusy, help: "Save Template")
-                    .keyboardShortcut("s", modifiers: [.command])
-
-                ToolbarButton(image: "doc.richtext", action: exportAsPDF, isDisabled: isBusy, help: "Export as PDF…")
-                ToolbarButton(image: "photo", action: exportAsPNG, isDisabled: isBusy, help: "Export as PNG…")
-                ToolbarButton(image: "photo.on.rectangle", action: exportAsJPEG, isDisabled: isBusy, help: "Export as JPEG…")
-                ToolbarButton(image: "checkmark.seal", action: runValidation, help: "Validate Template")
-            }
-
-            ToolbarItemGroup(placement: .automatic) {
-                ToolbarButton(image: "square.on.square", action: duplicateSelectedComponent, isDisabled: selectedComponent == nil, help: "Duplicate Component")
-                ToolbarButton(image: "doc.on.doc", action: copySelectedComponent, isDisabled: selectedComponent == nil, help: "Copy Component")
-                ToolbarButton(image: "arrow.down.doc.fill", action: pasteComponent, isDisabled: editorViewModel.clipboardComponent == nil, help: "Paste Component")
-                ToolbarButton(image: "arrow.up.to.line", action: bringToFront, isDisabled: selectedComponent == nil, help: "Bring to Front")
-                ToolbarButton(image: "arrow.down.to.line", action: sendToBack, isDisabled: selectedComponent == nil, help: "Send to Back")
-            }
-
-            ToolbarItemGroup(placement: .automatic) {
-                ToggleToolbarButton(isOn: workspace.isPaletteVisible, systemImage: "square.grid.2x2", help: "Toggle Component Palette") {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        workspace.isPaletteVisible.toggle()
-                    }
-                }
-                ToggleToolbarButton(isOn: isInspectorVisible, systemImage: "sidebar.right", help: "Toggle Inspector") {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isInspectorVisible.toggle()
-                    }
-                }
-                ToggleToolbarButton(isOn: workspace.showMargins, systemImage: "rectangle.dashed", help: "Toggle Margins Overlay") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        workspace.showMargins.toggle()
-                    }
-                }
-                ToggleToolbarButton(isOn: editorViewModel.showRulers, systemImage: "ruler", help: "Toggle Rulers") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        editorViewModel.showRulers.toggle()
-                    }
-                }
-            }
-        }
+        editorLayout
         .alert(alertTitle, isPresented: $showingAlert) {
             Button("OK", role: .cancel) {}
                 .pointerStyle(.link)
@@ -153,6 +63,22 @@ struct ModernTemplateEditor: View {
         }
     }
 
+    private var editorLayout: some View {
+        HSplitView {
+            palettePanel
+            canvasPanel
+            inspectorPanel
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbarBackgroundVisibility(.hidden)
+        .background { 
+            Color(NSColor.windowBackgroundColor)
+                .ignoresSafeArea()
+            AppMeshBackdrop() 
+                .ignoresSafeArea()
+        }
+    }
+
     private func saveTemplate() {
         Task { @MainActor in
             if let metadata = await editorViewModel.saveTemplate() {
@@ -165,35 +91,21 @@ struct ModernTemplateEditor: View {
         }
     }
 
-    private func exportAsPDF() {
+    private func export(_ action: TemplateExportAction) {
         Task { @MainActor in
-            let success = await editorViewModel.exportToPDF(fileName: sanitizedFileName())
-            if success {
-                showStatus("PDF exported")
-            } else {
-                presentError(title: "Export Failed", message: editorViewModel.lastError ?? "Unable to export the template as PDF.")
+            let success: Bool
+            switch action {
+            case .pdf:
+                success = await editorViewModel.exportToPDF(fileName: sanitizedFileName())
+            case .image(let format):
+                success = await editorViewModel.exportToImage(format: format, fileName: sanitizedFileName())
             }
-        }
-    }
 
-    private func exportAsPNG() {
-        Task { @MainActor in
-            let success = await editorViewModel.exportToImage(format: .png, fileName: sanitizedFileName())
             if success {
-                showStatus("PNG exported")
+                showStatus("\(action.displayName) exported")
             } else {
-                presentError(title: "Export Failed", message: editorViewModel.lastError ?? "Unable to export the template as PNG.")
-            }
-        }
-    }
-
-    private func exportAsJPEG() {
-        Task { @MainActor in
-            let success = await editorViewModel.exportToImage(format: .jpeg, fileName: sanitizedFileName())
-            if success {
-                showStatus("JPEG exported")
-            } else {
-                presentError(title: "Export Failed", message: editorViewModel.lastError ?? "Unable to export the template as JPEG.")
+                let fallback = "Unable to export the template as \(action.displayName)."
+                presentError(title: "Export Failed", message: editorViewModel.lastError ?? fallback)
             }
         }
     }
@@ -278,50 +190,159 @@ struct ModernTemplateEditor: View {
             .replacingOccurrences(of: "/", with: "-")
     }
 
+    private enum TemplateExportAction {
+        case pdf
+        case image(ExportService.ImageFormat)
+
+        var displayName: String {
+            switch self {
+            case .pdf:
+                return "PDF"
+            case .image(let format):
+                return format.displayName
+            }
+        }
+    }
+
 }
 
 
+private extension ExportService.ImageFormat {
+    var displayName: String {
+        switch self {
+        case .png:
+            return "PNG"
+        case .jpeg:
+            return "JPEG"
+        }
+    }
+}
 
 
-// MARK: - Toolbar Button Components
-private struct ToolbarButton: View {
-    let image: String
-    let action: () -> Void
-    var isDisabled: Bool = false
-    var help: String? = nil
-    
+private extension ModernTemplateEditor {
+    private var undoRedoControls: some View {
+        HStack(spacing: 10) {
+            toolbarIconButton("arrow.uturn.backward", help: "Undo", isDisabled: !canUndo, action: undo)
+            toolbarIconButton("arrow.uturn.forward", help: "Redo", isDisabled: !canRedo, action: redo)
+        }
+    }
+
+    private var saveControl: some View {
+        toolbarIconButton("square.and.arrow.down", help: "Save Template", action: saveTemplate)
+    }
+
+    private var viewControls: some View {
+        HStack(spacing: 10) {
+            toolbarToggleButton(systemName: "square.grid.2x2", isOn: workspace.isPaletteVisible, help: "Toggle Component Palette") {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    workspace.isPaletteVisible.toggle()
+                }
+            }
+            toolbarToggleButton(systemName: "sidebar.right", isOn: isInspectorVisible, help: "Toggle Inspector") {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isInspectorVisible.toggle()
+                }
+            }
+            toolbarToggleButton(systemName: "rectangle.dashed", isOn: workspace.showMargins, help: "Toggle Margins Overlay") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    workspace.showMargins.toggle()
+                }
+            }
+            toolbarToggleButton(systemName: "ruler", isOn: editorViewModel.showRulers, help: "Toggle Rulers") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    editorViewModel.showRulers.toggle()
+                }
+            }
+        }
+    }
+
     @ViewBuilder
-    var body: some View {
-        let button = Button(action: action) {
-            Image(systemName: image)
-                .foregroundColor(isDisabled ? Color.secondaryText.opacity(0.5) : Color.primaryText)
+    var palettePanel: some View {
+        if workspace.isPaletteVisible {
+            sidePanel(defaultWidth: 340, minWidth: 300, maxWidth: 480) {
+                ModernComponentPalette()
+            }
+            .toolbarBackgroundVisibility(.hidden)
         }
-        .pointerStyle(.link)
-        //.buttonStyle(.plain)
-        .disabled(isDisabled)
+    }
 
-        if let help {
-            button.help(help)
-        } else {
-            button
+    private var canvasPanel: some View {
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: TemplateEditorPanelStyle.cornerRadius,
+                style: .continuous
+            )
+                .fill(Color.clear)
+                .glassEffect(
+                    .regular,
+                    in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius)
+                )
+
+            ModernCanvasView()
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: TemplateEditorPanelStyle.cornerRadius,
+                        style: .continuous
+                    )
+                )
+                .toolbar {
+                    ToolbarSpacer(.flexible)
+                    ToolbarItemGroup {
+                        saveControl
+                        undoRedoControls
+                        viewControls
+                    }
+                    ToolbarSpacer(.flexible)
+                }
+                .toolbarBackgroundVisibility(.hidden)
         }
+        .padding(TemplateEditorPanelStyle.outerPadding)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    var inspectorPanel: some View {
+        if isInspectorVisible {
+            sidePanel(defaultWidth: 340, minWidth: 300, maxWidth: 480) {
+                ModernInspectorView()
+            }
+            .toolbarBackgroundVisibility(.hidden)
+        }
+    }
+
+    private func sidePanel<Content: View>(defaultWidth: CGFloat, minWidth: CGFloat, maxWidth: CGFloat, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(minWidth: minWidth, idealWidth: defaultWidth, maxWidth: maxWidth, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+            .clipped()
+    }
+
+}
+
+@ViewBuilder
+private func toolbarIconButton(_ systemName: String, help: String? = nil, isDisabled: Bool = false, action: @escaping () -> Void) -> some View {
+    let button = Button(action: action) {
+        Image(systemName: systemName)
+            .foregroundColor(isDisabled ? Color.secondaryText.opacity(0.5) : Color.primaryText)
+    }
+    .disabled(isDisabled)
+    .pointerStyle(.link)
+
+    if let help {
+        button.help(help)
+    } else {
+        button
     }
 }
 
-private struct ToggleToolbarButton: View {
-    var isOn: Bool
-    var systemImage: String
-    var help: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .symbolVariant(isOn ? .fill : .none)
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondaryText)
-        }
-        .pointerStyle(.link)
-        //.buttonStyle(.plain)
-        .help(help)
+@ViewBuilder
+private func toolbarToggleButton(systemName: String, isOn: Bool, help: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: systemName)
+            .symbolVariant(isOn ? .fill : .none)
+            .foregroundStyle(isOn ? Color.accentColor : Color.secondaryText)
     }
+    .pointerStyle(.link)
+    .help(help)
 }

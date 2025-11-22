@@ -293,7 +293,7 @@ public struct RelationshipsDetailColumn: View {
             title: "No Relationship Selected",
             message: "Select a client, payee, or plan manager from the list."
         )
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.ultraThinMaterial)
     }
 
     @ToolbarContentBuilder

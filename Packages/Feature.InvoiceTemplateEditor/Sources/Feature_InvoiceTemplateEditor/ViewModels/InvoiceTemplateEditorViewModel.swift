@@ -319,11 +319,11 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
     // MARK: - Layer Management
 
     func selectComponent(_ component: InvoiceComponent?) {
-        document.selectedComponentID = component?.id
+        document.selectComponent(component?.id)
     }
 
     func selectComponent(id: UUID?) {
-        document.selectedComponentID = id
+        document.selectComponent(id)
     }
 
     func toggleVisibility(for component: InvoiceComponent) {

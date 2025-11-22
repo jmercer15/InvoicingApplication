@@ -11,6 +11,38 @@ import SwiftUI
 
 /// Model representing a split section that can be recursively subdivided
 struct SectionSplit: Codable {
+    struct PaddingInsets: Codable, Equatable {
+        var top: CGFloat
+        var leading: CGFloat
+        var bottom: CGFloat
+        var trailing: CGFloat
+        
+        static let zero = PaddingInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+    }
+    
+    enum SizingMode: String, Codable, CaseIterable {
+        case fixed // Ratio-based (default)
+        case expand // Takes remaining space
+        case shrink // Shrinks to fit content
+        
+        var displayName: String {
+            switch self {
+            case .fixed: return "Fixed Ratio"
+            case .expand: return "Expand"
+            case .shrink: return "Shrink to Fit"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .fixed: return "arrow.left.and.right"
+            case .expand: return "arrow.up.left.and.arrow.down.right"
+            case .shrink: return "arrow.down.right.and.arrow.up.left"
+            }
+        }
+    }
+    
+    
     let direction: SplitDirection
     let splitCount: Int
     var splitRatios: [CGFloat] // For custom sizing - now mutable
@@ -18,6 +50,12 @@ struct SectionSplit: Codable {
     var childComponents: [Int: [InvoiceComponent]] = [:] // Components per child index (for leaf children)
     var childLabels: [Int: String] = [:] // Labels for each child section
     var childAlignments: [Int: LeafAlignment] = [:] // Alignment for each leaf child section
+    var childWidthSizingModes: [SizingMode] = [] // Width sizing mode for each child
+    var childHeightSizingModes: [SizingMode] = [] // Height sizing mode for each child
+    var childPaddings: [PaddingInsets] = [] // Internal padding per child
+    var childSpacing: CGFloat = 0 // Spacing between children
+    var padding: CGFloat = 0 // Internal padding
+    var margin: CGFloat = 0 // External padding around the split
     let id: UUID
     
     // Grid-specific properties
@@ -25,6 +63,17 @@ struct SectionSplit: Codable {
     var gridColumns: Int = 2
     var heightRatios: [CGFloat] = [] // For grid: row height ratios
     var widthRatios: [CGFloat] = [] // For grid: column width ratios
+    var rowSizingModes: [SizingMode] = [] // Sizing mode for each row
+    var columnSizingModes: [SizingMode] = [] // Sizing mode for each column
+    
+    // CodingKeys for custom decoding
+    private enum CodingKeys: String, CodingKey {
+        case direction, splitCount, splitRatios, children, childComponents, childLabels, childAlignments
+        case childWidthSizingModes, childHeightSizingModes, childSizingModes // childSizingModes for migration
+        case childPaddings
+        case childSpacing, padding, margin
+        case id, gridRows, gridColumns, heightRatios, widthRatios, rowSizingModes, columnSizingModes
+    }
     
     init(direction: SplitDirection, splitCount: Int, splitRatios: [CGFloat]? = nil) {
         self.direction = direction
@@ -41,12 +90,22 @@ struct SectionSplit: Codable {
         // Initialize children as nil (unsplit)
         self.children = Array(repeating: nil, count: splitCount)
         
+        // Initialize sizing modes
+        self.childWidthSizingModes = Array(repeating: .fixed, count: splitCount)
+        self.childHeightSizingModes = Array(repeating: .fixed, count: splitCount)
+        self.childPaddings = Array(repeating: .zero, count: splitCount)
+        self.childSpacing = 0
+        self.padding = 0
+        self.margin = 0
+        
         // Initialize grid-specific properties
         if direction == .grid {
             self.gridRows = 2
             self.gridColumns = 2
             self.heightRatios = Array(repeating: 1.0 / CGFloat(gridRows), count: gridRows)
             self.widthRatios = Array(repeating: 1.0 / CGFloat(gridColumns), count: gridColumns)
+            self.rowSizingModes = Array(repeating: .fixed, count: gridRows)
+            self.columnSizingModes = Array(repeating: .fixed, count: gridColumns)
         }
     }
     
@@ -61,12 +120,21 @@ struct SectionSplit: Codable {
         // Initialize children as nil (unsplit)
         self.children = Array(repeating: nil, count: splitCount)
         
+        // Initialize sizing modes
+        self.childWidthSizingModes = Array(repeating: .fixed, count: splitCount)
+        self.childHeightSizingModes = Array(repeating: .fixed, count: splitCount)
+        self.childPaddings = Array(repeating: .zero, count: splitCount)
+        self.childSpacing = 0
+        self.padding = 0
+        self.margin = 0
+        
         // Set height ratios
         if let ratios = heightRatios, ratios.count == gridRows {
             self.heightRatios = ratios
         } else {
             self.heightRatios = Array(repeating: 1.0 / CGFloat(gridRows), count: gridRows)
         }
+        self.rowSizingModes = Array(repeating: .fixed, count: gridRows)
         
         // Set width ratios
         if let ratios = widthRatios, ratios.count == gridColumns {
@@ -74,9 +142,98 @@ struct SectionSplit: Codable {
         } else {
             self.widthRatios = Array(repeating: 1.0 / CGFloat(gridColumns), count: gridColumns)
         }
+        self.columnSizingModes = Array(repeating: .fixed, count: gridColumns)
         
         // Legacy splitRatios for compatibility (not used for grid)
         self.splitRatios = Array(repeating: 1.0 / CGFloat(splitCount), count: splitCount)
+    }
+    
+    // Custom decoding to handle migration
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        direction = try container.decode(SplitDirection.self, forKey: .direction)
+        splitCount = try container.decode(Int.self, forKey: .splitCount)
+        splitRatios = try container.decode([CGFloat].self, forKey: .splitRatios)
+        children = try container.decode([SectionSplit?].self, forKey: .children)
+        childComponents = try container.decodeIfPresent([Int: [InvoiceComponent]].self, forKey: .childComponents) ?? [:]
+        childLabels = try container.decodeIfPresent([Int: String].self, forKey: .childLabels) ?? [:]
+        childAlignments = try container.decodeIfPresent([Int: LeafAlignment].self, forKey: .childAlignments) ?? [:]
+        id = try container.decode(UUID.self, forKey: .id)
+        
+        // Try decoding new properties, fallback to defaults
+        // Handle migration from old childSizingModes to new width/height arrays
+        if let widthModes = try? container.decodeIfPresent([SizingMode].self, forKey: .childWidthSizingModes) {
+            childWidthSizingModes = widthModes
+        } else if let oldModes = try? container.decodeIfPresent([SizingMode].self, forKey: .childSizingModes) {
+            // Migrate from old single array
+            childWidthSizingModes = oldModes
+        } else {
+            childWidthSizingModes = Array(repeating: .fixed, count: splitCount)
+        }
+        
+        if let heightModes = try? container.decodeIfPresent([SizingMode].self, forKey: .childHeightSizingModes) {
+            childHeightSizingModes = heightModes
+        } else if let oldModes = try? container.decodeIfPresent([SizingMode].self, forKey: .childSizingModes) {
+            // Migrate from old single array
+            childHeightSizingModes = oldModes
+        } else {
+            childHeightSizingModes = Array(repeating: .fixed, count: splitCount)
+        }
+        
+        if let paddings = try? container.decodeIfPresent([PaddingInsets].self, forKey: .childPaddings) {
+            childPaddings = paddings
+        } else {
+            childPaddings = Array(repeating: .zero, count: splitCount)
+        }
+        childSpacing = try container.decodeIfPresent(CGFloat.self, forKey: .childSpacing) ?? 0
+        padding = try container.decodeIfPresent(CGFloat.self, forKey: .padding) ?? 0
+        margin = try container.decodeIfPresent(CGFloat.self, forKey: .margin) ?? 0
+        
+        gridRows = try container.decodeIfPresent(Int.self, forKey: .gridRows) ?? 2
+        gridColumns = try container.decodeIfPresent(Int.self, forKey: .gridColumns) ?? 2
+        heightRatios = try container.decodeIfPresent([CGFloat].self, forKey: .heightRatios) ?? []
+        widthRatios = try container.decodeIfPresent([CGFloat].self, forKey: .widthRatios) ?? []
+        
+        rowSizingModes = try container.decodeIfPresent([SizingMode].self, forKey: .rowSizingModes) ?? Array(repeating: .fixed, count: gridRows)
+        columnSizingModes = try container.decodeIfPresent([SizingMode].self, forKey: .columnSizingModes) ?? Array(repeating: .fixed, count: gridColumns)
+        
+        // Ensure arrays are correct size if defaults were used but dimensions differ
+        if rowSizingModes.count != gridRows {
+            rowSizingModes = Array(repeating: .fixed, count: gridRows)
+        }
+        if columnSizingModes.count != gridColumns {
+            columnSizingModes = Array(repeating: .fixed, count: gridColumns)
+        }
+        if childPaddings.count != splitCount {
+            childPaddings = Array(repeating: .zero, count: splitCount)
+        }
+    }
+    
+    // Custom encoding
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        try container.encode(direction, forKey: .direction)
+        try container.encode(splitCount, forKey: .splitCount)
+        try container.encode(splitRatios, forKey: .splitRatios)
+        try container.encode(children, forKey: .children)
+        try container.encode(childComponents, forKey: .childComponents)
+        try container.encode(childLabels, forKey: .childLabels)
+        try container.encode(childAlignments, forKey: .childAlignments)
+        try container.encode(childWidthSizingModes, forKey: .childWidthSizingModes)
+        try container.encode(childHeightSizingModes, forKey: .childHeightSizingModes)
+        try container.encode(childPaddings, forKey: .childPaddings)
+        try container.encode(childSpacing, forKey: .childSpacing)
+        try container.encode(padding, forKey: .padding)
+        try container.encode(margin, forKey: .margin)
+        try container.encode(id, forKey: .id)
+        try container.encode(gridRows, forKey: .gridRows)
+        try container.encode(gridColumns, forKey: .gridColumns)
+        try container.encode(heightRatios, forKey: .heightRatios)
+        try container.encode(widthRatios, forKey: .widthRatios)
+        try container.encode(rowSizingModes, forKey: .rowSizingModes)
+        try container.encode(columnSizingModes, forKey: .columnSizingModes)
     }
     
     mutating func updateRatio(at index: Int, newRatio: CGFloat) {
@@ -109,6 +266,12 @@ struct SectionSplit: Codable {
         if total > 0 {
             splitRatios = splitRatios.map { $0 / total }
         }
+    }
+
+    mutating func resetRatiosToEvenDistribution() {
+        guard splitCount > 0 else { return }
+        let evenValue = 1.0 / CGFloat(splitCount)
+        splitRatios = Array(repeating: evenValue, count: splitCount)
     }
     
     mutating func splitChild(at index: Int, direction: SplitDirection, splitCount: Int) {
@@ -562,4 +725,3 @@ struct SplitValidationResult {
         }
     }
 }
-

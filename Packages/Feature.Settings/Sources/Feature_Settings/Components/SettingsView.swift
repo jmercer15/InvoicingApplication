@@ -60,7 +60,7 @@ struct SettingsView: View {
             // Settings list with real-time selection
             settingsList
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
     
     // MARK: - Settings List
@@ -91,7 +91,7 @@ struct SettingsView: View {
             .padding(.vertical, 8)
         }
         .frame(maxWidth: 400) // Limit list width to match FoldPaperComponents
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }
 

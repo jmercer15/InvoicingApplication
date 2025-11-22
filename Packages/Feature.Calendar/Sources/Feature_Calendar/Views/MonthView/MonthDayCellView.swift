@@ -40,12 +40,12 @@ struct MonthDayCellView: View {
         if !isCurrentMonth { return Color("TextSecondary", bundle: .sharedUI).opacity(0.4) }
         return isWeekend ? Color("TextSecondary", bundle: .sharedUI).opacity(0.6) : Color("Text", bundle: .sharedUI)
     }
-    private var cellBackground: Color {
-        if isHovering { return Color("Background", bundle: .sharedUI).opacity(0.02) } 
+    private var cellTint: Color? {
+        if isHovering { return Color.white.opacity(0.18) }
         if isCurrentMonth {
-            return isWeekend ? Color("Background", bundle: .sharedUI).opacity(0.08) : Color.clear
+            return isWeekend ? Color.white.opacity(0.12) : nil
         }
-        return Color("Background", bundle: .sharedUI).opacity(0.15)
+        return Color.white.opacity(0.2)
     }
 
     var body: some View {
@@ -56,14 +56,21 @@ struct MonthDayCellView: View {
                 Spacer() // Pushes content to top
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedCorner(
-                    radius: 20,
-                    corners: isLastWeek ? 
-                        (dayIndex == 0 ? .bottomLeft : dayIndex == 6 ? .bottomRight : []) : []
-                )
-                .fill(cellBackground)
-            )
+            .background {
+                if let tint = cellTint {
+                    let cornerShape = RoundedCorner(
+                        radius: 20,
+                        corners: isLastWeek ?
+                            (dayIndex == 0 ? .bottomLeft : dayIndex == 6 ? .bottomRight : []) : []
+                    )
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .glassEffect(
+                            .regular.tint(tint),
+                            in: .rect(cornerRadius: 20)
+                        )
+                        .clipShape(cornerShape)
+                }
+            }
             .overlay(
                 // Top border (only for first row)
                 weekIndex == 0 ? Rectangle()
@@ -236,71 +243,14 @@ struct MonthSessionItemView: View {
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color("Background", bundle: .sharedUI).opacity(0.15),
-                            Color("Background", bundle: .sharedUI).opacity(0.08),
-                            Color("Background", bundle: .sharedUI).opacity(0.12)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                .glassEffect(
+                    .regular.tint(clientColor.opacity(0.35)),
+                    in: .rect(cornerRadius: 4)
                 )
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color("Background", bundle: .sharedUI).opacity(0.4),
-                                    Color("Background", bundle: .sharedUI).opacity(0.15),
-                                    Color("Background", bundle: .sharedUI).opacity(0.25)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .overlay(
-                    // Client color overlay
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    clientColor.opacity(0.7),
-                                    clientColor.opacity(0.6),
-                                    clientColor.opacity(0.5),
-                                    clientColor.opacity(0.4),
-                                    clientColor.opacity(0.35),
-                                    clientColor.opacity(0.3)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    clientColor.opacity(0.8),
-                                    clientColor.opacity(0.6),
-                                    clientColor.opacity(0.4),
-                                    clientColor.opacity(0.2),
-                                    clientColor.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(clientColor.opacity(0.6), lineWidth: 1)
         )
         .appInteractiveCursor()
     }
@@ -342,71 +292,14 @@ struct MonthEventItemView: View {
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color("Background", bundle: .sharedUI).opacity(0.15),
-                            Color("Background", bundle: .sharedUI).opacity(0.08),
-                            Color("Background", bundle: .sharedUI).opacity(0.12)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                .glassEffect(
+                    .regular.tint(calendarColor.opacity(0.35)),
+                    in: .rect(cornerRadius: 4)
                 )
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color("Background", bundle: .sharedUI).opacity(0.4),
-                                    Color("Background", bundle: .sharedUI).opacity(0.15),
-                                    Color("Background", bundle: .sharedUI).opacity(0.25)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .overlay(
-                    // Calendar color overlay
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    calendarColor.opacity(0.7),
-                                    calendarColor.opacity(0.6),
-                                    calendarColor.opacity(0.5),
-                                    calendarColor.opacity(0.4),
-                                    calendarColor.opacity(0.35),
-                                    calendarColor.opacity(0.3)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    calendarColor.opacity(0.8),
-                                    calendarColor.opacity(0.6),
-                                    calendarColor.opacity(0.4),
-                                    calendarColor.opacity(0.2),
-                                    calendarColor.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(calendarColor.opacity(0.6), lineWidth: 1)
         )
         .appInteractiveCursor()
     }

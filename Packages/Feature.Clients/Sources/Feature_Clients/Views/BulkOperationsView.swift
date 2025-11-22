@@ -81,6 +81,7 @@ struct BulkOperationsView: View {
         } message: {
             Text(errorMessage ?? "An unknown error occurred")
         }
+        .background { AppMeshBackdrop() }
         .overlay {
             if isProcessing {
                 ProgressView()

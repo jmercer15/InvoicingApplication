@@ -92,9 +92,6 @@ struct ControlRowContainer<Content: View>: View {
     let level: InspectorFontLevel
 
     private let cornerRadius: CGFloat = 8
-    private let hoverScale: CGFloat = 1.02
-    private let hoverAnimation: Animation = .easeOut(duration: 0.12)
-    @State private var isHovered = false
 
     init(
         level: InspectorFontLevel = .controlLabel,
@@ -110,14 +107,11 @@ struct ControlRowContainer<Content: View>: View {
             .padding(.vertical, 2)
             .padding(.horizontal, 4)
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            //.glassEffect(.regular.interactive(true), in: .rect(cornerRadius: cornerRadius))
-            //.glassEffectTransition(.materialize)
-            .scaleEffect(isHovered ? hoverScale : 1.0)
-            .onHover { hovering in
-                withAnimation(hoverAnimation) {
-                    isHovered = hovering
-                }
-            }
+            .glassEffect(
+                .regular.tint(Color(NSColor.windowBackgroundColor)),
+                in: .rect(cornerRadius: cornerRadius)
+            )
+            .glassEffectTransition(.materialize)
     }
 
     private func leadingInset(for level: InspectorFontLevel) -> CGFloat {

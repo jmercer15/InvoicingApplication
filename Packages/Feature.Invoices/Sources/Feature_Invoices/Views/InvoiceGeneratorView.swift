@@ -64,7 +64,7 @@ struct InvoiceGeneratorView: View {
         .onChange(of: endDate) { _, _ in
             Task { await loadSessionInstances() }
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.ultraThinMaterial)
         .cornerRadius(StyleGuide.Dimensions.cornerRadiusMedium)
         .shadow(radius: 8)
         .frame(minWidth: 700, idealWidth: 800, minHeight: 500, idealHeight: 600)

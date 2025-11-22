@@ -123,6 +123,8 @@ struct ComponentStyle: Codable, Hashable {
     var tableRowColor: String = "FFFFFF"
     var tableRowAltColor: String = "F9FAFB"
     var tableTextColor: String = "111827"
+    /// Empty string indicates the header should inherit the regular table text color
+    var tableHeaderTextColor: String = ""
     var showTableHeader: Bool = true
     var useAlternatingRows: Bool = false
     var tableDirection: TableDirection = .horizontal
@@ -363,6 +365,9 @@ struct ComponentStyle: Codable, Hashable {
     }
     var tableTextColorSwiftUI: Color {
         Color(hex: tableTextColor)
+    }
+    var tableHeaderTextColorSwiftUI: Color {
+        Color(hex: tableHeaderTextColor.isEmpty ? tableTextColor : tableHeaderTextColor)
     }
     var tableBorderColorSwiftUI: Color {
         Color(hex: tableBorderColor)
@@ -687,6 +692,7 @@ struct ComponentStyle: Codable, Hashable {
         hasher.combine(tableRowColor)
         hasher.combine(tableRowAltColor)
         hasher.combine(tableTextColor)
+        hasher.combine(tableHeaderTextColor)
         hasher.combine(showTableHeader)
         hasher.combine(useAlternatingRows)
         hasher.combine(tableDirection)
@@ -930,4 +936,3 @@ extension ComponentStyle {
         return style
     }
 }
-

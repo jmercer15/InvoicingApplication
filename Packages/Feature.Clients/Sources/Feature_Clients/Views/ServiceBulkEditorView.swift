@@ -134,7 +134,7 @@ struct ServiceBulkEditorView: View {
             .padding()
             .background(.bar)
         }
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(.ultraThinMaterial)
     }
 
     private func removeTemplate(at index: Int) {

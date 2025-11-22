@@ -31,7 +31,6 @@ public struct InvoicesContentColumn: View {
             containerViewModel: viewModel
         )
         .scrollContentBackground(.hidden)
-        .background(Color("Background", bundle: .sharedUI))
     }
 
     @ToolbarContentBuilder
@@ -154,7 +153,8 @@ public struct InvoicesDetailColumn: View {
     private var detailContent: some View {
         ZStack {
             if viewModel.isTransitioningToBlack {
-                Color("Background", bundle: .sharedUI)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
                     .id("invoice_detail_transition")
             } else if let editorViewModel = viewModel.invoiceEditorViewModel {
                 InvoiceEditor(
@@ -165,7 +165,6 @@ public struct InvoicesDetailColumn: View {
                 .id("invoice-editor-\(editorViewModel.invoice.id.uuidString)")
                 .environment(\.modelContext, viewContext)
                 .fluidDetailTransition()
-                .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
             } else {
                 EmptyStateView(
                     icon: "doc.text.fill",
@@ -173,10 +172,8 @@ public struct InvoicesDetailColumn: View {
                     message: "Select an invoice from the list or create a new one."
                 )
                 .id("invoice_detail_placeholder")
-                .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
             }
         }
-        .preferredColorScheme(.light)
     }
 
     @ToolbarContentBuilder

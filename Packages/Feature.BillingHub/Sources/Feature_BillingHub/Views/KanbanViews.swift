@@ -127,14 +127,14 @@ struct KanbanColumn: View {
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge * 0.5)
         .padding(.vertical, 0)
-        .background(
+        .glassEffect(
+            .regular.interactive(true).tint(StyleGuide.Colors.secondary.opacity(0.4)),
+            in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge)
+        )
+        .shadow(color: groupAccent.opacity(0.08), radius: 8, x: 0, y: 2)
+        .overlay(
             RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge)
-                .fill(StyleGuide.Colors.secondary.opacity(StyleGuide.Opacity.subtle))
-                .shadow(color: groupAccent.opacity(0.08), radius: 8, x: 0, y: 2)
-                .overlay(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge)
-                        .stroke(groupAccent.opacity(0.5), lineWidth: 1)
-                )
+                .stroke(groupAccent.opacity(0.5), lineWidth: 1)
         )
         .pointerStyle(.openHand)
         .draggable(GroupDragPayload(groupID: groupID, column: resolvedColumn)) {
@@ -186,24 +186,24 @@ struct KanbanColumn: View {
                 .foregroundColor(StyleGuide.Colors.text)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(
+                .glassEffect(
+                    .regular.tint(accent.opacity(0.4)),
+                    in: .capsule
+                )
+                .overlay(
                     Capsule()
-                        .fill(accent.opacity(0.18))
-                        .overlay(
-                            Capsule()
-                                .stroke(accent.opacity(0.45), lineWidth: 0.5)
-                        )
+                        .stroke(accent.opacity(0.45), lineWidth: 0.5)
                 )
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
         .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
-        .background(
+        .glassEffect(
+            .regular.tint(accent.opacity(0.25)),
+            in: .capsule
+        )
+        .overlay(
             Capsule()
-                .fill(accent.opacity(0.08))
-                .overlay(
-                    Capsule()
-                        .stroke(accent, lineWidth: 0.5)
-                )
+                .stroke(accent, lineWidth: 0.5)
         )
     }
 
@@ -360,7 +360,10 @@ private struct KanbanColumn_Preview: View {
         .frame(width: 320, height: 420)
         .environmentObject(DragDropState())
         .padding()
-        .background(StyleGuide.Colors.secondary)
+        .glassEffect(
+            .regular.tint(StyleGuide.Colors.secondary.opacity(0.5)),
+            in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
+        )
     }
 }
 
@@ -688,7 +691,10 @@ struct KanbanCard: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(Color.orange.opacity(0.12)))
+                .glassEffect(
+                    .regular.tint(Color.orange.opacity(0.4)),
+                    in: .capsule
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -821,12 +827,15 @@ struct KanbanCard: View {
                 }
             }
             .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
-                    .fill(StyleGuide.Colors.background)
-                    .stroke(sessionData.accentColor, lineWidth: 2)
-                    .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .glassEffect(
+                .regular.tint(sessionData.accentColor.opacity(0.4)),
+                in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
+                    .stroke(sessionData.accentColor, lineWidth: 2)
+            )
+            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
 
         .frame(width: 260, height: 84)
         .scaleEffect(0.5) // Scale down the drag preview for a lighter feel
@@ -852,12 +861,15 @@ private struct CardContainer: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(StyleGuide.Dimensions.paddingMedium)
-            .background(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
-                    .fill(StyleGuide.Colors.background)
-                    .stroke(StyleGuide.Colors.border, lineWidth: 1)
-                    .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
+            .glassEffect(
+                .regular.tint(Color.white.opacity(0.2)),
+                in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
+                    .stroke(StyleGuide.Colors.border, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
     }
 }
 

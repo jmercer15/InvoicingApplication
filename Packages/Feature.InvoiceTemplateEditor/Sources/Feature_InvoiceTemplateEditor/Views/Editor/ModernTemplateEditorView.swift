@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import Foundation
+import Core
 
 // MARK: - Template Categories
 
@@ -215,7 +216,11 @@ public struct ModernTemplateEditorView: View {
             showingNewTemplateSheet: $showingNewTemplateSheet
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .background {
+            Color(NSColor.windowBackgroundColor)
+                .ignoresSafeArea()
+        }
+        .background { AppMeshBackdrop() }
         .environmentObject(workspace)
         .environmentObject(workspace.editorViewModel)
         .environmentObject(workspace.editorViewModel.document)
@@ -510,61 +515,101 @@ struct ModernTemplateCreatorSheet: View {
 }
 
 
+// MARK: - Component Size Preference Key
+
+private struct ComponentSizePreferenceKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
+}
+
 struct ModernComponentView: View {
     let component: InvoiceComponent
-    let proposedSize: CGSize?
     @EnvironmentObject private var document: InvoiceDocument
     
-    private var frameSize: CGSize { proposedSize ?? component.size }
-    
     var body: some View {
-        Group {
-            switch component.type {
-            case .companyName:
-                CompanyNameComponent(component: component)
-            case .companyLogo:
-                ImageComponent(component: component)
-            case .companyABN:
-                CompanyABNComponent(component: component)
-            case .companyEmail:
-                CompanyEmailComponent(component: component)
-            case .invoiceNumberAndDates:
-                InvoiceNumberAndDatesComponent(component: component)
-            case .billTo:
-                BillToComponent(component: component)
-            case .participant:
-                ParticipantComponent(component: component)
-            case .servicesTable:
-                TableComponent(component: component)
-            case .documentGrid:
-                DocumentGridComponent(component: component)
-            case .totals:
-                TotalsComponent(component: component)
-            case .paymentDetails:
-                PaymentDetailsComponent(component: component)
-            case .paymentTerms:
-                PaymentTermsComponent(component: component)
-            case .invoiceTitle:
-                InvoiceTitleComponent(component: component)
-            case .notes:
-                NotesComponent(component: component)
-            case .textBox:
-                TextBoxComponent(component: component)
-            case .rectangleShape:
-                RectangleShapeComponent(component: component)
-            case .ellipseShape:
-                EllipseShapeComponent(component: component)
-            case .lineShape:
-                LineShapeComponent(component: component)
-            case .triangleShape:
-                TriangleShapeComponent(component: component)
-            case .starShape:
-                StarShapeComponent(component: component)
-            case .imagePlaceholder:
-                ImagePlaceholderComponent(component: component)
+        componentView
+            .background(measurementLayer)
+            .frame(width: component.size.width)
+            .onPreferenceChange(ComponentSizePreferenceKey.self) { measuredSize in
+                updateComponentSizeIfNeeded(measuredSize)
             }
+    }
+    
+    @ViewBuilder
+    private var componentView: some View {
+        switch component.type {
+        case .companyName: CompanyNameComponent(component: component)
+        case .companyLogo: ImageComponent(component: component)
+        case .companyABN: CompanyABNComponent(component: component)
+        case .companyEmail: CompanyEmailComponent(component: component)
+        case .invoiceNumberAndDates: InvoiceNumberAndDatesComponent(component: component)
+        case .billTo: BillToComponent(component: component)
+        case .participant: ParticipantComponent(component: component)
+        case .servicesTable: TableComponent(component: component)
+        case .documentGrid: DocumentGridComponent(component: component)
+        case .totals: TotalsComponent(component: component)
+        case .paymentDetails: PaymentDetailsComponent(component: component)
+        case .paymentTerms: PaymentTermsComponent(component: component)
+        case .invoiceTitle: InvoiceTitleComponent(component: component)
+        case .notes: NotesComponent(component: component)
+        case .textBox: TextBoxComponent(component: component)
+        case .rectangleShape: RectangleShapeComponent(component: component)
+        case .ellipseShape: EllipseShapeComponent(component: component)
+        case .lineShape: LineShapeComponent(component: component)
+        case .triangleShape: TriangleShapeComponent(component: component)
+        case .starShape: StarShapeComponent(component: component)
+        case .imagePlaceholder: ImagePlaceholderComponent(component: component)
         }
-        .frame(width: frameSize.width, height: frameSize.height)
+    }
+    
+    private var measurementLayer: some View {
+        GeometryReader { geometry in
+            Color.clear.preference(
+                key: ComponentSizePreferenceKey.self,
+                value: geometry.size
+            )
+        }
+        .allowsHitTesting(false)
+    }
+    
+    private func updateComponentSizeIfNeeded(_ measuredSize: CGSize) {
+        guard measuredSize != .zero && measuredSize.width > 0 && measuredSize.height > 0 else { return }
+        
+        // Account for additional pixels introduced by shadows
+        let adjustedSize = CGSize(
+            width: measuredSize.width + shadowExtension.width,
+            height: measuredSize.height + shadowExtension.height
+        )
+        
+        let currentSize = component.size
+        let widthDiff = abs(adjustedSize.width - currentSize.width)
+        let heightDiff = abs(adjustedSize.height - currentSize.height)
+        
+        // Only update if size changed significantly (more than 0.5pt difference)
+        guard widthDiff > 0.5 || heightDiff > 0.5 else { return }
+        
+        document.updateComponent(id: component.id) { component in
+            component.size = adjustedSize
+        }
+    }
+    
+    private var shadowExtension: CGSize {
+        guard component.style.shadowEnabled else { return .zero }
+        
+        let radius = component.style.shadowRadius
+        let offsetX = component.style.shadowOffsetX
+        let offsetY = component.style.shadowOffsetY
+        
+        // Shadow extends by its radius on each side plus the absolute offset
+        return CGSize(
+            width: radius * 2 + abs(offsetX),
+            height: radius * 2 + abs(offsetY)
+        )
     }
 }
 

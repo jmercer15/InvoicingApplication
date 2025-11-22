@@ -210,32 +210,28 @@ struct ContentView: View {
 
     @ViewBuilder
     private func featureWorkspace(for feature: AppTab) -> some View {
-        switch feature {
+        ZStack {
+            AppMeshBackdrop()
+            switch feature {
         case .invoices:
             HSplitView {
                 InvoicesContentColumn(viewModel: invoicesViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
 
                 InvoicesDetailColumn(viewModel: invoicesViewModel, showInspector: .constant(false))
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
             }
         case .billingHub:
             BillingHubView(viewModel: appAssembly.makeBillingHubViewModel())
                 .environment(\.modelContext, modelContext)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .invoiceTemplateEditor:
-            ZStack {
-                ModernTemplateEditorView(workspace: templateEditorWorkspace)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .environment(\.modelContext, modelContext)
-                    .environmentObject(templateEditorWorkspace)
-                    .environmentObject(templateEditorWorkspace.editorViewModel)
-                    .environmentObject(appAssembly.templateDataService)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(NSColor.windowBackgroundColor))
+            ModernTemplateEditorView(workspace: templateEditorWorkspace)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(\.modelContext, modelContext)
+                .environmentObject(templateEditorWorkspace)
+                .environmentObject(templateEditorWorkspace.editorViewModel)
+                .environmentObject(appAssembly.templateDataService)
         case .calendar:
             CalendarContentColumn(viewModel: calendarViewModel, showInspector: .constant(false))
                 .environment(\.modelContext, modelContext)
@@ -248,11 +244,9 @@ struct ContentView: View {
             HSplitView {
                 RelationshipsContentColumn(viewModel: relationshipsViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
 
                 RelationshipsDetailColumn(viewModel: relationshipsViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
             }
             .onAppear {
                 // Context is managed by ViewModel through repositories
@@ -261,11 +255,9 @@ struct ContentView: View {
             HSplitView {
                 NDISCatalogueContentColumn(viewModel: ndisCatalogueViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
 
                 NDISCatalogueDetailColumn(viewModel: ndisCatalogueViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
             }
             .onAppear {
                 ndisCatalogueViewModel.updateContextIfNeeded(modelContext)
@@ -274,10 +266,8 @@ struct ContentView: View {
             HSplitView {
                 NDISBillingContentColumn(viewModel: ndisBillingViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
 
                 NDISBillingDetailColumn(viewModel: ndisBillingViewModel)
-                    .background(Color("Background", bundle: .sharedUI))
             }
             .onAppear {
                 ndisBillingViewModel.updateContextIfNeeded(modelContext)
@@ -289,12 +279,11 @@ struct ContentView: View {
         case .settings:
             HSplitView {
                 SettingsContentColumn(viewModel: settingsViewModel)
-                    .background(Color("Background", bundle: .sharedUI))
 
                 SettingsDetailColumn(viewModel: settingsViewModel)
                     .environment(\.modelContext, modelContext)
-                    .background(Color("Background", bundle: .sharedUI))
             }
+        }
         }
     }
 
@@ -519,4 +508,3 @@ private extension View {
         #endif
     }
 }
-

@@ -37,14 +37,14 @@ extension InvoiceDocument {
             y: originalComponent.position.y + 20
         )
         components.append(copiedComponent)
-        selectedComponentID = copiedComponent.id
+        selectComponent(copiedComponent.id)
     }
     
     func removeComponent(with id: UUID) {
         saveStateForUndo()
         components.removeAll { $0.id == id }
         if selectedComponentID == id {
-            selectedComponentID = nil
+            selectComponent(nil)
         }
     }
     
@@ -52,7 +52,7 @@ extension InvoiceDocument {
         if let index = components.firstIndex(where: { $0.id == id }) {
             components.remove(at: index)
             if selectedComponentID == id {
-                selectedComponentID = nil
+                selectComponent(nil)
             }
         }
     }
@@ -106,7 +106,7 @@ extension InvoiceDocument {
             isVisibleAfterToggle = component.isVisible
         }
         if !isVisibleAfterToggle && selectedComponentID == id {
-            selectedComponentID = nil
+            selectComponent(nil)
         }
     }
     
@@ -175,4 +175,3 @@ extension InvoiceDocument {
         return split.getAlignment(forChild: childIndex)
     }
 }
-

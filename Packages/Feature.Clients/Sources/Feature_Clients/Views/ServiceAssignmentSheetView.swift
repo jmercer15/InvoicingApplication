@@ -43,7 +43,7 @@ struct ServiceAssignmentSheetView: View {
             }
         }
         .padding()
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(.ultraThinMaterial)
         .onAppear {
             // Pre-select already selected items
             for item in alreadySelectedItems {

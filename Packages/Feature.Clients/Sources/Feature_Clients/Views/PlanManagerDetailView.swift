@@ -197,7 +197,7 @@ struct PlanManagerDetailView: View {
             .padding(24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .background { AppMeshBackdrop() }
         .foregroundColor(Color(NSColor.labelColor))
         .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
@@ -732,17 +732,7 @@ struct PlanManagerAddressEditingSheetView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color("Background", bundle: .sharedUI),
-                    Color("Background", bundle: .sharedUI).opacity(0.95),
-                    Color("Background", bundle: .sharedUI).opacity(0.9)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(.ultraThinMaterial)
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
             // Load existing address data from ViewModel

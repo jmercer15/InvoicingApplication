@@ -161,17 +161,7 @@ struct EnhancedSupportItemDetailView: View {
             }
             .padding()
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color("Background", bundle: .sharedUI),
-                    Color("Background", bundle: .sharedUI).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
+        .background(.clear)
         .foregroundColor(Color("Text", bundle: .sharedUI))
         .onAppear {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
@@ -361,7 +351,7 @@ fileprivate struct ModernCombinedPricingCard: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background", bundle: .sharedUI))
+                .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color("White10", bundle: .sharedUI), lineWidth: 1)
@@ -414,7 +404,7 @@ fileprivate struct ModernCombinedInfoCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background", bundle: .sharedUI))
+                .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
@@ -582,7 +572,7 @@ fileprivate struct ModernCombinedInfoCard: View {
             ZStack {
                 // Background that covers the entire value cell area
                 Rectangle()
-                    .fill(Color("Background", bundle: .sharedUI))
+                    .fill(.ultraThinMaterial)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
                 // Value text on top
@@ -664,7 +654,7 @@ fileprivate struct ModernFeaturesCard: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background", bundle: .sharedUI))
+                .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color("White10", bundle: .sharedUI), lineWidth: 1)
@@ -805,7 +795,7 @@ fileprivate struct InfoCard<Content: View>: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background", bundle: .sharedUI))
+                .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color("White10", bundle: .sharedUI), lineWidth: 1)
@@ -963,7 +953,7 @@ fileprivate struct ModernPriceChip: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color("Primary", bundle: .sharedUI).opacity(0.1) : Color("Background", bundle: .sharedUI).opacity(0.3))
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)

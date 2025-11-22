@@ -27,7 +27,6 @@ public struct NDISCatalogueContentColumn: View {
     public var body: some View {
         NDISCatalogueNavigationView(viewModel: viewModel, showingHistoricalChanges: $showingHistoricalChanges)
             .toolbar(content: filterToolbar)
-            .background(Color("Background", bundle: .sharedUI))
             .onAppear(perform: synchroniseContext)
             .onChange(of: allItems) { _, _ in
                 viewModel.setSourceItems(ndisItems: currentItems)
@@ -149,9 +148,9 @@ public struct NDISCatalogueDetailColumn: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 40)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color("Background", bundle: .sharedUI))
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
             }
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }

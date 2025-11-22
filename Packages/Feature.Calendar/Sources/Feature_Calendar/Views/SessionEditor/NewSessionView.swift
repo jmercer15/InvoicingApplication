@@ -135,7 +135,7 @@ struct NewSessionView: View {
             .padding(.top, 14) // 14 points from top
             .padding(.bottom, 20) // 20 points from bottom
         }
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(.ultraThinMaterial)
         .foregroundColor(Color("Text", bundle: .sharedUI))
         .frame(idealWidth: 500, maxWidth: 600, minHeight: 500, idealHeight: 600) // Reduced dimensions
         .onAppear {

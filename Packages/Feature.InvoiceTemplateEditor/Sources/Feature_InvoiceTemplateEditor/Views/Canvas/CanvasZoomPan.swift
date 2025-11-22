@@ -3,20 +3,6 @@ import CoreGraphics
 
 // MARK: - Zoom and Pan Logic
 
-struct CanvasZoomPanState {
-    var zoomScale: CGFloat = 1.0
-    var viewportOffset: CGSize = .zero
-    var lastMagnificationValue: CGFloat = 1.0
-    var gestureVelocity: CGFloat = 0.0
-    var lastGestureTime: Date = Date()
-    var isPanning: Bool = false
-    var panStartOffset: CGSize = .zero
-    var panStartTranslation: CGSize = .zero
-    var panVelocity: CGSize = .zero
-    var lastPanTime: Date = Date()
-    var lastPanTranslation: CGSize = .zero
-}
-
 struct CanvasZoomPan {
     // Helper function for smooth boundary resistance with exponential decay
     static func constrainWithResistance(_ value: CGFloat, min minValue: CGFloat, max maxValue: CGFloat, resistance: CGFloat) -> CGFloat {
@@ -175,4 +161,3 @@ struct CanvasZoomPan {
         )
     }
 }
-

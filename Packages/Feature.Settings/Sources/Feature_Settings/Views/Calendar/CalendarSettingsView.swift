@@ -119,7 +119,7 @@ public struct CalendarSettingsView: View {
             if viewModel.isLoading {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color("Background", bundle: .sharedUI).opacity(0.2))
+                    .background(.thinMaterial)
             }
             if let error = viewModel.errorMessage {
                 VStack(spacing: 8) {

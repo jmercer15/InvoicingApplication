@@ -136,7 +136,7 @@ struct NDISCatalogueBrowser: View {
             .searchToolbarBehavior(.automatic)
             // Add frame modifier for initial size if presented as sheet
             .frame(minWidth: 500, idealWidth: 600, minHeight: 400, idealHeight: 500) 
-            .background(Color("Background", bundle: .sharedUI))
+            .background(.ultraThinMaterial)
         }
     }
 }

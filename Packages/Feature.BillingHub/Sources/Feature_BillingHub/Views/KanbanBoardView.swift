@@ -88,21 +88,12 @@ struct KanbanBoardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            StyleGuide.Colors.background,
-                            StyleGuide.Colors.background.opacity(StyleGuide.Opacity.medium)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .background(.ultraThinMaterial)
             }
-            .background(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
+            .background(.clear)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.medium))
+        .background(.clear)
         .overlay(
             RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
                 .stroke(StyleGuide.Colors.border.opacity(0.6), lineWidth: 1.5)
@@ -294,7 +285,7 @@ struct PreparingSessionsColumn: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.medium))
+        .background(.ultraThinMaterial)
         .overlay(
             Rectangle()
                 .frame(width: 1)
@@ -423,7 +414,7 @@ private struct ProcessingColumn: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
+        .background(.ultraThinMaterial)
         .overlay(
             Rectangle()
                 .frame(width: 1)
@@ -520,6 +511,6 @@ private struct PaymentColumn: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.medium))
+        .background(.ultraThinMaterial)
     }
 }

@@ -732,7 +732,7 @@ struct InvoicesView: View {
                 .padding(.bottom, 16)
             }
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         .animation(.easeInOut(duration: StyleGuide.Animations.durationMedium), value: groupBy)
         .animation(.easeInOut(duration: StyleGuide.Animations.durationMedium), value: isMultiSelectMode)
     }

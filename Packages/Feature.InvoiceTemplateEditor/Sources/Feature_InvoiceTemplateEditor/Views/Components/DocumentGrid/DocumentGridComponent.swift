@@ -27,41 +27,93 @@ struct DocumentGridComponent: View {
     }
     
     var body: some View {
-            let data = sampleData
-            
-            // Initialize column configurations based on actual data
-            DocumentGridView(
-                data: data,
-                borderColor: currentComponent.style.showTableBorders ? currentComponent.style.tableBorderColorSwiftUI : .clear,
-                borderWidth: currentComponent.style.showTableBorders ? currentComponent.style.tableBorderWidth : 0,
-                columnConfigs: columnConfigurations,
-                borderOptions: TableBorderOptions(
-                    showHeaderBorders: currentComponent.style.showHeaderBorder,
-                    showRowBorders: currentComponent.style.showRowBorders,
-                    showCellBorders: currentComponent.style.showCellBorders
-                )
-            ) { item in
-                renderGridCell(for: item)
-            }
-            .id("\(currentComponent.id)-\(currentComponent.style.hashValue)") // Force re-render when style changes
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .shadow(
-                color: currentComponent.style.shadowEnabled ? currentComponent.style.shadowColorSwiftUI.opacity(currentComponent.style.shadowOpacity) : .clear,
-                radius: currentComponent.style.shadowRadius,
-                x: currentComponent.style.shadowOffsetX,
-                y: currentComponent.style.shadowOffsetY
-            )
-        .background(
-            GeometryReader { geometry in
-                Color.clear
-            .onAppear {
-                // Initialize column configurations when the view appears
-                initializeColumnsIfNeeded()
-                initializeColumnsForData(data)
-            }
+        DocumentGridView(
+            data: sampleData,
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            columnConfigs: columnConfigurations,
+            borderOptions: borderOptions,
+            horizontalBorderAppearance: horizontalBorderAppearance
+        ) { item in
+            renderGridCell(for: item)
         }
+        .id("\(currentComponent.id)-\(currentComponent.style.hashValue)")
+        .frame(width: currentComponent.size.width)
+        .shadow(
+            color: shadowColor,
+            radius: currentComponent.style.shadowRadius,
+            x: currentComponent.style.shadowOffsetX,
+            y: currentComponent.style.shadowOffsetY
         )
-        .id(currentComponent.id) // Force re-render when component changes
+        .background(sizeMeasurementLayer)
+        .id(currentComponent.id)
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var borderColor: Color {
+        currentComponent.style.showTableBorders ? currentComponent.style.tableBorderColorSwiftUI : .clear
+    }
+    
+    private var borderWidth: CGFloat {
+        currentComponent.style.showTableBorders ? currentComponent.style.tableBorderWidth : 0
+    }
+    
+    private var borderOptions: TableBorderOptions {
+        TableBorderOptions(
+            showHeaderBorders: currentComponent.style.showHeaderBorder,
+            showRowBorders: currentComponent.style.showRowBorders,
+            showCellBorders: currentComponent.style.showCellBorders
+        )
+    }
+    
+    private var horizontalBorderAppearance: TableHorizontalBorderAppearance {
+        let bordersEnabled = currentComponent.style.showTableBorders
+        return TableHorizontalBorderAppearance(
+            header: TableBorderSegmentAppearance(
+                color: bordersEnabled ? currentComponent.style.tableHeaderBorderColorSwiftUI : .clear,
+                width: bordersEnabled ? currentComponent.style.tableHeaderBorderWidth : 0
+            ),
+            row: TableBorderSegmentAppearance(
+                color: bordersEnabled ? currentComponent.style.tableRowBorderColorSwiftUI : .clear,
+                width: bordersEnabled ? currentComponent.style.tableRowBorderWidth : 0
+            )
+        )
+    }
+    
+    private var shadowColor: Color {
+        currentComponent.style.shadowEnabled 
+            ? currentComponent.style.shadowColorSwiftUI.opacity(currentComponent.style.shadowOpacity)
+            : .clear
+    }
+    
+    // MARK: - Size Measurement
+    
+    private var sizeMeasurementLayer: some View {
+        GeometryReader { _ in
+            Color.clear
+                .onAppear {
+                    initializeColumnsIfNeeded()
+                    initializeColumnsForData(sampleData)
+                }
+                .onPreferenceChange(GridSizePreferenceKey.self, perform: updateComponentSize)
+        }
+    }
+    
+    private func updateComponentSize(_ measuredSize: CGSize) {
+        guard measuredSize != .zero && measuredSize.height > 0 else { return }
+        
+        let newHeight = measuredSize.height
+        let currentHeight = currentComponent.size.height
+        
+        guard abs(newHeight - currentHeight) > 0.5 else { return }
+        
+        document.updateComponent(id: currentComponent.id) { component in
+            component.size = CGSize(
+                width: component.size.width,
+                height: newHeight
+            )
+        }
     }
     
     // MARK: - Column Configurations
@@ -291,7 +343,10 @@ struct DocumentGridComponent: View {
                     Text(displayText)
                         .font(.custom(currentComponent.style.fontFamily.isEmpty ? "Helvetica" : currentComponent.style.fontFamily, size: max(8, currentComponent.style.fontSize))
                             .weight(isHeader ? .bold : currentComponent.style.fontWeightValue))
-                        .foregroundColor(currentComponent.style.tableTextColorSwiftUI.opacity(currentComponent.style.textOpacity))
+                        .foregroundColor(
+                            (isHeader ? currentComponent.style.tableHeaderTextColorSwiftUI : currentComponent.style.tableTextColorSwiftUI)
+                                .opacity(currentComponent.style.textOpacity)
+                        )
                         .lineSpacing(currentComponent.style.lineSpacing)
                         .kerning(currentComponent.style.letterSpacing)
                         .underline(currentComponent.style.textUnderline)
@@ -300,6 +355,7 @@ struct DocumentGridComponent: View {
                         .lineLimit(effectiveLineLimit(for: item)) // Use configured line limit
                         .multilineTextAlignment(swiftUITextAlignment(effectiveTextAlignment(for: item))) // Match horizontal alignment
                         .padding(isHeader ? currentComponent.style.tableHeaderPadding : currentComponent.style.tableCellPadding)
+                        .background(DocumentGridCellHeightReporter(rowIndex: item.rowIndex))
                 }
             }
             .gridCellAnchor(gridCellAnchorForItem(item)) // Apply anchor to the entire cell content
@@ -1480,6 +1536,28 @@ struct DocumentGridPropertyEditor: View {
         .onAppear {
             // Initialize columns when property editor appears to avoid infinite loops
             initializePropertyEditorColumnsIfNeeded()
+        }
+    }
+}
+
+// MARK: - Cell Height Reporter
+
+private struct DocumentGridCellHeightReporter: View {
+    let rowIndex: Int?
+    @Environment(\.documentGridMeasurementPhase) private var measurementPhase
+    
+    var body: some View {
+        Group {
+            if measurementPhase == .content, let rowIndex {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: DocumentGridCellHeightPreferenceKey.self,
+                        value: [DocumentGridCellHeightMeasurement(rowIndex: rowIndex, height: geometry.size.height)]
+                    )
+                }
+            } else {
+                Color.clear
+            }
         }
     }
 }

@@ -21,6 +21,49 @@ private struct GridWidthPreferenceKey: PreferenceKey {
     }
 }
 
+/// PreferenceKey to measure the grid's actual rendered size
+struct GridSizePreferenceKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
+}
+
+/// Captures measured text heights for each grid cell
+struct DocumentGridCellHeightMeasurement: Equatable {
+    let rowIndex: Int
+    let height: CGFloat
+}
+
+struct DocumentGridCellHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: [DocumentGridCellHeightMeasurement] = []
+    
+    static func reduce(value: inout [DocumentGridCellHeightMeasurement], nextValue: () -> [DocumentGridCellHeightMeasurement]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+// MARK: - Measurement Phase Environment
+
+enum DocumentGridMeasurementPhase {
+    case content
+    case widthMeasurement
+}
+
+private struct DocumentGridMeasurementPhaseKey: EnvironmentKey {
+    static let defaultValue: DocumentGridMeasurementPhase = .content
+}
+
+extension EnvironmentValues {
+    var documentGridMeasurementPhase: DocumentGridMeasurementPhase {
+        get { self[DocumentGridMeasurementPhaseKey.self] }
+        set { self[DocumentGridMeasurementPhaseKey.self] = newValue }
+    }
+}
+
 // MARK: - Alignment Grid Picker
 
 /// Custom alignment picker using a 3x3 grid of buttons
@@ -274,6 +317,16 @@ struct TableBorderOptions {
     var showCellBorders: Bool = true
 }
 
+struct TableBorderSegmentAppearance {
+    var color: Color
+    var width: CGFloat
+}
+
+struct TableHorizontalBorderAppearance {
+    var header: TableBorderSegmentAppearance
+    var row: TableBorderSegmentAppearance
+}
+
 public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     private let data: [[Item]]
     private let cellContent: (DocumentTableItem) -> CellContent
@@ -281,11 +334,13 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     private let borderWidth: CGFloat
     private let columnConfigs: [ColumnWidthConfig]
     private let borderOptions: TableBorderOptions?
+    private let horizontalBorderAppearance: TableHorizontalBorderAppearance
     private let defaultAutoColumnWidth: CGFloat = 80
     
     /// Tracks the measured width for each column (for auto-sizing)
     /// Key: columnIndex, Value: measured width
     @State private var contentColumnWidths: [Int: CGFloat] = [:]
+    @State private var calculatedGridHeight: CGFloat = 0
     
     init(
         data: [[Item]],
@@ -293,6 +348,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
         borderWidth: CGFloat = 1.0,
         columnConfigs: [ColumnWidthConfig] = [],
         borderOptions: TableBorderOptions? = nil,
+        horizontalBorderAppearance: TableHorizontalBorderAppearance? = nil,
         @ViewBuilder cellContent: @escaping (DocumentTableItem) -> CellContent
     ) {
         self.data = data
@@ -306,18 +362,29 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
             self.columnConfigs = columnConfigs
         }
         self.borderOptions = borderOptions
+        self.horizontalBorderAppearance = horizontalBorderAppearance ?? TableHorizontalBorderAppearance(
+            header: TableBorderSegmentAppearance(color: borderColor, width: borderWidth),
+            row: TableBorderSegmentAppearance(color: borderColor, width: borderWidth)
+        )
     }
     
     public var body: some View {
         GeometryReader { geometry in
             let availableWidth = max(geometry.size.width - borderWidth, 0)
             let columnWidths = resolvedColumnWidths(totalWidth: availableWidth)
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 measurementLayer
+                    .environment(\.documentGridMeasurementPhase, .widthMeasurement)
                 mainGridLayer(columnWidths: columnWidths)
+                    .environment(\.documentGridMeasurementPhase, .content)
             }
-            .frame(width: geometry.size.width, alignment: .leading)
+            .frame(width: geometry.size.width, height: geometry.size.height)
             .padding(borderWidth / 2)
+        }
+        .frame(height: calculatedGridHeight > 0 ? calculatedGridHeight : nil)
+        .fixedSize(horizontal: false, vertical: true) // Use intrinsic height, constrain width
+        .onPreferenceChange(DocumentGridCellHeightPreferenceKey.self) { measurements in
+            updateCalculatedGridHeight(with: measurements)
         }
     }
     
@@ -480,8 +547,11 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                         let shouldShowBorder = !cellAboveEmpty && shouldDrawHorizontalBorder(beforeRow: rowIndex)
 
                         Rectangle()
-                            .fill(shouldShowBorder ? borderColor : Color.clear)
-                            .frame(width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0, height: borderWidth)
+                            .fill(shouldShowBorder ? horizontalAppearance(forRow: rowIndex).color : Color.clear)
+                            .frame(
+                                width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0,
+                                height: horizontalAppearance(forRow: rowIndex).width
+                            )
                     }
                 }
 
@@ -518,12 +588,66 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                     let shouldShowBorder = !finalCellEmpty && shouldDrawBottomBorder()
 
                     Rectangle()
-                        .fill(shouldShowBorder ? borderColor : Color.clear)
-                        .frame(width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0, height: borderWidth)
+                        .fill(shouldShowBorder ? horizontalBorderAppearance.row.color : Color.clear)
+                        .frame(
+                            width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0,
+                            height: horizontalBorderAppearance.row.width
+                        )
                 }
             }
         }
         .fixedSize(horizontal: false, vertical: true) // Allow vertical expansion for text wrapping
+        .background(
+            GeometryReader { gridGeometry in
+                Color.clear.preference(
+                    key: GridSizePreferenceKey.self,
+                    value: gridGeometry.size
+                )
+            }
+        )
+    }
+    
+    private func updateCalculatedGridHeight(with measurements: [DocumentGridCellHeightMeasurement]) {
+        guard !measurements.isEmpty else {
+            calculatedGridHeight = 0
+            return
+        }
+        
+        var rowHeights: [Int: CGFloat] = [:]
+        for measurement in measurements where measurement.height > 0 {
+            rowHeights[measurement.rowIndex] = max(rowHeights[measurement.rowIndex] ?? 0, measurement.height)
+        }
+        
+        let totalRowHeight = (0..<data.count).reduce(CGFloat(0)) { partial, rowIndex in
+            partial + (rowHeights[rowIndex] ?? 0)
+        }
+        
+        let borderHeight = totalHorizontalBorderHeight(rowCount: data.count)
+        let paddingContribution = borderWidth
+        let totalHeight = max(totalRowHeight + borderHeight + paddingContribution, 0)
+        
+        if abs(totalHeight - calculatedGridHeight) > 0.5 {
+            calculatedGridHeight = totalHeight
+        }
+    }
+    
+    private func totalHorizontalBorderHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else {
+            return shouldDrawBottomBorder() ? horizontalBorderAppearance.row.width : 0
+        }
+        
+        var total: CGFloat = 0
+        for rowIndex in 0..<rowCount {
+            if shouldDrawHorizontalBorder(beforeRow: rowIndex) {
+                total += horizontalAppearance(forRow: rowIndex).width
+            }
+        }
+        
+        if shouldDrawBottomBorder() {
+            total += horizontalBorderAppearance.row.width
+        }
+        
+        return total
     }
     
     private func verticalBorderForCell(_ item: DocumentTableItem, rowIndex: Int, cellIndex: Int, rowData: [DocumentTableItem]) -> some View {
@@ -589,5 +713,9 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
 
     private func shouldDrawBottomBorder() -> Bool {
         borderOptions?.showRowBorders ?? true
+    }
+
+    private func horizontalAppearance(forRow rowIndex: Int) -> TableBorderSegmentAppearance {
+        rowIndex == 0 ? horizontalBorderAppearance.header : horizontalBorderAppearance.row
     }
 }

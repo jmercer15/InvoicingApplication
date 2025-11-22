@@ -1,9 +1,15 @@
 import SwiftUI
 import CoreGraphics
 import Foundation
+
+struct SectionSplitSelection: Equatable {
+    let sectionIndex: Int
+    let path: [Int]
+}
 final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     @Published var components: [InvoiceComponent] = []
     @Published var selectedComponentID: UUID? = nil
+    @Published var selectedSplitSelection: SectionSplitSelection? = nil
     @Published var isSnapping: Bool = false
     @Published var isDragging: Bool = false
     @Published var draggedComponentID: UUID? = nil
@@ -11,6 +17,31 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     @Published var showCursorIndicator = false
     @Published var draggedComponentFrame: CGRect? = nil 
     @Published var pendingScrollTargetID: UUID? = nil
+    @Published var isDraggingPaletteComponent: Bool = false
+    /// Update the component selection and clear any split selection
+    func selectComponent(_ id: UUID?) {
+        selectedComponentID = id
+        if id != nil {
+            selectedSplitSelection = nil
+        }
+    }
+
+    private func ensureSplitContainer(for sectionIndex: Int) {
+        if sectionSplits[sectionIndex] == nil {
+            sectionSplits[sectionIndex] = SectionSplit(direction: .horizontal, splitCount: 1)
+        }
+    }
+
+    /// Update the split selection and clear the component selection
+    func selectSplitSelection(_ selection: SectionSplitSelection?) {
+        selectedSplitSelection = selection
+        if selection != nil {
+            selectedComponentID = nil
+            if let sectionIndex = selection?.sectionIndex {
+                ensureSplitContainer(for: sectionIndex)
+            }
+        }
+    }
     struct DocumentMargins: Codable, Equatable {
         var left: CGFloat
         var right: CGFloat
@@ -33,7 +64,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     func add(_ component: InvoiceComponent) {
         saveStateForUndo()
         components.append(component)
-        selectedComponentID = component.id
+        selectComponent(component.id)
     }
     func component(_ id: UUID?) -> InvoiceComponent? {
         guard let id else { return nil }
@@ -77,7 +108,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     }
     func startDragging(for componentID: UUID) {
         if selectedComponentID != componentID {
-            selectedComponentID = nil
+            selectComponent(nil)
         }
         isDragging = true
         draggedComponentID = componentID
@@ -297,6 +328,11 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     func updateTableTextColor(for id: UUID, color: String) {
         updateComponent(id: id) { component in
             component.style.tableTextColor = color
+        }
+    }
+    func updateTableHeaderTextColor(for id: UUID, color: String) {
+        updateComponent(id: id) { component in
+            component.style.tableHeaderTextColor = color
         }
     }
     func updateShowTableHeader(for id: UUID, show: Bool) {
@@ -573,7 +609,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     func loadTemplate(_ templateData: TemplateData) {
         components.removeAll()
         sectionSplits.removeAll() // Clear existing splits
-        selectedComponentID = nil
+        selectComponent(nil)
         margins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
         zoom = 1.0
         clearUndoRedoStacks()
@@ -581,7 +617,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     }
     func createNewDocument() {
         components.removeAll()
-        selectedComponentID = nil
+        selectComponent(nil)
         margins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
         zoom = 1.0
         clearUndoRedoStacks()
@@ -631,6 +667,276 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     func printDocument() {
         ExportService.shared.printDocument(document: self)
     }
+
+    private func updateSplitSelection(
+        _ selection: SectionSplitSelection,
+        mutate: (inout SectionSplit, Int) -> Void
+    ) {
+        guard !selection.path.isEmpty else { return }
+        ensureSplitContainer(for: selection.sectionIndex)
+        guard var rootSplit = sectionSplits[selection.sectionIndex] else { return }
+
+        var didMutate = false
+
+        func applyMutation(_ split: inout SectionSplit, path: ArraySlice<Int>) {
+            guard let index = path.first, index < split.children.count else { return }
+            if path.count == 1 {
+                mutate(&split, index)
+                didMutate = true
+            } else {
+                guard var childSplit = split.children[index] else { return }
+                applyMutation(&childSplit, path: path.dropFirst())
+                split.children[index] = childSplit
+                didMutate = true
+            }
+        }
+
+        applyMutation(&rootSplit, path: ArraySlice(selection.path))
+
+        if didMutate {
+            sectionSplits[selection.sectionIndex] = rootSplit
+        }
+    }
+
+    private func updateSplit(
+        at sectionIndex: Int,
+        path: [Int],
+        mutate: (inout SectionSplit) -> Void
+    ) {
+        ensureSplitContainer(for: sectionIndex)
+        guard var rootSplit = sectionSplits[sectionIndex] else { return }
+        var didMutate = false
+
+        func apply(_ split: inout SectionSplit, path: ArraySlice<Int>) {
+            guard let index = path.first else {
+                mutate(&split)
+                didMutate = true
+                return
+            }
+
+            guard index < split.children.count, var childSplit = split.children[index] else { return }
+            if path.count == 1 {
+                mutate(&childSplit)
+                split.children[index] = childSplit
+                didMutate = true
+            } else {
+                apply(&childSplit, path: path.dropFirst())
+                split.children[index] = childSplit
+            }
+        }
+
+        apply(&rootSplit, path: ArraySlice(path))
+
+        if didMutate {
+            sectionSplits[sectionIndex] = rootSplit
+        }
+    }
+
+    func setSplitLabel(for selection: SectionSplitSelection, label: String) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.setLabel(label, forChild: childIndex)
+        }
+    }
+
+    func setSplitAlignment(for selection: SectionSplitSelection, alignment: SectionSplit.LeafAlignment) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.setAlignment(alignment, forChild: childIndex)
+        }
+    }
+    
+    func setSplitPadding(for selection: SectionSplitSelection, value: CGFloat) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+            split.setPadding(value)
+        }
+    }
+    
+    func setSplitMargin(for selection: SectionSplitSelection, value: CGFloat) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+            split.setMargin(value)
+        }
+    }
+    
+    func setSplitSpacing(for selection: SectionSplitSelection, value: CGFloat) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+            split.setChildSpacing(value)
+        }
+    }
+    
+    func setChildPadding(for selection: SectionSplitSelection, value: SectionSplit.PaddingInsets) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.setChildPadding(value, forChild: childIndex)
+        }
+    }
+
+    func setSplitRatio(for selection: SectionSplitSelection, ratio: CGFloat) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.updateRatio(at: childIndex, newRatio: ratio)
+        }
+    }
+
+    func splitSelection(
+        _ selection: SectionSplitSelection,
+        direction: SectionSplit.SplitDirection,
+        splitCount: Int,
+        gridRows: Int? = nil,
+        gridColumns: Int? = nil
+    ) {
+        updateSplitSelection(selection) { split, childIndex in
+            if direction == .grid, let rows = gridRows, let columns = gridColumns {
+                split.splitChild(at: childIndex, direction: direction, splitCount: splitCount, gridRows: rows, gridColumns: columns)
+            } else {
+                split.splitChild(at: childIndex, direction: direction, splitCount: splitCount)
+            }
+        }
+    }
+
+    func removeSplitContainingSelection(_ selection: SectionSplitSelection) {
+        guard selection.path.count >= 2 else { return }
+        var parentPath = selection.path
+        parentPath.removeLast() // remove leaf index
+        guard let parentIndex = parentPath.popLast() else { return }
+        updateSplit(at: selection.sectionIndex, path: parentPath) { split in
+            split.unsplitChild(at: parentIndex)
+        }
+    }
+
+    func equalizeSplitRatios(for selection: SectionSplitSelection) {
+        updateSplitSelection(selection) { split, _ in
+            split.resetRatiosToEvenDistribution()
+        }
+    }
+    
+    func setWidthSizingMode(for selection: SectionSplitSelection, mode: SectionSplit.SizingMode) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.setWidthSizingMode(mode, forChild: childIndex)
+        }
+    }
+    
+    func setHeightSizingMode(for selection: SectionSplitSelection, mode: SectionSplit.SizingMode) {
+        updateSplitSelection(selection) { split, childIndex in
+            split.setHeightSizingMode(mode, forChild: childIndex)
+        }
+    }
+    
+    func setGridRowSizingMode(for selection: SectionSplitSelection, row: Int, mode: SectionSplit.SizingMode) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+            split.setRowSizingMode(mode, forRow: row)
+        }
+    }
+    
+    func setGridColumnSizingMode(for selection: SectionSplitSelection, column: Int, mode: SectionSplit.SizingMode) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+            split.setColumnSizingMode(mode, forColumn: column)
+        }
+    }
 }
 
+struct SectionSplitLeafContext {
+    let selection: SectionSplitSelection
+    let parentSplit: SectionSplit
+    let childIndex: Int
+    let childComponents: [InvoiceComponent]
 
+    var label: String {
+        parentSplit.getLabel(forChild: childIndex) ?? parentSplit.getDefaultLabel(forChild: childIndex)
+    }
+
+    var alignment: SectionSplit.LeafAlignment {
+        parentSplit.getAlignment(forChild: childIndex)
+    }
+
+    var ratio: CGFloat? {
+        guard childIndex < parentSplit.splitRatios.count else { return nil }
+        return parentSplit.splitRatios[childIndex]
+    }
+
+    var directionName: String {
+        parentSplit.direction.displayName
+    }
+
+    var directionIcon: String {
+        parentSplit.direction.icon
+    }
+
+    var pathDescription: String {
+        guard !selection.path.isEmpty else { return "Root" }
+        let indexes = selection.path.map { "\($0 + 1)" }
+        return indexes.joined(separator: " → ")
+    }
+
+    var gridPositionDescription: String? {
+        guard parentSplit.direction == .grid else { return nil }
+        let coordinates = parentSplit.rowColumn(for: childIndex)
+        return "Row \(coordinates.row + 1), Column \(coordinates.column + 1)"
+    }
+
+    var gridSizeDescription: String? {
+        guard parentSplit.direction == .grid else { return nil }
+        return "\(parentSplit.gridRows) × \(parentSplit.gridColumns)"
+    }
+
+    struct SiblingSummary: Identifiable {
+        let id = UUID()
+        let index: Int
+        let label: String
+    }
+
+    var siblingSummaries: [SiblingSummary] {
+        let total = parentSplit.children.count
+        guard total > 1 else { return [] }
+        return (0..<total).map { idx in
+            let label = parentSplit.getLabel(forChild: idx) ?? parentSplit.getDefaultLabel(forChild: idx)
+            return SiblingSummary(index: idx, label: label)
+        }
+    }
+
+    var canNavigateToParent: Bool {
+        selection.path.count > 1
+    }
+
+    var parentPath: [Int] {
+        Array(selection.path.dropLast())
+    }
+}
+
+extension InvoiceDocument {
+    private func fallbackRootSplit(for sectionIndex: Int) -> SectionSplit {
+        var split = SectionSplit(direction: .horizontal, splitCount: 1)
+        split.childLabels[0] = "Section \(sectionIndex + 1)"
+        return split
+    }
+    
+    func leafContext(for selection: SectionSplitSelection?) -> SectionSplitLeafContext? {
+        guard let selection,
+              !selection.path.isEmpty else {
+            return nil
+        }
+        
+        var parentSplit = sectionSplits[selection.sectionIndex] ?? fallbackRootSplit(for: selection.sectionIndex)
+        var pathToParent = selection.path
+        guard let leafIndex = pathToParent.popLast(),
+              leafIndex >= 0 else {
+            return nil
+        }
+
+        for index in pathToParent {
+            guard index >= 0, index < parentSplit.children.count,
+                  let childSplit = parentSplit.children[index] else {
+                return nil
+            }
+            parentSplit = childSplit
+        }
+
+        guard leafIndex < parentSplit.children.count else {
+            return nil
+        }
+
+        let components = parentSplit.childComponents[leafIndex] ?? []
+        return SectionSplitLeafContext(
+            selection: selection,
+            parentSplit: parentSplit,
+            childIndex: leafIndex,
+            childComponents: components
+        )
+    }
+}

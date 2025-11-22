@@ -18,11 +18,18 @@ struct ResizableDivider: View {
     
     var body: some View {
         // Visual divider with enhanced design
+        let isColumnDivider = direction == .horizontal
+        let thickness: CGFloat = (isHovered || isDragging) ? 6 : 1.5
+
         Rectangle()
-            .fill(isHovered || isDragging ? Color.accentColor : Color.accentColor.opacity(0.3))
+            .fill(isHovered || isDragging ? Color.accentColor : Color.accentColor.opacity(0.35))
             .frame(
-                maxWidth: direction == .horizontal ? (isHovered || isDragging ? 6 : 1) : .infinity,
-                maxHeight: direction == .vertical ? (isHovered || isDragging ? 6 : 1) : .infinity
+                width: isColumnDivider ? thickness : nil,
+                height: isColumnDivider ? nil : thickness
+            )
+            .frame(
+                maxWidth: isColumnDivider ? nil : .infinity,
+                maxHeight: isColumnDivider ? .infinity : nil
             )
             .shadow(
                 color: isHovered || isDragging ? Color.accentColor.opacity(0.3) : Color.clear,

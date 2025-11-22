@@ -38,7 +38,7 @@ struct RelationshipsView: View {
             // Entity list with real-time filtering
             entityList
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         // Toolbar moved to RelationshipsContainerView
         // Create sheet is now triggered from container
         
@@ -379,7 +379,7 @@ struct RelationshipsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         .scrollEdgeEffectStyle(.hard, for: .top)
     }
     
@@ -746,7 +746,7 @@ struct EntityTypeSelectionView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }
 

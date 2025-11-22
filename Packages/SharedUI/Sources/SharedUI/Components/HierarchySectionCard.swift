@@ -129,21 +129,20 @@ public struct HierarchySectionCard<Content: View>: View {
     }
 
     private func styledHeader(_ label: some View) -> some View {
-        let padding = headerStyle?.padding ?? EdgeInsets(top: 9, leading: 13, bottom: 9, trailing: 13)
+        let padding = headerStyle?.padding ?? EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
         let styled = label
             .padding(padding)
             .contentShape(RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.6)
+            )
             .glassEffect(headerGlassStyle, in: .rect(cornerRadius: currentCornerRadius))
             .glassEffectTransition(.materialize)
+
             .applyGlassID(namespace: namespace, id: headerGlassID)
             .applyGlassUnion(namespace: namespace, id: glassUnionID)
-            .scaleEffect(isHeaderHovered ? hoverScale : 1.0)
-            .onHover { hovering in
-                guard isCollapsible else { return }
-                withAnimation(hoverAnimation) {
-                    isHeaderHovered = hovering
-                }
-            }
+
             .contentShape(Rectangle())
             .onTapGesture {
                 guard isCollapsible else { return }
@@ -151,18 +150,25 @@ public struct HierarchySectionCard<Content: View>: View {
             }
             .pointerStyle(.link)
 
-        guard let style = headerStyle else {
-            return AnyView(styled)
+        let finalView: AnyView
+        if let style = headerStyle {
+            finalView = AnyView(
+                styled
+                    .font(style.font)
+                    .foregroundColor(style.color)
+                    .opacity(style.opacity)
+                    .tracking(style.letterSpacing)
+                    .baselineOffset(style.baselineOffset)
+            )
+        } else {
+            finalView = AnyView(
+                styled
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color.primary)
+            )
         }
 
-        return AnyView(
-            styled
-                .font(style.font)
-                .foregroundColor(style.color)
-                .opacity(style.opacity)
-                .tracking(style.letterSpacing)
-                .baselineOffset(style.baselineOffset)
-        )
+        return finalView
     }
 
     private var currentCornerRadius: CGFloat {

@@ -20,7 +20,7 @@ struct TestingAreaView: View {
                 }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }
 
@@ -146,7 +146,7 @@ private struct HierarchyDemoTab: View {
                     }
                 }
             }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
     }
 }
 

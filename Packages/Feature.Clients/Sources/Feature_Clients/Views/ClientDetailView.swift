@@ -169,7 +169,7 @@ struct ClientDetailView: View {
                 .padding(24)
             }
         }
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(.clear)
         .foregroundColor(Color("Text", bundle: .sharedUI))
 
         .sheet(isPresented: $showingServiceAssignment) {
@@ -1361,17 +1361,7 @@ struct ClientAddressEditingSheet: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color("Background", bundle: .sharedUI),
-                    Color("Background", bundle: .sharedUI).opacity(0.95),
-                    Color("Background", bundle: .sharedUI).opacity(0.9)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(.ultraThinMaterial)
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
             loadExistingAddressData()

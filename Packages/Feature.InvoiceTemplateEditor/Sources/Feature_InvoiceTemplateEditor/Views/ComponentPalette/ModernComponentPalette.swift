@@ -7,182 +7,81 @@
 
 import SwiftUI
 import Core
+import SharedUI
+import AppKit
 
 struct ModernComponentPalette: View {
     @EnvironmentObject private var editorViewModel: InvoiceTemplateEditorViewModel
     @EnvironmentObject private var document: InvoiceDocument
-    @State private var expandedSections: Set<String> = ["Basic Elements", "Invoice Sections", "Company Info", "Additional Elements"]
+    @State private var expandedSection: String? = "Basic Elements"
     @State private var searchText = ""
 
     var body: some View {
         VStack(spacing: 12) {
-            // Palette header
-            VStack(alignment: .leading, spacing: 10) {
-                Label {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Component Library")
-                        .font(.system(.headline, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundColor(Color.primaryText)
-                } icon: {
-                    ZStack {
-                        Circle()
-                            .fill(Color.accentColor.opacity(0.1))
-                            .frame(width: 24, height: 24)
-                    Image(systemName: "square.grid.3x2")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                }
-                .labelStyle(.titleAndIcon)
 
-                HStack(spacing: 10) {
+                    Text("Browse available components and drag them into your design.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.secondaryText)
+                }
+
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(Color.secondaryText)
 
                     TextField("Search components", text: $searchText)
                         .pointerStyle(.horizontalText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .regular, design: .default))
-                        .foregroundColor(Color.primaryText)
+                        .font(.system(size: 13, weight: .regular))
 
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color.secondaryText)
+                                .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(.plain)
-                        .padding(.trailing, 2)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.secondaryFill)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.primaryOutline.opacity(0.15),
-                                            Color.primaryOutline.opacity(0.08)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 0.5
-                                )
-                        )
-                )
-                .shadow(color: Color.primaryShadow.opacity(0.04), radius: 2, x: 0, y: 1)
-                .shadow(color: Color.accentColor.opacity(0.02), radius: 4, x: 0, y: 2)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             // Palette content
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     ForEach(paletteSections) { section in
                         let items = filteredItems(for: section.items)
                         if !isFiltering || !items.isEmpty {
-                            // Section header
-                            VStack(alignment: .leading, spacing: 8) {
-                                Button(action: {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        toggleSection(section.title)
+                            HierarchySectionCard(
+                                title: section.title,
+                                isExpanded: binding(for: section),
+                                childSpacing: 8
+                            ) {
+                                VStack(spacing: 8) {
+                                    ForEach(items) { descriptor in
+                                        PaletteItemView(descriptor: descriptor)
+                                            .environmentObject(document)
                                     }
-                                }) {
-                                    HStack(spacing: 10) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color.accentColor.opacity(0.08))
-                                                .frame(width: 20, height: 20)
-                                        Image(systemName: expandedSections.contains(section.title) ? "chevron.up" : "chevron.down")
-                                                .font(.system(size: 10, weight: .semibold))
-                                            .foregroundColor(.accentColor)
-                                        }
-
-                                        Text(section.title)
-                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                            .foregroundColor(Color.primaryText)
-
-                                        Spacer()
-                                        
-                                        if expandedSections.contains(section.title) {
-                                            Text("\(items.count)")
-                                                .font(.caption2)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(Color.secondaryText)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(
-                                                    Capsule()
-                                                        .fill(Color.accentColor.opacity(0.08))
-                                                )
-                                                .transition(.scale.combined(with: .opacity))
-                                        }
-                                    }
-                                    .padding(.vertical, 6)
                                 }
-                                .pointerStyle(.link)
-                                .buttonStyle(.plain)
-
-                                if expandedSections.contains(section.title) {
-                                    VStack(spacing: 6) {
-                                        ForEach(items) { descriptor in
-                                            // Palette item
-                                            PaletteItemView(descriptor: descriptor)
-                                                .transition(.asymmetric(
-                                                    insertion: .opacity.combined(with: .move(edge: .top)),
-                                                    removal: .opacity.combined(with: .move(edge: .top))
-                                                ))
-                                        }
-                                    }
-                                    .padding(.top, 4)
-                                }
+                                .padding(.top, 2)
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.primarySurface)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .strokeBorder(
-                                                LinearGradient(
-                                                    colors: [
-                                                        Color.primaryOutline.opacity(0.1),
-                                                        Color.primaryOutline.opacity(0.05)
-                                                    ],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                ),
-                                                lineWidth: 0.5
-                                            )
-                                    )
-                            )
-                            .shadow(color: Color.primaryShadow.opacity(0.04), radius: 3, x: 0, y: 1.5)
-                            .shadow(color: Color.accentColor.opacity(0.01), radius: 6, x: 0, y: 3)
+                            .transition(.opacity.combined(with: .scale))
                         }
                     }
 
                     if isFiltering && !hasSearchResults {
                         Text("No components match \"\(searchQuery)\".")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(Color.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color(NSColor.secondaryLabelColor))
+                            .padding(.top, 12)
                     }
                 }
-                .padding(.horizontal, 2)
-                .padding(.bottom, 4)
+                .padding(.bottom, 6)
             }
             .simultaneousGesture(
                 DragGesture()
@@ -190,21 +89,24 @@ struct ModernComponentPalette: View {
                     .onEnded { _ in }
             )
         }
-        .padding(12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 8)
-        .foregroundColor(Color.primaryText)
+        .padding(16)
+        .glassEffect(
+            .regular,
+            in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius)
+        )
+        .padding(TemplateEditorPanelStyle.outerPadding)
     }
-    
-    private func toggleSection(_ name: String) {
-        if expandedSections.contains(name) {
-            expandedSections.remove(name)
-        } else {
-            expandedSections.insert(name)
-        }
+
+    private func binding(for section: PaletteSection) -> Binding<Bool> {
+        Binding(
+            get: { expandedSection == section.title },
+            set: { isExpanded in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedSection = isExpanded ? section.title : nil
+                }
+            }
+        )
     }
-    
     private var searchQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -228,56 +130,61 @@ struct ModernComponentPalette: View {
     }
     
     private var paletteSections: [PaletteSection] {
+        Dictionary(grouping: paletteItems, by: \.group)
+            .sorted { $0.key.sortOrder < $1.key.sortOrder }
+            .map { PaletteSection(title: $0.key.title, items: $0.value) }
+    }
+    
+    private var paletteItems: [PaletteItemDescriptor] {
         [
-            PaletteSection(title: "Basic Elements", items: basicElementItems),
-            PaletteSection(title: "Invoice Sections", items: invoiceSectionItems),
-            PaletteSection(title: "Company Info", items: companyInfoItems),
-            PaletteSection(title: "Additional Elements", items: additionalElementItems)
+            PaletteItemDescriptor(group: .basicElements, type: .textBox, name: "Text Box", icon: "textformat", description: "Add editable text"),
+            PaletteItemDescriptor(group: .basicElements, type: .rectangleShape, name: "Rectangle", icon: "square", description: "Add rectangle shape"),
+            PaletteItemDescriptor(group: .basicElements, type: .ellipseShape, name: "Ellipse", icon: "circle", description: "Add ellipse shape"),
+            PaletteItemDescriptor(group: .basicElements, type: .lineShape, name: "Line", icon: "line.horizontal.3", description: "Add divider line"),
+            PaletteItemDescriptor(group: .basicElements, type: .triangleShape, name: "Triangle", icon: "triangle", description: "Add triangle shape"),
+            PaletteItemDescriptor(group: .basicElements, type: .starShape, name: "Star", icon: "star", description: "Add star shape"),
+            PaletteItemDescriptor(group: .basicElements, type: .imagePlaceholder, name: "Image Placeholder", icon: "photo", description: "Add image placeholder"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .invoiceNumberAndDates, name: "Invoice Number & Dates", icon: "number", description: "Invoice number and dates"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .billTo, name: "Bill To", icon: "person.2", description: "Customer information"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .participant, name: "Participant", icon: "person.3", description: "Participant information"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .servicesTable, name: "Services Table", icon: "table", description: "Services and pricing"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .documentGrid, name: "Document Grid", icon: "tablecells.fill", description: "Advanced document-style table"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .totals, name: "Totals", icon: "sum", description: "Invoice totals"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .paymentDetails, name: "Payment Details", icon: "creditcard", description: "Payment information"),
+            PaletteItemDescriptor(group: .invoiceSections, type: .paymentTerms, name: "Payment Terms", icon: "doc.text", description: "Payment terms and conditions"),
+            PaletteItemDescriptor(group: .companyInfo, type: .invoiceTitle, name: "Invoice Title", icon: "doc.text", description: "Invoice title"),
+            PaletteItemDescriptor(group: .companyInfo, type: .companyName, name: "Company Name", icon: "building.2", description: "Company name"),
+            PaletteItemDescriptor(group: .companyInfo, type: .companyABN, name: "Company ABN", icon: "number.circle", description: "Company ABN"),
+            PaletteItemDescriptor(group: .companyInfo, type: .companyEmail, name: "Company Email", icon: "envelope", description: "Company email"),
+            PaletteItemDescriptor(group: .companyInfo, type: .companyLogo, name: "Company Logo", icon: "photo", description: "Company logo placeholder"),
+            PaletteItemDescriptor(group: .additionalElements, type: .notes, name: "Notes", icon: "note.text", description: "Additional notes")
         ]
     }
     
-    private var basicElementItems: [PaletteItemDescriptor] {
-        [
-            PaletteItemDescriptor(type: .textBox, name: "Text Box", icon: "textformat", description: "Add editable text"),
-            PaletteItemDescriptor(type: .rectangleShape, name: "Rectangle", icon: "square", description: "Add rectangle shape"),
-            PaletteItemDescriptor(type: .ellipseShape, name: "Ellipse", icon: "circle", description: "Add ellipse shape"),
-            PaletteItemDescriptor(type: .lineShape, name: "Line", icon: "line.horizontal.3", description: "Add divider line"),
-            PaletteItemDescriptor(type: .triangleShape, name: "Triangle", icon: "triangle", description: "Add triangle shape"),
-            PaletteItemDescriptor(type: .starShape, name: "Star", icon: "star", description: "Add star shape"),
-            PaletteItemDescriptor(type: .imagePlaceholder, name: "Image Placeholder", icon: "photo", description: "Add image placeholder")
-        ]
-    }
-    
-    private var invoiceSectionItems: [PaletteItemDescriptor] {
-        [
-            PaletteItemDescriptor(type: .invoiceNumberAndDates, name: "Invoice Number & Dates", icon: "number", description: "Invoice number and dates"),
-            PaletteItemDescriptor(type: .billTo, name: "Bill To", icon: "person.2", description: "Customer information"),
-            PaletteItemDescriptor(type: .participant, name: "Participant", icon: "person.3", description: "Participant information"),
-            PaletteItemDescriptor(type: .servicesTable, name: "Services Table", icon: "table", description: "Services and pricing"),
-            PaletteItemDescriptor(type: .documentGrid, name: "Document Grid", icon: "tablecells.fill", description: "Advanced document-style table"),
-            PaletteItemDescriptor(type: .totals, name: "Totals", icon: "sum", description: "Invoice totals"),
-            PaletteItemDescriptor(type: .paymentDetails, name: "Payment Details", icon: "creditcard", description: "Payment information"),
-            PaletteItemDescriptor(type: .paymentTerms, name: "Payment Terms", icon: "doc.text", description: "Payment terms and conditions")
-        ]
-    }
-    
-    private var companyInfoItems: [PaletteItemDescriptor] {
-        [
-            PaletteItemDescriptor(type: .invoiceTitle, name: "Invoice Title", icon: "doc.text", description: "Invoice title"),
-            PaletteItemDescriptor(type: .companyName, name: "Company Name", icon: "building.2", description: "Company name"),
-            PaletteItemDescriptor(type: .companyABN, name: "Company ABN", icon: "number.circle", description: "Company ABN"),
-            PaletteItemDescriptor(type: .companyEmail, name: "Company Email", icon: "envelope", description: "Company email"),
-            PaletteItemDescriptor(type: .companyLogo, name: "Company Logo", icon: "photo", description: "Company logo placeholder")
-        ]
-    }
-    
-    private var additionalElementItems: [PaletteItemDescriptor] {
-        [
-            PaletteItemDescriptor(type: .notes, name: "Notes", icon: "note.text", description: "Additional notes")
-        ]
+    private enum PaletteGroup: Int, CaseIterable {
+        case basicElements
+        case invoiceSections
+        case companyInfo
+        case additionalElements
+
+        var title: String {
+            switch self {
+            case .basicElements:
+                return "Basic Elements"
+            case .invoiceSections:
+                return "Invoice Sections"
+            case .companyInfo:
+                return "Company Info"
+            case .additionalElements:
+                return "Additional Elements"
+            }
+        }
+
+        var sortOrder: Int { rawValue }
     }
     
     private struct PaletteItemDescriptor: Identifiable {
+        let group: PaletteGroup
         let type: InvoiceComponentType
         let name: String
         let icon: String
@@ -297,124 +204,46 @@ struct ModernComponentPalette: View {
     
     private struct PaletteItemView: View {
         let descriptor: PaletteItemDescriptor
-        @State private var isHovered = false
+        @EnvironmentObject private var document: InvoiceDocument
         
         var body: some View {
-            HStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(
-                            isHovered 
-                                ? LinearGradient(
-                                    colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.15)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                                : LinearGradient(
-                                    colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.12)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                        )
-                        .frame(width: 28, height: 28)
+                        .fill(Color.accentColor.opacity(0.18))
                         .overlay(
                             Circle()
-                                .stroke(
-                                    isHovered ? Color.accentColor.opacity(0.3) : Color.accentColor.opacity(0.15),
-                                    lineWidth: isHovered ? 1 : 0.5
-                                )
+                                .stroke(Color.white.opacity(0.4), lineWidth: 0.5)
                         )
+                        .frame(width: 30, height: 30)
+                    
                     Image(systemName: descriptor.icon)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            isHovered
-                                ? LinearGradient(
-                                    colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                                : LinearGradient(
-                                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                        )
-                        .scaleEffect(isHovered ? 1.1 : 1.0)
+                        .foregroundColor(.accentColor)
                 }
                 
                 Text(descriptor.name)
-                    .font(.system(size: 13, weight: .medium, design: .default))
-                    .foregroundColor(Color.primaryText)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color(NSColor.labelColor))
+                    .lineLimit(1)
                 
                 Spacer()
-                
-                if isHovered {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color.accentColor.opacity(0.6))
-                        .transition(.scale.combined(with: .opacity))
-                }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        isHovered 
-                            ? LinearGradient(
-                                colors: [
-                                    Color.hoverHighlight,
-                                    Color.hoverHighlight.opacity(0.8)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            : LinearGradient(
-                                colors: [
-                                    Color.primarySurface,
-                                    Color.primarySurface.opacity(0.95)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(
-                                isHovered 
-                                    ? LinearGradient(
-                                        colors: [
-                                            Color.accentColor.opacity(0.4),
-                                            Color.accentColor.opacity(0.25)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                    : LinearGradient(
-                                        colors: [
-                                            Color.primaryOutline.opacity(0.6),
-                                            Color.primaryOutline.opacity(0.4)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                lineWidth: isHovered ? 0.75 : 0.5
-                            )
-                    )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .glassEffect(
+                .regular.interactive(true).tint(Color(NSColor.windowBackgroundColor)),
+                in: .rect(cornerRadius: 12)
             )
-            .shadow(color: Color.primaryShadow.opacity(isHovered ? 0.12 : 0), radius: isHovered ? 8 : 0, x: 0, y: isHovered ? 4 : 0)
-            .shadow(color: Color.accentColor.opacity(isHovered ? 0.08 : 0), radius: isHovered ? 12 : 0, x: 0, y: isHovered ? 6 : 0)
-            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .glassEffectTransition(.materialize)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.6)
+            )
             .pointerStyle(.link)
             .help(descriptor.description)
-            .onHover { hovering in
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    isHovered = hovering
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .draggable(createDraggableComponent()) {
-                // Drag preview
                 HStack(spacing: 8) {
                     Image(systemName: descriptor.icon)
                         .font(.system(size: 16, weight: .medium))
@@ -428,10 +257,21 @@ struct ModernComponentPalette: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.primarySurface)
+                        .fill(Color(NSColor.windowBackgroundColor))
                         .shadow(color: Color.primaryShadow.opacity(0.12), radius: 6, x: 0, y: 3)
                 )
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if document.isDraggingPaletteComponent == false {
+                            document.isDraggingPaletteComponent = true
+                        }
+                    }
+                    .onEnded { _ in
+                        document.isDraggingPaletteComponent = false
+                    }
+            )
         }
         
         private func createDraggableComponent() -> InvoiceComponent {

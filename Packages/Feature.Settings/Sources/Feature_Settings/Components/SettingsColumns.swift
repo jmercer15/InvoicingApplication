@@ -13,7 +13,7 @@ public struct SettingsContentColumn: View {
     public var body: some View {
         SettingsView(selectedSection: selectedSectionBinding)
             .frame(minWidth: 250)
-            .background(Color("Background", bundle: .sharedUI))
+            .background(.clear)
     }
 
     private var selectedSectionBinding: Binding<SettingsView.SettingsSection?> {
@@ -40,7 +40,8 @@ public struct SettingsDetailColumn: View {
     public var body: some View {
         ZStack {
             if viewModel.isTransitioning {
-                Color("Background", bundle: .sharedUI)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
                     .fluidTransition()
                     .id("settings_transition")
             } else if let section = viewModel.displayedSection {
@@ -57,7 +58,7 @@ public struct SettingsDetailColumn: View {
                 .id("settings_empty_state")
             }
         }
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         .onAppear(perform: applyInitialSelection)
         .onChange(of: viewModel.selectedSection) { newValue in
             handleSectionChange(from: previousSelection, to: newValue)

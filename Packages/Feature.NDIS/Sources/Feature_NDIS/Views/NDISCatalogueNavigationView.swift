@@ -93,7 +93,7 @@ struct NDISCatalogueNavigationView: View {
                     message: "Try adjusting your search or filter criteria."
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color("Background", bundle: .sharedUI))
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
             } else {
                 GeometryReader { geometry in
                     ScrollView {
@@ -133,7 +133,7 @@ struct NDISCatalogueNavigationView: View {
         }
         .searchable(text: $viewModel.searchText)
         .searchToolbarBehavior(.automatic)
-        .background(Color("Background", bundle: .sharedUI).ignoresSafeArea())
+        .background(.clear)
         .onAppear(perform: rebuildNavigationTree)
         .onChange(of: viewModel.filteredItems) { _, _ in
             rebuildNavigationTree()

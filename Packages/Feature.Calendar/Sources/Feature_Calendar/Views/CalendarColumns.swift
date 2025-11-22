@@ -29,7 +29,7 @@ public struct CalendarContentColumn: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         .toolbar(content: toolbarContent)
         .environment(\.modelContext, modelContext)
         .onAppear {
@@ -291,7 +291,7 @@ public struct CalendarDetailColumn: View {
             .environmentObject(eventKitService)
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color("Background", bundle: .sharedUI))
+            .background(.clear)
     }
 
     private var currentSidebarContent: some View {

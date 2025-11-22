@@ -57,7 +57,7 @@ struct NDISBillingContextView: View {
             Spacer()
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
-        .background(Color("Background", bundle: .sharedUI))
+        .background(.clear)
         .scrollEdgeEffectStyle(.hard, for: .top)
         .onAppear {
             // Execute automation flow when view appears, but only if shouldAutoDetermine is true
@@ -751,4 +751,3 @@ struct SupportItemPickerView: View {
         }
     }
 }
-
