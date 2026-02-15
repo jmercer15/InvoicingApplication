@@ -5,9 +5,11 @@ import Core
 /// SwiftData implementation of TravelChargeRepository
 public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unchecked Sendable {
     private let modelContext: ModelContext
+    private let mapper: TravelChargeMapper
     
-    public init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext, mapper: TravelChargeMapper = TravelChargeMapper()) {
         self.modelContext = modelContext
+        self.mapper = mapper
     }
     
     public func fetchAll() async throws -> [TravelCharge] {
@@ -15,8 +17,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -29,8 +31,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -43,8 +45,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -58,8 +60,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -69,25 +71,51 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
         }
         let descriptor = FetchDescriptor<TravelChargeEntity>(predicate: predicate)
         return try await MainActor.run {
-        guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-        return TravelCharge(from: entity)
+            guard let entity = try modelContext.fetch(descriptor).first else { return nil }
+            return self.mapper.mapToDomain(entity)
         }
     }
     
     public func create(_ travelCharge: TravelCharge) async throws -> TravelCharge {
         return try await MainActor.run {
-        let entity = TravelChargeEntity(id: travelCharge.id)
-        entity.update(from: travelCharge)
+            var entity = TravelChargeEntity(id: travelCharge.id)
+            self.mapper.updateEntity(&entity, from: travelCharge)
+            
+            // Resolve relationships using IDs from domain model
+            let clientPredicate = #Predicate<ClientEntity> { $0.id == travelCharge.clientId }
+            let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: clientPredicate)
+            if let client = try modelContext.fetch(clientDescriptor).first {
+                entity.client = client
+            } else {
+                print("TravelChargeRepository: Client not found for ID \(travelCharge.clientId)")
+            }
+            
+            let sessionPredicate = #Predicate<SessionEntity> { $0.id == travelCharge.sessionId }
+            let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: sessionPredicate)
+            if let session = try modelContext.fetch(sessionDescriptor).first {
+                entity.linkedSession = session
+            } else {
+                print("TravelChargeRepository: Session not found for ID \(travelCharge.sessionId)")
+            }
+            
+            if let serviceId = travelCharge.serviceId {
+                let servicePredicate = #Predicate<ClientServiceEntity> { $0.id == serviceId }
+                let serviceDescriptor = FetchDescriptor<ClientServiceEntity>(predicate: servicePredicate)
+                if let service = try modelContext.fetch(serviceDescriptor).first {
+                    entity.service = service
+                }
+            }
+            
             if entity.modelContext == nil {
-        modelContext.insert(entity)
+                modelContext.insert(entity)
             }
             do {
-        try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-        return TravelCharge(from: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -98,14 +126,15 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: travelCharge)
+            var mutableEntity = entity
+            self.mapper.updateEntity(&mutableEntity, from: travelCharge)
             do {
                 try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return TravelCharge(from: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -165,8 +194,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -178,8 +207,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
         descriptor.fetchOffset = offset
         
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -218,7 +247,7 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
                 guard let creationDate = entity.ekCreationDate else { return false }
                 return creationDate >= startDate && creationDate <= endDate
             }
-            return filteredEntities.map { TravelCharge(from: $0) }
+            return filteredEntities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -231,8 +260,8 @@ public final class TravelChargeRepositorySwiftData: TravelChargeRepository, @unc
             sortBy: [SortDescriptor(\.ekCreationDate, order: .reverse)]
         )
         return try await MainActor.run {
-        let entities = try modelContext.fetch(descriptor)
-        return entities.map { TravelCharge(from: $0) }
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     

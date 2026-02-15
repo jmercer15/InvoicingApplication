@@ -109,22 +109,53 @@ struct DocumentGridDataGenerator {
     
     private func generateBillToData() -> [[DocumentTableItem]] {
         let payeeData = templateDataService.getPayeeData(for: clientId)
-        let fields = [
-            ("Name", payeeData.name),
-            ("Email", payeeData.email),
-            ("Address", payeeData.address)
-        ]
+        // Also fetch authority if available (from invoice snapshot primarily)
+        let invoiceData = templateDataService.getInvoiceData(for: invoiceId)
+        
+        var fields: [(String, String)] = []
+        
+        if !component.style.hiddenFields.contains("Name") {
+            fields.append(("Name", payeeData.name))
+        }
+        if !component.style.hiddenFields.contains("Email") {
+            fields.append(("Email", payeeData.email))
+        }
+        if !component.style.hiddenFields.contains("Address") {
+            fields.append(("Address", payeeData.address))
+        }
+        if !component.style.hiddenFields.contains("Phone") {
+            // Prefer payee phone, fallback to billTo phone if needed or empty
+            let phone = !payeeData.phone.isEmpty ? payeeData.phone : (invoiceData.billToEmail ?? "") // Fallback logic is fuzzy, sticking to filtered data
+             // Actually, the payeeData should already have the best available phone from the service layer init
+             fields.append(("Phone", payeeData.phone))
+        }
+        if !component.style.hiddenFields.contains("Authority") {
+            fields.append(("Authority", invoiceData.billingAuthority ?? ""))
+        }
+        
         return keyValueGrid(for: fields)
     }
     
     private func generateParticipantData() -> [[DocumentTableItem]] {
         let clientData = templateDataService.getClientData(for: clientId)
-        var fields: [(String, String)] = [
-            ("Name", clientData.name)
-        ]
-        if !clientData.ndisNumber.isEmpty {
+        var fields: [(String, String)] = []
+        
+        if !component.style.hiddenFields.contains("Name") {
+            fields.append(("Name", clientData.name))
+        }
+        if !component.style.hiddenFields.contains("NDIS No.") && !clientData.ndisNumber.isEmpty {
             fields.append(("NDIS No.", clientData.ndisNumber))
         }
+        if !component.style.hiddenFields.contains("Email") {
+            fields.append(("Email", clientData.email))
+        }
+        if !component.style.hiddenFields.contains("Phone") {
+            fields.append(("Phone", clientData.phone))
+        }
+        if !component.style.hiddenFields.contains("Address") {
+            fields.append(("Address", clientData.address))
+        }
+        
         return keyValueGrid(for: fields)
     }
     
@@ -132,22 +163,39 @@ struct DocumentGridDataGenerator {
         let invoiceData = templateDataService.getInvoiceData(for: invoiceId)
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
-        let fields = [
-            ("Invoice #", invoiceData.invoiceNumber),
-            ("Date", formatter.string(from: invoiceData.issueDate)),
-            ("Due Date", formatter.string(from: invoiceData.dueDate))
-        ]
+        
+        var fields: [(String, String)] = []
+        
+        if !component.style.hiddenFields.contains("Invoice #") {
+            fields.append(("Invoice #", invoiceData.invoiceNumber))
+        }
+        if !component.style.hiddenFields.contains("Date") {
+            fields.append(("Date", formatter.string(from: invoiceData.issueDate)))
+        }
+        if !component.style.hiddenFields.contains("Due Date") {
+            fields.append(("Due Date", formatter.string(from: invoiceData.dueDate)))
+        }
+        
         return keyValueGrid(for: fields)
     }
     
     private func generatePaymentDetailsData() -> [[DocumentTableItem]] {
         let businessData = templateDataService.getBusinessData()
-        let fields = [
-            ("Bank Name", businessData.bankName),
-            ("Account Name", businessData.bankAccountName),
-            ("BSB", businessData.bankBSB),
-            ("Account No.", businessData.bankAccountNumber)
-        ]
+        var fields: [(String, String)] = []
+        
+        if !component.style.hiddenFields.contains("Bank Name") {
+            fields.append(("Bank Name", businessData.bankName))
+        }
+        if !component.style.hiddenFields.contains("Account Name") {
+            fields.append(("Account Name", businessData.bankAccountName))
+        }
+        if !component.style.hiddenFields.contains("BSB") {
+            fields.append(("BSB", businessData.bankBSB))
+        }
+        if !component.style.hiddenFields.contains("Account No.") {
+            fields.append(("Account No.", businessData.bankAccountNumber))
+        }
+
         return keyValueGrid(for: fields)
     }
     

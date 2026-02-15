@@ -53,3 +53,8 @@ public protocol TravelChargeRepository: Sendable {
     /// Reject travel charge
     func reject(id: UUID, reason: String?) async throws -> TravelCharge
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias TravelChargeRepositoryProtocol = TravelChargeRepository

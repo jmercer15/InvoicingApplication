@@ -17,3 +17,8 @@ public protocol ClientServicesRepository: Sendable {
     /// Delete a client service assignment
     func delete(id: UUID) async throws
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias ClientServicesRepositoryProtocol = ClientServicesRepository

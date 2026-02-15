@@ -2,54 +2,89 @@
 //  InvoiceSharingService.swift
 //  Feature.Invoices
 //
-//  Created by AI Assistant for Refactoring Initiative
+//  Service for generating PDF documents from invoices using the template system
 //
+
 import Foundation
 import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
 import Core
 import SharedUI
+import Feature_InvoiceTemplateEditor
 
-// MARK: - Invoice PDF and Sharing Service
-public struct InvoiceSharingService {
+/// Service for generating PDF documents from invoices using the template system
+public class InvoiceSharingService {
+    private let templateManager: TemplateManager
+    private let templateDataService: TemplateDataService
+    
+    public init(templateManager: TemplateManager, templateDataService: TemplateDataService) {
+        self.templateManager = templateManager
+        self.templateDataService = templateDataService
+    }
+    
+    /// Renders PDF data for the given invoice using template-based rendering
     @MainActor
-    public static func renderPDFData(invoice: Invoice, invoiceItems: [InvoiceItem]) -> Data? {
-        let sheet = SharedUI.A4InvoiceSheetView(invoice: invoice, invoiceItems: invoiceItems)
-            .environment(\.colorScheme, .light)
-            .background(Color(NSColor.windowBackgroundColor))
-            .frame(width: 595, height: 842)
-
-        let renderer = ImageRenderer(content: sheet)
-        renderer.proposedSize = .init(width: 595, height: 842)
-        renderer.scale = 3.0
-        renderer.isOpaque = true
-        if let cg = renderer.cgImage {
-            let nsImage = NSImage(cgImage: cg, size: NSSize(width: 595, height: 842))
-            guard let page = PDFPage(image: nsImage) else { return nil }
-            let doc = PDFDocument()
-            doc.insert(page, at: 0)
-            return doc.dataRepresentation()
+    public func renderPDFData(invoice: Invoice, invoiceItems: [InvoiceItem]) async -> Data? {
+        // Create a fresh document to load the template into
+        let document = InvoiceDocument()
+        
+        // Set the invoice data in the template data service
+        await templateDataService.setSelectedInvoice(invoice, items: invoiceItems)
+        
+        // Load the template - prefer invoice's assigned template, fallback to first available
+        let templates = await templateManager.browseTemplates()
+        
+        var selectedTemplate: TemplateMetadata?
+        
+        // Try to find the invoice's assigned template
+        if let templateId = invoice.templateId {
+            selectedTemplate = templates.first(where: { $0.id == templateId })
         }
-        if let ns = renderer.nsImage, let page = PDFPage(image: ns) {
-            let doc = PDFDocument()
-            doc.insert(page, at: 0)
-            return doc.dataRepresentation()
+        
+        // Fallback to first available template if not found
+        if selectedTemplate == nil {
+            selectedTemplate = templates.first
         }
-        return nil
+        
+        if let metadata = selectedTemplate,
+           let templateData = await templateManager.loadTemplate(metadata: metadata) {
+            document.loadTemplate(templateData)
+        }
+        
+        // Generate PDF using ExportService
+        do {
+            return try await ExportService.shared.generatePDFData(from: document)
+        } catch {
+            print("❌ [InvoiceSharingService] PDF generation failed: \(error)")
+            return nil
+        }
     }
 
+    /// Creates a temporary PDF file URL for the invoice
     @MainActor
-    public static func temporaryPDFURL(invoice: Invoice, invoiceItems: [InvoiceItem]) -> URL? {
-        guard let data = renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else { return nil }
+    public func temporaryPDFURL(invoice: Invoice, invoiceItems: [InvoiceItem]) async -> URL? {
+        guard let data = await renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else {
+            return nil
+        }
+        
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Invoice-\(invoice.invoiceNumber).pdf")
-        do { try data.write(to: url) } catch { return nil }
-        return url
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            print("❌ [InvoiceSharingService] Failed to write PDF to temp file: \(error)")
+            return nil
+        }
     }
 
+    /// Creates an NSItemProvider for sharing the invoice as a PDF
     @MainActor
-    public static func pdfItemProvider(invoice: Invoice, invoiceItems: [InvoiceItem]) -> NSItemProvider? {
-        guard let data = renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else { return nil }
+    public func pdfItemProvider(invoice: Invoice, invoiceItems: [InvoiceItem]) async -> NSItemProvider? {
+        guard let data = await renderPDFData(invoice: invoice, invoiceItems: invoiceItems) else {
+            return nil
+        }
+        
         let provider = NSItemProvider()
         provider.suggestedName = "Invoice-\(invoice.invoiceNumber).pdf"
         provider.registerDataRepresentation(forTypeIdentifier: UTType.pdf.identifier, visibility: .all) { completion in

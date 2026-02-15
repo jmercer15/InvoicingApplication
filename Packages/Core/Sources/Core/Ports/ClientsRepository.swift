@@ -50,3 +50,8 @@ public protocol ClientsRepository: Sendable {
     /// Fetch clients by plan manager ID
     func fetch(byPlanManagerId planManagerId: UUID) async throws -> [Client]
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias ClientsRepositoryProtocol = ClientsRepository

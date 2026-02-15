@@ -5,43 +5,64 @@ import CoreGraphics
 
 extension InvoiceDocument {
     var canUndo: Bool {
-        return !undoStack.isEmpty
+        return undoManager?.canUndo ?? false
     }
     
     var canRedo: Bool {
-        return !redoStack.isEmpty
+        return undoManager?.canRedo ?? false
     }
     
     func undo() {
-        guard canUndo else { return }
-        isUndoRedoOperation = true
-        redoStack.append(DocumentState(components: components))
-        let previousState = undoStack.removeLast()
-        components = previousState.components
-        isUndoRedoOperation = false
+        undoManager?.undo()
     }
     
     func redo() {
-        guard canRedo else { return }
-        isUndoRedoOperation = true
-        undoStack.append(DocumentState(components: components))
-        let nextState = redoStack.removeLast()
-        components = nextState.components
-        isUndoRedoOperation = false
+        undoManager?.redo()
     }
     
-    func saveStateForUndo() {
-        guard !isUndoRedoOperation else { return }
-        undoStack.append(DocumentState(components: components))
-        redoStack.removeAll()
-        if undoStack.count > 50 {
-            undoStack.removeFirst()
+    func saveStateForUndo(actionName: String? = nil) {
+        // If we don't have an undo manager, do nothing
+        guard let undoManager = undoManager else { return }
+        
+        // Capture current state
+        let oldState = DocumentState(
+            components: components,
+            sectionSplits: sectionSplits,
+            margins: margins,
+            sectionHeightRatios: sectionHeightRatios,
+            selectedComponentID: selectedComponentID,
+            selectedSplitSelection: selectedSplitSelection,
+            selectedTableElement: selectedTableElement
+        )
+        
+        undoManager.registerUndo(withTarget: self) { document in
+            document.restoreState(oldState)
+        }
+        
+        if let actionName = actionName {
+            undoManager.setActionName(actionName)
         }
     }
     
+    private func restoreState(_ state: DocumentState) {
+        // Register the reverse operation (Redo)
+        // Since we are executing inside an undo closure, this will register to the Redo stack
+        saveStateForUndo()
+        
+        // Restore state properties
+        self.components = state.components
+        self.sectionSplits = state.sectionSplits
+        self.margins = state.margins
+        self.sectionHeightRatios = state.sectionHeightRatios
+        
+        // Restore selection
+        self.selectedComponentID = state.selectedComponentID
+        self.selectedSplitSelection = state.selectedSplitSelection
+        self.selectedTableElement = state.selectedTableElement
+    }
+    
     func clearUndoRedoStacks() {
-        undoStack.removeAll()
-        redoStack.removeAll()
+        undoManager?.removeAllActions()
     }
 }
 

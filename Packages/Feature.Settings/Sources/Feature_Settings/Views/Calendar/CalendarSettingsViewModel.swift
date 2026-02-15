@@ -8,8 +8,9 @@ import Core
 
 /// ViewModel for CalendarSettingsView, mediating between CalendarPreferences, EventKitSyncService, and the UI.
 @MainActor
-class CalendarSettingsViewModel: ObservableObject {
+public class CalendarSettingsViewModel: ObservableObject {
     // MARK: - Dependencies
+    private let unitOfWork: UnitOfWorkService
     @Published var preferences = CalendarPreferences()
     @Published var eventKitService: EventKitSyncService = .shared
 
@@ -18,6 +19,8 @@ class CalendarSettingsViewModel: ObservableObject {
     @Published var showCreateCalendarSheet: Bool = false
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
+    
+    
     @Published var showingResetConfirmation: Bool = false
     @Published var showingClearSessionsConfirmation: Bool = false
 
@@ -41,7 +44,8 @@ class CalendarSettingsViewModel: ObservableObject {
     }
 
     // MARK: - Initialization
-    init() {
+    public init(unitOfWork: UnitOfWorkService) {
+        self.unitOfWork = unitOfWork
         setupStateObservers()
         initializeState()
     }
@@ -292,16 +296,17 @@ class CalendarSettingsViewModel: ObservableObject {
         }
     }
 
-    func clearAllSessions(modelContext: ModelContext) {
-        let descriptor = FetchDescriptor<SessionEntity>()
+    func clearAllSessions() async {
         do {
-            let sessions: [SessionEntity] = try modelContext.fetch(descriptor)
+            let sessions = try await unitOfWork.sessions.fetchAll()
+            let sessionCount = sessions.count
             for session in sessions {
-                modelContext.delete(session)
+                 try await unitOfWork.sessions.delete(id: session.id)
             }
-            print("All sessions deleted successfully.")
+            try await unitOfWork.saveChanges()
+            print("All sessions deleted successfully. Deleted \(sessionCount) sessions.")
         } catch {
             print("Failed to delete all sessions: \(error)")
         }
     }
-} 
+}

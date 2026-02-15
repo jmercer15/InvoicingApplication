@@ -6,10 +6,12 @@
 //
 
 import SwiftUI
+import Combine
 import AppKit  // Add this import for NSScreen
 import PDFKit
 import Core
 import SharedUI
+import Feature_InvoiceTemplateEditor
 
 struct InvoicesView: View {
     @Binding var searchText: String
@@ -40,6 +42,16 @@ struct InvoicesView: View {
     // Tree items for hierarchical list
     @State private var treeItems: [TreeItem] = []
     
+    // Filter state is now in containerViewModel, accessed via computed properties
+    private var isDateFilterActive: Bool { containerViewModel.isDateFilterActive }
+    private var filterStartDate: Date? { containerViewModel.filterStartDate }
+    private var filterEndDate: Date? { containerViewModel.filterEndDate }
+    private var isAmountFilterActive: Bool { containerViewModel.isAmountFilterActive }
+    private var filterMinAmount: Double? { containerViewModel.filterMinAmount }
+    private var filterMaxAmount: Double? { containerViewModel.filterMaxAmount }
+    private var isClientFilterActive: Bool { containerViewModel.isClientFilterActive }
+    private var filterClients: Set<String> { containerViewModel.filterClients }
+    
     // Use invoices from container ViewModel (domain models)
     private var invoices: [Invoice] {
         containerViewModel.allInvoices
@@ -66,11 +78,51 @@ struct InvoicesView: View {
 
         // Apply status filter
         if !filterStatus.isEmpty {
-            filtered = filtered.filter { filterStatus.contains($0.status ?? "") }
+            filtered = filtered.filter { invoice in
+                filterStatus.contains(invoice.status)
+            }
         }
 
-        // Future enhancement: Add date range and amount range filters in toolbar controls
-
+        // Apply date range filter
+        if isDateFilterActive {
+            let calendar = Calendar.current
+            filtered = filtered.filter { invoice in
+                var matches = true
+                if let start = filterStartDate {
+                    let startOfDay = calendar.startOfDay(for: start)
+                    matches = matches && invoice.date >= startOfDay
+                }
+                if let end = filterEndDate {
+                    let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: end) ?? end
+                    matches = matches && invoice.date <= endOfDay
+                }
+                return matches
+            }
+        }
+        
+        // Apply amount range filter
+        if isAmountFilterActive {
+            filtered = filtered.filter { invoice in
+                var matches = true
+                if let min = filterMinAmount {
+                    matches = matches && invoice.totalAmount >= min
+                }
+                if let max = filterMaxAmount {
+                    matches = matches && invoice.totalAmount <= max
+                }
+                return matches
+            }
+        }
+        
+        // Apply client filter
+        if isClientFilterActive {
+            filtered = filtered.filter { invoice in
+                guard let clientName = invoice.clientName, !clientName.isEmpty else {
+                    return false
+                }
+                return filterClients.contains(clientName)
+            }
+        }
         // Apply sorting
         let sortOrder = InvoicesSortOrder.from(field: sortField, direction: sortDirection)
         return filtered.sorted(by: { first, second in
@@ -96,9 +148,9 @@ struct InvoicesView: View {
             case .numberDesc:
                 return first.invoiceNumber > second.invoiceNumber
             case .statusAsc:
-                return (first.status ?? "") < (second.status ?? "")
+                return first.status < second.status
             case .statusDesc:
-                return (first.status ?? "") > (second.status ?? "")
+                return first.status > second.status
             }
         })
     }
@@ -140,30 +192,15 @@ struct InvoicesView: View {
             setupInitialState()
             updateTreeItems()
         }
-        .onChange(of: searchText) { _, _ in 
-            updateTreeItems()
-        }
-        .onChange(of: filterStatus) { _, _ in 
-            updateTreeItems()
-        }
-        .onChange(of: sortField) { _, _ in
-            updateTreeItems()
-        }
-        .onChange(of: sortDirection) { _, _ in
-            updateTreeItems()
-        }
-        .onChange(of: groupBy) { _, _ in
-            updateTreeItems()
-        }
-        .onChange(of: containerViewModel.allInvoices) { _, _ in
-            updateTreeItems()
-        }
-        .onChange(of: selectedInvoiceId) { _, newIdUUID in
-            syncSelectedInvoiceFromId(newIdUUID)
-        }
-        .onChange(of: selectedInvoice) { _, newInvoice in
-            syncSelectedIdFromInvoice(newInvoice)
-        }
+        .onChange(of: searchText) { _, _ in updateTreeItems() }
+        .onChange(of: filterStatus) { _, _ in updateTreeItems() }
+        .onChange(of: sortField) { _, _ in updateTreeItems() }
+        .onChange(of: sortDirection) { _, _ in updateTreeItems() }
+        .onChange(of: groupBy) { _, _ in updateTreeItems() }
+        .onChange(of: containerViewModel.allInvoices) { _, _ in updateTreeItems() }
+        .onChange(of: selectedInvoiceId) { _, newIdUUID in syncSelectedInvoiceFromId(newIdUUID) }
+        .onChange(of: selectedInvoice) { _, newInvoice in syncSelectedIdFromInvoice(newInvoice) }
+        .onChange(of: filterStateHash) { _, _ in updateTreeItems() }
         .task {
             // Refresh invoices when view appears
             await containerViewModel.fetchAllInvoices()
@@ -173,6 +210,21 @@ struct InvoicesView: View {
             invoicesToDelete: invoicesToDelete,
             performDeleteInvoices: performDeleteInvoices
         ))
+        .loadingOverlay(isLoading: containerViewModel.isLoading, message: "Loading invoices...")
+    }
+    
+    // Combine all filter values into a single value for onChange
+    private var filterStateHash: Int {
+        var hasher = Hasher()
+        hasher.combine(isDateFilterActive)
+        hasher.combine(filterStartDate)
+        hasher.combine(filterEndDate)
+        hasher.combine(isAmountFilterActive)
+        hasher.combine(filterMinAmount)
+        hasher.combine(filterMaxAmount)
+        hasher.combine(isClientFilterActive)
+        hasher.combine(filterClients)
+        return hasher.finalize()
     }
     
     // MARK: - Helper Methods
@@ -298,7 +350,7 @@ struct InvoicesView: View {
                 }
             }
         }
-        .appInteractiveCursor()
+        .pointerStyle(.link)
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingMediumLarge)
         .frame(maxWidth: .infinity)
@@ -368,7 +420,7 @@ struct InvoicesView: View {
 
                 Spacer()
 
-                Text(invoice.status ?? "Draft")
+                Text(AppConstants.invoiceStatusDisplayName(for: invoice.status))
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -406,7 +458,7 @@ struct InvoicesView: View {
         Dictionary(grouping: filteredInvoices) { invoice in
             switch groupBy {
             case .status:
-                return invoice.status ?? "Draft"
+                return AppConstants.invoiceStatusDisplayName(for: invoice.status)
             case .client:
                 return invoice.clientName ?? "No Client"
             case .month:
@@ -434,9 +486,14 @@ struct InvoicesView: View {
         switch groupBy {
         case .status:
             switch key {
-            case "Draft": return "doc.text"
-            case "Sent": return "paperplane.fill"
-            case "Paid": return "checkmark.circle.fill"
+            case AppConstants.invoiceStatusDisplayName(for: AppConstants.invoiceStatusReviewDraft):
+                return "doc.text"
+            case AppConstants.invoiceStatusDisplayName(for: AppConstants.invoiceStatusReadyToSend):
+                return "checkmark.circle"
+            case AppConstants.invoiceStatusDisplayName(for: AppConstants.invoiceStatusPending):
+                return "paperplane.fill"
+            case AppConstants.invoiceStatusDisplayName(for: AppConstants.invoiceStatusReceived):
+                return "checkmark.circle.fill"
             default: return "doc.text.fill"
             }
         case .client:
@@ -455,8 +512,12 @@ struct InvoicesView: View {
         if groupBy != .none {
             // Create grouped structure
             let grouped = groupedInvoices
-            for (key, invoicesInGroup) in grouped.sorted(by: { $0.key < $1.key }) {
-                let children = invoicesInGroup.map { invoice in
+            let sortedGroups = grouped.sorted(by: { $0.key < $1.key })
+            
+            // If only one group with few items, flatten it
+            if sortedGroups.count == 1, let (_, invoicesInGroup) = sortedGroups.first, invoicesInGroup.count <= 5 {
+                // Show as flat list instead of single section
+                items = invoicesInGroup.map { invoice in
                     TreeItem(
                         id: "invoice_\(invoice.id)",
                         title: invoice.invoiceNumber,
@@ -466,17 +527,30 @@ struct InvoicesView: View {
                         entityType: "invoice"
                     )
                 }
-                
-                items.append(TreeItem(
-                    id: "section_\(key)",
-                    title: key,
-                    subtitle: "\(invoicesInGroup.count) \(invoicesInGroup.count == 1 ? "invoice" : "invoices")",
-                    children: children
-                ))
+            } else {
+                for (key, invoicesInGroup) in sortedGroups {
+                    let children = invoicesInGroup.map { invoice in
+                        TreeItem(
+                            id: "invoice_\(invoice.id)",
+                            title: invoice.invoiceNumber,
+                            subtitle: invoice.clientName ?? "No Client",
+                            children: nil,
+                            entityId: invoice.id.uuidString,
+                            entityType: "invoice"
+                        )
+                    }
+                    
+                    items.append(TreeItem(
+                        id: "section_\(key)",
+                        title: key,
+                        subtitle: "\(invoicesInGroup.count) \(invoicesInGroup.count == 1 ? "invoice" : "invoices")",
+                        children: children
+                    ))
+                }
             }
         } else {
-            // Create ungrouped structure - single section with all invoices
-            let children = filteredInvoices.map { invoice in
+            // No grouping - create flat list of invoice items
+            items = filteredInvoices.map { invoice in
                 TreeItem(
                     id: "invoice_\(invoice.id)",
                     title: invoice.invoiceNumber,
@@ -486,13 +560,6 @@ struct InvoicesView: View {
                     entityType: "invoice"
                 )
             }
-            
-            items.append(TreeItem(
-                id: "section_all",
-                title: "All Invoices",
-                subtitle: "\(filteredInvoices.count) \(filteredInvoices.count == 1 ? "invoice" : "invoices")",
-                children: children
-            ))
         }
         
         treeItems = items
@@ -557,12 +624,15 @@ struct InvoicesView: View {
         }
     }
 
-    // Generate PDF data for a given invoice using the same sheet view used elsewhere
+    // Generate PDF data for a given invoice using template-based rendering
     private func temporaryPDFURL(for invoice: Invoice) async -> URL? {
         // Fetch invoice items for PDF generation
         do {
             let invoiceItems = try await containerViewModel.invoicesRepository.fetchItems(by: invoice.id)
-            return InvoiceSharingService.temporaryPDFURL(invoice: invoice, invoiceItems: invoiceItems)
+            return await containerViewModel.sharingService.temporaryPDFURL(
+                invoice: invoice,
+                invoiceItems: invoiceItems
+            )
         } catch {
             print("❌ [InvoicesView] Error fetching invoice items for PDF: \(error)")
             return nil
@@ -592,7 +662,7 @@ struct InvoicesView: View {
             }
         }
     }
-    
+
     private func handleCommandTap(invoice: Invoice) {
         // Command+click always activates multi-select mode
         withAnimation(.easeInOut(duration: StyleGuide.Animations.durationMedium)) {
@@ -636,6 +706,7 @@ struct InvoicesView: View {
                     message: "No invoices match the current filters."
                 )
                 .frame(maxHeight: .infinity)
+                .standardContentPanelListInsets()
                 .fluidTransition()
             } else {
                 // Use hierarchical list
@@ -643,12 +714,11 @@ struct InvoicesView: View {
                     items: $treeItems,
                     onItemTap: handleItemTap
                 )
-                .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
-                .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
             }
             
             // Add multi-select toolbar
             if isMultiSelectMode {
+                let actionButtonShape = RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(selectedInvoices.count) selected")
@@ -675,8 +745,10 @@ struct InvoicesView: View {
                             .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
                             .background(Color("Gray20", bundle: .sharedUI))
                             .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                            .contentShape(actionButtonShape)
                     }
                     .buttonStyle(.plain)
+                    .pointerStyle(.link)
                     .padding(.trailing, 8)
                     
                     Button(action: deleteSelectedInvoices) {
@@ -689,9 +761,10 @@ struct InvoicesView: View {
                         .padding(.vertical, 6)
                         .background(Color("Red70", bundle: .sharedUI))
                         .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                        .contentShape(actionButtonShape)
                     }
                     .buttonStyle(.plain)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     .disabled(selectedInvoices.isEmpty)
                     .padding(.trailing)
 
@@ -705,9 +778,10 @@ struct InvoicesView: View {
                         .padding(.vertical, 6)
                         .background(Color("Blue70", bundle: .sharedUI))
                         .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                        .contentShape(actionButtonShape)
                     }
                     .buttonStyle(.plain)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     .disabled(selectedInvoices.isEmpty)
                     .padding(.trailing, 8)
 
@@ -721,9 +795,10 @@ struct InvoicesView: View {
                         .padding(.vertical, 6)
                         .background(Color("Blue70", bundle: .sharedUI))
                         .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                        .contentShape(actionButtonShape)
                     }
                     .buttonStyle(.plain)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     .disabled(selectedInvoices.isEmpty)
                 }
                 .padding(.vertical, 8)
@@ -807,6 +882,9 @@ struct PickerDisplayButton<Item: Hashable, LabelContent: View>: View {
 
     // ADDED color constant
     private let mediumGrayText = Color("A4Text", bundle: .sharedUI)
+    private var fieldShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous)
+    }
 
     var body: some View {
         Button(action: action) {
@@ -825,8 +903,10 @@ struct PickerDisplayButton<Item: Hashable, LabelContent: View>: View {
             .padding(.vertical, 2)
             .font(.system(size: 10)) // <<<< REDUCED font size for picker button content
             .formFieldStyle()
+            .contentShape(fieldShape)
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .frame(width: buttonWidth) // <<<< ADDED: Apply frame width if provided
     }
 }
@@ -930,42 +1010,16 @@ struct InvoiceEditor: View {
     @StateObject var viewModel: InvoiceEditorViewModel
     @Binding var isEditing: Bool
     @Binding var showInspector: Bool
+    
+    // Template rendering dependencies
+    @EnvironmentObject var templateDataService: TemplateDataService
+    @EnvironmentObject var templateManager: TemplateManager
 
     // State for UI and gestures
     @State private var isPresentingPreviewSheet = false
-    @State private var committedScaleFactor: CGFloat = 1.0
-    @GestureState private var gestureMagnification: CGFloat = 1.0
-    @State private var previousSize: CGSize? = nil
-    @State private var autoFitOnResize: Bool = false
-    @State private var currentGeometry: ViewGeometry = ViewGeometry()
-    
-    // State for confirmation dialogs
     @State private var showingDeleteConfirmation = false
     @State private var showingCancelConfirmation = false
-    
-    // Business info from invoice snapshot
-    private var businessInfo: BusinessInfo {
-        BusinessInfo.from(invoice: viewModel.invoice)
-    }
-    
-    // Structure to store geometry information
-    struct ViewGeometry {
-        var size: CGSize = .zero
-    }
 
-    // Color constants
-            let lightGrayBackground = Color("A4TableBackground", bundle: .sharedUI)
-    let mediumGrayText = Color("A4Text", bundle: .sharedUI)
-    let darkText = Color("A4Text", bundle: .sharedUI)
-            let indigoButtonBackground = Color("A4IndigoButton", bundle: .sharedUI)
-            let indigoButtonText = Color("A4Text", bundle: .sharedUI)
-
-    // The view is initialized with its ViewModel
-    public init(viewModel: InvoiceEditorViewModel, isEditing: Binding<Bool>, showInspector: Binding<Bool>) {
-        self._viewModel = StateObject(wrappedValue: viewModel)
-        self._isEditing = isEditing
-        self._showInspector = showInspector
-    }
     
     private enum FitType {
         case width, height, page
@@ -973,609 +1027,172 @@ struct InvoiceEditor: View {
 
     // MARK: - Subviews (Editable Versions)
 
-    private var formHeaderBar: some View { EmptyView() }
-
-    private var businessInfoHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading) {
-                Text("TAX INVOICE")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(darkText)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(businessInfo.name ?? "Your Business Name")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(darkText)
-                    .lineLimit(1)
-                Text(businessInfo.abn ?? "ABN: N/A")
-                    .font(.system(size: 11))
-                    .foregroundColor(mediumGrayText)
-                Text(businessInfo.email ?? "contact@yourbusiness.com.au")
-                    .font(.system(size: 11))
-                    .foregroundColor(mediumGrayText)
-            }
-        }
-        .padding(EdgeInsets(top: 12, leading: 24, bottom: 10, trailing: 24))
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Color("A4LightBlueBackground", bundle: .sharedUI))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8))
-        .padding(.bottom, 8)
-    }
-
-    private var invoiceReferenceAndDatesSection: some View {
-        InfoSection(title: "Invoice Reference & Dates") {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow {
-                    Text("Invoice No.:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    if isEditing {
-                        TextField("Auto-generated when client selected", text: $viewModel.invoiceNumber)
-                            .font(.system(size: 11))
-                            .foregroundColor(darkText)
-                            .textFieldStyle(PlainTextFieldStyle())
-                            .gridColumnAlignment(.leading)
-                    } else {
-                        Text(viewModel.invoiceNumber)
-                            .font(.system(size: 11))
-                            .foregroundColor(darkText)
-                            .gridColumnAlignment(.leading)
-                    }
-                }
-                GridRow {
-                    Text("Issue Date:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    if isEditing {
-                        DatePicker("", selection: $viewModel.issueDate, displayedComponents: .date)
-                            .labelsHidden()
-                            .font(.system(size: 10))
-                            .foregroundColor(darkText)
-                            .colorScheme(.light)
-                            .accentColor(darkText)
-                            .gridColumnAlignment(.leading)
-                    } else {
-                        Text(viewModel.issueDate, style: .date)
-                            .font(.system(size: 10))
-                            .foregroundColor(darkText)
-                            .gridColumnAlignment(.leading)
-                    }
-                }
-                GridRow {
-                    Text("Due Date:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    if isEditing {
-                        DatePicker("", selection: Binding(get: { viewModel.dueDate ?? Date() }, set: { viewModel.dueDate = $0 }), displayedComponents: .date)
-                            .labelsHidden()
-                            .font(.system(size: 10))
-                            .foregroundColor(darkText)
-                            .colorScheme(.light)
-                            .accentColor(darkText)
-                            .gridColumnAlignment(.leading)
-                    } else {
-                        Text(viewModel.dueDate ?? Date(), style: .date)
-                            .font(.system(size: 10))
-                            .foregroundColor(darkText)
-                            .gridColumnAlignment(.leading)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var participantSection: some View {
-        InfoSection(title: "Participant") {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow {
-                    Text("Name:")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        .gridColumnAlignment(.trailing)
-                    if isEditing {
-                        Picker("Client", selection: $viewModel.selectedClientId) {
-                            Text("Select Client").tag(nil as UUID?)
-                            ForEach(viewModel.allClients) { client in
-                                Text(client.fullName).tag(client.id as UUID?)
-                            }
-                        }
-                        .colorScheme(.light)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: viewModel.selectedClientId) { _, newClientId in
-                            viewModel.onClientChanged(to: newClientId)
-                        }
-                    } else {
-                        Text(viewModel.invoice.clientName ?? viewModel.selectedClient?.fullName ?? "N/A")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                if let ndisNumber = viewModel.invoice.clientNDISNumber ?? viewModel.selectedClient?.ndisNumber, !ndisNumber.isEmpty {
-                    GridRow {
-                        Text("NDIS No.:")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            .gridColumnAlignment(.trailing)
-                        Text(ndisNumber)
-                            .font(.system(size: 10))
-                            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var billToSection: some View {
-        // Use snapshot data from invoice domain model
-        let billingAuthString = viewModel.invoice.billingAuthority
-        let billToName = viewModel.invoice.billToName
-        let billToEmail = viewModel.invoice.billToEmail
-        let billToAddress = viewModel.invoice.billToAddress
-        
-        var billToTitle = "Bill To"
-        var name: String? = ""
-        var email: String? = ""
-        var addressDisplayString: String? = nil
-
-        if billingAuthString == "parent_guardian" || billingAuthString == "Parent/Guardian" {
-            billToTitle = "Bill To: Parent/Guardian"
-            name = billToName ?? viewModel.invoice.payeeName
-            email = billToEmail ?? viewModel.invoice.payeeEmail
-            addressDisplayString = billToAddress ?? viewModel.invoice.payeeAddress
-        } else if billingAuthString == "client" || billingAuthString == "Client" {
-            billToTitle = "Bill To: Participant"
-            name = billToName ?? viewModel.invoice.clientName
-            email = billToEmail ?? viewModel.invoice.clientEmail
-            addressDisplayString = billToAddress ?? viewModel.invoice.clientAddress
-        } else {
-            return AnyView(InfoSection(title: "Bill To") {
-                Text("Select Participant to determine billing details.")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            })
-        }
-
-        return AnyView(InfoSection(title: billToTitle) {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow { Text("Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(name ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                GridRow { Text("Email:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(email ?? "N/A").multilineTextAlignment(.leading).lineLimit(nil).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                GridRow(alignment: .top) { Text("Address:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(addressDisplayString ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .font(.system(size: 10))
-            .foregroundColor(Color("A4Text", bundle: .sharedUI))
-        })
-    }
-
-    private var lineItemsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Line Items")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                .padding(.top, 4)
-            AdaptedLineItemsTable(
-                invoice: viewModel.invoice,
-                currentInvoiceItems: viewModel.invoiceItems,
-                clientId: viewModel.invoice.clientId,
-                clientServicesRepository: viewModel.clientServicesRepository,
-                onDeleteItem: { offsets in
-                    viewModel.deleteInvoiceItems(at: offsets)
-                },
-                onUpdateItem: { updatedItem in
-                    viewModel.updateInvoiceItem(
-                        updatedItem,
-                        description: updatedItem.itemDescription,
-                        quantity: updatedItem.quantity,
-                        rate: updatedItem.rate,
-                        clientServiceId: updatedItem.clientServiceId
-                    )
-                },
-                onItemDataChanged: { 
-                    viewModel.recomputeTotals()
-                },
-                isEditing: isEditing
-            )
-            .id(viewModel.invoice.clientId)
-            
-            if isEditing {
-                HStack {
-                    Spacer()
-                    Button(action: viewModel.addNewInvoiceItem) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 10))
-                            Text("Add New Line Item")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(indigoButtonBackground)
-                        .foregroundColor(indigoButtonText)
-                        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
-                    }
-                    .buttonStyle(.plain)
-                    .appInteractiveCursor()
-                    Spacer()
-                }
-                .padding(.top, 8)
-            }
-        }
-    }
-
-    private var paymentTermsSection: some View {
-        InfoSection(title: "Payment Terms") {
-            if isEditing {
-                TextField("Payment Terms", text: Binding(get: { viewModel.paymentTerms ?? "" }, set: { viewModel.paymentTerms = $0 }), axis: .vertical)
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(StyleGuide.Dimensions.paddingXSmall)
-            } else {
-                Text(viewModel.paymentTerms ?? "")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(StyleGuide.Dimensions.paddingXSmall)
-            }
-        }
-    }
-
-    private var invoiceSummarySection: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-             HStack { Text("Subtotal").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.subtotal.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-            if viewModel.discountAmount > 0 {
-                 HStack {
-                     Text("Discount (\(viewModel.discount, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI))
-                     Spacer()
-                     Text("-\(viewModel.discountAmount.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI))
-                }
-            }
-             HStack { Text("Tax (\(viewModel.taxRate, specifier: "%.2f")%)").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.taxAmount.formatted(.currency(code: "AUD"))).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-             if viewModel.creditApplied > 0 { HStack { Text("Credit Applied").foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text("-\(viewModel.creditApplied.formatted(.currency(code: "AUD")))").foregroundColor(Color("A4Text", bundle: .sharedUI)) } }
-             Divider().padding(.vertical, 2)
-             HStack { Text("TOTAL").fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)); Spacer(); Text(viewModel.calculatedTotal.formatted(.currency(code: "AUD"))).fontWeight(.bold).foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-        }
-        .font(.system(size: 10))
-        .foregroundColor(darkText)
-        .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-        .background(Color("A4TableBackground", bundle: .sharedUI))
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
-        .overlay(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall).stroke(Color("A4TableBorder", bundle: .sharedUI), lineWidth: 1))
-    }
-
-    private var paymentDetailsSection: some View {
-        InfoSection(title: "Payment Details") {
-            // Use snapshot data from invoice domain model
-            let bankName = businessInfo.bankName
-            let bankAccountName = businessInfo.bankAccountName
-            let bankBSB = businessInfo.bankBSB
-            let bankAccountNumber = businessInfo.bankAccountNumber
-            
-            if bankName != nil || bankAccountName != nil || bankBSB != nil || bankAccountNumber != nil {
-                Grid(alignment: .bottomLeading, horizontalSpacing: 10, verticalSpacing: 4) {
-                    GridRow { Text("Bank Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(bankName ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("Account Name:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(bankAccountName ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("BSB:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(bankBSB ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                    GridRow { Text("Account No.:").gridColumnAlignment(.trailing).foregroundColor(Color("A4Text", bundle: .sharedUI)); Text(bankAccountNumber ?? "N/A").foregroundColor(Color("A4Text", bundle: .sharedUI)) }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .font(.system(size: 10))
-                .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            } else {
-                Text("Business payment details not available.").font(.system(size: 10)).foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-        }
-    }
-    
-    // MARK: - Body
-
     var body: some View {
         VStack(spacing: 0) {
-            formHeaderBar
-                .padding(.top, 16)
-                .padding(.bottom, 16)
-            
-            ZStack(alignment: .bottomTrailing) {
-            GeometryReader { geometry in
-                    ScrollView([.vertical, .horizontal]) {
-                        let currentOverallScale = committedScaleFactor * gestureMagnification
-                        
-                        VStack(spacing: 0) {
-                            businessInfoHeader
-
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack(alignment: .top, spacing: 12) {
-                                    invoiceReferenceAndDatesSection
-                                        .frame(maxWidth: .infinity)
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        participantSection
-                                        billToSection
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-
-                                VStack(alignment: .trailing, spacing: 0) {
-                                    lineItemsSection
-                                    HStack(alignment: .top) {
-                                        Spacer()
-                                        invoiceSummarySection
-                                            .frame(width: 280) // A bit wider to accommodate text
-                                    }
-                                    .padding(.top, 10)
-                                }
-                                .frame(maxHeight: .infinity, alignment: .top) // Pushes summary down
-
-                                Grid(alignment: .bottom, horizontalSpacing: 12) {
-                                    GridRow(alignment: .top) {
-                                        paymentDetailsSection
-                                        paymentTermsSection
-                                    }
-                                }
-                                .frame(maxHeight: .infinity, alignment: .bottom) // Pushes payment details down
-                            }
-                            .padding(.vertical, 24)
-                        }
-                        .background(Color("A4White", bundle: .sharedUI))
-                        .frame(width: 595, height: 842)
-                        .scaleEffect(currentOverallScale)
-                        .gesture(
-                            MagnificationGesture()
-                                .updating($gestureMagnification) { currentState, gestureState, _ in
-                                    gestureState = max(0.01, currentState)
-                                }
-                                .onEnded { value in
-                                    self.committedScaleFactor *= value
-                                    self.committedScaleFactor = max(0.2, min(self.committedScaleFactor, 3.0))
-                                }
-                        )
-                        .frame(width: 595 * currentOverallScale, height: 842 * currentOverallScale)
-                        .clipped()
-                        .onAppear {
-                            self.currentGeometry.size = geometry.size
-                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                 autoFitToPage(geometrySize: geometry.size)
-                                 previousSize = geometry.size
-                             }
-                        }
-                        .onChange(of: geometry.size) { _, newSize in
-                             self.currentGeometry.size = newSize
-                             if autoFitOnResize {
-                                 autoFitToPage(geometrySize: newSize)
-                             }
-                        }
-                    }
-                    .background(Color("A4Black", bundle: .sharedUI).opacity(StyleGuide.Opacity.medium))
-                }
-                
-                zoomControls
+            if isEditing {
+                // Use live preview when editing
+                editableInvoiceContent
+            } else {
+                // Use template-based rendering for viewing
+                InvoiceTemplateRendererView(
+                    invoice: viewModel.invoice,
+                    templateDataService: templateDataService
+                )
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .font(.system(size: 10))
         // toolbar consolidated in InvoicesContainerView
         .onChange(of: viewModel.status) { _, newStatus in
             // Sync paidDate with status changes
-            if newStatus == AppConstants.invoiceStatusPaid {
+            if newStatus == AppConstants.invoiceStatusReceived {
                 // Note: paidDate is updated when saving invoice
             }
         }
         .onChange(of: viewModel.discount) { _, _ in viewModel.recomputeTotals() }
         .onChange(of: viewModel.taxRate) { _, _ in viewModel.recomputeTotals() }
         .onChange(of: viewModel.creditApplied) { _, _ in viewModel.recomputeTotals() }
-        .confirmationDialogs(
-            showingDeleteConfirmation: $showingDeleteConfirmation,
-            showingCancelConfirmation: $showingCancelConfirmation,
-            onDelete: {
+        .onChange(of: isEditing) { _, newValue in
+            // Show inspector when entering editing mode, hide when exiting
+            if newValue {
+                showInspector = true
+            } else {
+                showInspector = false
+            }
+        }
+        .confirmationDialog("Delete Invoice?", isPresented: $showingDeleteConfirmation) {
+            Button("Delete Invoice", role: .destructive) {
                 viewModel.deleteInvoiceAndDismiss()
                 dismiss()
-            },
-            onDiscard: {
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to delete this invoice? This action cannot be undone.")
+        }
+        .confirmationDialog("Discard Changes?", isPresented: $showingCancelConfirmation) {
+            Button("Discard Changes", role: .destructive) {
                 viewModel.cancelEditing()
                 isEditing = false
                 dismiss()
             }
-        )
-    }
-
-    // MARK: - Zoom Controls & Helpers
-    
-    private var zoomControls: some View {
-        HStack(spacing: 8) {
-            Button(action: { autoFitToPage(geometrySize: currentGeometry.size, withAnimation: true) }) {
-                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }.help("Fit to Page")
-                                
-            Button(action: { fitTo(.width, withAnimation: true) }) {
-                                    Image(systemName: "arrow.left.and.right.square")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }.help("Fit to Width")
-                                
-            Button(action: { fitTo(.height, withAnimation: true) }) {
-                                    Image(systemName: "arrow.up.and.down.square")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }.help("Fit to Height")
-                                
-            Rectangle().fill(Color("A4White", bundle: .sharedUI).opacity(StyleGuide.Opacity.strong)).frame(width: 1, height: 16)
-            
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-                                Text("\(Int((committedScaleFactor * gestureMagnification) * 100))%")
-                                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            
-            Button(action: { withAnimation(.spring()) { committedScaleFactor = 1.0 } }) {
-                                    Image(systemName: "arrow.counterclockwise")
-                                        .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }.help("Reset Zoom")
-                                
-            Rectangle().fill(Color("A4White", bundle: .sharedUI).opacity(StyleGuide.Opacity.strong)).frame(width: 1, height: 16)
-
-            Toggle(isOn: $autoFitOnResize) {
-                Image(systemName: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left")
-                    .foregroundColor(Color("A4Text", bundle: .sharedUI))
-            }
-            .toggleStyle(.button)
-            .help(autoFitOnResize ? "Disable Auto-Fit on Resize" : "Enable Auto-Fit on Resize")
-                                }
-                                .buttonStyle(.plain)
-        .padding(StyleGuide.Dimensions.paddingMedium)
-        .background(.black.opacity(StyleGuide.Opacity.medium))
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
-        .shadow(radius: 5)
-        .padding()
-    }
-
-    private func autoFitToPage(geometrySize: CGSize, withAnimation: Bool = false) {
-        let availableWidth = geometrySize.width - 40
-        let availableHeight = geometrySize.height - 40
-        let scale = min(availableWidth / 595.0, availableHeight / 842.0) * 0.95
-        
-        if withAnimation {
-            SwiftUI.withAnimation(.spring()) {
-                committedScaleFactor = max(0.2, min(3.0, scale))
-            }
-        } else {
-            committedScaleFactor = max(0.2, min(3.0, scale))
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You have unsaved changes. Are you sure you want to discard them?")
         }
     }
     
-    private func fitTo(_ type: FitType, withAnimation: Bool = false) {
-        let availableWidth = currentGeometry.size.width - 40
-        let availableHeight = currentGeometry.size.height - 40
-        var scale: CGFloat = 1.0
-        
-        switch type {
-        case .width:
-            scale = availableWidth / 595.0
-        case .height:
-            scale = availableHeight / 842.0
-        case .page:
-            autoFitToPage(geometrySize: currentGeometry.size, withAnimation: withAnimation)
-            return
-        }
-        
-        if withAnimation {
-            SwiftUI.withAnimation(.spring()) {
-                committedScaleFactor = max(0.2, min(3.0, scale))
-            }
-        } else {
-            committedScaleFactor = max(0.2, min(3.0, scale))
-                            }
-                        }
-                    }
-
-// Add this helper modifier at the end of the file for the confirmation dialogs
-extension View {
-    func confirmationDialogs(
-        showingDeleteConfirmation: Binding<Bool>,
-        showingCancelConfirmation: Binding<Bool>,
-        onDelete: @escaping () -> Void,
-        onDiscard: @escaping () -> Void
-    ) -> some View {
-        self
-        .confirmationDialog(
-            "Delete Invoice",
-            isPresented: showingDeleteConfirmation,
-            actions: {
-                Button("Delete", role: .destructive, action: onDelete)
-                Button("Cancel", role: .cancel) {}
-            },
-            message: {
-                Text("Are you sure you want to delete this invoice? This action cannot be undone.")
-            }
-        )
-        .confirmationDialog(
-            "Discard Changes",
-            isPresented: showingCancelConfirmation,
-            actions: {
-                Button("Discard", role: .destructive, action: onDiscard)
-                Button("Keep Editing", role: .cancel) {}
-            },
-            message: {
-                Text("You have unsaved changes. Are you sure you want to discard them?")
-            }
-        )
-    }
-}
-
-// MARK: - Invoice Inspector View
-struct InvoiceInspectorView: View {
-    @ObservedObject var viewModel: InvoiceEditorViewModel
-    @Binding var isEditing: Bool
+    // MARK: - Editable Content (for editing mode)
     
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                // Financials
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Financials").font(.headline).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                    VStack(alignment: .leading, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Discount %").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            TextField("0", value: $viewModel.discount, formatter: NumberFormatter.twoDecimal)
-                                .controlSize(.small)
-                                .textFieldStyle(.roundedBorder)
-                                .disabled(!isEditing)
-                                .frame(width: 80)
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("GST %").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            TextField("0", value: $viewModel.taxRate, formatter: NumberFormatter.twoDecimal)
-                                .controlSize(.small)
-                                .textFieldStyle(.roundedBorder)
-                                .disabled(!isEditing)
-                                .frame(width: 80)
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Credit Applied").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            HStack(spacing: 6) {
-                                TextField("0", value: $viewModel.creditApplied, formatter: NumberFormatter.twoDecimal)
-                                    .controlSize(.small)
-                                    .textFieldStyle(.roundedBorder)
-                                    .disabled(!isEditing)
-                                    .frame(width: 120)
-                                Button("Max") { viewModel.applyMaxClientCredit() }
-                                    .controlSize(.small)
-                                    .disabled(!isEditing)
-                                    .appInteractiveCursor()
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Status").font(.caption).foregroundColor(Color("A4Text", bundle: .sharedUI))
-                            Picker("Status", selection: $viewModel.status) {
-                                ForEach(AppConstants.invoiceStatusOptions, id: \.self) { Text($0).tag($0 as String?) }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .controlSize(.small)
-                            .frame(width: 140)
-                            .disabled(!isEditing)
-                        }
+    private var editableInvoiceContent: some View {
+        // Live Preview (Main Content)
+        VStack(spacing: 0) {
+            Text("Live Preview")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(NSColor.controlBackgroundColor))
+            
+            InvoiceTemplateRendererView(
+                invoice: viewModel.currentInvoiceSnapshot,
+                invoiceItems: viewModel.invoiceItems,
+                templateDataService: templateDataService
+            )
+            .id(viewModel.currentInvoiceSnapshot.id)
+        }
+    }
+    
+    private var invoiceEditingForm: some View {
+        Form {
+            Section("Invoice Details") {
+                TextField("Invoice Number", text: $viewModel.invoiceNumber)
+                DatePicker("Issue Date", selection: $viewModel.issueDate, displayedComponents: .date)
+                DatePicker("Due Date", selection: Binding(get: { viewModel.dueDate ?? Date() }, set: { viewModel.dueDate = $0 }), displayedComponents: .date)
+                
+                Picker("Status", selection: $viewModel.status) {
+                    ForEach(AppConstants.invoiceStatusOptions, id: \.self) { option in
+                        Text(AppConstants.invoiceStatusDisplayName(for: option)).tag(option as String?)
                     }
                 }
-                .padding(StyleGuide.Dimensions.paddingMedium)
-                .glassEffect(.regular, in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium))
-
-                // Summary & Dates removed per requirement
             }
-            .padding(StyleGuide.Dimensions.paddingMedium)
+            
+            Section("Participant") {
+                Picker("Client", selection: $viewModel.selectedClientId) {
+                    Text("Select Client").tag(nil as UUID?)
+                    ForEach(viewModel.allClients) { client in
+                        Text(client.fullName).tag(client.id as UUID?)
+                    }
+                    // Fallback tag for currently selected client if not in allClients list
+                    if let selectedId = viewModel.selectedClientId,
+                       !viewModel.allClients.contains(where: { $0.id == selectedId }) {
+                        Text(viewModel.selectedClient?.fullName ?? "Loading...").tag(selectedId as UUID?)
+                    }
+                }
+                
+                if let client = viewModel.selectedClient {
+                    Text(client.email ?? "No Email")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Section("Line Items") {
+                // Reuse the existing table logic but adapt for Form
+                // Or just loop through items
+                ForEach($viewModel.invoiceItems) { $item in
+                    VStack(alignment: .leading) {
+                        TextField("Description", text: $item.itemDescription)
+                        HStack {
+                            TextField("Qty", value: $item.quantity, formatter: NumberFormatter.decimal)
+                                .frame(width: 60)
+                            Text("@")
+                            TextField("Rate", value: $item.rate, formatter: NumberFormatter.currency)
+                                .frame(width: 80)
+                            Spacer()
+                            Text(item.lineTotal.formatted(.currency(code: "AUD")))
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onDelete { indexSet in
+                    viewModel.deleteInvoiceItems(at: indexSet)
+                }
+                
+                Button(action: viewModel.addNewInvoiceItem) {
+                    Label("Add Item", systemImage: "plus")
+                }
+            }
+            
+            Section("Financials") {
+                TextField("Discount %", value: $viewModel.discount, formatter: NumberFormatter.twoDecimal)
+                TextField("Tax Rate %", value: $viewModel.taxRate, formatter: NumberFormatter.twoDecimal)
+                TextField("Credit Applied", value: $viewModel.creditApplied, formatter: NumberFormatter.currency)
+                
+                LabeledContent("Subtotal", value: viewModel.subtotal, format: .currency(code: "AUD"))
+                LabeledContent("Tax", value: viewModel.taxAmount, format: .currency(code: "AUD"))
+                LabeledContent("Total", value: viewModel.calculatedTotal, format: .currency(code: "AUD"))
+                    .fontWeight(.bold)
+            }
+            
+            Section("Notes & Terms") {
+                TextField("Payment Terms", text: Binding(get: { viewModel.paymentTerms ?? "" }, set: { viewModel.paymentTerms = $0 }), axis: .vertical)
+                    .lineLimit(2...4)
+                
+                TextField("Notes", text: Binding(get: { viewModel.notes ?? "" }, set: { viewModel.notes = $0 }), axis: .vertical)
+                    .lineLimit(2...4)
+            }
         }
-        .frame(minWidth: 220)
-        
+        .formStyle(.grouped)
     }
-}
+
+    // Helper formatter
+    private var currencyFormatter: NumberFormatter {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "AUD"
+        return f
+    }
+
+    }
 
 // Add NumberFormatter extension for two decimal formatting
 extension NumberFormatter {
@@ -1584,6 +1201,12 @@ extension NumberFormatter {
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
+        return formatter
+    }
+
+    static var decimal: NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
         return formatter
     }
 }
@@ -1637,9 +1260,10 @@ struct InvoiceRowView: View {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.title2)
                         .foregroundColor(isSelected ? .accentColor : Color("Text", bundle: .sharedUI))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
             }
             
             VStack(alignment: .leading, spacing: 4) {
@@ -1651,7 +1275,7 @@ struct InvoiceRowView: View {
                     
                     Spacer()
                     
-                    StatusBadge(status: invoice.status ?? AppConstants.invoiceStatusDraft)
+                    StatusBadge(status: AppConstants.invoiceStatusDisplayName(for: invoice.status))
                 }
                 
 
@@ -1673,7 +1297,7 @@ struct InvoiceRowView: View {
         .padding(.vertical, StyleGuide.Dimensions.paddingMediumLarge)
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
         .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
-        .appInteractiveCursor()
+        .pointerStyle(.link)
         .glassEffect(.regular.interactive(true), in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .onHover { hovering in
@@ -2066,9 +1690,10 @@ struct LineItemRowView: View {
                 Button(action: onDeleteItem) {
                     Image(systemName: "trash")
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
                 .frame(width: 20)
                 .padding(EdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2))
             }
@@ -2092,7 +1717,7 @@ struct EditableServiceDateView: View {
     }()
     
     var body: some View {
-                if isEditing {
+        if isEditing {
             Button(action: { showPopover = true }) {
                 HStack(spacing: 4) {
                     Text(dateFormatter.string(from: serviceDate))
@@ -2102,6 +1727,7 @@ struct EditableServiceDateView: View {
                         .font(.system(size: 8))
                         .foregroundColor(Color("A4Text", bundle: .sharedUI))
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showPopover, arrowEdge: .bottom) {
@@ -2238,3 +1864,6 @@ struct InfoSection<Content: View>: View {
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(borderColor, lineWidth: 1))
     }
 }
+
+
+// MARK: - Date Filter Header Extension

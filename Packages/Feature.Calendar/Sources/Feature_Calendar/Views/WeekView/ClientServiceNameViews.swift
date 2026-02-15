@@ -7,6 +7,8 @@ import SharedUI
 struct ClientNameView: View {
     let clientId: UUID
     @ObservedObject var viewModel: CalendarViewModel
+    var fontSize: CGFloat = 11
+    var textColor: Color = Color("TextSecondary", bundle: .sharedUI)
     @State private var clientName: String?
     
     var body: some View {
@@ -14,11 +16,11 @@ struct ClientNameView: View {
             if let name = clientName, !name.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "person.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.system(size: max(8, fontSize - 1)))
+                        .foregroundColor(textColor)
                     Text(name)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.system(size: fontSize))
+                        .foregroundColor(textColor)
                         .lineLimit(1)
                 }
             }
@@ -32,6 +34,8 @@ struct ClientNameView: View {
 struct ServiceNameView: View {
     let serviceId: UUID
     @ObservedObject var viewModel: CalendarViewModel
+    var fontSize: CGFloat = 11
+    var textColor: Color = Color("TextSecondary", bundle: .sharedUI)
     @State private var serviceName: String?
     
     var body: some View {
@@ -39,11 +43,11 @@ struct ServiceNameView: View {
             if let name = serviceName, !name.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "tag.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.system(size: max(8, fontSize - 1)))
+                        .foregroundColor(textColor)
                     Text(name)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(.system(size: fontSize))
+                        .foregroundColor(textColor)
                         .lineLimit(1)
                 }
             }
@@ -55,4 +59,3 @@ struct ServiceNameView: View {
         }
     }
 }
-

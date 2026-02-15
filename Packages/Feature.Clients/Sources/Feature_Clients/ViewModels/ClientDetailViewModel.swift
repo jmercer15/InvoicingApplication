@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import MapKit
 import SwiftData
+import Combine
 import Core
 import Data
 import SharedUI
@@ -10,16 +11,7 @@ import SharedUI
 public class ClientDetailViewModel: ObservableObject {
     
     // MARK: - Core Dependencies
-    private let clientsRepository: ClientsRepository
-    private let clientServicesRepository: ClientServicesRepository
-    private let invoicesRepository: InvoicesRepository
-    private let ndisItemsRepository: NDISItemRepository
-    private let payeesRepository: PayeeRepository
-    private let planManagersRepository: PlanManagerRepository
-    // Note: ModelContext is stored but not currently used in this ViewModel
-    // It was previously needed for geocoding, but geocoding is not currently implemented in this ViewModel
-    // Future: If geocoding is needed, consider refactoring GeocodingService to work through repositories
-    let modelContext: ModelContext
+    private let unitOfWork: UnitOfWorkService
     var dismiss: () -> Void = {}
 
     // MARK: - Published Properties
@@ -63,6 +55,10 @@ public class ClientDetailViewModel: ObservableObject {
     @Published var serviceToDelete: ClientService?
     @Published var isCreatingCustomService: Bool = false
     @Published var availableNDISItems: [NDISItem] = []
+    @Published var serviceAgreements: [ServiceAgreement] = []
+    @Published var serviceAgreementToEdit: ServiceAgreement?
+    @Published var isPresentingServiceAgreementSheet: Bool = false
+    @Published var serviceAgreementValidationError: String?
 
     // UI State
     @Published var isPresentingServiceAssignmentSheet = false
@@ -71,6 +67,7 @@ public class ClientDetailViewModel: ObservableObject {
     @Published var showDeleteServiceAlert = false
     @Published var showDeleteClientAlert = false
     @Published var isEditingAddress: Bool = false
+    @Published var isLoading: Bool = false
     @Published var showAlert: Bool = false
     @Published var alertTitle: String = ""
     @Published var alertMessage: String = ""
@@ -85,27 +82,16 @@ public class ClientDetailViewModel: ObservableObject {
 
     // Invoices (Domain Models)
     @Published var relatedInvoices: [Invoice] = []
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Initializer
     public init(
         client: Client,
-        clientsRepository: ClientsRepository,
-        clientServicesRepository: ClientServicesRepository,
-        invoicesRepository: InvoicesRepository,
-        ndisItemsRepository: NDISItemRepository,
-        payeesRepository: PayeeRepository,
-        planManagersRepository: PlanManagerRepository,
-        modelContext: ModelContext,
+        unitOfWork: UnitOfWorkService,
         isCreating: Bool
     ) {
         self.client = client
-        self.clientsRepository = clientsRepository
-        self.clientServicesRepository = clientServicesRepository
-        self.invoicesRepository = invoicesRepository
-        self.ndisItemsRepository = ndisItemsRepository
-        self.payeesRepository = payeesRepository
-        self.planManagersRepository = planManagersRepository
-        self.modelContext = modelContext
+        self.unitOfWork = unitOfWork
         self.isCreatingNew = isCreating
         self.phoneFormatter = PhoneNumberFormatter(initialPhoneNumber: client.phone ?? "")
         self.emailValidator = EmailValidator(initialEmail: client.email ?? "")
@@ -115,27 +101,33 @@ public class ClientDetailViewModel: ObservableObject {
         selectedPlanManager = client.planManager
         
         Task {
+            await Task.yield()
             await loadAllDetails()
-            await fetchPickerData()
-            await fetchRelatedInvoices()
         }
         
         // Set up notification observer for reopening service assignment sheet
-        NotificationCenter.default.addObserver(forName: .reopenServiceAssignmentSheet, object: nil, queue: .main) { [weak self] _ in
-            self?.isPresentingServiceAssignmentSheet = true
-        }
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        NotificationCenter.default.publisher(for: .reopenServiceAssignmentSheet)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.isPresentingServiceAssignmentSheet = true
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Data Loading
     func loadAllDetails() async {
+        await MainActor.run { self.isLoading = true }
+        await Task.yield()
+        defer { Task { @MainActor in self.isLoading = false } }
+        
         loadClientDetails()
         loadAddressDetails()
-        await fetchClientServices()
-        await fetchAvailableNDISItems()
+        async let servicesTask = fetchClientServices()
+        async let ndisItemsTask = fetchAvailableNDISItems()
+        async let pickersTask = fetchPickerData()
+        async let invoicesTask = fetchRelatedInvoices()
+        async let agreementsTask = fetchServiceAgreements()
+        _ = await (servicesTask, ndisItemsTask, pickersTask, invoicesTask, agreementsTask)
     }
 
     func loadClientDetails() {
@@ -182,11 +174,16 @@ public class ClientDetailViewModel: ObservableObject {
     
     private func fetchClientServices() async {
         do {
-            let services = try await clientServicesRepository.fetch(for: client.id)
-            clientServices = services.sorted { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) }
+            let services = try await unitOfWork.clientServices.fetch(for: client.id)
+            let sorted = await Task.detached { services.sorted { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) } }.value
+            await MainActor.run {
+                self.clientServices = sorted
+            }
         } catch {
             print("❌ [ClientDetailViewModel] Error fetching client services: \(error)")
-            clientServices = []
+            await MainActor.run {
+                self.clientServices = []
+            }
         }
     }
 
@@ -204,7 +201,7 @@ public class ClientDetailViewModel: ObservableObject {
         var items: [NDISItem] = []
         
         for id in ndisItemIds {
-            if let item = try? await ndisItemsRepository.fetch(by: id) {
+            if let item = try? await unitOfWork.ndisItems.fetch(by: id) {
                 items.append(item)
             }
         }
@@ -215,43 +212,59 @@ public class ClientDetailViewModel: ObservableObject {
     private func fetchAvailableNDISItems() async {
         do {
             // Fetch effective NDIS items using repository
-            let fetchedItems = try await ndisItemsRepository.fetchEffective()
-
-            // Deduplicate items by itemNumber and name, keeping the most recent version
-            let deduplicated = deduplicateCurrentItems(fetchedItems)
-            
-            // Sort by item number, then by name
-            let sorted = deduplicated.sorted { lhs, rhs in
-                let numberComparison = lhs.itemNumber.localizedCaseInsensitiveCompare(rhs.itemNumber)
-                if numberComparison == .orderedSame {
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            let fetchedItems = try await unitOfWork.ndisItems.fetchEffective()
+            let processed = await Task.detached {
+                // Deduplicate items by itemNumber and name, keeping the most recent version
+                let deduplicated = await Self.deduplicateCurrentItems(
+                    fetchedItems
+                )
+                
+                // Sort by item number, then by name
+                return deduplicated.sorted { lhs, rhs in
+                    let numberComparison = lhs.itemNumber.localizedCaseInsensitiveCompare(rhs.itemNumber)
+                    if numberComparison == .orderedSame {
+                        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    }
+                    return numberComparison == .orderedAscending
                 }
-                return numberComparison == .orderedAscending
+            }.value
+            await MainActor.run {
+                self.availableNDISItems = processed
             }
-
-            availableNDISItems = sorted
         } catch {
             print("❌ [ClientDetailViewModel] Failed to fetch NDIS items: \(error)")
-            availableNDISItems = []
+            await MainActor.run {
+                self.availableNDISItems = []
+            }
         }
     }
     
     private func fetchPickerData() async {
         do {
             // Fetch all payees and plan managers using repositories
-            async let payeesTask = payeesRepository.fetchAll()
-            async let managersTask = planManagersRepository.fetchAll()
+            // Capture on MainActor to avoid isolation issues in child tasks
+            let payeesRepo = unitOfWork.payees
+            let managersRepo = unitOfWork.planManagers
+
+            async let payeesTask = payeesRepo.fetchAll()
+            async let managersTask = managersRepo.fetchAll()
             
-            allPayees = try await payeesTask
-            allPlanManagers = try await managersTask
+            let payees = try await payeesTask
+            let managers = try await managersTask
+            await MainActor.run {
+                self.allPayees = payees
+                self.allPlanManagers = managers
+            }
         } catch {
             print("❌ [ClientDetailViewModel] Failed to fetch picker data: \(error)")
-            allPayees = []
-            allPlanManagers = []
+            await MainActor.run {
+                self.allPayees = []
+                self.allPlanManagers = []
+            }
         }
     }
 
-    private func deduplicateCurrentItems(_ items: [NDISItem]) -> [NDISItem] {
+    private static func deduplicateCurrentItems(_ items: [NDISItem]) -> [NDISItem] {
         var itemsDict: [String: NDISItem] = [:]
 
         for item in items {
@@ -273,13 +286,32 @@ public class ClientDetailViewModel: ObservableObject {
     
     func fetchRelatedInvoices() async {
         do {
-            let invoices = try await invoicesRepository.fetch(byClientId: client.id)
-            relatedInvoices = invoices.sorted {
-                $0.issueDate > $1.issueDate
+            let invoices = try await unitOfWork.invoices.fetch(byClientId: client.id)
+            let sorted = await Task.detached {
+                invoices.sorted { $0.issueDate > $1.issueDate }
+            }.value
+            await MainActor.run {
+                self.relatedInvoices = sorted
             }
         } catch {
             print("❌ [ClientDetailViewModel] Error fetching related invoices: \(error)")
-            relatedInvoices = []
+            await MainActor.run {
+                self.relatedInvoices = []
+            }
+        }
+    }
+
+    private func fetchServiceAgreements() async {
+        do {
+            let agreements = try await unitOfWork.serviceAgreements.fetchByClient(client.id, includeArchived: true)
+            await MainActor.run {
+                self.serviceAgreements = agreements.sorted { $0.effectiveFrom > $1.effectiveFrom }
+            }
+        } catch {
+            print("❌ [ClientDetailViewModel] Error fetching service agreements: \(error)")
+            await MainActor.run {
+                self.serviceAgreements = []
+            }
         }
     }
     
@@ -341,7 +373,7 @@ public class ClientDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedClient = try await clientsRepository.update(updatedClient)
+            let savedClient = try await unitOfWork.clients.update(updatedClient)
             client = savedClient
             // Update selected references
             selectedPlanManager = savedClient.planManager
@@ -354,6 +386,28 @@ public class ClientDetailViewModel: ObservableObject {
         }
     }
     
+    func updateAndSaveClientToggle(
+        sendInvoicesToClient: Bool? = nil,
+        sendInvoicesToPayee: Bool? = nil,
+        sendInvoicesToPlanManager: Bool? = nil
+    ) {
+        var updatedClient = client
+        if let toClient = sendInvoicesToClient { updatedClient.sendInvoicesToClient = toClient }
+        if let toPayee = sendInvoicesToPayee { updatedClient.sendInvoicesToPayee = toPayee }
+        if let toPlanManager = sendInvoicesToPlanManager { updatedClient.sendInvoicesToPlanManager = toPlanManager }
+        
+        Task {
+            do {
+                let savedClient = try await unitOfWork.clients.update(updatedClient)
+                await MainActor.run {
+                    self.client = savedClient
+                }
+            } catch {
+                print("❌ [ClientDetailViewModel] Error updating client toggles: \(error)")
+            }
+        }
+    }
+    
     // MARK: - Payee and Plan Manager Selection
     
     @Published var selectedPayee: Payee?
@@ -362,7 +416,7 @@ public class ClientDetailViewModel: ObservableObject {
     func updatePayee(by id: UUID?) {
         Task {
             if let id = id {
-                selectedPayee = try? await payeesRepository.fetch(by: id)
+                selectedPayee = try? await unitOfWork.payees.fetch(by: id)
             } else {
                 selectedPayee = nil
             }
@@ -374,7 +428,7 @@ public class ClientDetailViewModel: ObservableObject {
     func updatePlanManager(by id: UUID?) {
         Task {
             if let id = id {
-                selectedPlanManager = try? await planManagersRepository.fetch(by: id)
+                selectedPlanManager = try? await unitOfWork.planManagers.fetch(by: id)
             } else {
                 selectedPlanManager = nil
             }
@@ -455,7 +509,7 @@ public class ClientDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedClient = try await clientsRepository.create(newClient)
+            let savedClient = try await unitOfWork.clients.create(newClient)
             client = savedClient
             // Update selected references
             selectedPlanManager = savedClient.planManager
@@ -533,6 +587,91 @@ public class ClientDetailViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Service Agreement Actions
+    func prepareToAddServiceAgreement() {
+        serviceAgreementValidationError = nil
+        serviceAgreementToEdit = ServiceAgreement(
+            id: UUID(),
+            clientId: client.id,
+            effectiveFrom: Date(),
+            effectiveTo: nil,
+            pricingDisclosureAcceptedAt: nil,
+            cancellationPolicyType: CancellationPolicyType.twoClearBusinessDays.rawValue,
+            allowsProviderTravel: false,
+            allowsTelehealth: false,
+            allowsNonFaceToFace: false,
+            participantSignatoryName: nil,
+            participantSignatoryRole: nil,
+            signedAt: nil,
+            signatureMethod: SignatureMethod.attestation.rawValue,
+            notes: nil,
+            isArchived: false
+        )
+        isPresentingServiceAgreementSheet = true
+    }
+
+    func prepareToEditServiceAgreement(_ agreement: ServiceAgreement) {
+        serviceAgreementValidationError = nil
+        serviceAgreementToEdit = agreement
+        isPresentingServiceAgreementSheet = true
+    }
+
+    func cancelServiceAgreementEdit() {
+        serviceAgreementValidationError = nil
+        serviceAgreementToEdit = nil
+        isPresentingServiceAgreementSheet = false
+    }
+
+    func saveServiceAgreement() {
+        guard let agreement = serviceAgreementToEdit else { return }
+        serviceAgreementValidationError = nil
+
+        Task {
+            do {
+                let hasOverlap = try await unitOfWork.serviceAgreements.hasOverlap(
+                    clientId: client.id,
+                    effectiveFrom: agreement.effectiveFrom,
+                    effectiveTo: agreement.effectiveTo,
+                    excluding: serviceAgreements.contains(where: { $0.id == agreement.id }) ? agreement.id : nil
+                )
+                if hasOverlap {
+                    await MainActor.run {
+                        self.serviceAgreementValidationError = "Agreement dates overlap with an existing active agreement."
+                    }
+                    return
+                }
+
+                if serviceAgreements.contains(where: { $0.id == agreement.id }) {
+                    _ = try await unitOfWork.serviceAgreements.update(agreement)
+                } else {
+                    _ = try await unitOfWork.serviceAgreements.create(agreement)
+                }
+
+                await fetchServiceAgreements()
+                await MainActor.run {
+                    self.serviceAgreementToEdit = nil
+                    self.isPresentingServiceAgreementSheet = false
+                    self.serviceAgreementValidationError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self.serviceAgreementValidationError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func archiveServiceAgreement(_ agreement: ServiceAgreement) {
+        Task {
+            do {
+                try await unitOfWork.serviceAgreements.archive(id: agreement.id)
+                await fetchServiceAgreements()
+            } catch {
+                print("❌ [ClientDetailViewModel] Error archiving agreement: \(error)")
+            }
+        }
+    }
+
     // MARK: - Service Actions
     func saveService() {
         guard let serviceToSave = serviceToEdit else { return }
@@ -543,10 +682,10 @@ public class ClientDetailViewModel: ObservableObject {
                 let savedService: ClientService
                 if let existingId = clientServices.first(where: { $0.id == serviceToSave.id })?.id {
                     // Update existing service
-                    savedService = try await clientServicesRepository.update(serviceToSave)
+                    savedService = try await unitOfWork.clientServices.update(serviceToSave)
                 } else {
                     // Create new service
-                    savedService = try await clientServicesRepository.create(serviceToSave)
+                    savedService = try await unitOfWork.clientServices.create(serviceToSave)
                 }
                 
                 // Refresh services list
@@ -699,7 +838,7 @@ public class ClientDetailViewModel: ObservableObject {
                     validateAndFixNDISItemRelationship(&newService, ndisItem: item)
                     
                     // Create service using repository
-                    _ = try await clientServicesRepository.create(newService)
+                    _ = try await unitOfWork.clientServices.create(newService)
                 }
                 
                 // Refresh services list
@@ -749,7 +888,7 @@ public class ClientDetailViewModel: ObservableObject {
                     validateAndFixNDISItemRelationship(&newService, ndisItem: template.sourceNdisItem)
                     
                     // Create service using repository
-                    _ = try await clientServicesRepository.create(newService)
+                    _ = try await unitOfWork.clientServices.create(newService)
                 }
                 
                 // Refresh services list
@@ -769,7 +908,7 @@ public class ClientDetailViewModel: ObservableObject {
         // Fetch NDISItem if the service has an NDIS item ID
         if let ndisItemId = service.ndisItemId {
             Task {
-                ndisItemForNewService = try? await ndisItemsRepository.fetch(by: ndisItemId)
+                ndisItemForNewService = try? await unitOfWork.ndisItems.fetch(by: ndisItemId)
             }
         } else {
             ndisItemForNewService = nil
@@ -794,7 +933,7 @@ public class ClientDetailViewModel: ObservableObject {
         
         Task {
             do {
-                try await clientServicesRepository.delete(id: service.id)
+                try await unitOfWork.clientServices.delete(id: service.id)
                 await fetchClientServices()
                 
                 serviceToDelete = nil
@@ -825,7 +964,7 @@ public class ClientDetailViewModel: ObservableObject {
         
         Task {
             do {
-                _ = try await clientServicesRepository.update(updatedService)
+                _ = try await unitOfWork.clientServices.update(updatedService)
                 await fetchClientServices()
             } catch {
                 print("❌ [ClientDetailViewModel] Error toggling service status: \(error)")
@@ -844,7 +983,7 @@ public class ClientDetailViewModel: ObservableObject {
     func deleteClientAndDismiss() {
         Task {
             do {
-                try await clientsRepository.delete(id: client.id)
+                try await unitOfWork.clients.delete(id: client.id)
                 dismiss()
             } catch {
                 print("❌ [ClientDetailViewModel] Error deleting client: \(error)")

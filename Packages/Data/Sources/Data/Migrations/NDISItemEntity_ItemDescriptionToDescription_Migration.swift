@@ -138,6 +138,7 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
 }
 
 /// Migration test utilities for NDISItemEntity
+#if DEBUG
 public struct NDISItemMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -184,3 +185,4 @@ public struct NDISItemMigrationTestUtils {
         print("✅ NDISItem migration test completed successfully")
     }
 }
+#endif

@@ -63,22 +63,76 @@ struct NativeSessionFormView: View {
     
     // Form state
     @State private var selectedRepeatOption: RepeatOption? = .never
-    @State private var showCustomRecurrence = false
     @State private var showAddressEditingSheet = false
     @State private var validationErrors: [String: String] = [:]
     
     // Clients are fetched via ViewModel
     
-    // Computed bindings for dropdown compatibility
+    // Computed bindings for dropdown compatibility (read-modify-write so struct updates persist)
     private var statusBinding: Binding<SessionStatus> {
         Binding(
-            get: { 
-                SessionStatus(rawValue: viewModel.formModel.status) ?? .scheduled 
+            get: {
+                SessionStatus(normalized: viewModel.formModel.status) ?? .scheduled
             },
-            set: { 
-                viewModel.formModel.status = $0.rawValue 
+            set: { newValue in
+                var updated = viewModel.formModel
+                updated.status = newValue.rawValue
+                viewModel.formModel = updated
             }
         )
+    }
+
+    private var clientPickerOptions: [Client] {
+        var options = viewModel.availableClients
+        if let selectedClient = viewModel.selectedClient,
+           !options.contains(where: { $0.id == selectedClient.id }) {
+            options.insert(selectedClient, at: 0)
+        }
+        return options
+    }
+
+    private var servicePickerOptions: [ClientService] {
+        var options = viewModel.availableServices
+        if let selectedService = viewModel.selectedClientService,
+           !options.contains(where: { $0.id == selectedService.id }) {
+            options.insert(selectedService, at: 0)
+        }
+        return options
+    }
+
+    private var clientPickerSelection: Binding<UUID?> {
+        Binding(
+            get: { viewModel.formModel.selectedClientID },
+            set: { newID in viewModel.updateSelectedClientID(newID) }
+        )
+    }
+
+    private var servicePickerSelection: Binding<UUID?> {
+        Binding(
+            get: { viewModel.formModel.selectedClientServiceID },
+            set: { newID in viewModel.updateSelectedClientServiceID(newID) }
+        )
+    }
+
+    private func supportLogBinding<T>(_ keyPath: WritableKeyPath<SessionSupportLogDraft, T>) -> Binding<T> {
+        Binding(
+            get: { viewModel.formModel.supportLogDraft[keyPath: keyPath] },
+            set: { newValue in
+                var updated = viewModel.formModel
+                updated.supportLogDraft[keyPath: keyPath] = newValue
+                viewModel.formModel = updated
+            }
+        )
+    }
+
+    private var missingSelectedClientID: UUID? {
+        guard let selectedClientID = viewModel.formModel.selectedClientID else { return nil }
+        return clientPickerOptions.contains(where: { $0.id == selectedClientID }) ? nil : selectedClientID
+    }
+
+    private var missingSelectedServiceID: UUID? {
+        guard let selectedServiceID = viewModel.formModel.selectedClientServiceID else { return nil }
+        return servicePickerOptions.contains(where: { $0.id == selectedServiceID }) ? nil : selectedServiceID
     }
     
     var body: some View {
@@ -95,6 +149,7 @@ struct NativeSessionFormView: View {
                     recurrenceSection
                     locationSection
                     notesSection
+                    supportLogSection
                     statusSection
                 }
                 .padding(.horizontal, 16)
@@ -152,20 +207,23 @@ struct NativeSessionFormView: View {
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        TextField("Session title", text: $viewModel.formModel.title)
+                        TextField("Session title", text: viewModel.formBinding(\.title))
                             .textFieldStyle(.roundedBorder)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .accentColor(.blue)
                             .font(.title2)
                             .fontWeight(.semibold)
-                            .onChange(of: viewModel.formModel.title) { _, _ in
-                                if !viewModel.formModel.title.isEmpty {
+                            .onChange(of: viewModel.formModel.title) { _, newValue in
+                                if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    validationErrors["title"] = "Title is required."
+                                } else {
                                     validationErrors["title"] = nil
                                 }
                             }
                             .onSubmit {
-                                // Trim on submit to avoid trailing spaces creating validation failures
-                                viewModel.formModel.title = viewModel.formModel.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                var updated = viewModel.formModel
+                                updated.title = updated.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                viewModel.formModel = updated
                             }
                         
                         if let error = validationErrors["title"] {
@@ -185,31 +243,42 @@ struct NativeSessionFormView: View {
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack(spacing: 12) {
-                        DatePicker("", selection: $viewModel.formModel.startTime, displayedComponents: .date)
+                        DatePicker("", selection: viewModel.formBinding(\.startTime), displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .labelsHidden()
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .accentColor(.blue)
                             .onChange(of: viewModel.formModel.startTime) { _, newValue in
-                                // Adjust end time if needed
-                                if viewModel.formModel.isAllDay && viewModel.formModel.endTime < newValue {
-                                    viewModel.formModel.endTime = newValue
+                                var updated = viewModel.formModel
+                                if updated.isAllDay {
+                                    if updated.endTime < newValue {
+                                        updated.endTime = newValue
+                                    }
+                                } else if updated.endTime <= newValue {
+                                    updated.endTime = newValue.addingTimeInterval(3600)
                                 }
+                                viewModel.formModel = updated
                             }
                         
-                        Toggle("All Day", isOn: $viewModel.formModel.isAllDay)
+                        Toggle("All Day", isOn: viewModel.formBinding(\.isAllDay))
                             .toggleStyle(.switch)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .onChange(of: viewModel.formModel.isAllDay) { _, isAllDay in
                                 if isAllDay {
-                                    // Snap times to full-day alignment by preserving date and clearing time range issues
                                     let cal = Calendar.current
-                                    let dayStart = cal.startOfDay(for: viewModel.formModel.startTime)
-                                    viewModel.formModel.startTime = dayStart
-                                    // keep end at least start
-                                    if viewModel.formModel.endTime < viewModel.formModel.startTime {
-                                        viewModel.formModel.endTime = viewModel.formModel.startTime
+                                    var updated = viewModel.formModel
+                                    let dayStart = cal.startOfDay(for: updated.startTime)
+                                    updated.startTime = dayStart
+                                    if updated.endTime < updated.startTime {
+                                        updated.endTime = updated.startTime
                                     }
+                                    viewModel.formModel = updated
+                                } else {
+                                    var updated = viewModel.formModel
+                                    if updated.endTime <= updated.startTime {
+                                        updated.endTime = updated.startTime.addingTimeInterval(3600)
+                                    }
+                                    viewModel.formModel = updated
                                 }
                             }
                     }
@@ -224,29 +293,33 @@ struct NativeSessionFormView: View {
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
                         HStack(spacing: 12) {
-                            DatePicker("Start", selection: $viewModel.formModel.startTime, displayedComponents: .hourAndMinute)
+                            DatePicker("Start", selection: viewModel.formBinding(\.startTime), displayedComponents: .hourAndMinute)
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
                                 .foregroundColor(Color("Text", bundle: .sharedUI))
                                 .accentColor(.blue)
                                 .onChange(of: viewModel.formModel.startTime) { _, newValue in
-                                    if !viewModel.formModel.isAllDay && viewModel.formModel.endTime <= newValue {
-                                        viewModel.formModel.endTime = newValue.addingTimeInterval(3600)
+                                    var updated = viewModel.formModel
+                                    if !updated.isAllDay && updated.endTime <= newValue {
+                                        updated.endTime = newValue.addingTimeInterval(3600)
                                     }
+                                    viewModel.formModel = updated
                                 }
                             
                             Text("to")
                                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                             
-                            DatePicker("End", selection: $viewModel.formModel.endTime, displayedComponents: .hourAndMinute)
+                            DatePicker("End", selection: viewModel.formBinding(\.endTime), displayedComponents: .hourAndMinute)
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
                                 .foregroundColor(Color("Text", bundle: .sharedUI))
                                 .accentColor(.blue)
                                 .onChange(of: viewModel.formModel.endTime) { _, newValue in
-                                    if !viewModel.formModel.isAllDay && newValue <= viewModel.formModel.startTime {
-                                        viewModel.formModel.startTime = newValue.addingTimeInterval(-3600)
+                                    var updated = viewModel.formModel
+                                    if !updated.isAllDay && newValue <= updated.startTime {
+                                        updated.endTime = updated.startTime.addingTimeInterval(3600)
                                     }
+                                    viewModel.formModel = updated
                                 }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,16 +344,12 @@ struct NativeSessionFormView: View {
                         .frame(width: 80, alignment: .trailing)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
-                    Picker("", selection: Binding(
-                        get: { viewModel.formModel.selectedClientID },
-                        set: { newID in
-                            viewModel.formModel.selectedClientID = newID
-                            // Reset service when client changes
-                            viewModel.formModel.selectedClientServiceID = nil
-                        }
-                    )) {
+                    Picker("", selection: clientPickerSelection) {
                         Text("Select a client").tag(nil as UUID?)
-                        ForEach(viewModel.availableClients, id: \.id) { client in
+                        if let missingSelectedClientID {
+                            Text("Loading selected client...").tag(missingSelectedClientID as UUID?)
+                        }
+                        ForEach(clientPickerOptions, id: \.id) { client in
                             Text(client.fullName).tag(client.id as UUID?)
                         }
                     }
@@ -294,15 +363,13 @@ struct NativeSessionFormView: View {
                         .frame(width: 80, alignment: .trailing)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
-                    if let selectedClient = viewModel.selectedClient {
-                        Picker("", selection: Binding(
-                            get: { viewModel.formModel.selectedClientServiceID },
-                            set: { newID in
-                                viewModel.formModel.selectedClientServiceID = newID
-                            }
-                        )) {
+                    if viewModel.formModel.selectedClientID != nil {
+                        Picker("", selection: servicePickerSelection) {
                             Text("Select a service").tag(nil as UUID?)
-                            ForEach(viewModel.availableServices, id: \.id) { service in
+                            if let missingSelectedServiceID {
+                                Text("Loading selected service...").tag(missingSelectedServiceID as UUID?)
+                            }
+                            ForEach(servicePickerOptions, id: \.id) { service in
                                 Text(service.serviceName).tag(service.id as UUID?)
                             }
                         }
@@ -322,13 +389,6 @@ struct NativeSessionFormView: View {
                         .cornerRadius(6)
                         .disabled(true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .onChange(of: viewModel.selectedClient) { _, newClient in
-                    // Keep IDs in sync if client is set externally
-                    viewModel.formModel.selectedClientID = newClient?.id
-                    if newClient == nil {
-                        viewModel.formModel.selectedClientServiceID = nil
                     }
                 }
             }
@@ -356,12 +416,16 @@ struct NativeSessionFormView: View {
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: selectedRepeatOption) { _, newValue in
-                        if let newValue = newValue {
-                            if newValue == .custom {
-                                showCustomRecurrence = true
-                            } else {
-                                applyRepeatOption(newValue)
+                        guard let newValue else { return }
+                        if newValue == .custom {
+                            var updated = viewModel.formModel
+                            if updated.recurrenceFrequency == .none {
+                                updated.recurrenceFrequency = .daily
+                                updated.recurrenceInterval = 1
                             }
+                            viewModel.formModel = updated
+                        } else {
+                            applyRepeatOption(newValue)
                         }
                     }
                 }
@@ -374,7 +438,7 @@ struct NativeSessionFormView: View {
                 }
                 
                 // Recurrence Summary
-                if selectedRepeatOption != .never {
+                if viewModel.formModel.hasRecurrence {
                     Text(getRecurrenceSummaryText())
                         .font(.caption)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
@@ -397,21 +461,17 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                Picker("Frequency", selection: $viewModel.formModel.recurrenceFrequency) {
+                Picker("Frequency", selection: viewModel.formBinding(\.recurrenceFrequency)) {
                     ForEach(RecurrenceFrequency.allCases, id: \.self) { frequency in
                         Text(frequency.rawValue).tag(frequency)
                     }
                 }
                 .onChange(of: viewModel.formModel.recurrenceFrequency) { _, newValue in
-                    switch newValue {
-                    case .weekly:
-                        // Set default weekday if none selected
-                        if viewModel.formModel.selectedWeekdays.isEmpty {
-                            let weekday = Calendar.current.component(.weekday, from: viewModel.formModel.startTime)
-                            viewModel.formModel.selectedWeekdays = [SelectableWeekday(rawValue: weekday) ?? .monday]
-                        }
-                    default:
-                        break
+                    if case .weekly = newValue, viewModel.formModel.selectedWeekdays.isEmpty {
+                        let weekday = Calendar.current.component(.weekday, from: viewModel.formModel.startTime)
+                        var updated = viewModel.formModel
+                        updated.selectedWeekdays = [SelectableWeekday(rawValue: weekday) ?? .monday]
+                        viewModel.formModel = updated
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -424,7 +484,7 @@ struct NativeSessionFormView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 HStack(spacing: 8) {
-                    Stepper("", value: $viewModel.formModel.recurrenceInterval, in: 1...100)
+                    Stepper("", value: viewModel.formBinding(\.recurrenceInterval), in: 1...100)
                         .labelsHidden()
                     
                     Text("\(viewModel.formModel.recurrenceInterval) \(pluralizeUnit(viewModel.formModel.recurrenceFrequency, interval: viewModel.formModel.recurrenceInterval))")
@@ -447,11 +507,13 @@ struct NativeSessionFormView: View {
                             Toggle(weekday.shortName, isOn: Binding(
                                 get: { viewModel.formModel.selectedWeekdays.contains(weekday) },
                                 set: { isSelected in
+                                    var updated = viewModel.formModel
                                     if isSelected {
-                                        viewModel.formModel.selectedWeekdays.insert(weekday)
+                                        updated.selectedWeekdays.insert(weekday)
                                     } else {
-                                        viewModel.formModel.selectedWeekdays.remove(weekday)
+                                        updated.selectedWeekdays.remove(weekday)
                                     }
+                                    viewModel.formModel = updated
                                 }
                             ))
                             .toggleStyle(.button)
@@ -466,13 +528,12 @@ struct NativeSessionFormView: View {
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.recurrenceFrequency)
             }
 
-            // Ordinal options for monthly/yearly
-            if viewModel.formModel.recurrenceFrequency == .monthly || viewModel.formModel.recurrenceFrequency == .yearly {
+            if viewModel.formModel.recurrenceFrequency == .monthly {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Pattern:")
                         .frame(width: 80, alignment: .trailing)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
-                    Picker("Type", selection: viewModel.formModel.recurrenceFrequency == .monthly ? $viewModel.formModel.monthlyRecurrenceType : $viewModel.formModel.yearlyRecurrenceType) {
+                    Picker("Type", selection: viewModel.formBinding(\.monthlyRecurrenceType)) {
                         Text("On specific day(s)").tag(PositionalRecurrenceType.onSpecificDays)
                         Text("On the ordinal weekday").tag(PositionalRecurrenceType.onTheOrdinalDayOfWeek)
                     }
@@ -481,30 +542,116 @@ struct NativeSessionFormView: View {
                 }
                 .fluidListTransition()
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.recurrenceFrequency)
-                if viewModel.formModel.recurrenceFrequency == .monthly && viewModel.formModel.monthlyRecurrenceType == .onTheOrdinalDayOfWeek ||
-                   viewModel.formModel.recurrenceFrequency == .yearly && viewModel.formModel.yearlyRecurrenceType == .onTheOrdinalDayOfWeek {
+
+                if viewModel.formModel.monthlyRecurrenceType == .onSpecificDays {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("Days:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        MonthDayGridView(selectedDays: viewModel.formBinding(\.selectedMonthDaysNumbers))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .fluidListTransition()
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.monthlyRecurrenceType)
+                } else {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("Ordinal:")
                             .frame(width: 80, alignment: .trailing)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
-                        Picker("Ordinal", selection: $viewModel.formModel.selectedOrdinal) {
-                            ForEach([1,2,3,4,-1], id: \.self) { value in
-                                Text(value == -1 ? "Last" : [1:"First",2:"Second",3:"Third",4:"Fourth"][value]!).tag(value)
+                        Picker("Ordinal", selection: viewModel.formBinding(\.selectedOrdinal)) {
+                            ForEach([1, 2, 3, 4, -1], id: \.self) { value in
+                                Text(value == -1 ? "Last" : [1: "First", 2: "Second", 3: "Third", 4: "Fourth"][value]!).tag(value)
                             }
                         }
                         .pickerStyle(.menu)
-                        Picker("Weekday", selection: $viewModel.formModel.selectedDayOfWeekForOrdinal) {
-                            ForEach(DayOfWeekOption.allCases, id: \.self) { option in
-                                if option.rawValue >= 3 { // real weekdays
-                                    Text(option.displayName).tag(option)
-                                }
+                        Picker("Weekday", selection: viewModel.formBinding(\.selectedDayOfWeekForOrdinal)) {
+                            ForEach(
+                                DayOfWeekOption.allCases.filter { $0.rawValue >= DayOfWeekOption.sunday.rawValue },
+                                id: \.self
+                            ) { option in
+                                Text(option.displayName).tag(option)
                             }
                         }
                         .pickerStyle(.menu)
                         Spacer()
                     }
                     .fluidListTransition()
-                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.recurrenceFrequency)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.monthlyRecurrenceType)
+                }
+            }
+
+            if viewModel.formModel.recurrenceFrequency == .yearly {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("Months:")
+                        .frame(width: 80, alignment: .trailing)
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(SelectableMonth.allCases, id: \.self) { month in
+                            Button(action: { toggleYearMonth(month) }) {
+                                Text(month.shortName)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity, minHeight: 30)
+                                    .background(viewModel.formModel.selectedYearMonths.contains(month) ? Color.accentColor : Color.white.opacity(0.1))
+                                    .foregroundColor(viewModel.formModel.selectedYearMonths.contains(month) ? .white : .white.opacity(0.8))
+                                    .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .fluidListTransition()
+                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.recurrenceFrequency)
+
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Pattern:")
+                        .frame(width: 80, alignment: .trailing)
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    Picker("Type", selection: viewModel.formBinding(\.yearlyRecurrenceType)) {
+                        Text("On specific day(s)").tag(PositionalRecurrenceType.onSpecificDays)
+                        Text("On the ordinal weekday").tag(PositionalRecurrenceType.onTheOrdinalDayOfWeek)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .fluidListTransition()
+                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.recurrenceFrequency)
+
+                if viewModel.formModel.yearlyRecurrenceType == .onSpecificDays {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("Days:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        MonthDayGridView(selectedDays: viewModel.formBinding(\.selectedYearlyDaysNumbers))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .fluidListTransition()
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.yearlyRecurrenceType)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Ordinal:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        Picker("Ordinal", selection: viewModel.formBinding(\.selectedOrdinal)) {
+                            ForEach([1, 2, 3, 4, -1], id: \.self) { value in
+                                Text(value == -1 ? "Last" : [1: "First", 2: "Second", 3: "Third", 4: "Fourth"][value]!).tag(value)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Picker("Weekday", selection: viewModel.formBinding(\.selectedDayOfWeekForOrdinal)) {
+                            ForEach(
+                                DayOfWeekOption.allCases.filter { $0.rawValue >= DayOfWeekOption.sunday.rawValue },
+                                id: \.self
+                            ) { option in
+                                Text(option.displayName).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Spacer()
+                    }
+                    .fluidListTransition()
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.formModel.yearlyRecurrenceType)
                 }
             }
             
@@ -518,7 +665,7 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                Picker("End Type", selection: $viewModel.formModel.recurrenceEndType) {
+                Picker("End Type", selection: viewModel.formBinding(\.recurrenceEndType)) {
                     Text("Never").tag(RecurrenceEndType.never)
                     Text("After X occurrences").tag(RecurrenceEndType.afterCount)
                     Text("On date").tag(RecurrenceEndType.onDate)
@@ -535,7 +682,7 @@ struct NativeSessionFormView: View {
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack(spacing: 8) {
-                        Stepper("", value: $viewModel.formModel.recurrenceCount, in: 1...999)
+                        Stepper("", value: viewModel.formBinding(\.recurrenceCount), in: 1...999)
                             .labelsHidden()
                         
                         Text("\(viewModel.formModel.recurrenceCount) occurrences")
@@ -556,7 +703,7 @@ struct NativeSessionFormView: View {
                         .frame(width: 80, alignment: .trailing)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
-                    DatePicker("", selection: $viewModel.formModel.recurrenceEndDate, displayedComponents: .date)
+                    DatePicker("", selection: viewModel.formBinding(\.recurrenceEndDate), displayedComponents: .date)
                         .datePickerStyle(.compact)
                         .labelsHidden()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -585,7 +732,7 @@ struct NativeSessionFormView: View {
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: hasAddressData)
                 } else if let addressId = viewModel.sessionToEdit?.addressId {
                     // Fetch and display address using AddressRepository
-                    AddressDisplayView(addressId: addressId, addressRepository: viewModel.addressRepository)
+                    AddressDisplayView(addressId: addressId, addressRepository: viewModel.unitOfWork.addresses)
                         .fluidListTransition()
                         .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.sessionToEdit?.addressId != nil)
                 }
@@ -611,11 +758,6 @@ struct NativeSessionFormView: View {
             .fluidSheetTransition()
             .animation(.spring(response: 0.6, dampingFraction: 0.7), value: showAddressEditingSheet)
         }
-    }
-    
-    private var shouldShowManualFields: Bool {
-        (!viewModel.formModel.addressSearchText.isEmpty && !hasAddressData) || 
-        viewModel.formModel.selectedAddress != nil
     }
     
     private var compactAddressView: some View {
@@ -669,7 +811,8 @@ struct NativeSessionFormView: View {
         }
         
         // Add locality components
-        if !viewModel.formModel.suburb.isEmpty { parts.append(viewModel.formModel.suburb) }
+        let locality = viewModel.formModel.suburb.isEmpty ? viewModel.formModel.city : viewModel.formModel.suburb
+        if !locality.isEmpty { parts.append(locality) }
         if !viewModel.formModel.state.isEmpty { parts.append(viewModel.formModel.state) }
         if !viewModel.formModel.postcode.isEmpty { parts.append(viewModel.formModel.postcode) }
         if !viewModel.formModel.country.isEmpty { parts.append(viewModel.formModel.country) }
@@ -679,39 +822,17 @@ struct NativeSessionFormView: View {
     
     private var hasAddressData: Bool {
         !viewModel.formModel.unitNumber.isEmpty || !viewModel.formModel.streetNumber.isEmpty || 
-        !viewModel.formModel.streetName.isEmpty || !viewModel.formModel.suburb.isEmpty || 
+        !viewModel.formModel.streetName.isEmpty || !viewModel.formModel.suburb.isEmpty || !viewModel.formModel.city.isEmpty ||
         !viewModel.formModel.state.isEmpty || !viewModel.formModel.postcode.isEmpty || 
         !viewModel.formModel.country.isEmpty || !viewModel.formModel.poBox.isEmpty
     }
     
     private func updateAddressFromSearchResult(_ address: AddressData) {
-        viewModel.formModel.unitNumber = address.unitNumber
-        viewModel.formModel.streetNumber = address.streetNumber
-        viewModel.formModel.streetName = address.streetName
-        viewModel.formModel.suburb = address.suburb
-        viewModel.formModel.state = address.state
-        viewModel.formModel.postcode = address.postcode
-        viewModel.formModel.country = address.country
-        viewModel.formModel.poBox = address.poBox
-        // Note: AddressData no longer has coordinate property
-        // Coordinates would need to be set separately if needed
-        // viewModel.formModel.sessionLatitude = coordinate.latitude
-        // viewModel.formModel.sessionLongitude = coordinate.longitude
+        viewModel.updateAddressFromSearchResult(address)
     }
     
     private func clearAddressData() {
-        viewModel.formModel.unitNumber = ""
-        viewModel.formModel.streetNumber = ""
-        viewModel.formModel.streetName = ""
-        viewModel.formModel.suburb = ""
-        viewModel.formModel.state = ""
-        viewModel.formModel.postcode = ""
-        viewModel.formModel.country = ""
-        viewModel.formModel.poBox = ""
-        viewModel.formModel.sessionLatitude = 0.0
-        viewModel.formModel.sessionLongitude = 0.0
-        viewModel.formModel.addressSearchText = ""
-        viewModel.formModel.selectedAddress = nil
+        viewModel.clearFormAddress()
     }
     
     private func currentAddressView(_ address: AddressEntity) -> some View {
@@ -725,36 +846,26 @@ struct NativeSessionFormView: View {
                 
                 HStack(spacing: 8) {
                     Button("Edit") {
-                        // Populate form fields with existing address data
-                        viewModel.formModel.unitNumber = address.unitNumber
-                        viewModel.formModel.streetNumber = address.streetNumber
-                        viewModel.formModel.streetName = address.streetName
-                        viewModel.formModel.suburb = address.suburb
-                        viewModel.formModel.state = address.state
-                        viewModel.formModel.postcode = address.postcode
-                        viewModel.formModel.country = address.country
-                        viewModel.formModel.poBox = address.poBox
-                        viewModel.formModel.sessionLatitude = address.latitude
-                        viewModel.formModel.sessionLongitude = address.longitude
-                        viewModel.formModel.addressSearchText = address.fullAddressText
+                        var updated = viewModel.formModel
+                        updated.unitNumber = address.unitNumber
+                        updated.streetNumber = address.streetNumber
+                        updated.streetName = address.streetName
+                        updated.suburb = address.suburb
+                        updated.city = address.city
+                        updated.state = address.state
+                        updated.postcode = address.postcode
+                        updated.country = address.country
+                        updated.poBox = address.poBox
+                        updated.sessionLatitude = address.latitude
+                        updated.sessionLongitude = address.longitude
+                        updated.addressSearchText = address.fullAddressText
+                        viewModel.formModel = updated
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     
                     Button("Clear") {
-                        // Clear all address fields
-                        viewModel.formModel.unitNumber = ""
-                        viewModel.formModel.streetNumber = ""
-                        viewModel.formModel.streetName = ""
-                        viewModel.formModel.suburb = ""
-                        viewModel.formModel.state = ""
-                        viewModel.formModel.postcode = ""
-                        viewModel.formModel.country = ""
-                        viewModel.formModel.poBox = ""
-                        viewModel.formModel.sessionLatitude = 0.0
-                        viewModel.formModel.sessionLongitude = 0.0
-                        viewModel.formModel.addressSearchText = ""
-                        viewModel.formModel.selectedAddress = nil
+                        viewModel.clearFormAddress()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -797,7 +908,7 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Unit number (optional)", text: $viewModel.formModel.unitNumber)
+                TextField("Unit number (optional)", text: viewModel.formBinding(\.unitNumber))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -810,13 +921,13 @@ struct NativeSessionFormView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 HStack(spacing: 8) {
-                    TextField("Number", text: $viewModel.formModel.streetNumber)
+                    TextField("Number", text: viewModel.formBinding(\.streetNumber))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
                         .frame(width: 80)
                     
-                    TextField("Street name", text: $viewModel.formModel.streetName)
+                    TextField("Street name", text: viewModel.formBinding(\.streetName))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
@@ -830,7 +941,7 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Enter suburb", text: $viewModel.formModel.suburb)
+                TextField("Enter suburb", text: viewModel.formBinding(\.suburb))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -843,12 +954,12 @@ struct NativeSessionFormView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 HStack(spacing: 12) {
-                    TextField("State", text: $viewModel.formModel.state)
+                    TextField("State", text: viewModel.formBinding(\.state))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
                     
-                    TextField("Postcode", text: $viewModel.formModel.postcode)
+                    TextField("Postcode", text: viewModel.formBinding(\.postcode))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
@@ -862,7 +973,7 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Enter country", text: $viewModel.formModel.country)
+                TextField("Enter country", text: viewModel.formBinding(\.country))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -874,7 +985,7 @@ struct NativeSessionFormView: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("PO Box number (optional)", text: $viewModel.formModel.poBox)
+                TextField("PO Box number (optional)", text: viewModel.formBinding(\.poBox))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -887,7 +998,7 @@ struct NativeSessionFormView: View {
     private var notesSection: some View {
         GroupBox("Notes") {
             VStack(spacing: 8) {
-                    TextEditor(text: $viewModel.formModel.notes)
+                TextEditor(text: viewModel.formBinding(\.notes))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
@@ -895,6 +1006,96 @@ struct NativeSessionFormView: View {
                         .scrollContentBackground(.hidden)
                         .background(Color("Background", bundle: .sharedUI).opacity(0.3))
                         .cornerRadius(8)
+            }
+        }
+        .groupBoxStyle(EnhancedGroupBoxStyle())
+        .background(Color.clear)
+    }
+
+    // MARK: - Support Log Section
+
+    private var supportLogSection: some View {
+        GroupBox("Support Log") {
+            VStack(spacing: 8) {
+                Toggle("Capture support log for this session", isOn: supportLogBinding(\.isEnabled))
+                    .toggleStyle(.switch)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if viewModel.formModel.supportLogDraft.isEnabled {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Participant:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Participant name", text: supportLogBinding(\.participantName))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("NDIS #:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Participant NDIS number", text: supportLogBinding(\.participantNdisNumber))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Item #:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Support item number", text: supportLogBinding(\.supportItemNumber))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Description:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Service description", text: supportLogBinding(\.serviceDescription))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Delivered:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        DatePicker(
+                            "",
+                            selection: supportLogBinding(\.deliveredFrom),
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        .labelsHidden()
+                        DatePicker(
+                            "",
+                            selection: supportLogBinding(\.deliveredTo),
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        .labelsHidden()
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Delivered by:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Staff name", text: supportLogBinding(\.deliveredBy))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Attested by:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Attested by", text: supportLogBinding(\.attestedBy))
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Location:")
+                            .frame(width: 80, alignment: .trailing)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                        TextField("Location", text: supportLogBinding(\.location))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
             }
         }
         .groupBoxStyle(EnhancedGroupBoxStyle())
@@ -930,30 +1131,44 @@ struct NativeSessionFormView: View {
     // MARK: - Helper Methods
     
     private func applyRepeatOption(_ option: RepeatOption) {
+        var updated = viewModel.formModel
         switch option {
         case .never:
-            viewModel.formModel.recurrenceFrequency = .none
+            updated.clearRecurrence()
         case .everyDay:
-            viewModel.formModel.recurrenceFrequency = .daily
-            viewModel.formModel.recurrenceInterval = 1
+            updated.recurrenceFrequency = .daily
+            updated.recurrenceInterval = 1
         case .everyWeek:
-            viewModel.formModel.recurrenceFrequency = .weekly
-            viewModel.formModel.recurrenceInterval = 1
+            updated.recurrenceFrequency = .weekly
+            updated.recurrenceInterval = 1
+            if updated.selectedWeekdays.isEmpty {
+                let weekday = Calendar.current.component(.weekday, from: updated.startTime)
+                updated.selectedWeekdays = [SelectableWeekday(rawValue: weekday) ?? .monday]
+            }
         case .every2Weeks:
-            viewModel.formModel.recurrenceFrequency = .weekly
-            viewModel.formModel.recurrenceInterval = 2
+            updated.recurrenceFrequency = .weekly
+            updated.recurrenceInterval = 2
+            if updated.selectedWeekdays.isEmpty {
+                let weekday = Calendar.current.component(.weekday, from: updated.startTime)
+                updated.selectedWeekdays = [SelectableWeekday(rawValue: weekday) ?? .monday]
+            }
         case .everyMonth:
-            viewModel.formModel.recurrenceFrequency = .monthly
-            viewModel.formModel.recurrenceInterval = 1
+            updated.recurrenceFrequency = .monthly
+            updated.recurrenceInterval = 1
+            updated.monthlyRecurrenceType = .onSpecificDays
         case .everyYear:
-            viewModel.formModel.recurrenceFrequency = .yearly
-            viewModel.formModel.recurrenceInterval = 1
+            updated.recurrenceFrequency = .yearly
+            updated.recurrenceInterval = 1
+            updated.yearlyRecurrenceType = .onSpecificDays
         case .custom:
-            break // Handled separately
+            break
         }
+        viewModel.formModel = updated
     }
     
     private func getRecurrenceSummaryText() -> String {
+        guard viewModel.formModel.hasRecurrence else { return "Does not repeat" }
+
         let frequency = viewModel.formModel.recurrenceFrequency
         let interval = viewModel.formModel.recurrenceInterval
         
@@ -976,6 +1191,16 @@ struct NativeSessionFormView: View {
         }
         
         return summary
+    }
+
+    private func toggleYearMonth(_ month: SelectableMonth) {
+        var updated = viewModel.formModel
+        if updated.selectedYearMonths.contains(month) {
+            updated.selectedYearMonths.remove(month)
+        } else {
+            updated.selectedYearMonths.insert(month)
+        }
+        viewModel.formModel = updated
     }
     
     private func pluralizeUnit(_ frequency: RecurrenceFrequency, interval: Int) -> String {
@@ -1026,49 +1251,7 @@ struct NativeSessionFormView: View {
 
 
 
-struct EnhancedGroupBoxStyle: GroupBoxStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            configuration.label
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundColor(Color("Text", bundle: .sharedUI))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.2),
-                                    Color.white.opacity(0.1)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.3),
-                                    Color.white.opacity(0.15)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-            
-            configuration.content
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-        }
-    }
-}
+
 
 // MARK: - NativeAddressSearchField Component
 
@@ -1135,7 +1318,6 @@ struct NativeAddressSearchField: View {
                                 }
                             }
                             .onAppear {
-                                print("🎨 Search TextField appeared")
                                 // If we have existing address data, show it in the search field
                                 if searchText.isEmpty && hasExistingAddressData {
                                     searchText = formatExistingAddress()
@@ -1165,73 +1347,31 @@ struct NativeAddressSearchField: View {
                 }
             }
         }
-        .onAppear {
-            print("🎨 NativeAddressSearchField body appeared")
-        }
-        .onChange(of: showResults) { _, newValue in
-            print("🔄 showResults changed to: \(newValue)")
-        }
-        .onChange(of: searchResults.count) { _, newValue in
-            print("🔄 searchResults.count changed to: \(newValue)")
-        }
     }
     
     private func setupSearchCompleter() {
-        print("🔧 setupSearchCompleter called, isSearchCompleterSetup: \(Self.isSearchCompleterSetup)")
+        guard !Self.isSearchCompleterSetup else { return }
         
-        guard !Self.isSearchCompleterSetup else {
-            print("🔧 Search completer already set up, skipping...")
-            return
-        }
-        
-        print("🔧 Setting up search completer...")
-        
-        // Create and store the delegate as a static property to ensure it persists
         Self.searchCompleterDelegate = SearchCompleterDelegate(
             onResultsUpdated: { results in
                 DispatchQueue.main.async {
                     guard let currentField = Self.currentSearchField else { return }
-                    print("📥 Received \(results.count) search results from delegate")
                     currentField.searchResults = results
                     currentField.showResults = !results.isEmpty && !currentField.searchText.isEmpty
-                    print("📊 Updated state - searchResults: \(currentField.searchResults.count), showResults: \(currentField.showResults)")
-                    
-                    // Debug each result
-                    for (index, result) in results.enumerated() {
-                        print("   Result \(index + 1): '\(result.title)' - '\(result.subtitle)'")
-                    }
                 }
             },
             onError: { error in
                 DispatchQueue.main.async {
                     guard let currentField = Self.currentSearchField else { return }
-                    print("❌ Search completer error: \(error.localizedDescription)")
                     currentField.searchResults = []
                     currentField.showResults = false
                 }
             }
         )
-        
-        print("🔧 Created delegate: \(Self.searchCompleterDelegate!)")
         Self.searchCompleter.delegate = Self.searchCompleterDelegate
-        print("🔧 Assigned delegate to searchCompleter")
-        
-        // Configure search completer for better results
         Self.searchCompleter.resultTypes = [.address, .pointOfInterest]
         Self.searchCompleter.pointOfInterestFilter = MKPointOfInterestFilter(including: [])
-        
-
-        print("✅ Search completer configured for global search (no region restriction)")
-        print("✅ Result types: \(Self.searchCompleter.resultTypes)")
-        print("✅ Delegate set: \(Self.searchCompleter.delegate != nil)")
-        print("✅ Delegate object: \(Self.searchCompleter.delegate != nil ? "set" : "nil")")
-        
-        // Test the search completer with a simple query
-        print("🧪 Testing search completer with 'test' query...")
-        Self.searchCompleter.queryFragment = "test"
-        
         Self.isSearchCompleterSetup = true
-        print("✅ Search completer setup completed")
     }
     
     private func ensureSearchCompleterDelegate() {
@@ -1240,30 +1380,20 @@ struct NativeAddressSearchField: View {
         
         // Check if delegate is nil and re-establish if needed
         if Self.searchCompleter.delegate == nil {
-            print("🔧 Delegate is nil, re-establishing...")
             if Self.searchCompleterDelegate == nil {
-                print("🔧 Creating new delegate...")
                 Self.searchCompleterDelegate = SearchCompleterDelegate(
                     onResultsUpdated: { results in
                         DispatchQueue.main.async {
                             guard let currentField = Self.currentSearchField else { return }
-                            print("📥 Received \(results.count) search results from delegate")
                             currentField.searchResults = results
                             currentField.showResults = !results.isEmpty && !currentField.searchText.isEmpty
                             currentField.isSearching = false
                             currentField.searchError = nil
-                            print("📊 Updated state - searchResults: \(currentField.searchResults.count), showResults: \(currentField.showResults)")
-                            
-                            // Debug each result
-                            for (index, result) in results.enumerated() {
-                                print("   Result \(index + 1): '\(result.title)' - '\(result.subtitle)'")
-                            }
                         }
                     },
                     onError: { error in
                         DispatchQueue.main.async {
                             guard let currentField = Self.currentSearchField else { return }
-                            print("❌ Search completer error: \(error.localizedDescription)")
                             currentField.searchResults = []
                             currentField.showResults = false
                             currentField.isSearching = false
@@ -1273,7 +1403,6 @@ struct NativeAddressSearchField: View {
                 )
             }
             Self.searchCompleter.delegate = Self.searchCompleterDelegate
-            print("🔧 Delegate re-established: \(Self.searchCompleter.delegate != nil)")
         }
     }
     
@@ -1326,43 +1455,23 @@ struct NativeAddressSearchField: View {
     }
     
     private func performSearch(query: String) {
-        print("🔍 performSearch called with query: '\(query)'")
-        
-        // Cancel previous timer
         searchTimer?.invalidate()
-        print("⏰ Cancelled previous timer")
-        
         guard !query.isEmpty else {
             searchResults = []
             showResults = false
             isSearching = false
             searchError = nil
-            print("🚫 Search cleared - empty query")
             return
         }
-        
-        // Ensure delegate is set before performing search
         ensureSearchCompleterDelegate()
-        
-        // Set loading state
         isSearching = true
         searchError = nil
-        
-        // Create new timer for debounced search
         searchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-            print("🚀 Timer fired - performing actual search for: '\(query)'")
-            print("🔧 Setting queryFragment on searchCompleter...")
-            print("🔧 searchCompleter delegate: \(Self.searchCompleter.delegate != nil ? "SET" : "NOT SET")")
-            print("🔧 searchCompleter resultTypes: \(Self.searchCompleter.resultTypes)")
-            Self.searchCompleter.queryFragment = query
-            print("✅ queryFragment set to: '\(query)'")
-            print("🔧 Will wait for delegate callbacks...")
-            
-            // Add timeout to detect if search completer is not responding
+            Task { @MainActor in
+                Self.searchCompleter.queryFragment = query
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 if searchResults.isEmpty && isSearching {
-                    print("⏰ TIMEOUT: No search results received after 3 seconds")
-                    print("🔧 This might indicate network issues or MapKit problems")
                     DispatchQueue.main.async {
                         isSearching = false
                         searchError = "Search timed out. Please try again."
@@ -1370,8 +1479,6 @@ struct NativeAddressSearchField: View {
                 }
             }
         }
-        
-        print("⏰ Created new timer for query: '\(query)'")
     }
     
     private func selectAddress(_ result: MKLocalSearchCompletion) {
@@ -1392,10 +1499,7 @@ struct NativeAddressSearchField: View {
         let search = MKLocalSearch(request: searchRequest)
         
         search.start { response, error in
-            guard let response = response, let item = response.mapItems.first else { 
-                print("❌ Geocoding failed: \(error?.localizedDescription ?? "Unknown error")")
-                return 
-            }
+            guard let response = response, let item = response.mapItems.first else { return }
             
             DispatchQueue.main.async {
                 fillAddressFields(from: item)
@@ -1404,34 +1508,26 @@ struct NativeAddressSearchField: View {
     }
     
     private func fillAddressFields(from mapItem: MKMapItem) {
-        // Use the new location and address properties instead of deprecated placemark
-        let address = mapItem.address
-        
-        // Try to extract address components from MKAddress first
-        var extractedComponents: [String: String] = [:]
-        if let address = address {
-            extractedComponents = parseAddressString(address.fullAddress)
-        }
-        
-        // Fall back to placemark if MKAddress parsing didn't provide sufficient data
-        let placemark = mapItem.placemark
-        
-        // Extract address components - prefer MKAddress parsed components, fall back to placemark
-        unitNumber = extractedComponents["unit"] ?? ""
-        streetNumber = extractedComponents["streetNumber"] ?? placemark.subThoroughfare ?? ""
-        streetName = extractedComponents["streetName"] ?? placemark.thoroughfare ?? ""
-        suburb = extractedComponents["suburb"] ?? placemark.locality ?? ""
-        postcode = extractedComponents["postcode"] ?? placemark.postalCode ?? ""
-        state = extractedComponents["state"] ?? placemark.administrativeArea ?? ""
-        country = extractedComponents["country"] ?? placemark.country ?? ""
-        poBox = ""
-        
-        // Create AddressData for the viewModel
-        selectedAddress = AddressData()
-        
-        // Update the AddressData with mapItem details
-        // Note: AddressData no longer has update method
-        // Address data would need to be updated manually if needed
+        let parsed = MapKitAddressResolver.parseAddress(from: mapItem)
+        unitNumber = parsed.unitNumber
+        streetNumber = parsed.streetNumber
+        streetName = parsed.streetName
+        suburb = parsed.suburb.isEmpty ? parsed.city : parsed.suburb
+        postcode = parsed.postcode
+        state = parsed.state
+        country = parsed.country
+        poBox = parsed.poBox
+
+        selectedAddress = AddressData(
+            unitNumber: unitNumber,
+            streetNumber: streetNumber,
+            streetName: streetName,
+            suburb: suburb,
+            state: state,
+            postcode: postcode,
+            country: country,
+            poBox: poBox
+        )
         
         // Clear the search text after populating fields (without triggering search)
         isProgrammaticallyUpdatingSearchText = true
@@ -1439,73 +1535,6 @@ struct NativeAddressSearchField: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isProgrammaticallyUpdatingSearchText = false
         }
-        
-        print("✅ Address fields populated from search result")
-    }
-    
-    /// Parses an address string to extract individual components
-    /// This is a best-effort parsing that may not work for all address formats
-    private func parseAddressString(_ addressString: String) -> [String: String] {
-        var components: [String: String] = [:]
-        let address = addressString.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Common patterns for address parsing
-        let patterns: [(String, String)] = [
-            // Unit/Street Number/Street Name pattern: "Unit 1, 123 Main St"
-            (#"Unit\s+([^,]+),\s*(\d+)\s+(.+?)(?:,|$)"#, "unit"),
-            // Street Number/Street Name pattern: "123 Main St"
-            (#"^(\d+)\s+(.+?)(?:,|$)"#, "streetNumber"),
-            // Postcode pattern: "NSW 2000" or "2000"
-            (#"([A-Z]{2,3})\s+(\d{4})"#, "state"),
-            (#"(\d{4})"#, "postcode"),
-            // Country pattern: "Australia" at the end
-            (#"([A-Za-z]+)$"#, "country")
-        ]
-        
-        for (pattern, componentType) in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
-                let matches = regex.matches(in: address, options: [], range: NSRange(location: 0, length: address.utf16.count))
-                
-                for match in matches {
-                    switch componentType {
-                    case "unit":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["unit"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "streetNumber":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["streetNumber"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                        if match.numberOfRanges > 2, let range = Range(match.range(at: 2), in: address) {
-                            components["streetName"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "state":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["state"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                        if match.numberOfRanges > 2, let range = Range(match.range(at: 2), in: address) {
-                            components["postcode"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "postcode":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["postcode"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "suburb":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["suburb"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "country":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["country"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    default:
-                        break
-                    }
-                }
-            }
-        }
-        
-        return components
     }
     
     private var hasExistingAddressData: Bool {
@@ -1567,25 +1596,13 @@ class SearchCompleterDelegate: NSObject, MKLocalSearchCompleterDelegate {
     init(onResultsUpdated: @escaping ([MKLocalSearchCompletion]) -> Void, onError: @escaping (Error) -> Void) {
         self.onResultsUpdated = onResultsUpdated
         self.onError = onError
-        print("🔧 SearchCompleterDelegate initialized")
     }
     
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        print("📡 completerDidUpdateResults called with \(completer.results.count) results")
-        print("📡 Current queryFragment: '\(completer.queryFragment)'")
-        
-        // Debug each result
-        for (index, result) in completer.results.enumerated() {
-            print("   📍 Result \(index + 1): '\(result.title)' - '\(result.subtitle)'")
-        }
-        
         onResultsUpdated(completer.results)
     }
     
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        print("💥 completer didFailWithError: \(error.localizedDescription)")
-        print("💥 Error domain: \((error as NSError).domain)")
-        print("💥 Error code: \((error as NSError).code)")
         onError(error)
     }
 }
@@ -1597,6 +1614,23 @@ struct AddressEditingSheet: View {
     @Binding var isPresented: Bool
     
     @State private var isManualMode = false
+    @State private var originalAddressSnapshot: AddressSnapshot?
+
+    private struct AddressSnapshot {
+        var unitNumber: String
+        var streetNumber: String
+        var streetName: String
+        var suburb: String
+        var city: String
+        var state: String
+        var postcode: String
+        var country: String
+        var poBox: String
+        var sessionLatitude: Double
+        var sessionLongitude: Double
+        var addressSearchText: String
+        var selectedAddress: AddressData?
+    }
     
     var body: some View {
         VStack(spacing: 16) {
@@ -1622,16 +1656,16 @@ struct AddressEditingSheet: View {
                     if !isManualMode {
                         VStack(spacing: 12) {
                             NativeAddressSearchField(
-                                searchText: $viewModel.formModel.addressSearchText,
-                                selectedAddress: $viewModel.formModel.selectedAddress,
-                                unitNumber: $viewModel.formModel.unitNumber,
-                                streetNumber: $viewModel.formModel.streetNumber,
-                                streetName: $viewModel.formModel.streetName,
-                                suburb: $viewModel.formModel.suburb,
-                                postcode: $viewModel.formModel.postcode,
-                                state: $viewModel.formModel.state,
-                                country: $viewModel.formModel.country,
-                                poBox: $viewModel.formModel.poBox
+                                searchText: viewModel.formBinding(\.addressSearchText),
+                                selectedAddress: viewModel.formBinding(\.selectedAddress),
+                                unitNumber: viewModel.formBinding(\.unitNumber),
+                                streetNumber: viewModel.formBinding(\.streetNumber),
+                                streetName: viewModel.formBinding(\.streetName),
+                                suburb: viewModel.formBinding(\.suburb),
+                                postcode: viewModel.formBinding(\.postcode),
+                                state: viewModel.formBinding(\.state),
+                                country: viewModel.formBinding(\.country),
+                                poBox: viewModel.formBinding(\.poBox)
                             )
                             .onChange(of: viewModel.formModel.selectedAddress) { _, newValue in
                                 if let address = newValue {
@@ -1682,6 +1716,7 @@ struct AddressEditingSheet: View {
             // Footer
             HStack {
                 Button("Cancel") {
+                    restoreOriginalAddress()
                     isPresented = false
                 }
                 .buttonStyle(.borderedProminent)
@@ -1711,11 +1746,12 @@ struct AddressEditingSheet: View {
             )
         )
         .frame(minWidth: 500, minHeight: 400)
+        .onAppear(perform: captureOriginalAddressIfNeeded)
     }
     
     private var hasAddressData: Bool {
         !viewModel.formModel.unitNumber.isEmpty || !viewModel.formModel.streetNumber.isEmpty || 
-        !viewModel.formModel.streetName.isEmpty || !viewModel.formModel.suburb.isEmpty || 
+        !viewModel.formModel.streetName.isEmpty || !viewModel.formModel.suburb.isEmpty || !viewModel.formModel.city.isEmpty ||
         !viewModel.formModel.state.isEmpty || !viewModel.formModel.postcode.isEmpty || 
         !viewModel.formModel.country.isEmpty || !viewModel.formModel.poBox.isEmpty
     }
@@ -1745,7 +1781,7 @@ struct AddressEditingSheet: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Unit number (optional)", text: $viewModel.formModel.unitNumber)
+                TextField("Unit number (optional)", text: viewModel.formBinding(\.unitNumber))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -1758,13 +1794,13 @@ struct AddressEditingSheet: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 HStack(spacing: 8) {
-                    TextField("Number", text: $viewModel.formModel.streetNumber)
+                    TextField("Number", text: viewModel.formBinding(\.streetNumber))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
                         .frame(width: 80)
                     
-                    TextField("Street name", text: $viewModel.formModel.streetName)
+                    TextField("Street name", text: viewModel.formBinding(\.streetName))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
@@ -1778,7 +1814,7 @@ struct AddressEditingSheet: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Enter suburb", text: $viewModel.formModel.suburb)
+                TextField("Enter suburb", text: viewModel.formBinding(\.suburb))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -1791,12 +1827,12 @@ struct AddressEditingSheet: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 HStack(spacing: 12) {
-                    TextField("State", text: $viewModel.formModel.state)
+                    TextField("State", text: viewModel.formBinding(\.state))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
                     
-                    TextField("Postcode", text: $viewModel.formModel.postcode)
+                    TextField("Postcode", text: viewModel.formBinding(\.postcode))
                         .textFieldStyle(.roundedBorder)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .accentColor(.blue)
@@ -1810,7 +1846,7 @@ struct AddressEditingSheet: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("Enter country", text: $viewModel.formModel.country)
+                TextField("Enter country", text: viewModel.formBinding(\.country))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -1822,7 +1858,7 @@ struct AddressEditingSheet: View {
                     .frame(width: 80, alignment: .trailing)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
-                TextField("PO Box number (optional)", text: $viewModel.formModel.poBox)
+                TextField("PO Box number (optional)", text: viewModel.formBinding(\.poBox))
                     .textFieldStyle(.roundedBorder)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
@@ -1831,18 +1867,45 @@ struct AddressEditingSheet: View {
     }
     
     private func clearAddressData() {
-        viewModel.formModel.unitNumber = ""
-        viewModel.formModel.streetNumber = ""
-        viewModel.formModel.streetName = ""
-        viewModel.formModel.suburb = ""
-        viewModel.formModel.state = ""
-        viewModel.formModel.postcode = ""
-        viewModel.formModel.country = ""
-        viewModel.formModel.poBox = ""
-        viewModel.formModel.sessionLatitude = 0.0
-        viewModel.formModel.sessionLongitude = 0.0
-        viewModel.formModel.addressSearchText = ""
-        viewModel.formModel.selectedAddress = nil
+        viewModel.clearFormAddress()
+    }
+
+    private func captureOriginalAddressIfNeeded() {
+        guard originalAddressSnapshot == nil else { return }
+        originalAddressSnapshot = AddressSnapshot(
+            unitNumber: viewModel.formModel.unitNumber,
+            streetNumber: viewModel.formModel.streetNumber,
+            streetName: viewModel.formModel.streetName,
+            suburb: viewModel.formModel.suburb,
+            city: viewModel.formModel.city,
+            state: viewModel.formModel.state,
+            postcode: viewModel.formModel.postcode,
+            country: viewModel.formModel.country,
+            poBox: viewModel.formModel.poBox,
+            sessionLatitude: viewModel.formModel.sessionLatitude,
+            sessionLongitude: viewModel.formModel.sessionLongitude,
+            addressSearchText: viewModel.formModel.addressSearchText,
+            selectedAddress: viewModel.formModel.selectedAddress
+        )
+    }
+
+    private func restoreOriginalAddress() {
+        guard let snapshot = originalAddressSnapshot else { return }
+        var updated = viewModel.formModel
+        updated.unitNumber = snapshot.unitNumber
+        updated.streetNumber = snapshot.streetNumber
+        updated.streetName = snapshot.streetName
+        updated.suburb = snapshot.suburb
+        updated.city = snapshot.city
+        updated.state = snapshot.state
+        updated.postcode = snapshot.postcode
+        updated.country = snapshot.country
+        updated.poBox = snapshot.poBox
+        updated.sessionLatitude = snapshot.sessionLatitude
+        updated.sessionLongitude = snapshot.sessionLongitude
+        updated.addressSearchText = snapshot.addressSearchText
+        updated.selectedAddress = snapshot.selectedAddress
+        viewModel.formModel = updated
     }
 }
 

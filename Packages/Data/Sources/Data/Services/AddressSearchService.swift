@@ -74,65 +74,31 @@ public final class AddressSearchService: NSObject, ObservableObject, @preconcurr
         }
     }
 
+    public func resolveAddress(
+        for completion: MKLocalSearchCompletion
+    ) async -> (mapItem: MKMapItem, parsedAddress: EventKitLocationParser.ParsedLocation)? {
+        guard let mapItem = await fetchMapItem(for: completion) else { return nil }
+        let parsed = MapKitAddressResolver.parseAddress(from: mapItem)
+        return (mapItem, parsed)
+    }
+
     // MARK: - Parsing Helpers
     /// Parses an address string to extract individual components
     /// This is a best-effort parsing that may not work for all address formats
     public func parseAddressString(_ addressString: String) -> [String: String] {
+        let parsed = EventKitLocationParser.parse(locationText: addressString)
         var components: [String: String] = [:]
-        let address = addressString.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let patterns: [(String, String)] = [
-            (#"Unit\s+([^,]+),\s*(\d+)\s+(.+?)(?:,|$)"#, "unit"),
-            (#"^(\d+)\s+(.+?)(?:,|$)"#, "streetNumber"),
-            (#"([A-Z]{2,3})\s+(\d{4})"#, "state"),
-            (#"(\d{4})"#, "postcode"),
-            (#"([A-Za-z]+)$"#, "country")
-        ]
-
-        for (pattern, componentType) in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
-                let matches = regex.matches(in: address, options: [], range: NSRange(location: 0, length: address.utf16.count))
-                for match in matches {
-                    switch componentType {
-                    case "unit":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["unit"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "streetNumber":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["streetNumber"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                        if match.numberOfRanges > 2, let range = Range(match.range(at: 2), in: address) {
-                            components["streetName"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "state":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["state"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                        if match.numberOfRanges > 2, let range = Range(match.range(at: 2), in: address) {
-                            components["postcode"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "postcode":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["postcode"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "suburb":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["suburb"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    case "country":
-                        if match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: address) {
-                            components["country"] = String(address[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                        }
-                    default:
-                        break
-                    }
-                }
-            }
-        }
-
+        components["unit"] = parsed.unitNumber
+        components["streetNumber"] = parsed.streetNumber
+        components["streetName"] = parsed.streetName
+        components["suburb"] = parsed.suburb
+        components["city"] = parsed.city
+        components["state"] = parsed.state
+        components["postcode"] = parsed.postcode
+        components["country"] = parsed.country
+        components["poBox"] = parsed.poBox
+        components["fullAddressText"] = parsed.fullAddressText
         return components
     }
 }
-
 

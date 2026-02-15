@@ -134,3 +134,8 @@ public struct CalendarEvent: Identifiable, Codable, Equatable, Sendable {
         self.lastModifiedDate = lastModifiedDate
     }
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across protocols.
+public typealias SyncServiceProtocol = SyncService

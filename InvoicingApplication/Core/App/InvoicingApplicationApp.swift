@@ -7,18 +7,8 @@
 
 import SwiftUI
 import AppKit
-import EventKit
 import SwiftData
-import Core
 import Data
-import SharedUI
-import Feature_Calendar
-import Feature_BillingHub
-import Feature_Clients
-import Feature_Invoices
-import Feature_Settings
-import Feature_NDIS
-import Feature_InvoiceTemplateEditor
 
 // MARK: - App Delegate for managing application lifecycle
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -35,12 +25,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 }
 
+@MainActor
 @main
 struct InvoicingApplicationApp: App {
-    
-    // Add the AppDelegate
-    @StateObject private var appDelegateHandler = AppDelegateHandler()
-    @StateObject private var appAssembly = AppAssembly()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var appAssembly: AppAssembly?
 
     init() {
         // Configure the appearance of NSWindow's titlebar controls
@@ -50,60 +39,67 @@ struct InvoicingApplicationApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appAssembly)
-            // Attach the app delegate adapter
-                .background(NSApplicationDelegateAdapter(appDelegate: appDelegateHandler.appDelegate))
-                .toolbarBackgroundVisibility(.hidden)
-
-            // No titlebar: handled via window style below
-                // .task {
-                //     // Load sample data if no data exists
-                //     await loadSampleDataIfNeeded()
-                // }
+            Group {
+                if let assembly = appAssembly {
+                    ContentView()
+                        .environmentObject(assembly)
+                        .toolbarBackgroundVisibility(.hidden)
+                        .modelContainer(assembly.modelContainer)
+                } else {
+                    VStack {
+                        ProgressView("Loading Application...")
+                        Text("Initializing Data Layer...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Material.ultraThin)
+                    .task {
+                        await initializeApp()
+                    }
+                }
+            }
         }
-        .modelContainer(appAssembly.modelContainer)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
+        .commands {
+            // Add standard text editing commands
+            TextEditingCommands()
+            TextFormattingCommands()
+        }
     }
-    
-    // MARK: - Sample Data Loading
-    // @MainActor
-    // private func loadSampleDataIfNeeded() async {
-    //     // Use the AppAssembly's import service
-    //     do {
-    //         let result = try await appAssembly.importAllData.callAsFunction()
-    //         if result.success {
-    //             print("Sample data loaded successfully: \(result.importedCounts)")
-    //         } else {
-    //             print("Sample data import failed: \(result.errors)")
-    //         }
-    //     } catch {
-    //         print("Failed to load sample data: \(error)")
-    //     }
-    // }
-}
 
-// MARK: - Application Delegate Handler (ObservableObject)
-class AppDelegateHandler: ObservableObject {
-    let appDelegate = AppDelegate()
+    // MARK: - Initialization Logic
     
-    init() {
-        NSApplication.shared.delegate = appDelegate
-    }
-}
+    @MainActor
+    private func initializeApp() async {
+        // Ensure the container is ready (this initialization happens on the background actor)
+        let container = await BackgroundPersistenceActor.shared.modelContainer
+        
+        // Run migrations
+        await BackgroundPersistenceActor.shared.performMigrations()
+        
+        #if DEBUG
+        let enableMonitoring = true
+        let enableIntegrityChecks = true
+        #else
+        let enableMonitoring = false
+        let enableIntegrityChecks = false
+        #endif
 
-// MARK: - SwiftUI to AppKit Delegate Adapter
-struct NSApplicationDelegateAdapter: NSViewRepresentable {
-    let appDelegate: NSApplicationDelegate
-    
-    func makeNSView(context: Context) -> NSView {
-        NSView()
+        // Initialize AppAssembly with the container
+        let assembly = AppAssembly(
+            modelContainer: container,
+            enableMonitoring: enableMonitoring,
+            enableIntegrityChecks: enableIntegrityChecks
+        )
+        
+        // Update state with animation
+        withAnimation {
+            self.appAssembly = assembly
+        }
     }
-    
-    func updateNSView(_ nsView: NSView, context: Context) {
-        // Nothing to update
-    }
+
 }
 
 // (Removed old WindowAppearanceModifier; window style handled by Scene modifiers)

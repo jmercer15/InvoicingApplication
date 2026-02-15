@@ -274,11 +274,11 @@ struct ClientServiceEditorView: View {
                         Spacer()
                         Button("Cancel") { onCancel() }
                             .buttonStyle(.glass)
-                            .appInteractiveCursor()
+                            .pointerStyle(.link)
                         Button("Save") { updateAndSaveService() }
                             .buttonStyle(.glassProminent)
                             .disabled(!isFormValid)
-                            .appInteractiveCursor()
+                            .pointerStyle(.link)
                     }
                     .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
                     .padding(.bottom, StyleGuide.Dimensions.paddingLarge)
@@ -299,7 +299,7 @@ struct ClientServiceEditorView: View {
                 )
             }
         }
-        .background(Color("Black30", bundle: .sharedUI).opacity(0.1))
+        .glassEffect(.regular, in: .rect())
         .onAppear(perform: initializeForm)
         .onChange(of: rate) { _, newValue in
             // Keep rateString in sync with rate, unless user is typing in the box.
@@ -334,7 +334,7 @@ struct ClientServiceEditorView: View {
                             resetToNdisDefaults(ndisItem)
                         }
                         .buttonStyle(.glass)
-                        .appInteractiveCursor()
+                        .pointerStyle(.link)
                     }
                 }
                 .padding()
@@ -517,7 +517,7 @@ struct ClientServiceEditorView: View {
                     }
                     .buttonStyle(SecondaryButtonStyle())
                     .keyboardShortcut(.escape)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     
                     Button("Save") {
                         updateAndSaveService()
@@ -525,7 +525,7 @@ struct ClientServiceEditorView: View {
                     .buttonStyle(PrimaryButtonStyle(isEnabled: isFormValid))
                     .disabled(!isFormValid)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                 }
             }
             .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
@@ -534,7 +534,7 @@ struct ClientServiceEditorView: View {
             Divider()
                 .background(Color("White10", bundle: .sharedUI))
         }
-        .background(Color("Black30", bundle: .sharedUI).opacity(0.67))
+        .background(.thickMaterial)
     }
     
     // MARK: - Helper Views
@@ -653,13 +653,14 @@ struct ClientServiceEditorView: View {
         let isEnabled: Bool
         
         func makeBody(configuration: Configuration) -> some View {
+            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
             configuration.label
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(Color("White", bundle: .sharedUI))
                 .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
                 .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    shape
                         .fill(
                             LinearGradient(
                                 colors: isEnabled ? [
@@ -674,13 +675,14 @@ struct ClientServiceEditorView: View {
                             )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            shape
                                 .stroke(
                                     isEnabled ? Color("Indigo", bundle: .sharedUI).opacity(0.8) : Color("Gray20", bundle: .sharedUI),
                                     lineWidth: 1
                                 )
                         )
                 )
+                .contentShape(shape)
                 .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
                 .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: configuration.isPressed)
         }
@@ -688,22 +690,23 @@ struct ClientServiceEditorView: View {
     
     struct SecondaryButtonStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
+            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
             configuration.label
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
                 .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    shape
                         .fill(Color("Black30", bundle: .sharedUI))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            shape
                                 .stroke(Color("White20", bundle: .sharedUI), lineWidth: 1)
                         )
                 )
+                .contentShape(shape)
                 .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
                 .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: configuration.isPressed)
         }
     }
 }
-

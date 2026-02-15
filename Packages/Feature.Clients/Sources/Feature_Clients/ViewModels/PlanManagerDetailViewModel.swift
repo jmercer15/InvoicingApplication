@@ -10,11 +10,7 @@ import SharedUI
 public class PlanManagerDetailViewModel: ObservableObject {
     
     // MARK: - Core Dependencies
-    private let planManagersRepository: PlanManagerRepository
-    private let clientsRepository: ClientsRepository
-    private let invoicesRepository: InvoicesRepository
-    // ModelContext still needed for address geocoding
-    let modelContext: ModelContext
+    private let unitOfWork: UnitOfWorkService
     var dismiss: () -> Void = {}
 
     // MARK: - Published Properties
@@ -56,40 +52,40 @@ public class PlanManagerDetailViewModel: ObservableObject {
     @Published var showAlert: Bool = false
     @Published var alertTitle: String = ""
     @Published var alertMessage: String = ""
+    @Published var isLoading: Bool = false
 
+    // MARK: - Initializer
     // MARK: - Initializer
     public init(
         planManager: PlanManager,
-        planManagersRepository: PlanManagerRepository,
-        clientsRepository: ClientsRepository,
-        invoicesRepository: InvoicesRepository,
-        modelContext: ModelContext,
+        unitOfWork: UnitOfWorkService,
         isCreating: Bool
     ) {
         self.planManager = planManager
-        self.planManagersRepository = planManagersRepository
-        self.clientsRepository = clientsRepository
-        self.invoicesRepository = invoicesRepository
-        self.modelContext = modelContext
+        self.unitOfWork = unitOfWork
         self.isCreatingNew = isCreating
         self.phoneFormatter = PhoneNumberFormatter(initialPhoneNumber: planManager.phone ?? "")
         self.emailValidator = EmailValidator(initialEmail: planManager.email ?? "")
         
         Task {
+            await Task.yield()
             await loadAllDetails()
-            await fetchRelatedInvoices()
         }
     }
     
     // MARK: - Data Loading
     func loadAllDetails() async {
+        await MainActor.run { self.isLoading = true }
+        await Task.yield()
+        defer { Task { @MainActor in self.isLoading = false } }
+        
         editableBusinessName = planManager.name
         editableAbn = planManager.abn
         phoneFormatter.phoneNumber = planManager.phone ?? ""
         emailValidator.email = planManager.email ?? ""
         loadAddressDetails()
-        await fetchManagedClients()
-        await fetchRelatedInvoices()
+        let managedClients = await fetchManagedClients()
+        await fetchRelatedInvoices(for: managedClients)
     }
 
     func loadAddressDetails() {
@@ -116,32 +112,44 @@ public class PlanManagerDetailViewModel: ObservableObject {
         }
     }
     
-    private func fetchManagedClients() async {
+    private func fetchManagedClients() async -> [Client] {
         do {
-            managedClients = try await clientsRepository.fetch(byPlanManagerId: planManager.id)
+            let clients = try await unitOfWork.clients.fetch(byPlanManagerId: planManager.id)
+            await MainActor.run {
+                self.managedClients = clients
+            }
+            return clients
         } catch {
             print("❌ [PlanManagerDetailViewModel] Error fetching managed clients: \(error)")
-            managedClients = []
+            await MainActor.run {
+                self.managedClients = []
+            }
+            return []
         }
     }
     
-    private func fetchRelatedInvoices() async {
+    private func fetchRelatedInvoices(for clients: [Client]) async {
         do {
             // Fetch invoices from managed clients
             var clientInvoices: [Invoice] = []
-            for client in managedClients {
-                let clientInvoiceList = try await invoicesRepository.fetch(byClientId: client.id)
+            for client in clients {
+                let clientInvoiceList = try await unitOfWork.invoices.fetch(byClientId: client.id)
                 clientInvoices.append(contentsOf: clientInvoiceList)
+                await Task.yield()
             }
             
-            // Remove duplicates by ID
-            let uniqueInvoices = Array(Set(clientInvoices))
-            relatedInvoices = uniqueInvoices.sorted {
-                $0.issueDate > $1.issueDate
+            let sorted = await Task.detached {
+                let uniqueInvoices = Array(Set(clientInvoices))
+                return uniqueInvoices.sorted { $0.issueDate > $1.issueDate }
+            }.value
+            await MainActor.run {
+                self.relatedInvoices = sorted
             }
         } catch {
             print("❌ [PlanManagerDetailViewModel] Error fetching related invoices: \(error)")
-            relatedInvoices = []
+            await MainActor.run {
+                self.relatedInvoices = []
+            }
         }
     }
     
@@ -226,10 +234,10 @@ public class PlanManagerDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedPlanManager = try await planManagersRepository.update(updatedPlanManager)
+            let savedPlanManager = try await unitOfWork.planManagers.update(updatedPlanManager)
             planManager = savedPlanManager
-            await fetchManagedClients()
-            await fetchRelatedInvoices()
+            let managedClients = await fetchManagedClients()
+            await fetchRelatedInvoices(for: managedClients)
         } catch {
             let nsError = error as NSError
             alertTitle = "Save Error"
@@ -271,7 +279,7 @@ public class PlanManagerDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedPlanManager = try await planManagersRepository.create(newPlanManager)
+            let savedPlanManager = try await unitOfWork.planManagers.create(newPlanManager)
             planManager = savedPlanManager
         } catch {
             let nsError = error as NSError
@@ -341,7 +349,7 @@ public class PlanManagerDetailViewModel: ObservableObject {
     func deletePlanManagerAndDismiss() {
         Task {
             do {
-                try await planManagersRepository.delete(id: planManager.id)
+                try await unitOfWork.planManagers.delete(id: planManager.id)
                 dismiss()
             } catch {
                 let nsError = error as NSError

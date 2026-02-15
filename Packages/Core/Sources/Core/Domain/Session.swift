@@ -11,6 +11,8 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
     public let notes: String?
     public let status: String?
     public let isTravel: Bool
+    public let isDetached: Bool
+    public let occurrenceDate: Date?
     public let clientId: UUID?
     public let clientServiceId: UUID?
     public let addressId: UUID?
@@ -19,6 +21,7 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
     
     // EventKit integration properties
     public let eventIdentifier: String
+    public let eventExternalIdentifier: String?
     public let calendarIdentifier: String?
     public let lastModifiedDate: Date?
     public let lastSyncTag: String?
@@ -31,6 +34,14 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
     public let sessionLatitude: Double
     public let sessionLongitude: Double
     
+    // Billing specific fields (for BillingHub)
+    public let assignedServiceName: String?
+    public let assignedRate: Double?
+    public let travelDistanceKM: Double?
+    public let travelTimeMinutes: Double?
+    public let travelTollsAmount: Double?
+    public let travelCharges: [TravelCharge]
+    
     public init(
         id: UUID,
         title: String,
@@ -41,12 +52,15 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
         notes: String? = nil,
         status: String? = nil,
         isTravel: Bool = false,
+        isDetached: Bool = false,
+        occurrenceDate: Date? = nil,
         clientId: UUID? = nil,
         clientServiceId: UUID? = nil,
         addressId: UUID? = nil,
         groupID: UUID? = nil,
         groupedPosition: Int32 = 0,
         eventIdentifier: String = "",
+        eventExternalIdentifier: String? = nil,
         calendarIdentifier: String? = nil,
         lastModifiedDate: Date? = nil,
         lastSyncTag: String? = nil,
@@ -55,7 +69,13 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
         derivedFromEKEventID: String? = nil,
         googleColorId: String? = nil,
         sessionLatitude: Double = 0.0,
-        sessionLongitude: Double = 0.0
+        sessionLongitude: Double = 0.0,
+        assignedServiceName: String? = nil,
+        assignedRate: Double? = nil,
+        travelDistanceKM: Double? = nil,
+        travelTimeMinutes: Double? = nil,
+        travelTollsAmount: Double? = nil,
+        travelCharges: [TravelCharge] = []
     ) {
         self.id = id
         self.title = title
@@ -66,12 +86,15 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
         self.notes = notes
         self.status = status
         self.isTravel = isTravel
+        self.isDetached = isDetached
+        self.occurrenceDate = occurrenceDate
         self.clientId = clientId
         self.clientServiceId = clientServiceId
         self.addressId = addressId
         self.groupID = groupID
         self.groupedPosition = groupedPosition
         self.eventIdentifier = eventIdentifier
+        self.eventExternalIdentifier = eventExternalIdentifier
         self.calendarIdentifier = calendarIdentifier
         self.lastModifiedDate = lastModifiedDate
         self.lastSyncTag = lastSyncTag
@@ -81,6 +104,12 @@ public struct Session: Identifiable, Codable, Equatable, Sendable {
         self.googleColorId = googleColorId
         self.sessionLatitude = sessionLatitude
         self.sessionLongitude = sessionLongitude
+        self.assignedServiceName = assignedServiceName
+        self.assignedRate = assignedRate
+        self.travelDistanceKM = travelDistanceKM
+        self.travelTimeMinutes = travelTimeMinutes
+        self.travelTollsAmount = travelTollsAmount
+        self.travelCharges = travelCharges
     }
     
     /// Duration in hours

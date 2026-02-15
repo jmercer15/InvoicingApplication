@@ -6,8 +6,13 @@ import Core
 public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendable {
     private let modelContext: ModelContext
     
+    private let mapper: PayeeMapper
+    private let addressMapper: AddressMapper
+    
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        self.mapper = PayeeMapper()
+        self.addressMapper = AddressMapper()
     }
     
     public func fetchAll() async throws -> [Payee] {
@@ -16,7 +21,7 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Payee(from: $0) }
+            return entities.map { mapper.mapToDomain($0) }
         }
     }
     
@@ -27,7 +32,7 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
         let descriptor = FetchDescriptor<PayeeEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Payee(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -38,15 +43,16 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
             let descriptor = FetchDescriptor<PayeeEntity>(predicate: predicate)
             if let existingEntity = try? modelContext.fetch(descriptor).first {
                 // Entity already exists, update it instead
-                existingEntity.update(from: payee)
+                var mutableEntity = existingEntity
+                mapper.updateEntity(&mutableEntity, from: payee)
                 
                 // Handle address update or clearing
                 if let address = payee.address {
-                    if let existingAddress = existingEntity.address {
-                        existingAddress.update(from: address)
+                    if var existingAddress = existingEntity.address {
+                        addressMapper.updateEntity(&existingAddress, from: address)
                     } else {
-                        let addressEntity = AddressEntity()
-                        addressEntity.update(from: address)
+                        var addressEntity = AddressEntity()
+                        addressMapper.updateEntity(&addressEntity, from: address)
                         // Only insert address if not already tracked
                         if addressEntity.modelContext == nil {
                             modelContext.insert(addressEntity)
@@ -59,46 +65,44 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
                 }
                 
                 do {
-                try modelContext.save()
+                    try modelContext.save()
                 } catch {
                     modelContext.rollback()
                     throw RepositoryError.saveFailed
                 }
-                return Payee(from: existingEntity)
+                return mapper.mapToDomain(existingEntity)
             }
             
             // Create new entity
-            let entity = PayeeEntity(id: payee.id, fullName: payee.fullName)
-            entity.update(from: payee)
+            var entity = PayeeEntity(id: payee.id, fullName: payee.fullName)
+            mapper.updateEntity(&entity, from: payee)
             
             // Insert entity first before assigning relationships
-            // This ensures entity is registered and prevents duplicate insertion
             if entity.modelContext == nil {
                 modelContext.insert(entity)
             }
             
             // Handle address if provided
             if let address = payee.address {
-                let addressEntity = AddressEntity()
-                addressEntity.update(from: address)
+                var addressEntity = AddressEntity()
+                addressMapper.updateEntity(&addressEntity, from: address)
                 // Insert address before assigning to relationship
                 if addressEntity.modelContext == nil {
                     modelContext.insert(addressEntity)
                 }
-                // Now assign relationship (entity is already registered)
+                // Now assign relationship
                 entity.address = addressEntity
             } else {
-                // Explicitly clear address relationship if not provided
                 entity.address = nil
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Payee(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -109,35 +113,32 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: payee)
+            var mutableEntity = entity
+            mapper.updateEntity(&mutableEntity, from: payee)
             
             // Handle address update or clearing
             if let address = payee.address {
-                if let existingAddress = entity.address {
-                    // Update existing address using domain model
-                    existingAddress.update(from: address)
+                if var existingAddress = entity.address {
+                    addressMapper.updateEntity(&existingAddress, from: address)
                 } else {
-                    // Create new address
-                    let addressEntity = AddressEntity()
-                    addressEntity.update(from: address)
-                    // Insert address before assigning to relationship
+                    var addressEntity = AddressEntity()
+                    addressMapper.updateEntity(&addressEntity, from: address)
                     if addressEntity.modelContext == nil {
                         modelContext.insert(addressEntity)
                     }
                     entity.address = addressEntity
                 }
             } else {
-                // Explicitly clear address relationship if not provided
                 entity.address = nil
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Payee(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -150,7 +151,7 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
             }
             modelContext.delete(entity)
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
@@ -173,7 +174,7 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Payee(from: $0) }
+            return entities.map { mapper.mapToDomain($0) }
         }
     }
     
@@ -185,7 +186,5 @@ public final class PayeeRepositorySwiftData: PayeeRepository, @unchecked Sendabl
     }
     
     // MARK: - Private Helpers
-    // Note: fetchEntity helper removed - all entity operations now happen directly within MainActor.run blocks
-    // to avoid Sendable conformance issues with PayeeEntity
 }
 

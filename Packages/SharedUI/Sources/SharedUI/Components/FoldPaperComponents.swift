@@ -2,7 +2,7 @@ import SwiftUI
 
 
 // MARK: - TreeItem Data Structure
-public struct TreeItem: Hashable, Identifiable {
+public struct TreeItem: Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
     public var subtitle: String?
@@ -35,23 +35,22 @@ public struct FoldPaperContainer: View {
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             breadcrumbView
+                .standardContentPanelBreadcrumbInsets()
+                .padding(.bottom, 12)
 
-            List(currentItems, id: \.id) { item in
-                rowView(for: item)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+            ScrollView {
+                LazyVStack(spacing: PanelShellTokens.contentListGridSpacing) {
+                    ForEach(currentItems, id: \.id) { item in
+                        rowView(for: item)
+                    }
+                }
+                .standardContentPanelListInsets()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .scrollIndicators(.hidden)
-            .frame(maxWidth: 400) // Limit list width
         }
-        .padding(12)
-        .contentShape(RoundedRectangle(cornerRadius: 8))
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
-        .padding(16)
         .animation(.easeInOut(duration: 0.2), value: selectionPath)
         .onChange(of: items) {
             pruneSelectionPath()
@@ -87,12 +86,13 @@ public struct FoldPaperContainer: View {
     private var breadcrumbView: some View {
         HStack(alignment: .top, spacing: 6) {
             if !selectionPath.isEmpty {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                shape
                     .fill(Color.accentColor.opacity(0.24))
                     .frame(width: 40, height: breadcrumbHeight)
+                    .glassEffect(.regular.interactive(true), in: shape)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                        shape.stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
                     )
                     .overlay(
                         Image(systemName: "chevron.backward")
@@ -104,14 +104,14 @@ public struct FoldPaperContainer: View {
                         goBack()
                     }
                     .accessibilityLabel(Text("Back"))
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     .transition(.scale.combined(with: .opacity))
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 breadcrumbSegments()
             }
-            .frame(maxWidth: 400, alignment: .leading) // Match list width
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 1)
             .background(
                 GeometryReader { geometry in
@@ -125,7 +125,6 @@ public struct FoldPaperContainer: View {
                 }
             )
         }
-        .padding(.horizontal, 4)
     }
 
     private func parentBackground(for item: TreeItem) -> Color {
@@ -145,9 +144,10 @@ public struct FoldPaperContainer: View {
 
         ForEach(Array(nodes.enumerated()), id: \.offset) { index, node in
             let background = breadcrumbBackground(for: node)
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
 
             Button(action: { crumbTapped(at: index) }) {
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     breadcrumbLabel(for: node)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -162,17 +162,17 @@ public struct FoldPaperContainer: View {
                 .padding(.vertical, 4)
                 .padding(.horizontal, 8) // Reduced horizontal padding
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(background)
+                    shape.fill(background)
                 )
+                .glassEffect(.regular.interactive(true), in: shape)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.16), lineWidth: 0.5)
+                    shape.stroke(Color.primary.opacity(0.16), lineWidth: 0.5)
                 )
                 .padding(.trailing, CGFloat(index) * breadcrumbIndent)
+                .contentShape(shape)
             }
             .buttonStyle(.plain)
-            .appInteractiveCursor()
+            .pointerStyle(.link)
             .help(node?.subtitle ?? node?.title ?? "All Items")
         }
     }
@@ -239,7 +239,7 @@ public struct FoldPaperContainer: View {
 
         return Group {
             if hasChildren {
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.title)
                             .font(.system(.headline, design: .rounded))
@@ -263,13 +263,10 @@ public struct FoldPaperContainer: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.vertical, 10) // Reduced vertical padding
-                .padding(.horizontal, 12) // Reduced horizontal padding
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(parentBackground(for: item))
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassEffect(.regular.interactive(true), in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(RoundedRectangle(cornerRadius: 12))
                 .onTapGesture {
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
                         handleSelection(of: item)
@@ -315,19 +312,11 @@ public struct FoldPaperContainer: View {
                         }
                     }
                 }
-                .padding(.vertical, 8) // Reduced vertical padding
-                .padding(.horizontal, 12) // Reduced horizontal padding
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(backgroundForChild(item))
-                        .strokeBorder(
-                            isLeafHighlighted ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.2),
-                            lineWidth: isLeafHighlighted ? 1.0 : 0.5
-                        )
-                )
-                .scaleEffect(isLeafHighlighted ? 1.02 : 1.0)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassEffect(.regular.interactive(true), in: RoundedRectangle(cornerRadius: 12))
                 .animation(.spring(response: 0.12, dampingFraction: 0.85), value: isLeafHighlighted)
-                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 12))
                 .onTapGesture {
                     withAnimation(.spring(response: 0.15, dampingFraction: 0.9)) {
                         handleSelection(of: item)

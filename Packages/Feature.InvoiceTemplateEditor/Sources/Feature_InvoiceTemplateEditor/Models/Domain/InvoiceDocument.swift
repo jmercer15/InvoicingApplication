@@ -2,14 +2,21 @@ import SwiftUI
 import CoreGraphics
 import Foundation
 
-struct SectionSplitSelection: Equatable {
-    let sectionIndex: Int
-    let path: [Int]
+public struct SectionSplitSelection: Equatable, Hashable {
+    public let sectionIndex: Int
+    public let path: [Int]
+    
+    public init(sectionIndex: Int, path: [Int]) {
+        self.sectionIndex = sectionIndex
+        self.path = path
+    }
 }
-final class InvoiceDocument: ObservableObject, @unchecked Sendable {
+public final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     @Published var components: [InvoiceComponent] = []
     @Published var selectedComponentID: UUID? = nil
     @Published var selectedSplitSelection: SectionSplitSelection? = nil
+    @Published var selectedTableElement: TableElementSelection? = nil
+    @Published var hoveredSplitSelection: SectionSplitSelection? = nil
     @Published var isSnapping: Bool = false
     @Published var isDragging: Bool = false
     @Published var draggedComponentID: UUID? = nil
@@ -18,10 +25,20 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     @Published var draggedComponentFrame: CGRect? = nil 
     @Published var pendingScrollTargetID: UUID? = nil
     @Published var isDraggingPaletteComponent: Bool = false
-    /// Update the component selection and clear any split selection
+    /// Update the component selection and clear any split/table element selection
     func selectComponent(_ id: UUID?) {
         selectedComponentID = id
         if id != nil {
+            selectedSplitSelection = nil
+            selectedTableElement = nil
+        }
+    }
+    
+    /// Update the table element selection (keeps component context)
+    func selectTableElement(_ element: TableElementSelection?, in componentID: UUID) {
+        selectedTableElement = element
+        if element != nil {
+            selectedComponentID = componentID  // Keep component context for inspector
             selectedSplitSelection = nil
         }
     }
@@ -42,27 +59,59 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
             }
         }
     }
-    struct DocumentMargins: Codable, Equatable {
-        var left: CGFloat
-        var right: CGFloat
-        var top: CGFloat
-        var bottom: CGFloat
+    
+    /// Clear all selections (components, splits, and table elements)
+    func deselectAll() {
+        selectedComponentID = nil
+        selectedSplitSelection = nil
+        selectedTableElement = nil
     }
-    @Published var pageSize: CGSize = CGSize(width: 595.2, height: 841.8) 
-    @Published var margins: DocumentMargins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
-    @Published var zoom: CGFloat = 1.0
-    @Published var sectionSplits: [Int: SectionSplit] = [:]
-    var undoStack: [DocumentState] = []
-    var redoStack: [DocumentState] = []
-    var isUndoRedoOperation = false
+    
+    /// Public initializer for creating new InvoiceDocument instances
+    public init() {
+        // Default initialization - all @Published properties have default values
+    }
+    public struct DocumentMargins: Codable, Equatable {
+        public var left: CGFloat
+        public var right: CGFloat
+        public var top: CGFloat
+        public var bottom: CGFloat
+        
+        public init(left: CGFloat, right: CGFloat, top: CGFloat, bottom: CGFloat) {
+            self.left = left
+            self.right = right
+            self.top = top
+            self.bottom = bottom
+        }
+    }
+    @Published public var pageSize: CGSize = CGSize(width: 595.2, height: 841.8) 
+    @Published public var margins: DocumentMargins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
+    @Published public var zoom: CGFloat = 1.0
+    @Published public var sectionSplits: [Int: SectionSplit] = [:]
+    // Track split configuration for each rectangle section (moved from view state for persistence/undo)
+    @Published public var sectionHeightRatios: [CGFloat] = [1.0]
+
+    // System UndoManager integration
+    weak var undoManager: UndoManager?
+    
+
+    
     enum MarginEdge {
         case left, right, top, bottom
     }
+    
     struct DocumentState {
         let components: [InvoiceComponent]
+        let sectionSplits: [Int: SectionSplit]
+        let margins: DocumentMargins
+        let sectionHeightRatios: [CGFloat]
+        let selectedComponentID: UUID?
+        let selectedSplitSelection: SectionSplitSelection?
+        let selectedTableElement: TableElementSelection?
     }
-    func add(_ component: InvoiceComponent) {
-        saveStateForUndo()
+    
+    func add(_ component: InvoiceComponent, actionName: String = "Add Component") {
+        saveStateForUndo(actionName: actionName)
         components.append(component)
         selectComponent(component.id)
     }
@@ -100,7 +149,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     func add(_ component: InvoiceComponent, at location: CGPoint) {
         var newComponent = component
         newComponent.position = location
-        add(newComponent)
+        add(newComponent) // uses default action name
     }
     func setPosition(for id: UUID, to newPosition: CGPoint) {
         guard let component = component(id) else { return }
@@ -125,18 +174,24 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         guard let component = component(id) else { return }
         setSizeAndPosition(for: id, size: newSize, position: component.position, recordUndo: true)
     }
-    func setSizeAndPosition(for id: UUID, size: CGSize, position: CGPoint, recordUndo: Bool = false) {
-        guard let idx = components.firstIndex(where: { $0.id == id }) else { return }
+    func setSizeAndPosition(for id: UUID, size: CGSize, position: CGPoint, recordUndo: Bool = false, actionName: String? = nil) {
         if recordUndo {
-            saveStateForUndo()
+            saveStateForUndo(actionName: actionName ?? "Move/Resize Component")
         }
-        components[idx].size = size
-        components[idx].position = position
+        updateComponent(id: id) { component in
+            component.size = size
+            component.position = position
+        }
     }
-    func setResizing(for id: UUID, isResizing: Bool) {
-        guard let idx = components.firstIndex(where: { $0.id == id }) else { return }
-        components[idx].isResizing = isResizing
+
+    
+    func updateComponentStyle(for id: UUID, actionName: String = "Change Style", transform: (inout ComponentStyle) -> Void) {
+        saveStateForUndo(actionName: actionName)
+        updateComponent(id: id) { component in
+            transform(&component.style)
+        }
     }
+
     func updateStyle(for id: UUID, style: ComponentStyle) {
         for i in 0..<components.count {
             if components[i].id == id {
@@ -145,457 +200,95 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
             }
         }
     }
-    func updateFontSize(for id: UUID, fontSize: CGFloat) {
+    
+    // MARK: - Column & Row Configurations (Complex Updates)
+    
+    func updateAxisSize(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, size: CGFloat, actionName: String = "Resize Table Column/Row") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.fontSize = fontSize
+            component.style.updateAxisSize(for: axis, at: index, size: size)
         }
     }
-    func updateTextColor(for id: UUID, color: String) {
+    
+    func updateAxisIsFlexible(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, isFlexible: Bool, actionName: String = "Change Column/Row Flexibility") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.textColor = color
+            component.style.updateAxisIsFlexible(for: axis, at: index, isFlexible: isFlexible)
         }
     }
-    func updateBackgroundColor(for id: UUID, color: String) {
+    
+    func updateAxisAutoSizing(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, isAutoSized: Bool, actionName: String = "Toggle Auto-Sizing") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.backgroundColor = color
+            component.style.updateAxisAutoSizing(for: axis, at: index, isAutoSized: isAutoSized)
         }
     }
-    func updateTextAlignment(for id: UUID, alignment: TextAlignment) {
+    
+    func updateAxisAlignment(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, alignment: TextAlignment, actionName: String = "Change Column/Row Alignment") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.textAlignment = alignment
+            component.style.updateAxisAlignment(for: axis, at: index, alignment: alignment)
         }
     }
-    func updateFontWeight(for id: UUID, weight: String) {
+    
+    func updateAxisVerticalAlignment(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, verticalAlignment: VerticalAlignment, actionName: String = "Change Vertical Alignment") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.fontWeight = weight
+            component.style.updateAxisVerticalAlignment(for: axis, at: index, verticalAlignment: verticalAlignment)
         }
     }
-    // Component management helpers moved to InvoiceDocument+Components.swift
-    func updateBorderWidth(for id: UUID, width: CGFloat) {
+    
+    func updateAxisHeaderAlignment(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, alignment: TextAlignment, actionName: String = "Change Header Alignment") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.borderWidth = width
+            component.style.updateAxisHeaderAlignment(for: axis, at: index, alignment: alignment)
         }
     }
-    func updateBorderColor(for id: UUID, color: String) {
+    
+    func updateAxisHeaderVerticalAlignment(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, verticalAlignment: VerticalAlignment, actionName: String = "Change Header Vertical Alignment") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.borderColor = color
+            component.style.updateAxisHeaderVerticalAlignment(for: axis, at: index, verticalAlignment: verticalAlignment)
         }
     }
-    func updateCornerRadius(for id: UUID, radius: CGFloat) {
+    
+    func updateAxisLineLimit(for id: UUID, axis: ComponentStyle.TableAxis, index: Int, lineLimit: Int, actionName: String = "Change Line Limit") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.cornerRadius = radius
+            component.style.updateAxisLineLimit(for: axis, at: index, lineLimit: lineLimit)
         }
     }
-    func updateFontFamily(for id: UUID, family: String) {
+    
+    func initializeAxisConfigurations(for id: UUID, axis: ComponentStyle.TableAxis, count: Int, actionName: String = "Reset Table Layout") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
-            component.style.fontFamily = family
+            switch axis {
+            case .column:
+                component.style.initializeColumnConfigurations(for: count)
+            case .row:
+                component.style.initializeRowConfigurations(for: count)
+            }
         }
     }
-    func updateLineSpacing(for id: UUID, spacing: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.lineSpacing = spacing
-        }
-    }
-    func updateLetterSpacing(for id: UUID, spacing: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.letterSpacing = spacing
-        }
-    }
-    func updateBackgroundOpacity(for id: UUID, opacity: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.backgroundOpacity = opacity
-        }
-    }
-    func updateText(for id: UUID, text: String) {
-        updateComponent(id: id) { component in
-            component.style.placeholderText = text
-        }
-    }
-    func updatePadding(for id: UUID, padding: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.padding = padding
-        }
-    }
-    func updateMargin(for id: UUID, margin: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.margin = margin
-        }
-    }
-    func updateShadowEnabled(for id: UUID, enabled: Bool) {
-        updateComponent(id: id) { component in
-            component.style.shadowEnabled = enabled
-        }
-    }
-    func updateShadowColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.shadowColor = color
-        }
-    }
-    func updateShadowOpacity(for id: UUID, opacity: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.shadowOpacity = opacity
-        }
-    }
-    func updateShadowRadius(for id: UUID, radius: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.shadowRadius = radius
-        }
-    }
-    func updateShadowOffset(for id: UUID, x: CGFloat, y: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.shadowOffsetX = x
-            component.style.shadowOffsetY = y
-        }
-    }
-    func updatePlaceholderText(for id: UUID, text: String) {
-        updateComponent(id: id) { component in
-            component.style.placeholderText = text
-        }
-    }
-    func updateStarPoints(for id: UUID, points: Int) {
-        updateComponent(id: id) { component in
-            component.style.starPoints = points
-        }
-    }
-    func updateStarSmoothness(for id: UUID, smoothness: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.starSmoothness = smoothness
-        }
-    }
-    func updateTriangleDirection(for id: UUID, direction: TriangleDirection) {
-        updateComponent(id: id) { component in
-            component.style.triangleDirection = direction
-        }
-    }
-    func updateLineThickness(for id: UUID, thickness: CGFloat) {
-        updateComponent(id: id) { component in
-            component.style.lineThickness = thickness
-        }
-    }
-    func updateLineStartDecorator(for id: UUID, decorator: LineDecorator) {
-        updateComponent(id: id) { component in
-            component.style.lineStartDecorator = decorator
-        }
-    }
-    func updateLineEndDecorator(for id: UUID, decorator: LineDecorator) {
-        updateComponent(id: id) { component in
-            component.style.lineEndDecorator = decorator
-        }
-    }
-    func updateImageData(for id: UUID, data: Data?) {
-        updateComponent(id: id) { component in
-            component.style.imageData = data
-        }
-    }
-    func updateImageContentMode(for id: UUID, mode: ImageContentMode) {
-        updateComponent(id: id) { component in
-            component.style.imageContentMode = mode
-        }
-    }
-    func updateImageOpacity(for id: UUID, opacity: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.imageOpacity = opacity
-        }
-    }
-    func updateLineStyle(for id: UUID, style: LineStyle) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.lineStyle = style
-        }
-    }
-    func updateStarInnerRatio(for id: UUID, ratio: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.starInnerRatio = ratio
-        }
-    }
-    func updateTableHeaderColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.tableHeaderColor = color
-        }
-    }
-    func updateTableRowColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.tableRowColor = color
-        }
-    }
-    func updateTableRowAltColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.tableRowAltColor = color
-        }
-    }
-    func updateTableTextColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.tableTextColor = color
-        }
-    }
-    func updateTableHeaderTextColor(for id: UUID, color: String) {
-        updateComponent(id: id) { component in
-            component.style.tableHeaderTextColor = color
-        }
-    }
-    func updateShowTableHeader(for id: UUID, show: Bool) {
-        updateComponent(id: id) { component in
-            component.style.showTableHeader = show
-        }
-    }
-    func updateUseAlternatingRows(for id: UUID, use: Bool) {
-        updateComponent(id: id) { component in
-            component.style.useAlternatingRows = use
-        }
-    }
-    func updateTableDirection(for id: UUID, direction: TableDirection) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableDirection = direction
-        }
-    }
-    func updateTableBorderWidth(for id: UUID, width: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableBorderWidth = width
-        }
-    }
-    func updateTableBorderColor(for id: UUID, color: String) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableBorderColor = color
-        }
-    }
-    func updateTableHeaderBorderWidth(for id: UUID, width: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableHeaderBorderWidth = width
-        }
-    }
-    func updateTableHeaderBorderColor(for id: UUID, color: String) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableHeaderBorderColor = color
-        }
-    }
-    func updateTableRowBorderWidth(for id: UUID, width: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableRowBorderWidth = width
-        }
-    }
-    func updateTableRowBorderColor(for id: UUID, color: String) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableRowBorderColor = color
-        }
-    }
-    func updateTableCellPadding(for id: UUID, padding: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableCellPadding = padding
-        }
-    }
-    func updateTableHeaderPadding(for id: UUID, padding: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.tableHeaderPadding = padding
-        }
-    }
-    func updateShowTableBorders(for id: UUID, show: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.showTableBorders = show
-        }
-    }
-    func updateShowHeaderBorder(for id: UUID, show: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.showHeaderBorder = show
-        }
-    }
-    func updateShowRowBorders(for id: UUID, show: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.showRowBorders = show
-        }
-    }
-    func updateShowCellBorders(for id: UUID, show: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.showCellBorders = show
-        }
-    }
-    func updateSectionLayout(for id: UUID, layout: SectionLayout) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.sectionLayout = layout
-        }
-    }
-    func updateGridColumns(for id: UUID, columns: Int) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.gridColumns = columns
-        }
-    }
-    func updateContentSpacing(for id: UUID, spacing: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.contentSpacing = spacing
-        }
-    }
-    func updateContentPadding(for id: UUID, padding: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.contentPadding = padding
-        }
-    }
-    func updateColumnWidth(for id: UUID, columnIndex: Int, width: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnWidth(for: columnIndex, width: width)
-        }
-    }
-    func updateColumnIsFlexible(for id: UUID, columnIndex: Int, isFlexible: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnIsFlexible(for: columnIndex, isFlexible: isFlexible)
-        }
-    }
-    func updateColumnAutoSizing(for id: UUID, columnIndex: Int, isAutoSized: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnAutoSizing(for: columnIndex, isAutoSized: isAutoSized)
-        }
-    }
-    func updateColumnAlignment(for id: UUID, columnIndex: Int, alignment: TextAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnAlignment(for: columnIndex, alignment: alignment)
-        }
-    }
-    func updateColumnVerticalAlignment(for id: UUID, columnIndex: Int, verticalAlignment: VerticalAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnVerticalAlignment(for: columnIndex, verticalAlignment: verticalAlignment)
-        }
-    }
-    func updateColumnHeaderAlignment(for id: UUID, columnIndex: Int, alignment: TextAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnHeaderAlignment(for: columnIndex, alignment: alignment)
-        }
-    }
-    func updateColumnHeaderVerticalAlignment(for id: UUID, columnIndex: Int, verticalAlignment: VerticalAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnHeaderVerticalAlignment(for: columnIndex, verticalAlignment: verticalAlignment)
-        }
-    }
-    func updateColumnLineLimit(for id: UUID, columnIndex: Int, lineLimit: Int) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateColumnLineLimit(for: columnIndex, lineLimit: lineLimit)
-        }
-    }
-    func initializeColumnConfigurations(for id: UUID, columnCount: Int) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.initializeColumnConfigurations(for: columnCount)
-        }
-    }
-    func updateRowHeight(for id: UUID, rowIndex: Int, height: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowHeight(for: rowIndex, height: height)
-        }
-    }
-    func updateRowIsFlexible(for id: UUID, rowIndex: Int, isFlexible: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowIsFlexible(for: rowIndex, isFlexible: isFlexible)
-        }
-    }
-    func updateRowAutoSizing(for id: UUID, rowIndex: Int, isAutoSized: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowAutoSizing(for: rowIndex, isAutoSized: isAutoSized)
-        }
-    }
-    func updateRowAlignment(for id: UUID, rowIndex: Int, alignment: TextAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowAlignment(for: rowIndex, alignment: alignment)
-        }
-    }
-    func updateRowVerticalAlignment(for id: UUID, rowIndex: Int, verticalAlignment: VerticalAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowVerticalAlignment(for: rowIndex, verticalAlignment: verticalAlignment)
-        }
-    }
-    func updateRowHeaderAlignment(for id: UUID, rowIndex: Int, alignment: TextAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowHeaderAlignment(for: rowIndex, alignment: alignment)
-        }
-    }
-    func updateRowHeaderVerticalAlignment(for id: UUID, rowIndex: Int, verticalAlignment: VerticalAlignment) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowHeaderVerticalAlignment(for: rowIndex, verticalAlignment: verticalAlignment)
-        }
-    }
-    func updateRowLineLimit(for id: UUID, rowIndex: Int, lineLimit: Int) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.updateRowLineLimit(for: rowIndex, lineLimit: lineLimit)
-        }
-    }
-    func initializeRowConfigurations(for id: UUID, rowCount: Int) {
-        saveStateForUndo()
+    func initializeRowConfigurations(for id: UUID, rowCount: Int, actionName: String = "Reset Rows") {
+        saveStateForUndo(actionName: actionName)
         updateComponent(id: id) { component in
             component.style.initializeRowConfigurations(for: rowCount)
         }
     }
-    func updateCellPadding(for id: UUID, padding: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.cellPadding = padding
-        }
-    }
-    private func sanitizedHex(_ hex: String) -> String {
-        let cleaned = hex.replacingOccurrences(of: "#", with: "").uppercased()
-        return cleaned
-    }
-    func updateTextUnderline(for id: UUID, underline: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.textUnderline = underline
-        }
-    }
-    func updateTextStrikethrough(for id: UUID, strikethrough: Bool) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.textStrikethrough = strikethrough
-        }
-    }
-    func updateTextTransform(for id: UUID, transform: TextTransform) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.textTransform = transform
-        }
-    }
-    func updateTextOpacity(for id: UUID, opacity: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.textOpacity = opacity
-        }
-    }
-    func updateAspectRatio(for id: UUID, ratio: CGFloat) {
-        saveStateForUndo()
-        updateComponent(id: id) { component in
-            component.style.aspectRatio = ratio
-        }
-    }
+
+    // Component management helpers moved to InvoiceDocument+Components.swift
+
+
+    
+    // MARK: - Advanced Typography Updates
+    
+
+    
+
+
     // Component management operations moved to InvoiceDocument+Components.swift
+    @available(*, unavailable, message: "Use InvoiceTemplateEditorViewModel.saveTemplate() instead.")
     func saveAsTemplate(
         name: String,
         description: String = "",
@@ -604,9 +297,9 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     ) async -> Bool {
         // Note: This method should be called through ViewModel which has access to TemplateManager
         // Keeping for backward compatibility but TemplateManager should be injected at call site
-        fatalError("saveTemplate should be called through InvoiceTemplateEditorViewModel.saveTemplate() instead")
+        fatalError("Use InvoiceTemplateEditorViewModel.saveTemplate() instead")
     }
-    func loadTemplate(_ templateData: TemplateData) {
+    public func loadTemplate(_ templateData: TemplateData) {
         components.removeAll()
         sectionSplits.removeAll() // Clear existing splits
         selectComponent(nil)
@@ -615,7 +308,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         clearUndoRedoStacks()
         templateData.document.apply(to: self)
     }
-    func createNewDocument() {
+    public func createNewDocument() {
         components.removeAll()
         selectComponent(nil)
         margins = DocumentMargins(left: 36, right: 36, top: 36, bottom: 36)
@@ -650,7 +343,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         }
         guard updatedMargins != margins else { return }
         if recordUndo {
-            saveStateForUndo()
+            saveStateForUndo(actionName: "Change Margin")
         }
         margins = updatedMargins
     }
@@ -670,8 +363,14 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
 
     private func updateSplitSelection(
         _ selection: SectionSplitSelection,
+        actionName: String? = nil,
         mutate: (inout SectionSplit, Int) -> Void
     ) {
+        if let actionName = actionName {
+            saveStateForUndo(actionName: actionName)
+        } else {
+             saveStateForUndo(actionName: "Update Split")
+        }
         guard !selection.path.isEmpty else { return }
         ensureSplitContainer(for: selection.sectionIndex)
         guard var rootSplit = sectionSplits[selection.sectionIndex] else { return }
@@ -701,8 +400,14 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     private func updateSplit(
         at sectionIndex: Int,
         path: [Int],
+        actionName: String? = nil,
         mutate: (inout SectionSplit) -> Void
     ) {
+        if let actionName = actionName {
+            saveStateForUndo(actionName: actionName)
+        } else {
+             saveStateForUndo(actionName: "Update Split")
+        }
         ensureSplitContainer(for: sectionIndex)
         guard var rootSplit = sectionSplits[sectionIndex] else { return }
         var didMutate = false
@@ -733,43 +438,49 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
     }
 
     func setSplitLabel(for selection: SectionSplitSelection, label: String) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Change Split Label") { split, childIndex in
             split.setLabel(label, forChild: childIndex)
         }
     }
 
     func setSplitAlignment(for selection: SectionSplitSelection, alignment: SectionSplit.LeafAlignment) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Change Split Alignment") { split, childIndex in
             split.setAlignment(alignment, forChild: childIndex)
         }
     }
     
     func setSplitPadding(for selection: SectionSplitSelection, value: CGFloat) {
-        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Change Split Padding") { split in
             split.setPadding(value)
         }
     }
     
     func setSplitMargin(for selection: SectionSplitSelection, value: CGFloat) {
-        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Change Split Margin") { split in
             split.setMargin(value)
         }
     }
     
     func setSplitSpacing(for selection: SectionSplitSelection, value: CGFloat) {
-        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Change Split Spacing") { split in
             split.setChildSpacing(value)
         }
     }
     
     func setChildPadding(for selection: SectionSplitSelection, value: SectionSplit.PaddingInsets) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Change Padding") { split, childIndex in
             split.setChildPadding(value, forChild: childIndex)
+        }
+    }
+    
+    func setUniformChildPadding(for selection: SectionSplitSelection, value: CGFloat) {
+        updateSplitSelection(selection, actionName: "Change Padding") { split, childIndex in
+            split.setUniformChildPadding(value, forChild: childIndex)
         }
     }
 
     func setSplitRatio(for selection: SectionSplitSelection, ratio: CGFloat) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Resize Section") { split, childIndex in
             split.updateRatio(at: childIndex, newRatio: ratio)
         }
     }
@@ -781,7 +492,7 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         gridRows: Int? = nil,
         gridColumns: Int? = nil
     ) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Split Section") { split, childIndex in
             if direction == .grid, let rows = gridRows, let columns = gridColumns {
                 split.splitChild(at: childIndex, direction: direction, splitCount: splitCount, gridRows: rows, gridColumns: columns)
             } else {
@@ -790,42 +501,78 @@ final class InvoiceDocument: ObservableObject, @unchecked Sendable {
         }
     }
 
+    func insertChildInSplit(for selection: SectionSplitSelection, at childIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Insert Child") { split in
+            split.insertChild(at: childIndex)
+        }
+    }
+    
+    func deleteChildFromSplit(for selection: SectionSplitSelection, at childIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Delete Child") { split in
+            _ = split.deleteChild(at: childIndex)
+        }
+    }
+    
+    func insertGridRow(for selection: SectionSplitSelection, at rowIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Insert Row") { split in
+            split.insertGridRow(at: rowIndex)
+        }
+    }
+    
+    func insertGridColumn(for selection: SectionSplitSelection, at columnIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Insert Column") { split in
+            split.insertGridColumn(at: columnIndex)
+        }
+    }
+    
+    func deleteGridRow(for selection: SectionSplitSelection, at rowIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Delete Row") { split in
+            _ = split.deleteGridRow(at: rowIndex)
+        }
+    }
+    
+    func deleteGridColumn(for selection: SectionSplitSelection, at columnIndex: Int) {
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Delete Column") { split in
+            _ = split.deleteGridColumn(at: columnIndex)
+        }
+    }
+
     func removeSplitContainingSelection(_ selection: SectionSplitSelection) {
         guard selection.path.count >= 2 else { return }
         var parentPath = selection.path
         parentPath.removeLast() // remove leaf index
         guard let parentIndex = parentPath.popLast() else { return }
-        updateSplit(at: selection.sectionIndex, path: parentPath) { split in
+        updateSplit(at: selection.sectionIndex, path: parentPath, actionName: "Merge Split") { split in
             split.unsplitChild(at: parentIndex)
         }
     }
 
     func equalizeSplitRatios(for selection: SectionSplitSelection) {
-        updateSplitSelection(selection) { split, _ in
+        updateSplitSelection(selection, actionName: "Equalize Sections") { split, _ in
             split.resetRatiosToEvenDistribution()
         }
     }
     
     func setWidthSizingMode(for selection: SectionSplitSelection, mode: SectionSplit.SizingMode) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Change Width Mode") { split, childIndex in
             split.setWidthSizingMode(mode, forChild: childIndex)
         }
     }
     
     func setHeightSizingMode(for selection: SectionSplitSelection, mode: SectionSplit.SizingMode) {
-        updateSplitSelection(selection) { split, childIndex in
+        updateSplitSelection(selection, actionName: "Change Height Mode") { split, childIndex in
             split.setHeightSizingMode(mode, forChild: childIndex)
         }
     }
     
     func setGridRowSizingMode(for selection: SectionSplitSelection, row: Int, mode: SectionSplit.SizingMode) {
-        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Change Row Sizing") { split in
             split.setRowSizingMode(mode, forRow: row)
         }
     }
     
     func setGridColumnSizingMode(for selection: SectionSplitSelection, column: Int, mode: SectionSplit.SizingMode) {
-        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast())) { split in
+        updateSplit(at: selection.sectionIndex, path: Array(selection.path.dropLast()), actionName: "Change Column Sizing") { split in
             split.setColumnSizingMode(mode, forColumn: column)
         }
     }

@@ -35,7 +35,11 @@ final class RoundTripMappingTests: XCTestCase {
             InvoiceItemEntity.self,
             ClientServiceEntity.self,
             NDISItemEntity.self,
-            RegionalPriceEntity.self
+            RegionalPriceEntity.self,
+            ServiceAgreementEntity.self,
+            SupportLogEntity.self,
+            BulkClaimBatchEntity.self,
+            BulkClaimLineEntity.self
         ])
         
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -183,7 +187,6 @@ final class RoundTripMappingTests: XCTestCase {
         originalEntity.phone = "0412345680"
         originalEntity.status = "active"
         originalEntity.relationToClient = "parent"
-        originalEntity.payeeID = 12345
         
         modelContext.insert(originalEntity)
         try modelContext.save()

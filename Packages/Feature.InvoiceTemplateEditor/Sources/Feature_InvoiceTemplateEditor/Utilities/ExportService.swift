@@ -10,21 +10,21 @@ import SharedUI
 // MARK: - Export Service (Apple Guidelines Compliant)
 
 /// Thread-safe PDF export service following Apple's Core Graphics and PDFKit best practices
-class ExportService: ObservableObject, @unchecked Sendable {
-    static let shared = ExportService()
+public class ExportService: ObservableObject, @unchecked Sendable {
+    public static let shared = ExportService()
 
     private init() {}
 
     // MARK: - Enums and Types
     
     /// Supported image formats for export
-    enum ImageFormat {
+    public enum ImageFormat: Sendable {
         case png
         case jpeg
     }
     
     /// Export-related errors
-    enum ExportError: Error {
+    public enum ExportError: Error {
         case contextCreationFailed
         case renderingFailed
         case fileCreationFailed
@@ -33,7 +33,7 @@ class ExportService: ObservableObject, @unchecked Sendable {
     // MARK: - Public Export Methods
     
     /// Exports document to PDF file
-    func exportToPDF(document: InvoiceDocument, fileName: String) async throws -> URL {
+    public func exportToPDF(document: InvoiceDocument, fileName: String) async throws -> URL {
         let pdfData = try await generatePDFData(from: document)
 
         return try await MainActor.run {
@@ -77,7 +77,7 @@ class ExportService: ObservableObject, @unchecked Sendable {
                 let printOperation = NSPrintOperation(view: PDFView(), printInfo: printInfo)
                 printOperation.run()
             } catch {
-                print("Print failed: \(error)")
+                presentPrintError(error)
             }
         }
     }
@@ -87,7 +87,7 @@ class ExportService: ObservableObject, @unchecked Sendable {
     /// Generates PDF data using Core Graphics with proper coordinate system handling
     /// - Parameter document: The invoice document to render
     /// - Returns: PDF data following Apple's PDFKit guidelines
-    func generatePDFData(from document: InvoiceDocument) async throws -> Data {
+    public func generatePDFData(from document: InvoiceDocument) async throws -> Data {
         return try await Task.detached(priority: .userInitiated) { @Sendable in
             try await self.generatePDFDataInternal(from: document)
         }.value
@@ -430,13 +430,100 @@ class ExportService: ObservableObject, @unchecked Sendable {
             height: rect.height
         )
         
-        // For now, render as placeholder rectangle
-        // In a full implementation, you would load and draw the actual image
+        // 1. Draw background if present
         if let cgColor = component.style.backgroundColorSwiftUI.cgColor {
             context.setFillColor(cgColor)
             context.fill(drawRect)
         }
         
+        // 2. Draw Image if data is present
+        if let imageData = component.style.imageData,
+           let nsImage = NSImage(data: imageData),
+           let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            
+            context.saveGState()
+            
+            // Flip coordinate system for image drawing (images are drawn upside down in PDF context otherwise)
+            context.translateBy(x: 0, y: drawRect.maxY + drawRect.minY) // Effectively 0 in local coords if centered? No.
+            // Local coords: minY is -height/2, maxY is height/2. Sum is 0.
+            // So we are translating by 0? No, that won't flip.
+            // We need to scale(1, -1). But we need to translate first?
+            // Usually: translate(0, height), scale(1, -1).
+            // In local coords [-w/2, -h/2] to [w/2, h/2]:
+            // We want to flip around the X axis.
+            context.scaleBy(x: 1.0, y: -1.0)
+            
+            // After flipping, positive Y is down.
+            // The rect [-w/2, -h/2] becomes top-left visually?
+            // Actually, simply drawing into the rect with negative height might work?
+            // Or using the standard flip:
+            
+            // Calculate target rect based on content mode
+            let imageWidth = CGFloat(cgImage.width)
+            let imageHeight = CGFloat(cgImage.height)
+            let aspect = imageWidth / imageHeight
+            let rectAspect = rect.width / rect.height
+            
+            var targetRect = drawRect
+            // Since we flipped Y, we need to adjust the Y coordinate of targetRect?
+            // If we scaled Y by -1, y=10 becomes y=-10.
+            // Our drawRect Y range is [-h/2, h/2].
+            // If we flip, it stays [-h/2, h/2].
+            // So usage of drawRect should remain the same *if* we are centered.
+            
+            if component.style.imageContentMode == .fit {
+                if aspect > rectAspect {
+                    // Image is wider than rect: fit to width
+                    let h = rect.width / aspect
+                    targetRect = CGRect(
+                        x: drawRect.minX,
+                        y: -h / 2, // Centered vertically
+                        width: rect.width,
+                        height: h
+                    )
+                } else {
+                    // Image is taller than rect: fit to height
+                    let w = rect.height * aspect
+                    targetRect = CGRect(
+                        x: -w / 2, // Centered horizontally
+                        y: drawRect.minY,
+                        width: w,
+                        height: rect.height
+                    )
+                }
+            } else if component.style.imageContentMode == .fill {
+                 // Aspect Fill - requires clipping
+                 context.restoreGState() // Restore to setup clip in non-flipped first?
+                 context.saveGState()
+                 context.clip(to: drawRect)
+                 context.scaleBy(x: 1.0, y: -1.0) // Flip again
+                 
+                 if aspect > rectAspect {
+                    // Image is wider: fit to height, center width (will crop sides)
+                    let w = rect.height * aspect
+                    targetRect = CGRect(
+                        x: -w / 2,
+                        y: drawRect.minY,
+                        width: w,
+                        height: rect.height
+                    )
+                 } else {
+                    // Image is taller: fit to width, center height (will crop top/bottom)
+                    let h = rect.width / aspect
+                    targetRect = CGRect(
+                        x: drawRect.minX,
+                        y: -h / 2,
+                        width: rect.width,
+                        height: h
+                    )
+                 }
+            }
+            
+            context.draw(cgImage, in: targetRect)
+            context.restoreGState()
+        }
+        
+        // 3. Draw border if present
         if component.style.borderWidth > 0 {
             if let cgColor = component.style.borderColorSwiftUI.cgColor {
                 context.setStrokeColor(cgColor)
@@ -726,6 +813,16 @@ class ExportService: ObservableObject, @unchecked Sendable {
             }
             return jpegData
         }
+    }
+    
+    @MainActor
+    private func presentPrintError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Print failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
 

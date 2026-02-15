@@ -1,8 +1,8 @@
 import Foundation
 import CoreGraphics
 
-struct A4 {
-    static let width: CGFloat = 595.28
-    static let height: CGFloat = 841.89
-    static let size: CGSize = CGSize(width: A4.width, height: A4.height)
+public struct A4 {
+    public static let width: CGFloat = 595.28
+    public static let height: CGFloat = 841.89
+    public static let size: CGSize = CGSize(width: A4.width, height: A4.height)
 }

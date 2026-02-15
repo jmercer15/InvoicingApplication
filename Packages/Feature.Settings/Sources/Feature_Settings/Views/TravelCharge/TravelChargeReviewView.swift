@@ -1,14 +1,13 @@
 import SwiftUI
 import SwiftData
 import Data
-// import Core  // Removed to avoid type ambiguity with TravelChargeReviewItem
+import Core
 import SharedUI
 
 struct TravelChargeReviewView: View {
-    @Environment(\.modelContext) private var viewContext
-    @Query(sort: \TravelChargeReviewItem.timestamp, order: .reverse) private var reviewItems: [TravelChargeReviewItem]
+    @ObservedObject var viewModel: TravelChargeReviewViewModel
     
-    @State private var selectedReviewItem: TravelChargeReviewItem?
+    @State private var selectedReviewItem: Core.TravelChargeReviewItem?
     @State private var showingViolationDetails = false
     @State private var showingReviewSheet = false
     @State private var filterStatus: ReviewStatusFilter = .all
@@ -21,18 +20,18 @@ struct TravelChargeReviewView: View {
         case skipped = "Skipped"
     }
     
-    var filteredReviewItems: [TravelChargeReviewItem] {
+    var filteredReviewItems: [Core.TravelChargeReviewItem] {
         switch filterStatus {
         case .all:
-            return reviewItems
+            return viewModel.reviewItems
         case .pending:
-            return reviewItems.filter { $0.status == "pending" }
+            return viewModel.reviewItems.filter { $0.status == "pending" }
         case .resolved:
-            return reviewItems.filter { $0.status == "resolved" }
+            return viewModel.reviewItems.filter { $0.status == "resolved" }
         case .overridden:
-            return reviewItems.filter { $0.status == "overridden" }
+            return viewModel.reviewItems.filter { $0.status == "overridden" }
         case .skipped:
-            return reviewItems.filter { $0.status == "skipped" }
+            return viewModel.reviewItems.filter { $0.status == "skipped" }
         }
     }
     
@@ -48,8 +47,8 @@ struct TravelChargeReviewView: View {
                             showingReviewSheet = true
                         }
                         .buttonStyle(.glassProminent)
-                        .appInteractiveCursor()
-                        .disabled(reviewItems.filter { $0.status == "pending" }.isEmpty)
+                        .pointerStyle(.link)
+                        .disabled(viewModel.reviewItems.filter { $0.status == "pending" }.isEmpty)
                     }
                     
                     Text("Review and resolve travel charge compliance violations")
@@ -82,7 +81,10 @@ struct TravelChargeReviewView: View {
                 .glassEffect(.regular, in: .rect(cornerRadius: 8))
                 
                 // Review Items List
-                if filteredReviewItems.isEmpty {
+                if viewModel.isLoading {
+                    ProgressView("Loading review items...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if filteredReviewItems.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 48))
@@ -97,7 +99,7 @@ struct TravelChargeReviewView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            ForEach(filteredReviewItems, id: \.id) { reviewItem in
+                            ForEach(filteredReviewItems) { reviewItem in
                                 ReviewItemCard(reviewItem: reviewItem) {
                                     selectedReviewItem = reviewItem
                                     showingViolationDetails = true
@@ -108,19 +110,22 @@ struct TravelChargeReviewView: View {
                     }
                 }
         }
+        .onAppear {
+            viewModel.loadReviewItems()
+        }
         .sheet(isPresented: $showingViolationDetails) {
             if let reviewItem = selectedReviewItem {
-                TravelChargeViolationDetailsView(reviewItem: reviewItem)
+                TravelChargeViolationDetailsView(viewModel: viewModel, reviewItem: reviewItem)
             }
         }
         .sheet(isPresented: $showingReviewSheet) {
-            TravelChargeReviewSheetView()
+            TravelChargeReviewSheetView(viewModel: viewModel)
         }
     }
 }
 
 struct ReviewItemCard: View {
-    let reviewItem: TravelChargeReviewItem
+    let reviewItem: Core.TravelChargeReviewItem
     let onTap: () -> Void
     
     var body: some View {
@@ -128,12 +133,12 @@ struct ReviewItemCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(reviewItem.session?.title ?? "Unknown Session")
+                        Text(reviewItem.sessionTitle ?? "Unknown Session")
                             .font(.headline)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
-                        if let client = reviewItem.session?.client {
-                            Text("Client: \(client.fullName)")
+                        if let clientName = reviewItem.clientName {
+                            Text("Client: \(clientName)")
                                 .font(.body)
                                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                         }
@@ -174,6 +179,7 @@ struct ReviewItemCard: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(borderColor, lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -212,7 +218,8 @@ struct ReviewItemCard: View {
 // Note: StatusBadge is already defined in ViewStyles.swift
 
 struct TravelChargeViolationDetailsView: View {
-    let reviewItem: TravelChargeReviewItem
+    @ObservedObject var viewModel: TravelChargeReviewViewModel
+    let reviewItem: Core.TravelChargeReviewItem
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var viewContext
     
@@ -236,10 +243,10 @@ struct TravelChargeViolationDetailsView: View {
                     // Session Information
                     GroupBox("Session Details") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Session: \(reviewItem.session?.title ?? "Unknown")")
+                            Text("Session: \(reviewItem.sessionTitle ?? "Unknown")")
                                 .font(.headline)
-                            if let client = reviewItem.session?.client {
-                                Text("Client: \(client.fullName)")
+                            if let clientName = reviewItem.clientName {
+                                Text("Client: \(clientName)")
                                     .font(.body)
                             }
                             if let timestamp = reviewItem.timestamp {
@@ -286,6 +293,7 @@ struct TravelChargeViolationDetailsView: View {
                                                 .foregroundColor(Color("Text", bundle: .sharedUI))
                                             Spacer()
                                         }
+                                        .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -324,7 +332,7 @@ struct TravelChargeViolationDetailsView: View {
                             dismiss()
                         }
                         .buttonStyle(.glass)
-                        .appInteractiveCursor()
+                        .pointerStyle(.link)
                         
                         Spacer()
                         
@@ -333,7 +341,7 @@ struct TravelChargeViolationDetailsView: View {
                                 handleOverrideAction()
                             }
                             .buttonStyle(.glassProminent)
-                            .appInteractiveCursor()
+                            .pointerStyle(.link)
                             .disabled(isProcessing)
                         }
                         
@@ -341,7 +349,7 @@ struct TravelChargeViolationDetailsView: View {
                             handleSkipAction()
                         }
                         .buttonStyle(.glass)
-                        .appInteractiveCursor()
+                        .pointerStyle(.link)
                         .disabled(isProcessing)
                     }
                 }
@@ -355,30 +363,15 @@ struct TravelChargeViolationDetailsView: View {
         isProcessing = true
         
         Task {
-            do {
-                let automationService = TravelChargeAutomationService(
-                    context: viewContext,
-                    businessRules: BusinessRules(),
-                    userPreferences: UserPreferences(),
-                    mmmZoneTable: MMMZoneTable()
-                )
-                
-                let reviewItemToResolve = reviewItem
-                try await automationService.resolveReviewWithOverride(
-                    reviewItemToResolve,
-                    overrideType: selectedOverride,
-                    overrideReason: overrideReason.isEmpty ? nil : overrideReason
-                )
-                
-                await MainActor.run {
-                    isProcessing = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isProcessing = false
-                    print("Error applying override: \(error)")
-                }
+            await viewModel.resolveWithOverride(
+                reviewItemId: reviewItem.id,
+                overrideType: selectedOverride,
+                reason: overrideReason.isEmpty ? nil : overrideReason
+            )
+            
+            await MainActor.run {
+                isProcessing = false
+                dismiss()
             }
         }
     }
@@ -387,34 +380,23 @@ struct TravelChargeViolationDetailsView: View {
         isProcessing = true
         
         Task {
-            do {
-                let automationService = TravelChargeAutomationService(
-                    context: viewContext,
-                    businessRules: BusinessRules(),
-                    userPreferences: UserPreferences(),
-                    mmmZoneTable: MMMZoneTable()
-                )
-                
-                let reviewItemToSkip = reviewItem
-                try await automationService.resolveReviewBySkipping(reviewItemToSkip)
-                
-                await MainActor.run {
-                    isProcessing = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isProcessing = false
-                    print("Error skipping review: \(error)")
-                }
+            await viewModel.resolveBySkipping(reviewItemId: reviewItem.id)
+            
+            await MainActor.run {
+                isProcessing = false
+                dismiss()
             }
         }
     }
 }
 
 struct TravelChargeReviewSheetView: View {
+    @ObservedObject var viewModel: TravelChargeReviewViewModel
     @Environment(\.dismiss) private var dismiss
-    @Query(filter: #Predicate<TravelChargeReviewItem> { $0.status == "pending" }, sort: \TravelChargeReviewItem.timestamp) private var pendingReviews: [TravelChargeReviewItem]
+    
+    var pendingReviews: [Core.TravelChargeReviewItem] {
+        viewModel.reviewItems.filter { $0.status == "pending" }
+    }
     
     var body: some View {
         NavigationView {
@@ -429,7 +411,7 @@ struct TravelChargeReviewSheetView: View {
                             dismiss()
                         }
                         .buttonStyle(.glass)
-                        .appInteractiveCursor()
+                        .pointerStyle(.link)
                     }
                     
                     Text("\(pendingReviews.count) items require attention")
@@ -453,7 +435,7 @@ struct TravelChargeReviewSheetView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            ForEach(pendingReviews, id: \.id) { reviewItem in
+                            ForEach(pendingReviews) { reviewItem in
                                 ReviewItemCard(reviewItem: reviewItem) {
                                     // Navigate to violation details
                                 }

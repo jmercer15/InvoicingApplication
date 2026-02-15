@@ -13,49 +13,34 @@ struct CalendarView: View {
     @Environment(\.modelContext) private var viewContext
     @ObservedObject var viewModel: CalendarViewModel
     @EnvironmentObject var eventKitService: EventKitSyncService
-    @Binding var showInspector: Bool
 
     var body: some View {
-        CalendarTabView(viewModel: viewModel, showInspector: $showInspector)
+        CalendarTabView(viewModel: viewModel)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading calendar...")
         // --- Sheet for editing/creating sessions ---
         .sheet(isPresented: Binding(
-            get: { viewModel.isShowingNewSessionSheet },
+            get: { viewModel.selectedSessionInfo != nil },
             set: {
-                viewModel.isShowingNewSessionSheet = $0
                 if !$0 { // When sheet is dismissed
                     viewModel.selectedSessionInfo = nil
                 }
             }
         )) {
             if let sessionInfo = viewModel.selectedSessionInfo {
-                let newSessionViewModel = NewSessionViewModel(
-                    context: viewContext,
-                    session: sessionInfo.session,
-                    instanceDate: sessionInfo.instanceStart,
-                    clientsRepository: viewModel.clientsRepository,
-                    clientServicesRepository: viewModel.clientServicesRepository,
-                    addressRepository: viewModel.addressRepository
-                )
-                
-                NativeSessionSheetView(viewModel: newSessionViewModel, onDismiss: { viewModel.isShowingNewSessionSheet = false })
-                    .environment(\.modelContext, viewContext)
-                    .fluidSheetTransition()
-                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isShowingNewSessionSheet)
-                    .onAppear {
-                        newSessionViewModel.onSave = { editMode in
-                            viewModel.handleSaveFromEditor(
-                                with: editMode,
-                                viewModel: newSessionViewModel
-                            )
-                        }
+                SessionEditorSheetContainer(
+                    unitOfWork: viewModel.unitOfWork,
+                    sessionInfo: sessionInfo,
+                    onDismiss: { viewModel.selectedSessionInfo = nil },
+                    onSave: { editMode, editorViewModel in
+                        viewModel.handleSaveFromEditor(with: editMode, viewModel: editorViewModel)
+                    },
+                    onDelete: { mode, editorViewModel in
+                        viewModel.handleDeleteFromEditor(with: mode, viewModel: editorViewModel)
                     }
-            }
-        }
-        // --- Keep onChange for session selection ---
-        .onChange(of: viewModel.selectedSessionEquatableID) { _, newID in
-            if newID != nil {
-                viewModel.isShowingNewSessionSheet = true
+                )
+                    .fluidSheetTransition()
+                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.selectedSessionInfo != nil)
             }
         }
         // --- Sheet for converting EKEvent ---
@@ -64,30 +49,19 @@ struct CalendarView: View {
                    set: { if !$0 { viewModel.eventToConvert = nil } }
                )) {
             if let event = viewModel.eventToConvert {
-                let newSessionViewModel = NewSessionViewModel(
-                    context: viewContext,
-                    from: event,
-                    clientsRepository: viewModel.clientsRepository,
-                    clientServicesRepository: viewModel.clientServicesRepository,
-                    addressRepository: viewModel.addressRepository
+                EventConversionSheetContainer(
+                    unitOfWork: viewModel.unitOfWork,
+                    event: event,
+                    onDismiss: { viewModel.eventToConvert = nil },
+                    onSave: { editMode, editorViewModel in
+                        viewModel.handleSaveFromEditor(with: editMode, viewModel: editorViewModel)
+                    },
+                    onDelete: { mode, editorViewModel in
+                        viewModel.handleDeleteFromEditor(with: mode, viewModel: editorViewModel)
+                    }
                 )
-                
-                NativeSessionSheetView(viewModel: newSessionViewModel, onDismiss: { viewModel.eventToConvert = nil })
-                    .environment(\.modelContext, viewContext)
                     .fluidSheetTransition()
                     .animation(.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.eventToConvert != nil)
-                    .onAppear {
-                        newSessionViewModel.onSave = { editMode in
-                            viewModel.handleSaveFromEditor(
-                                with: editMode,
-                                viewModel: newSessionViewModel
-                            )
-                        }
-
-                        newSessionViewModel.onDelete = { mode in
-                            viewModel.handleDeleteFromEditor(with: mode, viewModel: newSessionViewModel)
-                        }
-                    }
             } else {
                  Text("Error: Event data missing.") 
             }
@@ -110,14 +84,9 @@ struct CalendarView: View {
                 }
 
                 TravelChargeView(
+                    unitOfWork: viewModel.unitOfWork,
                     mainSession: session,
-                    instanceStartDate: viewModel.selectedInstanceStartDateForTravel,
-                    instanceEndDate: viewModel.selectedInstanceEndDateForTravel,
                     daySessions: daySessions,
-                    addressRepository: viewModel.addressRepository,
-                    sessionsRepository: viewModel.sessionsRepository,
-                    clientsRepository: viewModel.clientsRepository,
-                    clientServicesRepository: viewModel.clientServicesRepository,
                     onSave: {
                         viewModel.updateDisplayableItems()
                         viewModel.selectedSessionForTravel = nil
@@ -125,35 +94,201 @@ struct CalendarView: View {
                         viewModel.selectedInstanceEndDateForTravel = nil
                     }
                 )
-                .environment(\.modelContext, viewContext)
             } else {
                 Text("Error: Session data missing.")
             }
         }
-        // --- Dialog for Recurring Event Modifications ---
-        .confirmationDialog(
-            "You've modified a recurring event. How would you like to apply your changes?",
+        .sheet(
             isPresented: $viewModel.showingRecurringModificationDialog,
-            titleVisibility: .visible
+            onDismiss: { viewModel.pendingRecurringModification = nil }
         ) {
-            Button("This Event Only") {
-                viewModel.executeRecurringModification(with: .thisOnly)
+            RecurringScopePickerSheet(
+                title: "Apply Recurring Change",
+                options: viewModel.recurringModificationModes,
+                isDestructive: false,
+                label: { $0.title },
+                detail: { $0.detailText(isDelete: false) },
+                recommended: viewModel.recommendedRecurringModificationMode
+            ) { mode in
+                viewModel.executeRecurringModification(with: mode)
             }
-            .appInteractiveCursor()
-            Button("This and Future Events") {
-                viewModel.executeRecurringModification(with: .thisAndFuture)
-            }
-            .appInteractiveCursor()
-            Button("All Events in Series") {
-                viewModel.executeRecurringModification(with: .all)
-            }
-            .appInteractiveCursor()
-            Button("Cancel", role: .cancel) {
-                // Reset the pending modification if the user cancels
-                viewModel.pendingRecurringModification = nil
-            }
-            .appInteractiveCursor()
         }
+        .onChange(of: viewModel.selectedSessionInfo != nil) { _, isPresented in
+            guard isPresented else { return }
+            viewModel.eventToConvert = nil
+            viewModel.isShowingTravelChargeSheet = false
+            viewModel.pendingRecurringModification = nil
+            viewModel.showingRecurringModificationDialog = false
+        }
+        .onChange(of: viewModel.eventToConvert != nil) { _, isPresented in
+            guard isPresented else { return }
+            viewModel.selectedSessionInfo = nil
+            viewModel.isShowingTravelChargeSheet = false
+            viewModel.pendingRecurringModification = nil
+            viewModel.showingRecurringModificationDialog = false
+        }
+        .onChange(of: viewModel.isShowingTravelChargeSheet) { _, isPresented in
+            guard isPresented else { return }
+            viewModel.selectedSessionInfo = nil
+            viewModel.eventToConvert = nil
+            viewModel.pendingRecurringModification = nil
+            viewModel.showingRecurringModificationDialog = false
+        }
+        .onChange(of: viewModel.showingRecurringModificationDialog) { _, isPresented in
+            guard isPresented else { return }
+            viewModel.selectedSessionInfo = nil
+            viewModel.eventToConvert = nil
+            viewModel.isShowingTravelChargeSheet = false
+        }
+    }
+}
+
+private struct SessionEditorSheetContainer: View {
+    let onDismiss: () -> Void
+    let onSave: (RecurringEditMode, NewSessionViewModel) -> Void
+    let onDelete: (RecurringEditMode, NewSessionViewModel) -> Void
+
+    @StateObject private var editorViewModel: NewSessionViewModel
+
+    init(
+        unitOfWork: UnitOfWorkService,
+        sessionInfo: (session: Session?, instanceStart: Date?, instanceEnd: Date?),
+        onDismiss: @escaping () -> Void,
+        onSave: @escaping (RecurringEditMode, NewSessionViewModel) -> Void,
+        onDelete: @escaping (RecurringEditMode, NewSessionViewModel) -> Void
+    ) {
+        self.onDismiss = onDismiss
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _editorViewModel = StateObject(
+            wrappedValue: NewSessionViewModel(
+                unitOfWork: unitOfWork,
+                session: sessionInfo.session,
+                instanceDate: sessionInfo.instanceStart,
+                instanceEndDate: sessionInfo.instanceEnd
+            )
+        )
+    }
+
+    var body: some View {
+        NativeSessionSheetView(viewModel: editorViewModel, onDismiss: onDismiss)
+            .onAppear {
+                editorViewModel.onSave = { mode in
+                    onSave(mode, editorViewModel)
+                }
+                editorViewModel.onDelete = { mode in
+                    onDelete(mode, editorViewModel)
+                }
+            }
+    }
+}
+
+private struct EventConversionSheetContainer: View {
+    let onDismiss: () -> Void
+    let onSave: (RecurringEditMode, NewSessionViewModel) -> Void
+    let onDelete: (RecurringEditMode, NewSessionViewModel) -> Void
+
+    @StateObject private var editorViewModel: NewSessionViewModel
+
+    init(
+        unitOfWork: UnitOfWorkService,
+        event: EKEvent,
+        onDismiss: @escaping () -> Void,
+        onSave: @escaping (RecurringEditMode, NewSessionViewModel) -> Void,
+        onDelete: @escaping (RecurringEditMode, NewSessionViewModel) -> Void
+    ) {
+        self.onDismiss = onDismiss
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _editorViewModel = StateObject(
+            wrappedValue: NewSessionViewModel(unitOfWork: unitOfWork, from: event)
+        )
+    }
+
+    var body: some View {
+        NativeSessionSheetView(viewModel: editorViewModel, onDismiss: onDismiss)
+            .onAppear {
+                editorViewModel.onSave = { mode in
+                    onSave(mode, editorViewModel)
+                }
+                editorViewModel.onDelete = { mode in
+                    onDelete(mode, editorViewModel)
+                }
+            }
+    }
+}
+
+private struct RecurringScopePickerSheet: View {
+    let title: String
+    let options: [RecurringEditMode]
+    let isDestructive: Bool
+    let label: (RecurringEditMode) -> String
+    let detail: (RecurringEditMode) -> String
+    let recommended: RecurringEditMode?
+    let onSelect: (RecurringEditMode) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    
+    private var orderedOptions: [RecurringEditMode] {
+        guard let recommended, options.contains(recommended) else { return options }
+        return [recommended] + options.filter { $0 != recommended }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(isDestructive
+                         ? "Choose how broadly this delete should apply."
+                         : "Choose how broadly these changes should apply.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                }
+
+                if orderedOptions.isEmpty {
+                    Text("No available actions")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(orderedOptions, id: \.self) { mode in
+                        Button(role: isDestructive ? .destructive : nil) {
+                            dismiss()
+                            // Defer mutation until after sheet dismissal completes.
+                            Task { @MainActor in
+                                onSelect(mode)
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: mode.iconName)
+                                    .foregroundColor(isDestructive ? .red : .accentColor)
+                                    .padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(label(mode))
+                                        if recommended == mode {
+                                            Text("Recommended")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    Text(detail(mode))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 460, idealWidth: 520, minHeight: 320, idealHeight: 420)
     }
 }
 
@@ -174,7 +309,8 @@ struct NewSessionSheetView: View {
                     .buttonStyle(.glass)
                     .foregroundColor(.red)
                     .accentColor(.red)
-                    .appInteractiveCursor()
+                    .disabled(viewModel.isPerformingPersistence)
+
                 }
                 
                 Spacer()
@@ -183,48 +319,47 @@ struct NewSessionSheetView: View {
                     .buttonStyle(.glass)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                     .accentColor(.blue)
-                    .appInteractiveCursor()
+                    .disabled(viewModel.isPerformingPersistence)
+
                 
-                Button("Save") {
-                    viewModel.save()
+                Button(viewModel.saveButtonTitle) {
+                    viewModel.handleSaveButtonTapped()
                 }
-                .disabled(!viewModel.formIsValid)
+                .disabled(!viewModel.formIsValid || viewModel.isPerformingPersistence)
                 .buttonStyle(.glass)
                 .foregroundColor(Color("Text", bundle: .sharedUI))
                 .accentColor(.blue)
-                .appInteractiveCursor()
+
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(Color("Background", bundle: .sharedUI))
         }
-        .confirmationDialog(
-            "This is a recurring event. How would you like to apply your changes?",
-            isPresented: $viewModel.showingRecurringEditOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Save This Event Only") { viewModel.executeSave(with: .thisOnly) }
-            .appInteractiveCursor()
-            Button("Save This and Future Events") { viewModel.executeSave(with: .thisAndFuture) }
-            .appInteractiveCursor()
-            Button("Save All Events in Series") { viewModel.executeSave(with: .all) }
-            .appInteractiveCursor()
-            Button("Cancel", role: .cancel) { }
-            .appInteractiveCursor()
+        .sheet(isPresented: $viewModel.showingEditModeDialog) {
+            RecurringScopePickerSheet(
+                title: "Apply Changes",
+                options: viewModel.availableSaveModes,
+                isDestructive: false,
+                label: viewModel.saveScopeTitle(for:)
+                ,
+                detail: { $0.detailText(isDelete: false) },
+                recommended: viewModel.recommendedSaveMode
+            ) { mode in
+                viewModel.executeSave(with: mode)
+            }
         }
-        .confirmationDialog(
-            "This is a recurring event. How would you like to delete?",
-            isPresented: $viewModel.showingRecurringDeleteOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Delete This Event Only", role: .destructive) { Task { await viewModel.executeDelete(with: .thisOnly) } }
-            .appInteractiveCursor()
-            Button("Delete This and Future Events", role: .destructive) { Task { await viewModel.executeDelete(with: .thisAndFuture) } }
-            .appInteractiveCursor()
-            Button("Delete All Events in Series", role: .destructive) { Task { await viewModel.executeDelete(with: .all) } }
-            .appInteractiveCursor()
-            Button("Cancel", role: .cancel) { }
-            .appInteractiveCursor()
+        .sheet(isPresented: $viewModel.showingRecurringDeleteOptions) {
+            RecurringScopePickerSheet(
+                title: "Delete Recurring Session",
+                options: viewModel.availableDeleteModes,
+                isDestructive: true,
+                label: viewModel.deleteScopeTitle(for:)
+                ,
+                detail: { $0.detailText(isDelete: true) },
+                recommended: viewModel.recommendedDeleteMode
+            ) { mode in
+                viewModel.executeDelete(with: mode)
+            }
         }
     }
 }
@@ -237,54 +372,66 @@ struct NativeSessionSheetView: View {
         VStack(spacing: 0) {
             NativeSessionFormView(viewModel: viewModel)
             
-            // Footer with action buttons
+            footer
+        }
+        .onAppear { viewModel.onSaveCompleted = onDismiss }
+        .sheet(isPresented: $viewModel.showingEditModeDialog) {
+            RecurringScopePickerSheet(
+                title: "Apply Changes",
+                options: viewModel.availableSaveModes,
+                isDestructive: false,
+                label: viewModel.saveScopeTitle(for:)
+                ,
+                detail: { $0.detailText(isDelete: false) },
+                recommended: viewModel.recommendedSaveMode
+            ) { mode in
+                viewModel.executeSave(with: mode)
+            }
+        }
+        .sheet(isPresented: $viewModel.showingRecurringDeleteOptions) {
+            RecurringScopePickerSheet(
+                title: "Delete Recurring Session",
+                options: viewModel.availableDeleteModes,
+                isDestructive: true,
+                label: viewModel.deleteScopeTitle(for:)
+                ,
+                detail: { $0.detailText(isDelete: true) },
+                recommended: viewModel.recommendedDeleteMode
+            ) { mode in
+                viewModel.executeDelete(with: mode)
+            }
+        }
+    }
+    
+    private var footer: some View {
+        VStack(spacing: 0) {
             HStack {
                 if viewModel.isEditing {
-                    Button("Delete", role: .destructive) {
-                        viewModel.delete()
-                    }
-                    .buttonStyle(.glass)
-                    .foregroundColor(.red)
-                    .accentColor(.red)
-                    .appInteractiveCursor()
-                    .disabled(viewModel.isSaving)
+                    Button("Delete", role: .destructive) { viewModel.delete() }
+                        .buttonStyle(.glass)
+                        .foregroundColor(.red)
+                        .disabled(viewModel.isPerformingPersistence)
                 }
-                
                 Spacer()
-                
                 Button("Cancel") { onDismiss() }
                     .buttonStyle(.glass)
                     .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
-                    .appInteractiveCursor()
-                    .disabled(viewModel.isSaving)
-                
-                Button("Save") {
-                    // Use the same reliable save mechanism as CalendarViewModel
-                    // This ensures consistent behavior and proper error handling
-                    viewModel.handleSaveButtonTapped()
-                }
-                .disabled(!viewModel.formIsValid || viewModel.isSaving)
-                .buttonStyle(.glass)
-                .foregroundColor(Color("Text", bundle: .sharedUI))
-                .accentColor(.blue)
-                .appInteractiveCursor()
-                .overlay(
-                    Group {
-                        if viewModel.isSaving {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .disabled(viewModel.isPerformingPersistence)
+                Button(viewModel.saveButtonTitle) { viewModel.handleSaveButtonTapped() }
+                    .buttonStyle(.glass)
+                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .disabled(!viewModel.formIsValid || viewModel.isPerformingPersistence)
+                    .overlay {
+                        if viewModel.isPerformingPersistence {
+                            ProgressView().scaleEffect(0.8).foregroundColor(Color("Text", bundle: .sharedUI))
                         }
                     }
-                )
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(Color("Background", bundle: .sharedUI))
             
-            // Error display
-            if let error = viewModel.saveError {
+            if let error = viewModel.persistenceError {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.red)
@@ -293,7 +440,7 @@ struct NativeSessionSheetView: View {
                         .font(.caption)
                     Spacer()
                     Button("Dismiss") {
-                        viewModel.saveError = nil
+                        viewModel.persistenceError = nil
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
@@ -301,48 +448,18 @@ struct NativeSessionSheetView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 4)
                 .background(Color.red.opacity(0.1))
+            } else if viewModel.requiresSaveScopeSelection || viewModel.requiresDeleteScopeSelection {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                    Text("You will choose how changes apply to the recurring series on the next step.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 4)
             }
-        }
-        .onAppear {
-            // Set up the onSaveCompleted callback to dismiss the sheet when save completes
-            viewModel.onSaveCompleted = {
-                print("[NativeSessionSheetView] Save completed, dismissing sheet")
-                onDismiss()
-            }
-        }
-        .onDisappear {
-            // Cleanup when the sheet is dismissed
-            viewModel.cleanup()
-        }
-        .confirmationDialog(
-            "This is a recurring event. How would you like to apply your changes?",
-            isPresented: $viewModel.showingRecurringEditOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Save This Event Only") { viewModel.executeSave(with: .thisOnly) }
-            .appInteractiveCursor()
-            Button("Save This and Future Events") { viewModel.executeSave(with: .thisAndFuture) }
-            .appInteractiveCursor()
-            Button("Save All Events in Series") { viewModel.executeSave(with: .all) }
-            .appInteractiveCursor()
-            Button("Cancel", role: .cancel) { }
-            .appInteractiveCursor()
-        }
-        .confirmationDialog(
-            "This is a recurring event. How would you like to delete?",
-            isPresented: $viewModel.showingRecurringDeleteOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Delete This Event Only", role: .destructive) { Task { await viewModel.executeDelete(with: .thisOnly) } }
-            .appInteractiveCursor()
-            Button("Delete This and Future Events", role: .destructive) { Task { await viewModel.executeDelete(with: .thisAndFuture) } }
-            .appInteractiveCursor()
-            Button("Delete All Events in Series", role: .destructive) { Task { await viewModel.executeDelete(with: .all) } }
-            .appInteractiveCursor()
-            Button("Cancel", role: .cancel) { }
-            .appInteractiveCursor()
         }
     }
 }
-
-

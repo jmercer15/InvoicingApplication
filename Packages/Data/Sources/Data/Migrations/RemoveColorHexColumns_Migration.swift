@@ -147,7 +147,6 @@ public struct RemoveColorHexColumns_Migration {
             let _ = payee.id
             let _ = payee.fullName
             let _ = payee.email
-            let _ = payee.payeeID
             let _ = payee.phone
             let _ = payee.relationToClient
             let _ = payee.status
@@ -174,6 +173,7 @@ public struct RemoveColorHexColumns_Migration {
 }
 
 /// Migration test utilities for colorHex columns removal
+#if DEBUG
 public struct ColorHexColumnsMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -199,7 +199,6 @@ public struct ColorHexColumnsMigrationTestUtils {
         // Create test PayeeEntity data
         let testPayee = PayeeEntity(id: UUID(), fullName: "Test Payee")
         testPayee.email = "payee@example.com"
-        testPayee.payeeID = 12345
         testPayee.phone = "0412345679"
         testPayee.relationToClient = "parent"
         testPayee.status = "active"
@@ -241,6 +240,7 @@ public struct ColorHexColumnsMigrationTestUtils {
         print("✅ ColorHex columns removal migration test completed successfully")
     }
 }
+#endif
 
 /// Migration configuration for colorHex columns removal
 public struct ColorHexColumnsMigrationConfig {

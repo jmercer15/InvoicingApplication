@@ -1,22 +1,10 @@
-//
-//  PayeeDetailView.swift
-//  InvoicingApplication
-//
-//  Created by Jesse Mercer on 4/4/2025.
-//
-
 import SwiftUI
-import AppKit // Needed for NSColor, NSWorkspace, NSPasteboard etc.
-import MapKit // Added for address map view
-import Core
+import AppKit // For NSColor, NSPasteboard
+import MapKit // For address map view
 import SwiftData
+import Core
 import Data
 import SharedUI
-
-// MARK: - Helper Functions
-
-// Import helper function from Data package to avoid Codable conflicts
-// Helper functions defined in Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
 
 // MARK: - PayeeDetailView
 
@@ -35,7 +23,7 @@ struct PayeeDetailView: View {
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
     
     // Computed properties from ViewModel
-    private var associatedClients: [Client] {
+    private var linkedClients: [Client] {
         viewModel.associatedClients
     }
     
@@ -43,27 +31,22 @@ struct PayeeDetailView: View {
         viewModel.relatedInvoices
     }
     
-    private var payeeStatuses: [String] {
-        ["Active", "Inactive", "Pending", "Suspended"]
-    }
-    
-    
     // MARK: - Computed Properties
     
     private var sortedClients: [Client] {
         switch clientsSortOrder {
         case .nameAsc:
-            return associatedClients.sorted { $0.fullName < $1.fullName }
+            return linkedClients.sorted { $0.fullName < $1.fullName }
         case .nameDesc:
-            return associatedClients.sorted { $0.fullName > $1.fullName }
+            return linkedClients.sorted { $0.fullName > $1.fullName }
         case .ndisAsc:
-            return associatedClients.sorted { $0.ndisNumber < $1.ndisNumber }
+            return linkedClients.sorted { $0.ndisNumber < $1.ndisNumber }
         case .ndisDesc:
-            return associatedClients.sorted { $0.ndisNumber > $1.ndisNumber }
+            return linkedClients.sorted { $0.ndisNumber > $1.ndisNumber }
         case .statusAsc:
-            return associatedClients.sorted { $0.status < $1.status }
+            return linkedClients.sorted { $0.status < $1.status }
         case .statusDesc:
-            return associatedClients.sorted { $0.status > $1.status }
+            return linkedClients.sorted { $0.status > $1.status }
         }
     }
     
@@ -84,61 +67,36 @@ struct PayeeDetailView: View {
         case .amountDesc:
             return filteredInvoices.sorted { $0.totalAmount > $1.totalAmount }
         case .clientName:
-            return filteredInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") < (invoice2.status ?? "")
+            }
         case .numberAsc:
             return filteredInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .numberDesc:
             return filteredInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
         case .statusAsc:
-            return filteredInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") < (invoice2.status ?? "")
+            }
         case .statusDesc:
-            return filteredInvoices.sorted { ($0.status ?? "") > ($1.status ?? "") }
+            return filteredInvoices.sorted { (invoice1: Invoice, invoice2: Invoice) in
+                (invoice1.status ?? "") > (invoice2.status ?? "")
+            }
         }
     }
 
-    // Initializer for existing payees (entity-based - for compatibility)
-    init(payee: PayeeEntity, context: ModelContext, onSave: (() -> Void)? = nil) {
-        // Convert entity to domain model
-        // Note: Using extension from Data.Mapping module
-        let payeeDomain = payeeFromEntity(payee)
-        // Create temporary repositories for initialization
-        // In production, these should come from AppAssembly
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        
-        self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
-            payee: payeeDomain,
-            payeesRepository: payeesRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
-            isCreating: false
-        ))
-        viewModel.dismiss = onSave ?? {}
-    }
-    
-    // Convenience initializer for domain model (preferred)
-    init(payee: Payee, context: ModelContext, onSave: (() -> Void)? = nil) {
-        // Create temporary repositories for initialization
-        // In production, these should come from AppAssembly
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        
+    // Initializer for existing payees
+    init(payee: Payee, unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
         self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
             payee: payee,
-            payeesRepository: payeesRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
+            unitOfWork: unitOfWork,
             isCreating: false
         ))
-        viewModel.dismiss = onSave ?? {}
+        _viewModel.wrappedValue.dismiss = onSave ?? {}
     }
-    
+
     // Initializer for creating a new payee
-    init(context: ModelContext, onSave: (() -> Void)? = nil) {
+    init(unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
         // Create new payee domain model
         let newPayee = Payee(
             id: UUID(),
@@ -146,22 +104,16 @@ struct PayeeDetailView: View {
             email: nil,
             phone: nil,
             address: nil,
-            status: "Active"
+            status: "Active",
+            relationToClient: nil
         )
-        // Create temporary repositories for initialization
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
         
         self._viewModel = StateObject(wrappedValue: PayeeDetailViewModel(
             payee: newPayee,
-            payeesRepository: payeesRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
+            unitOfWork: unitOfWork,
             isCreating: true
         ))
-        viewModel.dismiss = onSave ?? { }
+        _viewModel.wrappedValue.dismiss = onSave ?? {}
     }
 
     var body: some View {
@@ -170,45 +122,18 @@ struct PayeeDetailView: View {
             payeeHeaderBar
             
             // Main Content
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                // Main content with ViewThatFits for adaptive layout
-                ViewThatFits {
-                    // Primary layout: 2x2 grid (2 columns, 2 rows)
-                    VStack(spacing: 20) {
-                        // Row 1: 2 columns
-                        HStack(spacing: 20) {
-                            payeeInfoCard
-                                .frame(maxWidth: .infinity)
-                                clientsCard
-                                .frame(maxWidth: .infinity)
-                        }
-                        
-                        // Row 2: 2 columns
-                        HStack(spacing: 20) {
-                            invoicesCard
-                                .frame(maxWidth: .infinity)
-                                Spacer()
-                                    .frame(maxWidth: .infinity)
-                        }
-                    }
-                    
-                        // Fallback layout: 1x3 grid (1 column, 3 rows)
-                    VStack(spacing: 20) {
-                        payeeInfoCard
-                        clientsCard
-                        invoicesCard
-                    }
-                }
-            }
-            .padding(24)
+            DetailCardsLayout(minCardWidth: DetailSectionTokens.detailCardMinimumWidth) {
+                payeeInfoCard
+                linkedClientsSection
+                invoicesSection
             }
         }
-        .background { AppMeshBackdrop() }
+        .background(.clear)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundColor(Color(NSColor.labelColor))
         .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
-            .appInteractiveCursor()
+            .pointerStyle(.link)
         } message: {
             Text(viewModel.alertMessage)
         }
@@ -220,23 +145,9 @@ struct PayeeDetailView: View {
         .sheet(isPresented: $showingAddressEditingSheet) {
             PayeeAddressEditingSheetView(viewModel: viewModel, isPresented: $showingAddressEditingSheet)
         }
-        .sheet(isPresented: $viewModel.showingClientSelector) {
-            ClientMultiSelector(
-                allClients: viewModel.allClients,
-                selectedClientIDs: $viewModel.selectedClientIDs
-            )
-            .onDisappear {
-                // Save client associations when selector closes
-                Task {
-                    await viewModel.updateClientAssociations()
-                }
-            }
-        }
-
-        
     }
     
-    // MARK: - Label Width Calculation
+    // MARK: - Helper Functions
     
     private var maxLabelWidth: CGFloat {
         let labels = [
@@ -254,13 +165,13 @@ struct PayeeDetailView: View {
         
         return maxWidth + 20 // Add some padding
     }
-    
+
     // MARK: - Header Bar
     
     private var payeeHeaderBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "person.circle.fill")
+                Image(systemName: "person.text.rectangle.fill")
                     .font(.system(size: 28, weight: .medium))
                     .foregroundColor(Color("Text", bundle: .sharedUI).opacity(0.9))
                 
@@ -268,7 +179,7 @@ struct PayeeDetailView: View {
                     Text(viewModel.payee.fullName.isEmpty ? "New Payee" : viewModel.payee.fullName)
                         .font(.largeTitle.weight(.regular))
                         .kerning(5.0)
-                        .foregroundColor(Color(NSColor.labelColor))
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
                         .lineLimit(1)
                     
                     Rectangle()
@@ -286,30 +197,18 @@ struct PayeeDetailView: View {
         .padding(.bottom, 16)
     }
     
-    // MARK: - Card Views
-    
+    // MARK: - Subviews
+
     private var payeeInfoCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "person.2")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Payee Information")
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 16) {
-                    // Name
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Name:")
+                // Name
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Name:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        
-                        VStack(alignment: .leading, spacing: 4) {
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             TextField("Enter payee name", text: $viewModel.editableFullName)
                                 .textFieldStyle(.roundedBorder)
@@ -320,81 +219,87 @@ struct PayeeDetailView: View {
                             Button(action: { viewModel.copyToClipboard(viewModel.editableFullName) }) {
                                 Image(systemName: "doc.on.doc")
                                     .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                    .contentShape(.rect)
                             }
                             .buttonStyle(.plain)
+                            .pointerStyle(.link)
                         }
-                            
-                            if let error = viewModel.fullNameError {
-                                Text(error)
-                                    .foregroundColor(Color(NSColor.systemRed))
-                                    .font(.caption)
-                            }
+                        
+                        if let error = viewModel.fullNameError {
+                            Text(error)
+                                .foregroundColor(Color(NSColor.systemRed))
+                                .font(.caption)
                         }
                     }
-                    
-                    // Email
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Email:")
+                }
+                
+                // Email
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Email:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                TextField("Enter email address", text: $viewModel.emailValidator.email)
-                                    .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
-                                    .accentColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
-                                    .onChange(of: viewModel.emailValidator.email) { _, _ in 
-                                        if viewModel.emailValidator.isValid { 
-                                            viewModel.updateAndSavePayee() 
-                                        } 
-                                    }
-                                
-                                Button(action: { viewModel.copyToClipboard(viewModel.emailValidator.email) }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            TextField("Enter email address", text: $viewModel.emailValidator.email)
+                                .textFieldStyle(.roundedBorder)
+                                .foregroundColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                .accentColor(viewModel.emailValidator.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                .onChange(of: viewModel.emailValidator.email) { _, _ in 
+                                    if viewModel.emailValidator.isValid { 
+                                        viewModel.updateAndSavePayee() 
+                                    } 
                                 }
-                                .buttonStyle(.plain)
-                            }
                             
-                            if let error = viewModel.emailValidator.validationMessage {
-                                Text(error)
-                                    .foregroundColor(Color(NSColor.systemRed))
-                                    .font(.caption)
+                            Button(action: { viewModel.copyToClipboard(viewModel.emailValidator.email) }) {
+                                Image(systemName: "doc.on.doc")
+                                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                    .contentShape(.rect)
                             }
+                            .buttonStyle(.plain)
+                            .pointerStyle(.link)
+                        }
+                        
+                        if let error = viewModel.emailValidator.validationMessage {
+                            Text(error)
+                                .foregroundColor(Color(NSColor.systemRed))
+                                .font(.caption)
                         }
                     }
-                    
-                    // Phone
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Phone:")
+                }
+                
+                // Phone
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Phone:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
-                                    .textFieldStyle(.roundedBorder)
-                                    .foregroundColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
-                                    .accentColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
-                                    .onChange(of: viewModel.phoneFormatter.phoneNumber) { _, _ in 
-                                        if viewModel.phoneFormatter.isValid { 
-                                            viewModel.updateAndSavePayee() 
-                                        } 
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
+                                .textFieldStyle(.roundedBorder)
+                                .foregroundColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.labelColor))
+                                .accentColor(viewModel.phoneFormatter.validationMessage != nil ? Color(NSColor.systemRed) : Color(NSColor.systemBlue))
+                                .onChange(of: viewModel.phoneFormatter.phoneNumber) { _, _ in 
+                                    if viewModel.phoneFormatter.isValid { 
+                                        viewModel.updateAndSavePayee() 
                                     }
-                                
-                                Button(action: { viewModel.copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .foregroundColor(Color(NSColor.secondaryLabelColor))
                                 }
-                                .buttonStyle(.plain)
-                            }
                             
-                            if let error = viewModel.phoneFormatter.validationMessage {
-                                Text(error)
-                                    .foregroundColor(Color(NSColor.systemRed))
-                                    .font(.caption)
+                            Button(action: { viewModel.copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
+                                Image(systemName: "doc.on.doc")
+                                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                    .contentShape(.rect)
                             }
+                            .buttonStyle(.plain)
+                            .pointerStyle(.link)
+                        }
+                        
+                        if let error = viewModel.phoneFormatter.validationMessage {
+                            Text(error)
+                                .foregroundColor(Color(NSColor.systemRed))
+                                .font(.caption)
+                        }
                     }
                 }
                 
@@ -405,18 +310,16 @@ struct PayeeDetailView: View {
                 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+            .padding(DetailSectionTokens.contentPadding)
+        } label: {
+            DetailSectionHeader(icon: "person.text.rectangle", title: "Payee Information")
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading payee information...")
     }
-    
+
     // MARK: - Address Helper Methods
     
     private var hasAddressData: Bool {
-        // Check existing address from domain model
         return viewModel.payee.address != nil
     }
     
@@ -429,200 +332,119 @@ struct PayeeDetailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if hasAddressData, let address = viewModel.payee.address {
                     Text(viewModel.formattedAddressString(from: address))
-                                    .font(.system(size: 14))
+                        .font(.system(size: 14))
                         .foregroundColor(Color(NSColor.labelColor))
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 } else {
                     Text("No address added")
                         .font(.system(size: 14))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 }
                 
                 if hasAddressData {
                     HStack(spacing: 4) {
-                                Button(action: {
-                                    showingMapSheet = true
-                                }) {
-                                        Image(systemName: "map")
-                                            .foregroundColor(.blue)
+                        Button(action: {
+                            showingMapSheet = true
+                        }) {
+                            Image(systemName: "map")
+                                .foregroundColor(Color("Primary", bundle: .sharedUI))
                                 .font(.caption)
-                                    }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
+                        }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
+                        .pointerStyle(.link)
                         
                         Button(action: {
                             showingAddressEditingSheet = true
                         }) {
                             Image(systemName: "pencil")
-                                .foregroundColor(.orange)
+                                .foregroundColor(Color("Inactive", bundle: .sharedUI))
                                 .font(.caption)
-                                }
-                                .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
-                            }
-                        } else {
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .pointerStyle(.link)
+                    }
+                } else {
                     Button(action: {
                         showingAddressEditingSheet = true
                     }) {
                         Image(systemName: "plus")
-                            .foregroundColor(.green)
+                            .foregroundColor(Color("Active", bundle: .sharedUI))
                             .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 4))
+                    .pointerStyle(.link)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-    
-    private var clientsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.3")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Associated Clients")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $clientsSortOrder) {
-                    ForEach(ClientsSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+
+    private var linkedClientsSection: some View {
+        GroupBox {
             VStack(spacing: 12) {
-                if !associatedClients.isEmpty {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedClients, id: \.id) { client in
-                                CompactClientRowView(client: client)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
+                DetailListBody(
+                    isEmpty: linkedClients.isEmpty,
+                    emptyMessage: "No clients are linked to this payee"
+                ) {
+                    ForEach(sortedClients, id: \.id) { client in
+                        CompactClientRowView(client: client)
                     }
-                    .frame(maxHeight: 200)
-                } else {
-                    Text("No clients associated.")
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 8)
                 }
                 
-                HStack {
-                    Spacer()
-                    Button(action: { 
-                        viewModel.showingClientSelector = true
-                    }) {
-                        Label("Associate Clients", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
-                }
-                
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "person.3", title: "Linked Clients") {
+                DetailSectionSortPicker(selection: $clientsSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading linked clients...")
     }
     
-    private var invoicesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.text")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Invoices")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $invoicesSortOrder) {
-                    ForEach(InvoicesSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+    private var invoicesSection: some View {
+        GroupBox {
             VStack(spacing: 12) {
-                if filteredInvoices.isEmpty {
-                    Text("No invoices found")
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedInvoices, id: \.id) { invoice in
-                                CompactInvoiceRowView(invoice: invoice)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
+                DetailListBody(
+                    isEmpty: filteredInvoices.isEmpty,
+                    emptyMessage: "No invoices found"
+                ) {
+                    ForEach(sortedInvoices, id: \.id) { invoice in
+                        CompactInvoiceRowView(invoice: invoice)
                     }
-                    .frame(maxHeight: 200)
                 }
                 
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "doc.text", title: "Invoices") {
+                DetailSectionSortPicker(selection: $invoicesSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading invoices...")
     }
 }
 
-
-
-// MARK: - Payee Address Editing Sheet (ViewModel-based)
+// MARK: - PayeeAddressEditingSheetView
 
 struct PayeeAddressEditingSheetView: View {
     @ObservedObject var viewModel: PayeeDetailViewModel
     @Binding var isPresented: Bool
     
     @State private var isManualMode = false
-    
-    // Address search state
     @State private var addressSearchText: String = ""
     @State private var selectedAddress: AddressData?
     
@@ -646,7 +468,6 @@ struct PayeeAddressEditingSheetView: View {
             // Content
             ScrollView {
                 VStack(spacing: 16) {
-                    // Address Search (only shown when not in manual mode)
                     if !isManualMode {
                         VStack(spacing: 12) {
                             NativeAddressSearchField(
@@ -663,41 +484,37 @@ struct PayeeAddressEditingSheetView: View {
                             )
                             .onChange(of: selectedAddress) { _, newValue in
                                 if newValue != nil {
-                                    // Auto-commit the selected address and close the sheet
                                     viewModel.commitAddressChanges(autosave: true)
                                     isPresented = false
                                 }
                             }
                             
-                            // Toggle to manual mode
                             HStack {
-                            Spacer()
+                                Spacer()
                                 Button("Enter Manually") {
                                     isManualMode = true
-                        }
+                                }
                                 .buttonStyle(.glass)
                                 .controlSize(.small)
-                    }
+                            }
                         }
-                }
-                
-                    // Manual Entry Fields (only shown in manual mode)
+                    }
+                    
                     if isManualMode {
                         VStack(spacing: 12) {
-                            // Header with mode toggle
-                HStack {
+                            HStack {
                                 Text("Manual Address Entry")
-                                    .font(.title3.weight(.bold)).foregroundColor(Color("Text", bundle: .sharedUI)).padding(.bottom, 4)
+                                    .font(.title3.weight(.bold))
                                     .foregroundColor(Color("Text", bundle: .sharedUI))
                                 
-                    Spacer()
+                                Spacer()
                                 
                                 Button("Search Instead") {
                                     isManualMode = false
-                    }
+                                }
                                 .buttonStyle(.glass)
-                    .controlSize(.small)
-                }
+                                .controlSize(.small)
+                            }
                             .padding(.bottom, 4)
                             
                             manualAddressFields
@@ -729,10 +546,9 @@ struct PayeeAddressEditingSheetView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: .rect())
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
-            // Load existing address data from ViewModel
             viewModel.loadAddressDetails()
             if let address = viewModel.payee.address {
                 addressSearchText = viewModel.formattedAddressString(from: address)
@@ -741,24 +557,22 @@ struct PayeeAddressEditingSheetView: View {
     }
     
     private var hasAddressData: Bool {
-        // Check ViewModel's editable address fields
         let hasStateData = !viewModel.editableUnitNumber.isEmpty || !viewModel.editableStreetNumber.isEmpty || 
         !viewModel.editableStreetName.isEmpty || !viewModel.editableSuburb.isEmpty || 
         !viewModel.editableState.isEmpty || !viewModel.editablePostcode.isEmpty || 
         !viewModel.editableCountry.isEmpty || !viewModel.editablePoBox.isEmpty
         
-        // Check existing address from domain model
         let hasExistingAddress = viewModel.payee.address != nil
         
         return hasStateData || hasExistingAddress
     }
     
     private var manualAddressFields: some View {
-            VStack(spacing: 8) {
+        VStack(spacing: 8) {
             // Header with clear button
             HStack {
                 Text("Address Details")
-                    .font(.title3.weight(.bold)).foregroundColor(Color("Text", bundle: .sharedUI)).padding(.bottom, 4)
+                    .font(.title3.weight(.bold))
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 
                 Spacer()
@@ -785,7 +599,7 @@ struct PayeeAddressEditingSheetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Unit:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(Color(NSColor.labelColor))
                 
                 TextField("Unit number (optional)", text: $viewModel.editableUnitNumber)
                     .textFieldStyle(.roundedBorder)
@@ -871,5 +685,4 @@ struct PayeeAddressEditingSheetView: View {
             }
         }
     }
-    
 }

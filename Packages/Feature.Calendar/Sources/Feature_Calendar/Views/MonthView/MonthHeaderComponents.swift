@@ -25,13 +25,8 @@ struct MonthHeaderView: View {
             }
         }
         .background {
-            let shape = UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .glassEffect(
-                    .regular.tint(Color.white.opacity(0.15)),
-                    in: .rect(cornerRadius: 20)
-                )
-                .clipShape(shape)
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+                .fill(Color("Background", bundle: .sharedUI).opacity(0.3))
         }
         // Add bottom border only to the day headers section
         .overlay(Rectangle().frame(width: nil, height: 1).foregroundColor(Color.secondary.opacity(0.2)), alignment: .bottom)

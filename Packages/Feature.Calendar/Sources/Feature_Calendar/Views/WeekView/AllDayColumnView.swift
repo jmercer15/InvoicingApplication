@@ -1,7 +1,7 @@
 import SwiftUI
-import Core
 import EventKit // Needed for EKEvent properties
 import SharedUI
+import Core
 import Data
 
 // ─────────────────────────────────────────────────────────────
@@ -27,7 +27,6 @@ struct AllDayStripView: View {
                 Spacer()
             }
             .frame(width: timeColumnWidth, height: layout.stripHeight)
-            .glassEffect(.regular, in: .rect())
 
             // Columns for each day's all-day items
             ForEach(viewModel.currentWeekDays, id: \.self) { day in
@@ -36,7 +35,6 @@ struct AllDayStripView: View {
             }
         }
         .frame(height: layout.stripHeight)
-        .glassEffect(.regular, in: .rect())
     }
 }
 
@@ -70,7 +68,7 @@ struct AllDayItemsColumnView: View {
                     ForEach(layout.visibleItems(from: items)) { item in
                         AllDayCalendarItemView(item: item, viewModel: viewModel)
                             .onTapGesture { handleTap(item: item) }
-                            .appInteractiveCursor()
+
                     }
 
                     // Show "+N more" indicator if needed
@@ -101,22 +99,14 @@ struct AllDayItemsColumnView: View {
     private func handleTap(item: DisplayableCalendarItem) {
         switch item {
         case .session(let session):
-            // Reset selection first to ensure onChange triggers even for same session
-            viewModel.selectedSessionInfo = nil
-            DispatchQueue.main.async {
-                viewModel.selectedSessionInfo = (session: session, instanceStart: nil, instanceEnd: nil)
-            }
+            viewModel.selectedSessionInfo = (session: session, instanceStart: nil, instanceEnd: nil)
         case .event(let event):
             // Event handling
             print("Tapped all-day event: \(event.title ?? "")")
             // Potentially allow converting this specific event instance to a session
             viewModel.convertEventToSession(event)
         case .recurringSessionInstance(let template, let startDate, let endDate, _):
-            // Reset selection first to ensure onChange triggers even for same session
-            viewModel.selectedSessionInfo = nil
-            DispatchQueue.main.async {
-                viewModel.selectedSessionInfo = (session: template, instanceStart: startDate, instanceEnd: endDate)
-            }
+            viewModel.selectedSessionInfo = (session: template, instanceStart: startDate, instanceEnd: endDate)
         case .eventSegment(let originalEvent, _, _, _):
             print("Tapped all-day event segment: \(originalEvent.title ?? "")")
             viewModel.convertEventToSession(originalEvent)
@@ -146,9 +136,10 @@ struct AllDayDropDelegate: DropDelegate {
         // When dropping on All Day, the time is the start of the day.
         let newStartDate = Calendar.current.startOfDay(for: day)
 
-        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo {
+        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo,
+           let sessionID = UUID(uuidString: draggedItem.sessionID) {
              viewModel.rescheduleSession(
-                with: draggedItem.sessionID,
+                with: sessionID,
                 originalInstanceDate: draggedItem.originalInstanceDate,
                 to: newStartDate,
                 isAllDay: true
@@ -171,7 +162,6 @@ struct AllDayCalendarItemView: View {
     let item: DisplayableCalendarItem
     @ObservedObject var viewModel: CalendarViewModel
 
-    @State private var isHovering: Bool = false
     @EnvironmentObject var eventKitService: EventKitSyncService
     
     // Define SessionStatus enum locally for context menu actions
@@ -195,89 +185,24 @@ struct AllDayCalendarItemView: View {
             
             Spacer()
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color("White15", bundle: .sharedUI),
-                            Color("White10", bundle: .sharedUI),
-                            Color("White15", bundle: .sharedUI).opacity(0.8)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.ultraThinMaterial)
-                )
+                .fill(statusColor.opacity(0.42))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color("White30", bundle: .sharedUI).opacity(1.33),
-                                    Color("White15", bundle: .sharedUI),
-                                    Color("White20", bundle: .sharedUI)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .overlay(
-                    // Diagonal Linear Gradient
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    statusColor.opacity(0.7),
-                                    statusColor.opacity(0.6),
-                                    statusColor.opacity(0.5),
-                                    statusColor.opacity(0.4),
-                                    statusColor.opacity(0.35),
-                                    statusColor.opacity(0.3)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .overlay(
-                    // Dynamic Edge Highlight Effect
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    statusColor.opacity(0.8),
-                                    statusColor.opacity(0.6),
-                                    statusColor.opacity(0.4),
-                                    statusColor.opacity(0.2),
-                                    statusColor.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.5
-                        )
+                        .stroke(statusColor.opacity(0.78), lineWidth: 0.6)
                 )
         )
         .shadow(
-            color: Color("Black30", bundle: .sharedUI).opacity(isHovering ? 0.83 : 0.33),
-            radius: isHovering ? 4 : 2,
-             x: 0, y: isHovering ? 2 : 1
+            color: Color("Black30", bundle: .sharedUI).opacity(0.33),
+            radius: 2,
+             x: 0, y: 1
         )
-        .zIndex(isHovering ? 10 : 1)
-         .onHover { hovering in
-            withAnimation(.easeInOut) {
-             isHovering = hovering
-            }
-        }
-        .appInteractiveCursor()
+        .zIndex(1)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .pointerStyle(.link)
         .contextMenu {
             makeContextMenu()
         }
@@ -298,21 +223,10 @@ struct AllDayCalendarItemView: View {
     }
 
     private func markSessionAs(_ status: SessionStatus, session: Session) {
-        let newStatus: String
-        switch status {
-        case .scheduled: newStatus = String.sessionStatusPlanned
-        case .completed: newStatus = String.sessionStatusCompleted
-        case .cancelled: newStatus = String.sessionStatusCancelled
-        case .noShow: newStatus = "No Show"
-        case .rescheduled: newStatus = "Rescheduled"
-        case .grouped: newStatus = "Grouped"
-        case .needsServices: newStatus = "Needs Services"
-        case .needsTravel: newStatus = "Needs Travel"
-        case .reviewDraft: newStatus = "Review Draft"
-        case .readyToSend: newStatus = "Ready To Send"
-        case .pending: newStatus = "Pending"
-        case .received: newStatus = "Received"
+        guard isCalendarLifecycleStatus(SessionStatus(normalized: session.status ?? "")?.token) else {
+            return
         }
+        let newStatus = status.token
         
         // Update session status via repository
         Task {
@@ -327,6 +241,15 @@ struct AllDayCalendarItemView: View {
         }
     }
 
+    private func isCalendarLifecycleStatus(_ token: String?) -> Bool {
+        switch token {
+        case "scheduled", "completed", "cancelled", "no_show", "rescheduled":
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Context Menu Builder
     @ViewBuilder
     private func makeContextMenu() -> some View {
@@ -335,7 +258,7 @@ struct AllDayCalendarItemView: View {
             Button(action: { handleTap() }) {
                 Label("View Details", systemImage: "info.circle")
             }
-            .appInteractiveCursor()
+
             Divider()
             
             // Navigation menu placeholder
@@ -343,27 +266,31 @@ struct AllDayCalendarItemView: View {
                 // Navigation logic
             }
 
-            let isCompleted = session.status == SessionStatus.completed.rawValue
-            let isCancelled = session.status == SessionStatus.cancelled.rawValue
+            let statusToken = SessionStatus(normalized: session.status ?? "")?.token
+            let isCompleted = statusToken == SessionStatus.completed.token
+            let isCancelled = statusToken == SessionStatus.cancelled.token
+            let canEditCalendarStatus = isCalendarLifecycleStatus(statusToken)
 
-            if !isCompleted && !isCancelled {
-                Divider()
-                Button(action: { markSessionAs(.completed, session: session) }) {
-                    Label("Mark as Completed", systemImage: "checkmark.circle")
-                }
-                .appInteractiveCursor()
-                Button(action: { markSessionAs(.cancelled, session: session) }) {
-                    Label("Mark as Cancelled", systemImage: "xmark.circle")
-                }
-                .appInteractiveCursor()
-            }
+            if canEditCalendarStatus {
+                if !isCompleted && !isCancelled {
+                    Divider()
+                    Button(action: { markSessionAs(.completed, session: session) }) {
+                        Label("Mark as Completed", systemImage: "checkmark.circle")
+                    }
 
-            if isCompleted || isCancelled {
-                Divider()
-                Button(action: { markSessionAs(.scheduled, session: session) }) {
-                    Label("Mark as Planned", systemImage: "calendar")
+                    Button(action: { markSessionAs(.cancelled, session: session) }) {
+                        Label("Mark as Cancelled", systemImage: "xmark.circle")
+                    }
+
                 }
-                .appInteractiveCursor()
+                
+                if isCompleted || isCancelled {
+                    Divider()
+                    Button(action: { markSessionAs(.scheduled, session: session) }) {
+                        Label("Mark as Planned", systemImage: "calendar")
+                    }
+
+                }
             }
 
             Divider()
@@ -371,7 +298,7 @@ struct AllDayCalendarItemView: View {
             Button(action: { viewModel.duplicateSession(session) }) {
                 Label("Duplicate Session", systemImage: "plus.square.on.square")
             }
-            .appInteractiveCursor()
+
 
             if !session.isTravel {
                 Button(action: {
@@ -382,7 +309,7 @@ struct AllDayCalendarItemView: View {
                 }) {
                     Label("Add Travel Charges", systemImage: "car")
                 }
-                .appInteractiveCursor()
+
             }
             
             // Delete via repository
@@ -400,7 +327,7 @@ struct AllDayCalendarItemView: View {
             }) {
                 Label("Delete Session...", systemImage: "trash")
             }
-            .appInteractiveCursor()
+
 
         case .event(let event), .eventSegment(let event, _, _, _):
             Button(action: {
@@ -408,7 +335,7 @@ struct AllDayCalendarItemView: View {
             }) {
                 Label("Convert to Session", systemImage: "arrow.right.circle.fill")
             }
-            .appInteractiveCursor()
+
          }
     }
 } 

@@ -5,11 +5,9 @@ import Core
 import SharedUI
 
 struct NDISChangesSummaryView: View {
-    @Environment(\.modelContext) private var modelContext // Change to modelContext
-    @State private var changesSummary: NDISChangesSummary?
+    @ObservedObject var viewModel: NDISContainerViewModel
     @State private var isLoading = true
     @State private var selectedItemForHistory: String?
-    @State private var itemChanges: [NDISItemChange] = []
     @State private var searchText = ""
     
     var body: some View {
@@ -36,7 +34,7 @@ struct NDISChangesSummaryView: View {
                 get: { selectedItemForHistory.map(NDISIdentifiableString.init) },
                 set: { selectedItemForHistory = $0?.value }
             )) { item in
-                ItemHistoryDetailView(itemNumber: item.value, itemChanges: itemChanges)
+                ItemHistoryDetailView(itemNumber: item.value, itemChanges: viewModel.itemChanges)
             }
         }
     }
@@ -45,7 +43,7 @@ struct NDISChangesSummaryView: View {
         VStack(alignment: .leading, spacing: 16) {
             NDISChangesSectionHeader(icon: "chart.bar.fill", title: "NDIS Catalogue Overview")
             
-            if let summary = changesSummary {
+            if let summary = viewModel.changesSummary {
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
@@ -131,37 +129,29 @@ struct NDISChangesSummaryView: View {
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
+            
+            if viewModel.isAnalyzingChanges {
+                ProgressView("Analyzing...")
+                    .padding(.top, 8)
+            }
         }
         .formSectionBackground()
     }
     
     private func loadChangesSummary() {
         Task {
-            do {
-                let summary = try NDISVersioningService.getChangesSummary(in: modelContext)
-                await MainActor.run {
-                    self.changesSummary = summary
-                    self.isLoading = false
-                }
-            } catch {
-                print("Error loading changes summary: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
-                }
+            await viewModel.fetchChangesSummary()
+            await MainActor.run {
+                self.isLoading = false
             }
         }
     }
     
     private func loadItemHistory(for itemNumber: String) {
         Task {
-            do {
-                let changes = try NDISVersioningService.analyzeItemChanges(itemNumber: itemNumber, in: modelContext)
-                await MainActor.run {
-                    self.itemChanges = changes
-                    self.selectedItemForHistory = itemNumber
-                }
-            } catch {
-                print("Error loading item history: \(error)")
+            await viewModel.loadItemHistory(for: itemNumber)
+            await MainActor.run {
+                self.selectedItemForHistory = itemNumber
             }
         }
     }
@@ -434,8 +424,7 @@ extension View {
     }
 }
 
-#Preview {
-    let container = try! ModelContainer(for: NDISItemEntity.self)
-    NDISChangesSummaryView()
-        .environment(\.modelContext, container.mainContext)
-} 
+// #Preview {
+//     let assembly = AppAssembly(modelContainer: try! ModelContainer(for: NDISItemEntity.self))
+//     NDISChangesSummaryView(viewModel: NDISContainerViewModel(unitOfWork: assembly.unitOfWork))
+// } 

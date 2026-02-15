@@ -14,8 +14,8 @@ struct CalendarTimelineMetrics {
 
     init(hourHeight: CGFloat,
          columnWidth: CGFloat,
-         leftPadding: CGFloat = StyleGuide.Dimensions.paddingSmall,
-         contentWidthSubtract: CGFloat = StyleGuide.Dimensions.paddingLarge) {
+         leftPadding: CGFloat = 0,
+         contentWidthSubtract: CGFloat = 2) {
         self.hourHeight = hourHeight
         self.columnWidth = columnWidth
         self.leftPadding = leftPadding
@@ -48,7 +48,7 @@ struct CalendarTimelineMetrics {
     }
 
     // Width used for an item inside the column based on current padding rules
-    var contentWidth: CGFloat { columnWidth - contentWidthSubtract }
+    var contentWidth: CGFloat { max(0, columnWidth - contentWidthSubtract) }
 
     // Horizontal center used by positioned blocks
     var centerX: CGFloat { leftPadding + (contentWidth / 2) }
@@ -60,5 +60,3 @@ struct CalendarTimelineMetrics {
         return (topOffset + height / 2, height)
     }
 }
-
-

@@ -17,13 +17,11 @@ public class ClientsViewModel: ObservableObject {
     @Published public private(set) var lastUpdated: Date = Date()
     
     // MARK: - Dependencies
-    private let clientsRepository: ClientsRepository
+    private let unitOfWork: UnitOfWorkService
     
     // MARK: - Initialization
-    public init(
-        clientsRepository: ClientsRepository
-    ) {
-        self.clientsRepository = clientsRepository
+    public init(unitOfWork: UnitOfWorkService) {
+        self.unitOfWork = unitOfWork
         
         Task {
             await loadClients()
@@ -72,7 +70,7 @@ public class ClientsViewModel: ObservableObject {
         error = nil
         
         do {
-            clients = try await clientsRepository.fetchAll()
+            clients = try await unitOfWork.clients.fetchAll()
             lastUpdated = Date()
         } catch {
             self.error = error
@@ -83,7 +81,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func createClient(_ client: Client) async {
         do {
-            let createdClient = try await clientsRepository.create(client)
+            let createdClient = try await unitOfWork.clients.create(client)
             clients.append(createdClient)
             lastUpdated = Date()
         } catch {
@@ -93,7 +91,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func updateClient(_ client: Client) async {
         do {
-            let updatedClient = try await clientsRepository.update(client)
+            let updatedClient = try await unitOfWork.clients.update(client)
             if let index = clients.firstIndex(where: { $0.id == client.id }) {
                 clients[index] = updatedClient
             }
@@ -105,7 +103,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func deleteClient(_ client: Client) async {
         do {
-            try await clientsRepository.delete(id: client.id)
+            try await unitOfWork.clients.delete(id: client.id)
             clients.removeAll { $0.id == client.id }
             lastUpdated = Date()
         } catch {
@@ -115,7 +113,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func archiveClient(_ client: Client) async {
         do {
-            try await clientsRepository.archive(id: client.id)
+            try await unitOfWork.clients.archive(id: client.id)
             if let index = clients.firstIndex(where: { $0.id == client.id }) {
                 var updatedClient = clients[index]
                 // Update status to archived
@@ -150,7 +148,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func reactivateClient(_ client: Client) async {
         do {
-            try await clientsRepository.reactivate(id: client.id)
+            try await unitOfWork.clients.reactivate(id: client.id)
             if let index = clients.firstIndex(where: { $0.id == client.id }) {
                 var updatedClient = clients[index]
                 // Update status to active
@@ -185,7 +183,7 @@ public class ClientsViewModel: ObservableObject {
     
     public func searchClients(query: String) async {
         do {
-            let searchResults = try await clientsRepository.search(query: query)
+            let searchResults = try await unitOfWork.clients.search(query: query)
             // For now, we'll update the local clients array
             // In a more sophisticated implementation, you might want to maintain separate search results
             clients = searchResults
@@ -228,16 +226,52 @@ public class ClientsViewModel: ObservableObject {
     
     // MARK: - Client Statistics
     
-    public func getClientStatistics(for client: Client) -> ClientStatistics {
-        // This would typically involve fetching session and invoice data
-        // For now, return placeholder statistics
-        return ClientStatistics(
-            totalSessions: 0,
-            totalHours: 0.0,
-            totalRevenue: 0.0,
-            lastSessionDate: nil,
-            averageSessionDuration: 0.0
-        )
+    /// Compute real client statistics from session and invoice data
+    public func getClientStatistics(for client: Client) async -> ClientStatistics {
+        do {
+            let sessions = try await unitOfWork.sessions.fetch(byClientId: client.id)
+            
+            let totalSessions = sessions.count
+            
+            // Calculate total hours from session durations
+            let totalHours = sessions.reduce(0.0) { sum, session in
+                guard let start = session.startTime, let end = session.endTime else { return sum }
+                let duration = end.timeIntervalSince(start) / 3600.0 // Convert seconds to hours
+                return sum + duration
+            }
+            
+            // Calculate total revenue from invoices if available
+            var totalRevenue = 0.0
+            
+            let invoices = try await unitOfWork.invoices.fetch(byClientId: client.id)
+            totalRevenue = invoices.reduce(0.0) { $0 + $1.totalAmount }
+            
+            // Find last session date
+            let lastSessionDate = sessions
+                .compactMap { $0.startTime }
+                .sorted()
+                .last
+            
+            // Calculate average session duration
+            let averageSessionDuration = totalSessions > 0 ? totalHours / Double(totalSessions) : 0.0
+            
+            return ClientStatistics(
+                totalSessions: totalSessions,
+                totalHours: totalHours,
+                totalRevenue: totalRevenue,
+                lastSessionDate: lastSessionDate,
+                averageSessionDuration: averageSessionDuration
+            )
+        } catch {
+            // On error, return default statistics
+            return ClientStatistics(
+                totalSessions: 0,
+                totalHours: 0.0,
+                totalRevenue: 0.0,
+                lastSessionDate: nil,
+                averageSessionDuration: 0.0
+            )
+        }
     }
 }
 

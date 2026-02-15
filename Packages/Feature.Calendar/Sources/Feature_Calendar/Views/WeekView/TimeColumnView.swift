@@ -20,7 +20,6 @@ struct TimeColumnView: View {
         .frame(width: width)
         .frame(height: CGFloat(hours.count) * effectiveHourHeight)
         .clipped()
-        .glassEffect(.regular, in: .rect())
     }
 
     @ViewBuilder

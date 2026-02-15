@@ -10,7 +10,32 @@ struct CalendarBulkOperationsToolbar: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Selection info
+            selectionInfoView
+            
+            Divider()
+                .frame(height: 20)
+            
+            actionsView
+            
+            Spacer()
+            
+            doneButton
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .background(Color.gray.opacity(0.1))
+        .alert("Delete Sessions", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                viewModel.bulkDeleteSessions()
+            }
+        } message: {
+            Text("Are you sure you want to delete \(viewModel.selectedSessions.count) session(s)? This action cannot be undone.")
+        }
+    }
+    
+    private var selectionInfoView: some View {
+        HStack {
             Text("\(viewModel.selectedItemIDs.count) selected")
                 .font(.caption)
                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
@@ -24,10 +49,11 @@ struct CalendarBulkOperationsToolbar: View {
                 }
             }
             .buttonStyle(.glass)
-            
-            Divider()
-                .frame(height: 20)
-            
+        }
+    }
+
+    private var actionsView: some View {
+        HStack {
             // Status change menu
             Menu {
                 Button("Mark as Planned") {
@@ -54,43 +80,18 @@ struct CalendarBulkOperationsToolbar: View {
             .buttonStyle(.glassProminent)
             .tint(Color.red.opacity(0.7))
             .disabled(viewModel.selectedSessions.isEmpty)
-            
-            Spacer()
-            
-            // Exit bulk mode
-            Button("Done") {
-                viewModel.toggleBulkSelectionMode()
-            }
-            .buttonStyle(.glass)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
-        .background(Color.gray.opacity(0.1))
-        .alert("Delete Sessions", isPresented: $showDeleteAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                viewModel.bulkDeleteSessions()
-            }
-        } message: {
-            Text("Are you sure you want to delete \(viewModel.selectedSessions.count) session(s)? This action cannot be undone.")
+    }
+
+    private var doneButton: some View {
+        Button("Done") {
+            viewModel.toggleBulkSelectionMode()
         }
+        .buttonStyle(.glass)
     }
 }
 
 #Preview {
     // Note: Preview disabled - would need CalendarViewModel(sessionsRepository:clientsRepository:clientServicesRepository:eventKitService:modelContext:)
     EmptyView()
-    /*
-    let container = try! ModelContainer(for: SessionEntity.self)
-    let context = ModelContext(container)
-    let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
-    let eventKitService = EventKitSyncService.shared
-    let dataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
-    CalendarBulkOperationsToolbar(viewModel: CalendarViewModel(
-        sessionsRepository: sessionsRepository,
-        eventKitService: eventKitService,
-        dataManager: dataManager,
-        modelContext: context
-    ))
-    */
-} 
+}  

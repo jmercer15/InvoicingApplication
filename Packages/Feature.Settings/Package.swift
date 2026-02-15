@@ -10,10 +10,9 @@ let package = Package(
     dependencies: [
         .package(path: "../Core"),
         .package(path: "../Data"),
-        .package(path: "../SharedUI"),
-        .package(url: "https://github.com/CoreOffice/CoreXLSX.git", from: "0.14.1")
+        .package(path: "../SharedUI")
     ],
     targets: [
-        .target(name: "Feature_Settings", dependencies: ["Core", "Data", "SharedUI", .product(name: "CoreXLSX", package: "CoreXLSX")])
+        .target(name: "Feature_Settings", dependencies: ["Core", "Data", "SharedUI"])
     ]
 )

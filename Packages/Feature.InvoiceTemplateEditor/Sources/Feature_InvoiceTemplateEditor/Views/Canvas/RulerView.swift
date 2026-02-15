@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RulerView: View {
     let orientation: RulerOrientation
+    let edge: RulerEdge
     let length: CGFloat
     let unit: RulerUnit
     let cursorPosition: CGFloat?
@@ -16,19 +17,19 @@ struct RulerView: View {
     let zoom: CGFloat
     let scrollOffset: CGFloat
     
-    private let rulerHeight: CGFloat = 20
-    private let majorTickHeight: CGFloat = 12
-    private let minorTickHeight: CGFloat = 6
-    private let textOffset: CGFloat = 2
+    private let rulerHeight: CGFloat = 30
+    private let majorTickHeight: CGFloat = 8
+    private let minorTickHeight: CGFloat = 3
+    private let textOffset: CGFloat = 4
     
     var body: some View {
         ZStack {
             // Ruler background (darker than control background, lighter than black)
             Rectangle()
-                .fill(Color.elevatedSurface)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.9))
                 .overlay(
                     Rectangle()
-                        .stroke(Color.primaryOutline, lineWidth: 0.5)
+                        .stroke(Color(NSColor.separatorColor).opacity(0.6), lineWidth: 0.5)
                 )
             
             // Selection range indicator
@@ -59,119 +60,128 @@ struct RulerView: View {
     }
     
     private var rulerMarkings: some View {
-        ZStack {
-            ForEach(tickMarks, id: \.position) { tick in
-                Group {
-                    // Tick line
-                    Rectangle()
-                        .fill(Color.primaryText)
-                        .frame(
-                            width: orientation == .horizontal ? 0.5 : tick.height,
-                            height: orientation == .horizontal ? tick.height : 0.5
-                        )
-                        .position(tickPosition(for: tick))
+        Canvas { context, size in
+            let totalPoints = max(0, length)
+            guard totalPoints > 0 else { return }
+            
+            let pixelsPerUnit = unit.pixelsPerUnit * zoom
+            let step = calculateOptimalStep(pixelsPerUnit: pixelsPerUnit)
+            
+            let startValue = -(zeroOffset / pixelsPerUnit)
+            let endValue = ((totalPoints - zeroOffset - scrollOffset) / pixelsPerUnit)
+            
+            // Align start value to the step
+            var currentValue = floor(startValue / step) * step
+            
+            while currentValue <= endValue {
+                let position = zeroOffset + scrollOffset + (currentValue * pixelsPerUnit)
+                
+                if position >= -20 && position <= totalPoints + 20 { // Draw slightly off-screen to avoid pop-in
+                    let isMajor = isMajorTick(value: currentValue, step: step)
+                    let tickHeight = isMajor ? majorTickHeight : minorTickHeight
                     
-                    // Tick label
-                    if tick.showLabel {
-                        Text(tick.label)
-                            .font(.system(size: 8, weight: .regular, design: .monospaced))
+                    // Draw tick
+                    let tickRect: CGRect
+                    switch edge {
+                    case .top:
+                        tickRect = CGRect(x: position, y: rulerHeight - tickHeight, width: 0.5, height: tickHeight)
+                    case .bottom:
+                        tickRect = CGRect(x: position, y: 0, width: 0.5, height: tickHeight)
+                    case .leading:
+                        tickRect = CGRect(x: rulerHeight - tickHeight, y: position, width: tickHeight, height: 0.5)
+                    case .trailing:
+                        tickRect = CGRect(x: 0, y: position, width: tickHeight, height: 0.5)
+                    }
+                    context.fill(Path(tickRect), with: .color(Color.primaryText))
+                    
+                    // Draw label
+                    if isMajor {
+                        let text = Text(formatValue(currentValue))
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
                             .foregroundColor(Color.secondaryText)
-                            .position(labelPosition(for: tick))
+                        
+                        let resolvedText = context.resolve(text)
+                        
+                        switch edge {
+                        case .top:
+                            context.draw(resolvedText, at: CGPoint(x: position + 2, y: 4), anchor: .topLeading)
+                        case .bottom:
+                            context.draw(resolvedText, at: CGPoint(x: position + 2, y: rulerHeight - 4), anchor: .bottomLeading)
+                        case .leading:
+                            context.draw(resolvedText, at: CGPoint(x: rulerHeight - majorTickHeight - 4, y: position), anchor: .trailing)
+                        case .trailing:
+                            context.draw(resolvedText, at: CGPoint(x: majorTickHeight + 4, y: position), anchor: .leading)
+                        }
                     }
                 }
+                currentValue += step
             }
         }
     }
     
-    private var tickMarks: [TickMark] {
-        var marks: [TickMark] = []
-        let totalPoints = max(0, length) // Ensure positive length
-        
-        // Early return if length is too small to show meaningful rulers
-        guard totalPoints > 0 else { return marks }
-        
-        let pixelsPerUnit = unit.pixelsPerUnit * zoom
-        
-        // Calculate the step size based on zoom level
-        let baseStep = unit.baseStep
-        let step = calculateOptimalStep(baseStep: baseStep, pixelsPerUnit: pixelsPerUnit)
-        
-        // Calculate the starting value based on zero offset
-        // We want to show negative values before the zero point
-        let startValue = -(zeroOffset / pixelsPerUnit)
-        let endValue = ((totalPoints - zeroOffset - scrollOffset) / pixelsPerUnit)
-        
-        // Start from a nice round number before startValue
-        var currentValue = floor(startValue / step) * step
-        
-        while currentValue <= endValue {
-            let position = zeroOffset + scrollOffset + (currentValue * pixelsPerUnit)
-            
-            // Only draw ticks that are within the ruler bounds
-            if position >= 0 && position <= totalPoints {
-                let isMajor = currentValue.truncatingRemainder(dividingBy: step * 5) == 0
-                let showLabel = isMajor
-                
-                marks.append(TickMark(
-                    position: position,
-                    value: currentValue,
-                    height: isMajor ? majorTickHeight : minorTickHeight,
-                    showLabel: showLabel,
-                    label: formatValue(currentValue),
-                    isMajor: isMajor
-                ))
-            }
-            
-            currentValue += step
-        }
-        
-        return marks
-    }
-    
-    private func calculateOptimalStep(baseStep: CGFloat, pixelsPerUnit: CGFloat) -> CGFloat {
+    private func calculateOptimalStep(pixelsPerUnit: CGFloat) -> CGFloat {
         let minPixelsBetweenTicks: CGFloat = 8
-        var step = baseStep
         
-        while step * pixelsPerUnit < minPixelsBetweenTicks {
-            step *= 2
+        // Standard steps for metric/points: 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000...
+        // Standard steps for inches: 1/16, 1/8, 1/4, 1/2, 1, 2, 5, 10...
+        
+        if unit == .inches {
+            let steps: [CGFloat] = [0.0625, 0.125, 0.25, 0.5, 1, 2, 5, 10]
+            for step in steps {
+                if step * pixelsPerUnit >= minPixelsBetweenTicks {
+                    return step
+                }
+            }
+            return 10
+        } else {
+            var step: CGFloat = 1
+            while step * pixelsPerUnit < minPixelsBetweenTicks {
+                if step * pixelsPerUnit >= minPixelsBetweenTicks { break }
+                step *= 2
+                if step * pixelsPerUnit >= minPixelsBetweenTicks { break }
+                step *= 2.5 // 1 -> 2 -> 5
+                if step * pixelsPerUnit >= minPixelsBetweenTicks { break }
+                step *= 2 // 5 -> 10
+            }
+            return step
         }
-        
-        while step * pixelsPerUnit > minPixelsBetweenTicks * 4 {
-            step /= 2
-        }
-        
-        return max(step, baseStep)
     }
     
-    private func tickPosition(for tick: TickMark) -> CGPoint {
-        switch orientation {
-        case .horizontal:
-            return CGPoint(
-                x: tick.position,
-                y: rulerHeight - tick.height / 2
-            )
-        case .vertical:
-            return CGPoint(
-                x: rulerHeight - tick.height / 2,
-                y: tick.position
-            )
+    private func isMajorTick(value: CGFloat, step: CGFloat) -> Bool {
+        let epsilon: CGFloat = 0.0001
+        
+        switch unit {
+        case .inches:
+            // Major ticks at whole inches, or significant fractions if zoomed in
+            if step >= 1 {
+                return abs(value.truncatingRemainder(dividingBy: step * 5)) < epsilon // e.g. 0, 5, 10
+            } else if step >= 0.5 {
+                return abs(value.truncatingRemainder(dividingBy: 1)) < epsilon // Whole inches
+            } else {
+                return abs(value.truncatingRemainder(dividingBy: 0.5)) < epsilon // Half inches
+            }
+        case .points, .millimeters:
+             // Major ticks logic:
+             // If step is 1, major every 10
+             // If step is 2, major every 10
+             // If step is 5, major every 10? No, every 50?
+             // If step is 10, major every 50 or 100
+             
+             if step <= 2 {
+                 return abs(value.truncatingRemainder(dividingBy: 10)) < epsilon
+             } else if step <= 5 {
+                 return abs(value.truncatingRemainder(dividingBy: 50)) < epsilon
+             } else if step <= 10 {
+                 return abs(value.truncatingRemainder(dividingBy: 50)) < epsilon
+             } else if step <= 20 {
+                 return abs(value.truncatingRemainder(dividingBy: 100)) < epsilon
+             } else {
+                 return abs(value.truncatingRemainder(dividingBy: step * 5)) < epsilon
+             }
         }
     }
     
-    private func labelPosition(for tick: TickMark) -> CGPoint {
-        switch orientation {
-        case .horizontal:
-            return CGPoint(
-                x: tick.position,
-                y: textOffset + 4
-            )
-        case .vertical:
-            return CGPoint(
-                x: textOffset + 6,
-                y: tick.position
-            )
-        }
-    }
+
     
     private func formatValue(_ value: CGFloat) -> String {
         switch unit {
@@ -296,6 +306,13 @@ enum RulerOrientation {
     case vertical
 }
 
+enum RulerEdge {
+    case top
+    case bottom
+    case leading
+    case trailing
+}
+
 enum RulerUnit {
     case points
     case millimeters
@@ -324,14 +341,7 @@ enum RulerUnit {
     }
 }
 
-private struct TickMark {
-    let position: CGFloat
-    let value: CGFloat
-    let height: CGFloat
-    let showLabel: Bool
-    let label: String
-    let isMajor: Bool
-}
+
 
 // MARK: - Preview
 
@@ -340,6 +350,7 @@ private struct TickMark {
         // Horizontal ruler
         RulerView(
             orientation: .horizontal,
+            edge: .top,
             length: 400,
             unit: .points,
             cursorPosition: 150,
@@ -357,6 +368,7 @@ private struct TickMark {
         HStack(spacing: 20) {
             RulerView(
                 orientation: .vertical,
+                edge: .leading,
                 length: 300,
                 unit: .points,
                 cursorPosition: 100,

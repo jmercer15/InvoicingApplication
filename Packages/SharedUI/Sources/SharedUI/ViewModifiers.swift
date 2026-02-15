@@ -23,13 +23,6 @@ public struct FormField<Content: View>: View {
     }
 }
 
-// MARK: - Interactive Cursor Modifiers
-public extension View {
-    func appInteractiveCursor() -> some View {
-        self
-    }
-}
-
 // MARK: - Selection Column Style
 extension View {
     func selectionColumnStyle() -> some View {
@@ -92,6 +85,26 @@ public struct AddressData: Codable, Hashable {
         // Default initializer
     }
     
+    public init(
+        unitNumber: String = "",
+        streetNumber: String = "",
+        streetName: String = "",
+        suburb: String = "",
+        state: String = "",
+        postcode: String = "",
+        country: String = "",
+        poBox: String = ""
+    ) {
+        self.unitNumber = unitNumber
+        self.streetNumber = streetNumber
+        self.streetName = streetName
+        self.suburb = suburb
+        self.state = state
+        self.postcode = postcode
+        self.country = country
+        self.poBox = poBox
+    }
+    
     var street: String {
         [unitNumber, streetNumber, streetName]
             .filter { !$0.isEmpty }
@@ -127,7 +140,7 @@ public struct AddressData: Codable, Hashable {
         return entity
     }
     
-    var city: String {
+    public var city: String {
         suburb
     }
     
@@ -159,9 +172,14 @@ extension Animation {
 // MARK: - Custom Modifiers
 
 // Central glass background modifier used across components
-struct GlassBackgroundModifier: ViewModifier {
+// Central glass background modifier used across components
+public struct GlassBackgroundModifier: ViewModifier {
     var cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
+    
+    public init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+    }
 
     private var backgroundGradientColors: [Color] {
         colorScheme == .light ? [
@@ -183,7 +201,7 @@ struct GlassBackgroundModifier: ViewModifier {
         ]
     }
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
@@ -202,8 +220,8 @@ struct GlassBackgroundModifier: ViewModifier {
     }
 }
 
-extension View {
-    func glassBackgroundStyle(cornerRadius: CGFloat = StyleGuide.Dimensions.cornerRadiusMedium) -> some View {
+public extension View {
+    public func glassBackgroundStyle(cornerRadius: CGFloat = StyleGuide.Dimensions.cornerRadiusMedium) -> some View {
         self.modifier(GlassBackgroundModifier(cornerRadius: cornerRadius))
     }
 }
@@ -214,10 +232,12 @@ struct GroupBoxGlassModifier: ViewModifier {
     }
 }
 
-struct EnhancedGroupBoxStyle: GroupBoxStyle {
+public struct EnhancedGroupBoxStyle: GroupBoxStyle {
     @Environment(\.colorScheme) var colorScheme
     
-    func makeBody(configuration: Configuration) -> some View {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             configuration.label
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -225,7 +245,7 @@ struct EnhancedGroupBoxStyle: GroupBoxStyle {
                 .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
                 .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(GlassBackgroundModifier(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium))
+                .glassBackgroundStyle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
             
             configuration.content
                 .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
@@ -243,17 +263,19 @@ extension ButtonStyle where Self == CustomGlassButtonStyle {
 
 struct CustomGlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous)
         configuration.label
             .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
             .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
             .background(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                shape
                     .fill(Color("White20", bundle: .sharedUI).opacity(configuration.isPressed ? 1.0 : 0.5))
                     .overlay(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                        shape
                             .stroke(Color("White30", bundle: .sharedUI), lineWidth: 1)
                     )
             )
+            .contentShape(shape)
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: configuration.isPressed)
     }
@@ -261,17 +283,19 @@ struct CustomGlassButtonStyle: ButtonStyle {
 
 struct CustomGlassProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous)
         configuration.label
             .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
             .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
             .background(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                shape
                     .fill(Color("Blue", bundle: .sharedUI).opacity(configuration.isPressed ? 0.8 : 0.6))
                     .overlay(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                        shape
                             .stroke(Color("Blue", bundle: .sharedUI).opacity(0.8), lineWidth: 1)
                     )
             )
+            .contentShape(shape)
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: configuration.isPressed)
     }
@@ -441,30 +465,26 @@ public struct NativeAddressSearchField: View {
     }
     
     private func fillAddressFields(from mapItem: MKMapItem) {
-        // Use the new location and address properties instead of deprecated placemark
-        let address = mapItem.address
-        
-        // Try to extract address components from MKAddress first
-        var extractedComponents: [String: String] = [:]
-        if let address = address {
-            extractedComponents = service.parseAddressString(address.fullAddress)
-        }
-        
-        // Fall back to placemark if MKAddress parsing didn't provide sufficient data
-        let placemark = mapItem.placemark
-        
-        // Extract address components - prefer MKAddress parsed components, fall back to placemark
-        unitNumber = extractedComponents["unit"] ?? ""
-        streetNumber = extractedComponents["streetNumber"] ?? placemark.subThoroughfare ?? ""
-        streetName = extractedComponents["streetName"] ?? placemark.thoroughfare ?? ""
-        suburb = extractedComponents["suburb"] ?? placemark.locality ?? ""
-        postcode = extractedComponents["postcode"] ?? placemark.postalCode ?? ""
-        state = extractedComponents["state"] ?? placemark.administrativeArea ?? ""
-        country = extractedComponents["country"] ?? placemark.country ?? ""
-        poBox = ""
-        
-        // Create AddressData for the viewModel
-        selectedAddress = AddressData()
+        let parsed = MapKitAddressResolver.parseAddress(from: mapItem)
+        unitNumber = parsed.unitNumber
+        streetNumber = parsed.streetNumber
+        streetName = parsed.streetName
+        suburb = parsed.suburb.isEmpty ? parsed.city : parsed.suburb
+        postcode = parsed.postcode
+        state = parsed.state
+        country = parsed.country
+        poBox = parsed.poBox
+
+        selectedAddress = AddressData(
+            unitNumber: unitNumber,
+            streetNumber: streetNumber,
+            streetName: streetName,
+            suburb: suburb,
+            state: state,
+            postcode: postcode,
+            country: country,
+            poBox: poBox
+        )
         
         // Clear the search text after populating fields (without triggering search)
         isProgrammaticallyUpdatingSearchText = true

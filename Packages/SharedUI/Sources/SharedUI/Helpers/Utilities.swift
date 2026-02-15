@@ -86,44 +86,4 @@ public extension Date {
     }
 }
 
-// MARK: - Invoice Numbering Service
-public struct InvoiceNumberingService {
-    /// Generate next invoice number using domain model (preferred)
-    public static func nextNumber(for client: Client?, context: ModelContext) -> String {
-        if let client = client {
-            let nameParts = client.fullName.split(separator: " ").map { String($0) }
-            if let first = nameParts.first, let last = nameParts.last, !first.isEmpty, !last.isEmpty {
-                let surnamePart = String(last.uppercased().prefix(4))
-                let firstInitial = String(first.uppercased().prefix(1))
-                let prefix = "\(surnamePart)-\(firstInitial)-"
-                let fetch = FetchDescriptor<InvoiceEntity>()
-                let all = (try? context.fetch(fetch)) ?? []
-                let clientInvoices = all.filter { $0.invoiceNumber.starts(with: prefix) && $0.client?.id == client.id }
-                let suffixes = clientInvoices.compactMap { inv -> Int? in
-                    guard inv.invoiceNumber.starts(with: prefix) else { return nil }
-                    return Int(String(inv.invoiceNumber.dropFirst(prefix.count)))
-                }
-                let next = (suffixes.max() ?? 0) + 1
-                return "\(prefix)\(String(format: "%04d", next))"
-            }
-        }
-        // Generic fallback INV-####
-        let fetch = FetchDescriptor<InvoiceEntity>()
-        let all = (try? context.fetch(fetch)) ?? []
-        let suffixes = all.compactMap { inv -> Int? in
-            let parts = inv.invoiceNumber.split(separator: "-")
-            guard parts.count >= 2 else { return nil }
-            return Int(parts.last!)
-        }
-        let next = (suffixes.max() ?? 0) + 1
-        return String(format: "INV-%04d", next)
-    }
-    
-    /// Legacy method for ClientEntity (kept for backward compatibility)
-    @available(*, deprecated, message: "Use nextNumber(for:context:) with Client domain model instead")
-    public static func nextNumber(for client: ClientEntity?, context: ModelContext) -> String {
-        // Use public helper function to convert entity to domain model
-        let clientDomain: Client? = client.map { clientFromEntity($0) }
-        return nextNumber(for: clientDomain, context: context)
-    }
-}
+

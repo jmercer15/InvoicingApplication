@@ -5,7 +5,7 @@ import SharedUI
 
 struct InvoiceSettingsView: View {
     @AppStorage("defaultPaymentTerms") private var defaultPaymentTerms: Int = 14
-    @AppStorage("taxRate") private var taxRate: Double = 10.0
+    @AppStorage("defaultTaxRate") private var taxRate: Double = 10.0
     @AppStorage("showTaxColumn") private var showTaxColumn: Bool = true
     @AppStorage("autogenerateInvoiceNumbers") private var autogenerateInvoiceNumbers: Bool = true
     @AppStorage("defaultNotes") private var defaultNotes: String = ""

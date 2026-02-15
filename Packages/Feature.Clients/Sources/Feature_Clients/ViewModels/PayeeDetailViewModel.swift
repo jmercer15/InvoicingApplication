@@ -10,11 +10,7 @@ import SharedUI
 public class PayeeDetailViewModel: ObservableObject {
     
     // MARK: - Core Dependencies
-    private let payeesRepository: PayeeRepository
-    private let clientsRepository: ClientsRepository
-    private let invoicesRepository: InvoicesRepository
-    // ModelContext still needed for address geocoding and client association updates
-    let modelContext: ModelContext
+    private let unitOfWork: UnitOfWorkService
     var dismiss: () -> Void = {}
 
     // MARK: - Published Properties
@@ -64,34 +60,33 @@ public class PayeeDetailViewModel: ObservableObject {
     @Published var alertTitle: String = ""
     @Published var alertMessage: String = ""
     @Published var showingClientSelector = false
+    @Published var isLoading: Bool = false
 
+    // MARK: - Initializer
     // MARK: - Initializer
     public init(
         payee: Payee,
-        payeesRepository: PayeeRepository,
-        clientsRepository: ClientsRepository,
-        invoicesRepository: InvoicesRepository,
-        modelContext: ModelContext,
+        unitOfWork: UnitOfWorkService,
         isCreating: Bool
     ) {
         self.payee = payee
-        self.payeesRepository = payeesRepository
-        self.clientsRepository = clientsRepository
-        self.invoicesRepository = invoicesRepository
-        self.modelContext = modelContext
+        self.unitOfWork = unitOfWork
         self.isCreatingNew = isCreating
         self.phoneFormatter = PhoneNumberFormatter(initialPhoneNumber: payee.phone ?? "")
         self.emailValidator = EmailValidator(initialEmail: payee.email ?? "")
         
         Task {
+            await Task.yield()
             await loadAllDetails()
-            await fetchRelatedInvoices()
-            await fetchPickerData()
         }
     }
     
     // MARK: - Data Loading
     private func loadAllDetails() async {
+        await MainActor.run { self.isLoading = true }
+        await Task.yield()
+        defer { Task { @MainActor in self.isLoading = false } }
+        
         self.editableFullName = payee.fullName
         self.editableStatus = payee.status ?? "Active"
         // colorHex property removed - using deterministic color system instead
@@ -100,31 +95,39 @@ public class PayeeDetailViewModel: ObservableObject {
         self.phoneFormatter.phoneNumber = payee.phone ?? ""
         self.emailValidator.email = payee.email ?? ""
         loadAddressDetails()
-        await fetchAssociatedClients()
-        await fetchAllClients()
+        async let allClientsTask = fetchAllClients()
+        let associatedClients = await fetchAssociatedClients()
+        _ = await allClientsTask
+        await fetchRelatedInvoices(for: associatedClients)
     }
 
-    private func fetchRelatedInvoices() async {
+    private func fetchRelatedInvoices(for clients: [Client]) async {
         do {
             // Fetch invoices from associated clients (payee-related invoices are stored as snapshots in invoices)
             var clientInvoices: [Invoice] = []
-            for client in associatedClients {
-                let clientInvoiceList = try await invoicesRepository.fetch(byClientId: client.id)
-                // Filter invoices that reference this payee (check payeeId snapshot or payeeName)
-                let payeeInvoices = clientInvoiceList.filter { invoice in
-                    invoice.payeeId == payee.id || invoice.payeeName == payee.fullName
-                }
-                clientInvoices.append(contentsOf: payeeInvoices)
+            for client in clients {
+                let clientInvoiceList = try await unitOfWork.invoices.fetch(byClientId: client.id)
+                clientInvoices.append(contentsOf: clientInvoiceList)
+                await Task.yield()
             }
             
-            // Remove duplicates by ID
-            let uniqueInvoices = Array(Set(clientInvoices))
-            relatedInvoices = uniqueInvoices.sorted {
-                $0.issueDate > $1.issueDate
+            let payeeId = payee.id
+            let payeeName = payee.fullName
+            let sorted = await Task.detached {
+                let filtered = clientInvoices.filter { invoice in
+                    invoice.payeeId == payeeId || invoice.payeeName == payeeName
+                }
+                let uniqueInvoices = Array(Set(filtered))
+                return uniqueInvoices.sorted { $0.issueDate > $1.issueDate }
+            }.value
+            await MainActor.run {
+                self.relatedInvoices = sorted
             }
         } catch {
             print("❌ [PayeeDetailViewModel] Error fetching related invoices: \(error)")
-            relatedInvoices = []
+            await MainActor.run {
+                self.relatedInvoices = []
+            }
         }
     }
 
@@ -152,29 +155,39 @@ public class PayeeDetailViewModel: ObservableObject {
         }
     }
     
-    private func fetchAssociatedClients() async {
+    private func fetchAssociatedClients() async -> [Client] {
         do {
-            let clients = try await clientsRepository.fetch(byPayeeId: payee.id)
-            self.associatedClients = clients.sorted(by: { $0.fullName < $1.fullName })
-            self.selectedClientIDs = Set(clients.map { $0.id })
+            let clients = try await unitOfWork.clients.fetch(byPayeeId: payee.id)
+            let sorted = await Task.detached {
+                clients.sorted(by: { $0.fullName < $1.fullName })
+            }.value
+            await MainActor.run {
+                self.associatedClients = sorted
+                self.selectedClientIDs = Set(sorted.map { $0.id })
+            }
+            return sorted
         } catch {
             print("❌ [PayeeDetailViewModel] Error fetching associated clients: \(error)")
-            associatedClients = []
-            selectedClientIDs = []
+            await MainActor.run {
+                self.associatedClients = []
+                self.selectedClientIDs = []
+            }
+            return []
         }
     }
     
     private func fetchAllClients() async {
         do {
-            allClients = try await clientsRepository.fetchAll()
+            let clients = try await unitOfWork.clients.fetchAll()
+            await MainActor.run {
+                self.allClients = clients
+            }
         } catch {
             print("❌ [PayeeDetailViewModel] Error fetching all clients: \(error)")
-            allClients = []
+            await MainActor.run {
+                self.allClients = []
+            }
         }
-    }
-    
-    private func fetchPickerData() async {
-        await fetchAllClients()
     }
     
     // MARK: - Save & Update Logic
@@ -239,12 +252,12 @@ public class PayeeDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedPayee = try await payeesRepository.update(updatedPayee)
+            let savedPayee = try await unitOfWork.payees.update(updatedPayee)
             payee = savedPayee
             // Update client associations after saving payee
             await updateClientAssociations()
-            await fetchAssociatedClients()
-            await fetchRelatedInvoices()
+            let associatedClients = await fetchAssociatedClients()
+            await fetchRelatedInvoices(for: associatedClients)
         } catch {
             let nsError = error as NSError
             alertTitle = "Save Error"
@@ -287,7 +300,7 @@ public class PayeeDetailViewModel: ObservableObject {
         )
         
         do {
-            let savedPayee = try await payeesRepository.create(newPayee)
+            let savedPayee = try await unitOfWork.payees.create(newPayee)
             payee = savedPayee
             // Update client associations after creating payee
             await updateClientAssociations()
@@ -358,7 +371,7 @@ public class PayeeDetailViewModel: ObservableObject {
         // We need to fetch each client and update it with the payee reference
         do {
             // Fetch all clients to update
-            let allClientsToUpdate = try await clientsRepository.fetchAll()
+            let allClientsToUpdate = try await unitOfWork.clients.fetchAll()
             
             for client in allClientsToUpdate {
                 let shouldHavePayee = selectedClientIDs.contains(client.id)
@@ -386,7 +399,7 @@ public class PayeeDetailViewModel: ObservableObject {
                         sendInvoicesToPayee: client.sendInvoicesToPayee,
                         sendInvoicesToPlanManager: client.sendInvoicesToPlanManager
                     )
-                    _ = try await clientsRepository.update(updatedClient)
+                    _ = try await unitOfWork.clients.update(updatedClient)
                 }
             }
         } catch {
@@ -405,7 +418,7 @@ public class PayeeDetailViewModel: ObservableObject {
     func deletePayeeAndDismiss() {
         Task {
             do {
-                try await payeesRepository.delete(id: payee.id)
+                try await unitOfWork.payees.delete(id: payee.id)
                 dismiss()
             } catch {
                 let nsError = error as NSError

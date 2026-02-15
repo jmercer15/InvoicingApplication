@@ -16,7 +16,6 @@ import SwiftUI
     public var id: UUID
     public var fullName: String = ""
     public var email: String?
-    public var payeeID: Int32? = 0
     public var phone: String?
     public var relationToClient: String?
     public var status: String?
@@ -31,5 +30,4 @@ import SwiftUI
         self.fullName = fullName
     }
 }
-
 

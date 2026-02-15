@@ -21,13 +21,12 @@ import SharedUI
 /// providing an optimal user experience across all Apple platforms.
 struct CalendarTabView: View {
     @ObservedObject var viewModel: CalendarViewModel
-    @Binding var showInspector: Bool
     @State private var selectedTab: CalendarViewType = .week
     
     var body: some View {
         TabView(selection: $selectedTab) {
             // Week View Tab
-            WeekView(viewModel: viewModel, showInspector: $showInspector)
+            WeekView(viewModel: viewModel)
                 .tabItem {
                     Label("Week", systemImage: "calendar")
                 }
@@ -37,7 +36,7 @@ struct CalendarTabView: View {
             
             // Month View Tab
             let weeks = CalendarDisplayDataProvider().buildMonthGridWeeks(for: viewModel.selectedDate)
-            MonthView(viewModel: viewModel, showInspector: $showInspector, precomputedWeeks: weeks)
+            MonthView(viewModel: viewModel, precomputedWeeks: weeks)
                 .tabItem {
                     Label("Month", systemImage: "calendar.badge.clock")
                 }
@@ -98,8 +97,7 @@ extension CalendarTabView {
             eventKitService: eventKitService,
             dataManager: dataManager,
             modelContext: context
-        ),
-        showInspector: .constant(false)
+        )
     )
     */
 }

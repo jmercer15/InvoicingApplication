@@ -28,7 +28,7 @@ struct TravelChargeReviewSheet: View {
                         dismiss()
                     }
                     .buttonStyle(.glass)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                 }
                 
                 Text("Review automation results and resolve any issues")
@@ -158,6 +158,7 @@ struct TravelChargeReviewSheet: View {
                                     .padding()
                                     .background(Color.orange.opacity(0.1))
                                     .cornerRadius(8)
+                                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -217,8 +218,8 @@ struct TravelChargeReviewSheet: View {
                         .foregroundColor(Color("Cancelled", bundle: .sharedUI))
                 }
                 
-                if let client = reviewItem.session.client {
-                    Text("Client: \(client.fullName)")
+                if let clientName = reviewItem.clientName {
+                    Text("Client: \(clientName)")
                         .font(.body)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
@@ -243,6 +244,7 @@ struct TravelChargeReviewSheet: View {
             .padding()
             .background(Color.red.opacity(0.1))
             .cornerRadius(8)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }

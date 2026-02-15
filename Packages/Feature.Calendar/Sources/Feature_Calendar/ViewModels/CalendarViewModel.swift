@@ -1,5 +1,3 @@
-
-// LOCAL VERSION - COMMENTED OUT TO USE PACKAGE VERSION
 import SwiftUI
 import Combine
 import Core
@@ -23,7 +21,9 @@ enum DisplayableCalendarItem: Identifiable {
         case .session(let session):
             return session.id.uuidString
         case .event(let event):
-            return event.eventIdentifier // A real, saved event.
+            let base = event.eventIdentifier ?? "unsaved_event"
+            let startAnchor = event.startDate.timeIntervalSinceReferenceDate
+            return "\(base)_\(startAnchor)"
         case .recurringSessionInstance(let template, let instanceStartDate, _, _):
             return "\(template.id.uuidString)_\(instanceStartDate.timeIntervalSinceReferenceDate)"
         case .eventSegment(let originalEvent, let segmentStartDate, _, _):
@@ -82,13 +82,13 @@ enum DisplayableCalendarItem: Identifiable {
             }
         
             // Parse status string to SessionStatus enum equivalent
-            let statusString = session.status ?? ""
-            let isCompleted = statusString == SessionStatus.completed.rawValue
-            let isCancelled = statusString == SessionStatus.cancelled.rawValue
+            let statusToken = SessionStatus(normalized: session.status ?? "")?.token
+            let isCompleted = statusToken == SessionStatus.completed.token
+            let isCancelled = statusToken == SessionStatus.cancelled.token
             let currentEndDate = self.endDate ?? Date()
             let isPast = currentEndDate < Date()
-            let isConfirmed = statusString == SessionStatus.scheduled.rawValue
-            let isPending = statusString == SessionStatus.scheduled.rawValue
+            let isConfirmed = statusToken == SessionStatus.scheduled.token
+            let isPending = statusToken == SessionStatus.scheduled.token
 
             // Use clientId from domain model instead of client relationship
             if let clientId = session.clientId {
@@ -190,10 +190,10 @@ public class CalendarViewModel: ObservableObject {
     @Published var selectedDate: Date
     @Published var calendarViewType: CalendarViewType
     @Published var searchText: String
-    @Published var isShowingNewSessionSheet: Bool
     @Published var selectedSessionInfo: (session: Session?, instanceStart: Date?, instanceEnd: Date?)?
     @Published var selectedClientFilterIDs: Set<UUID> = []
     @Published var showCancelledSessions: Bool = false
+    @Published var isLoading: Bool = false
     @Published var hourHeight: CGFloat
     @Published private(set) var filteredSessions: [Session] = []
 
@@ -208,6 +208,15 @@ public class CalendarViewModel: ObservableObject {
     
     // --- ADD State for Event Conversion ---
     @Published var eventToConvert: EKEvent? = nil
+    
+    // --- Bulk Selection Mode ---
+    @Published var isBulkSelectionMode: Bool = false
+    @Published var bulkSelectedSessionIDs: Set<UUID> = []
+    
+    // --- Available Calendars from EventKit ---
+    var availableCalendars: [EKCalendar] {
+        eventKitService.eventStore.calendars(for: .event)
+    }
     
     // --- ADD Unified Item State ---
     @Published private(set) var allDayItems: [DisplayableCalendarItem] = []
@@ -273,21 +282,31 @@ public class CalendarViewModel: ObservableObject {
     @Published var pendingRecurringModification: (session: Session, modification: RecurringModificationType, originalInstanceDate: Date)?
     @Published var mode: RecurringEditMode = .thisOnly
 
-    // MARK: - Dependencies
-    public let sessionsRepository: SessionsRepository
-    public let clientsRepository: ClientsRepository
-    public let clientServicesRepository: ClientServicesRepository
-    private var cancellables = Set<AnyCancellable>()
+    var recurringModificationModes: [RecurringEditMode] {
+        pendingRecurringModification == nil ? [] : [.thisOnly, .thisAndFuture, .all]
+    }
 
-    // --- New: Inject EventKitSyncService ---
+    var recommendedRecurringModificationMode: RecurringEditMode? {
+        recurringModificationModes.contains(.thisAndFuture) ? .thisAndFuture : recurringModificationModes.first
+    }
+
+    // MARK: - Dependencies
+    let unitOfWork: UnitOfWorkService
+    private let sessionDomainService: SessionDomainServiceProtocol
     let eventKitService: EventKitSyncService
-    let dataManager: CalendarDataManager // Add CalendarDataManager dependency
     
-    // ModelContext is needed for EventKit external changes handling
-    // EventKitSyncService.handleExternalChangesWithContext requires ModelContext to fetch and update entities
-    // This is a limitation of the current EventKitSyncService implementation
-    public let modelContext: ModelContext
-    let addressRepository: AddressRepository
+    // MARK: - Data Manager
+    private let dataManager: CalendarDataManager
+    
+    // Computed proxy properties for legacy compatibility with Views
+    public var sessionsRepository: SessionsRepository { unitOfWork.sessions }
+    public var clientsRepository: ClientsRepository { unitOfWork.clients }
+    public var clientServicesRepository: ClientServicesRepository { unitOfWork.clientServices }
+    public var addressRepository: AddressRepository { unitOfWork.addresses }
+    
+
+    
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Session Modification Service
     private let sessionModificationService: SessionModificationService
@@ -296,38 +315,34 @@ public class CalendarViewModel: ObservableObject {
     private var clientNameCache: [UUID: String] = [:]
     private var clientServiceCache: [UUID: ClientService] = [:]
 
-    public init(sessionsRepository: SessionsRepository,
-         clientsRepository: ClientsRepository,
-         clientServicesRepository: ClientServicesRepository,
-         eventKitService: EventKitSyncService,
-         dataManager: CalendarDataManager,
-         modelContext: ModelContext, // Needed for EventKit external changes handling
-         addressRepository: AddressRepository,
-         selectedDate: Date = Date(),
-         calendarViewType: CalendarViewType = .week,
-         searchText: String = "",
-         isShowingNewSessionSheet: Bool = false) {
-        self.sessionsRepository = sessionsRepository
-        self.clientsRepository = clientsRepository
-        self.clientServicesRepository = clientServicesRepository
+    public init(
+        unitOfWork: UnitOfWorkService,
+        sessionDomainService: SessionDomainServiceProtocol,
+        eventKitService: EventKitSyncService,
+        selectedDate: Date = Date(),
+        calendarViewType: CalendarViewType = .week,
+        searchText: String = ""
+    ) {
+        self.unitOfWork = unitOfWork
+        self.sessionDomainService = sessionDomainService
         self.eventKitService = eventKitService
-        self.dataManager = dataManager
-        self.modelContext = modelContext // Needed for EventKit external changes handling
-        self.addressRepository = addressRepository
         self.selectedDate = selectedDate
         self.calendarViewType = calendarViewType
         self.searchText = searchText
-        self.isShowingNewSessionSheet = isShowingNewSessionSheet
         self.hourHeight = CGFloat(UserDefaults.standard.double(forKey: "hourHeightDouble"))
         self.miniCalendarDisplayMonth = selectedDate.startOfMonth
         self.interactionHandler = CalendarInteractionHandler()
         self.filterState = CalendarFilterState()
         
-        // Create SessionModificationService for use in calendar operations
+        // Initialize DataManager with repositories from UoW
+        self.dataManager = CalendarDataManager(
+            sessionsRepository: unitOfWork.sessions,
+            eventKitService: eventKitService
+        )
+        
+        // Initialize SessionModificationService
         self.sessionModificationService = SessionModificationService(
-            context: modelContext,
-            sessionsRepository: sessionsRepository,
-            addressRepository: addressRepository,
+            unitOfWork: unitOfWork,
             eventKitService: eventKitService,
             recurrenceRuleBuilder: RecurrenceRuleBuilder()
         )
@@ -360,6 +375,24 @@ public class CalendarViewModel: ObservableObject {
                 self?.updateDisplayableItems()
              }
              .store(in: &cancellables)
+
+        // Listen for invoice changes that can transition linked session billing states.
+        InvoiceChangePublisher.shared.invoicesRefreshNeeded
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateDisplayableItems()
+            }
+            .store(in: &cancellables)
+
+        // Listen for session changes from other features (Billing Hub, editor flows, imports).
+        SessionChangePublisher.shared.sessionsRefreshNeeded
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateDisplayableItems()
+            }
+            .store(in: &cancellables)
         
         // Handle EventKit external changes
         NotificationCenter.default.publisher(for: .eventKitExternalChangesDetected)
@@ -496,9 +529,8 @@ public class CalendarViewModel: ObservableObject {
     
     // --- Added: Computed property for total gross income ---
     var totalGrossIncome: Double {
-        // Calculate income synchronously from cached data
-        // For accurate calculation, use calculateTotalGrossIncome() async method
-        return 0.0 // Placeholder - use async method for actual calculation
+        // Synchronous estimate from the currently loaded sessions.
+        visibleGrossIncome
     }
     
     /// Calculate total gross income asynchronously
@@ -711,12 +743,43 @@ public class CalendarViewModel: ObservableObject {
 
     func updateDisplayableItems() {
         Task { @MainActor in
+            self.isLoading = true
+            defer { self.isLoading = false }
+            
             let (viewStartDate, viewEndDate) = currentViewDateRange
             // Fetch both sessions and events in a single call from dataManager (now async)
             let (fetchedSessions, fetchedEvents) = await dataManager.fetchCalendarData(from: viewStartDate, to: viewEndDate)
         
         var localAllDayItems: [DisplayableCalendarItem] = []
         var localTimedItems: [DisplayableCalendarItem] = []
+        let calendar = Calendar.current
+        let normalizeOccurrenceAnchor: (Date, Bool) -> Date = { date, isAllDay in
+            if isAllDay {
+                return calendar.startOfDay(for: date)
+            }
+            let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+            return calendar.date(from: comps) ?? date
+        }
+
+        // Detached sessions override generated master occurrences with the same temporal anchor.
+        let detachedOverridesByMaster: [UUID: Set<Date>] = {
+            var overrides: [UUID: Set<Date>] = [:]
+            for session in fetchedSessions where session.isDetached {
+                guard let masterIDRaw = session.derivedFromEKEventID,
+                      let masterID = UUID(uuidString: masterIDRaw) else {
+                    continue
+                }
+
+                let anchor = session.occurrenceDate ?? session.startTime
+                guard let anchor else { continue }
+                let normalizedAnchor = normalizeOccurrenceAnchor(anchor, session.isAllDay)
+
+                var values = overrides[masterID] ?? []
+                values.insert(normalizedAnchor)
+                overrides[masterID] = values
+            }
+            return overrides
+        }()
 
         // Expand recurring sessions using RecurrenceService
         let expandedSessionData = RecurrenceService().expandRecurringSessions(
@@ -728,33 +791,30 @@ public class CalendarViewModel: ObservableObject {
         // Process expanded recurring sessions
         for sessionData in expandedSessionData {
             // Use domain model from SessionRecurrenceData
-            guard let masterSession = sessionData.masterSession else { continue }
+            let masterSession = sessionData.masterSession
+            let overriddenAnchors = detachedOverridesByMaster[masterSession.id] ?? []
             for instance in sessionData.instances {
+                    let instanceAnchor = normalizeOccurrenceAnchor(instance.instanceStart, masterSession.isAllDay)
+                    if overriddenAnchors.contains(instanceAnchor) {
+                        continue
+                    }
                     let item = DisplayableCalendarItem.recurringSessionInstance(
                     template: masterSession,
                         instanceStartDate: instance.instanceStart,
                         instanceEndDate: instance.instanceEnd,
                     instanceIsAllDay: masterSession.isAllDay
                     )
-                if item.isAllDay {
-                        localAllDayItems.append(item)
-                        } else {
-                        localTimedItems.append(item)
-                        }
+                splitMultiDayItem(item, into: &localAllDayItems, and: &localTimedItems)
                     }
         }
         
         // Process non-recurring sessions AND master sessions that fall within the view range
         for session in fetchedSessions.filter({ $0.recurrenceRuleData == nil }) {
                 let item = DisplayableCalendarItem.session(session)
-                if item.isAllDay {
-                    localAllDayItems.append(item)
-                } else {
-                    localTimedItems.append(item)
-            }
+                splitMultiDayItem(item, into: &localAllDayItems, and: &localTimedItems)
         }
         
-
+        
 
         // Add the filtered EKEvents to display items
         for event in fetchedEvents {
@@ -763,13 +823,49 @@ public class CalendarViewModel: ObservableObject {
             
             if shouldShowEvent {
                 let item = DisplayableCalendarItem.event(event)
-                if item.isAllDay {
-                    localAllDayItems.append(item)
-                } else {
-                    localTimedItems.append(item)
-                }
+                splitMultiDayItem(item, into: &localAllDayItems, and: &localTimedItems)
             }
         }
+
+            let normalizedSearchText = searchText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            self.filteredSessions = fetchedSessions.filter { session in
+                let statusToken = SessionStatus(normalized: session.status ?? "")?.token
+                if !showCancelledSessions && statusToken == SessionStatus.cancelled.token {
+                    return false
+                }
+
+                if !filterStatuses.isEmpty {
+                    let allowedStatuses = Set(filterStatuses.compactMap { SessionStatus(normalized: $0)?.token })
+                    guard let statusToken else { return false }
+                    if !allowedStatuses.contains(statusToken) {
+                        return false
+                    }
+                }
+
+                if !selectedClientFilterIDs.isEmpty {
+                    guard let clientId = session.clientId,
+                          selectedClientFilterIDs.contains(clientId) else {
+                        return false
+                    }
+                }
+
+                if !normalizedSearchText.isEmpty {
+                    let haystack = [
+                        session.title,
+                        session.location ?? "",
+                        session.notes ?? ""
+                    ]
+                        .joined(separator: " ")
+                        .lowercased()
+                    if !haystack.contains(normalizedSearchText) {
+                        return false
+                    }
+                }
+
+                return true
+            }
 
             self.allDayItems = localAllDayItems.sorted { $0.startDate ?? .distantPast < $1.startDate ?? .distantPast }
             self.timedItems = localTimedItems.sorted { $0.startDate ?? .distantPast < $1.startDate ?? .distantPast }
@@ -782,7 +878,7 @@ public class CalendarViewModel: ObservableObject {
             do {
                 // Check if session exists, then create or update
                 let savedSession: Session
-                if let existingSession = try await sessionsRepository.fetch(byId: session.id) {
+                if try await sessionsRepository.fetch(byId: session.id) != nil {
                     // Update existing session
                     savedSession = try await sessionsRepository.update(session)
                 } else {
@@ -792,860 +888,453 @@ public class CalendarViewModel: ObservableObject {
                 
                 // Sync with EventKit using domain model
                 Task { @MainActor in
-                    eventKitService.sync(session: savedSession, modelContext: modelContext)
+                    eventKitService.sync(session: savedSession, unitOfWork: unitOfWork)
                 }
                 
+                // Refresh data
                 await MainActor.run {
                     updateDisplayableItems()
                 }
             } catch {
-                print("Error saving session: \(error.localizedDescription)")
+                print("Error saving session: \(error)")
             }
         }
     }
     
-    func deleteSession(_ session: Session) {
-        Task {
-            // Delete from EventKit if it has an event identifier
-            if !session.eventIdentifier.isEmpty {
-                Task { @MainActor in
-                    eventKitService.delete(syncIdentifier: session.eventIdentifier)
-                }
-            }
-            
-            do {
-                try await sessionsRepository.delete(id: session.id)
-                await MainActor.run {
-                    updateDisplayableItems()
-                }
-            } catch {
-                print("Error deleting session: \(error.localizedDescription)")
-            }
-        }
-    }
-    
-    // MARK: - Session Duplication
-    
-    func duplicateSession(_ session: Session) {
-        Task {
-            do {
-                // Create a duplicate session with new ID
-                var duplicateSession = session
-                // Create new session via repository
-                // Note: This creates a shallow copy - deep duplication logic would go here
-                duplicateSession = Session(
-                    id: UUID(),
-                    title: session.title,
-                    startTime: session.startTime,
-                    endTime: session.endTime,
-                    isAllDay: session.isAllDay,
-                    location: session.location,
-                    notes: session.notes,
-                    status: session.status,
-                    isTravel: session.isTravel,
-                    clientId: session.clientId,
-                    clientServiceId: session.clientServiceId,
-                    addressId: session.addressId,
-                    groupID: session.groupID,
-                    groupedPosition: session.groupedPosition,
-                    eventIdentifier: "", // New session doesn't have EventKit identifier yet
-                    calendarIdentifier: session.calendarIdentifier,
-                    lastModifiedDate: Date(),
-                    lastSyncTag: nil,
-                    recurrenceRuleData: session.recurrenceRuleData,
-                    attendeesCount: session.attendeesCount,
-                    derivedFromEKEventID: session.derivedFromEKEventID,
-                    googleColorId: session.googleColorId,
-                    sessionLatitude: session.sessionLatitude,
-                    sessionLongitude: session.sessionLongitude
-                )
-                
-                let _ = try await sessionsRepository.create(duplicateSession)
-                
-                await MainActor.run {
-                    updateDisplayableItems()
-                }
-            } catch {
-                print("Error duplicating session: \(error.localizedDescription)")
-            }
-        }
-    }
-    
-    // MARK: - Helper Methods
-    
-    /// Fetch client name with caching
-    func fetchClientName(for clientId: UUID) async -> String? {
-        // Check cache first
-        if let cachedName = clientNameCache[clientId] {
-            return cachedName
-        }
-        
-        // Fetch from repository
-        do {
-            if let client = try await clientsRepository.fetch(by: clientId) {
-                let name = client.fullName
-                clientNameCache[clientId] = name
-                return name
-            }
-        } catch {
-            print("[CalendarViewModel] Failed to fetch client: \(error)")
-        }
-        return nil
-    }
-    
-    /// Fetch client service with caching
-    func fetchClientService(for serviceId: UUID) async -> ClientService? {
-        // Check cache first
-        if let cached = clientServiceCache[serviceId] {
-            return cached
-        }
-        
-        // Fetch directly from repository using the new fetch(by:) method
-        do {
-            if let service = try await clientServicesRepository.fetch(by: serviceId) {
-                clientServiceCache[serviceId] = service
-                return service
-            }
-        } catch {
-            print("[CalendarViewModel] Failed to fetch client service: \(error)")
-        }
-        return nil
-    }
-    
-    /// Fetch client service by client ID and service ID
-    private func fetchClientService(clientId: UUID, serviceId: UUID) async -> ClientService? {
-        do {
-            let services = try await clientServicesRepository.fetch(for: clientId)
-            return services.first(where: { $0.id == serviceId })
-        } catch {
-            print("[CalendarViewModel] Failed to fetch client services: \(error)")
-            return nil
-        }
-    }
-    
-    /// Helper to fetch SessionEntity for EventKit sync operations
-    /// Note: EventKitSyncService.sync(session:modelContext:) already accepts domain models
-    /// This method is kept for direct entity operations that still require SessionEntity
-    func fetchSessionEntity(by id: UUID) async throws -> SessionEntity {
-        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == id })
-        return try await MainActor.run {
-            guard let entity = try modelContext.fetch(descriptor).first else {
-                throw RepositoryError.entityNotFound
-            }
-            return entity
-        }
-    }
-
-    func updateAvailableFilters() {
-        // Update available statuses from filtered sessions
-        let statuses: Set<String> = Set(filteredSessions.compactMap { $0.status }.filter { !$0.isEmpty })
-        var newAvailableStatuses: [(label: String, value: String?)] = [("All", nil)]
-        newAvailableStatuses.append(contentsOf: statuses.sorted().map { (label: $0.capitalized, value: $0) })
-        self.availableFilterStatuses = newAvailableStatuses
-
-        // Update available clients from visible session instances (async)
-        Task {
-            // Collect unique client IDs from sessions
-            let clientIds = Set(visibleSessionInstances.compactMap { $0.underlyingSession?.clientId })
-            
-            // Fetch client names using ClientsRepository
-            var uniqueClients: [(label: String, value: UUID?, color: Color?)] = [("All", nil, nil)]
-            for clientId in clientIds {
-                let clientName = await fetchClientName(for: clientId) ?? "Client \(clientId.uuidString.prefix(8))"
-                uniqueClients.append((
-                    label: clientName,
-                    value: clientId,
-                    color: ColorSystem.Client.color(for: clientId)
-                ))
-            }
-            await MainActor.run {
-                self.availableFilterClients = uniqueClients
-            }
-        }
-    }
-
-    func prepareSession(from event: EKEvent) {
-        self.eventToConvert = event
-        // self.isShowingNewSessionSheet = true // This is handled by .sheet watching eventToConvert
-    }
-
-    func updateSessionStatus(for session: Session, to status: String) {
-        Task {
-            do {
-                try await sessionsRepository.updateStatus(id: session.id, status: status)
-                await MainActor.run {
-                    updateDisplayableItems() // Refresh items after status change
-                }
-            } catch {
-                print("Error updating session status: \(error)")
-            }
-        }
-    }
-
-    // MARK: - Event Conversion and Session Management (Added for error fixes)
-    
-    func convertEventToSession(_ event: EKEvent) {
-        prepareSession(from: event)
-    }
-    
-    func rescheduleSession(with sessionID: String, originalInstanceDate: Date?, to newStartDate: Date, isAllDay: Bool) {
-        // Find the session by ID using repository
-        Task {
-            guard let sessionUUID = UUID(uuidString: sessionID),
-                  let session = try? await sessionsRepository.fetch(byId: sessionUUID) else {
-                print("[CalendarViewModel] Could not find session with ID: \(sessionID)")
-                return
-            }
-            
-            var formModel = SessionFormModel(from: session)
-            formModel.updateStartTime(newStartDate)
-            formModel.isAllDay = isAllDay
-            
-            // Update session via repository
-            var updatedSession = session
-            updatedSession = Session(
-                id: session.id,
-                title: session.title,
-                startTime: newStartDate,
-                endTime: session.endTime,
-                isAllDay: isAllDay,
-                location: session.location,
-                notes: session.notes,
-                status: session.status,
-                isTravel: session.isTravel,
-                clientId: session.clientId,
-                clientServiceId: session.clientServiceId,
-                addressId: session.addressId,
-                groupID: session.groupID,
-                groupedPosition: session.groupedPosition,
-                eventIdentifier: session.eventIdentifier,
-                calendarIdentifier: session.calendarIdentifier,
-                lastModifiedDate: Date(),
-                lastSyncTag: session.lastSyncTag,
-                recurrenceRuleData: session.recurrenceRuleData,
-                attendeesCount: session.attendeesCount,
-                derivedFromEKEventID: session.derivedFromEKEventID,
-                googleColorId: session.googleColorId,
-                sessionLatitude: session.sessionLatitude,
-                sessionLongitude: session.sessionLongitude
-            )
-            
-            do {
-                let _ = try await sessionsRepository.update(updatedSession)
-                
-                // Sync with EventKit using domain model
-                Task { @MainActor in
-                    eventKitService.sync(session: updatedSession, modelContext: modelContext)
-                }
-                
-                await MainActor.run {
-                    print("[CalendarViewModel] Successfully rescheduled session \(sessionID)")
-                    updateDisplayableItems()
-                }
-            } catch {
-                print("[CalendarViewModel] Failed to reschedule session: \(error.localizedDescription)")
-            }
-        }
-    }
+    // MARK: - Recurring Editing Support
     
     func handleDeleteFromEditor(with mode: RecurringEditMode, viewModel: NewSessionViewModel) {
-        guard let session = viewModel.sessionToEdit else {
-            print("[CalendarViewModel] No session to delete in viewModel")
-            return
-        }
         Task {
-            do {
-                try await sessionModificationService.deleteSession(session, mode: mode, originalInstanceDate: viewModel.formModel.startTime)
-                await MainActor.run {
-                    print("[CalendarViewModel] Successfully deleted session \(session.id)")
-                    updateDisplayableItems()
-                }
-            } catch {
-                print("[CalendarViewModel] Failed to delete session: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    // MARK: - Month-Specific Summary Properties
-    
-    private func filteredSessionsForCurrentMonth() -> [Session] {
-        let calendar = Calendar.current
-        let startOfMonth = calendar.startOfDay(for: selectedDate.startOfMonth)
-        guard let endOfMonthBase = calendar.date(byAdding: .month, value: 1, to: startOfMonth),
-              let endOfMonth = calendar.date(byAdding: .day, value: -1, to: endOfMonthBase) else {
-            return []
-        }
-        let endOfMonthDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endOfMonth)) ?? endOfMonth.addingTimeInterval(24*60*60)
-
-        // Note: This computed property is synchronous, so it uses already-loaded session data
-        // from filteredSessions, allDayItems, and timedItems rather than making async repository calls
-        // For accurate date-range filtering, consider using an async method that queries the repository directly
-        let allSessions = (allDayItems + timedItems).compactMap { $0.underlyingSession }
-
-        return allSessions.filter { session in
-            let isInMonth =
-                (session.recurrenceRuleData == nil && (
-                    (session.isAllDay == true && (session.startTime ?? Date.distantPast) >= startOfMonth && (session.startTime ?? Date.distantFuture) < endOfMonthDay)
-                    ||
-                    (session.isAllDay == false && (session.endTime ?? Date.distantPast) > startOfMonth && (session.startTime ?? Date.distantFuture) < endOfMonthDay)
-                ))
-                ||
-                (session.recurrenceRuleData != nil && (session.startTime ?? Date.distantFuture) < endOfMonthDay)
-
-            if !isInMonth { return false }
-            if !selectedClientFilterIDs.isEmpty && !(selectedClientFilterIDs.contains(session.clientId ?? UUID())) { return false }
-            if !filterStatuses.isEmpty && !(filterStatuses.contains(session.status ?? "")) { return false }
-            if !showCancelledSessions && session.status == SessionStatus.cancelled.rawValue { return false }
-            if !searchText.isEmpty && !(session.title.localizedCaseInsensitiveContains(searchText)) { return false }
-            return true
-        }
-    }
-
-    var monthVisibleSessionsCount: Int {
-        return filteredSessionsForCurrentMonth().count
-    }
-    
-    var monthTotalBillableHours: Double {
-        return filteredSessionsForCurrentMonth().reduce(0.0) { total, session in
-            guard let startTime = session.startTime, let endTime = session.endTime, endTime > startTime else {
-                return total
-            }
-            let durationInSeconds = endTime.timeIntervalSince(startTime)
-            return total + (durationInSeconds / 3600.0)
-        }
-    }
-    
-    var monthTotalGrossIncome: Double {
-        // Calculate income synchronously from cached data
-        // For accurate calculation, use calculateMonthTotalGrossIncome() async method
-        return 0.0 // Placeholder - use async method for actual calculation
-    }
-    
-    /// Calculate month total gross income asynchronously
-    func calculateMonthTotalGrossIncome() async -> Double {
-        var total: Double = 0.0
-        
-        for session in filteredSessionsForCurrentMonth() {
-            guard let serviceId = session.clientServiceId else { continue }
+            // Delete logic using editor ViewModel or SessionDomainService?
+            // The editor VM has already called its delete.
+            // This handler is just for refreshing?
+            // Checking CalendarView:
+            // newSessionViewModel.onDelete = { mode in viewModel.handleDeleteFromEditor(...) }
+            // So NewSessionViewModel delegates deletion to CalendarViewModel?
+            // No, NewSessionViewModel should handle deletion internally now that it has UoW.
+            // BUT let's check CalendarView again.
+            // `newSessionViewModel.onDelete` logic is: `viewModel.handleDeleteFromEditor(...)`
+            // So NewSessionViewModel might trigger it.
             
-            // Fetch service data
-            let service = await fetchClientService(for: serviceId)
-            guard let service = service, service.rate > 0 else { continue }
+            // Wait, NewSessionViewModel refactor: `executeDelete` accesses `onDelete?()`.
+            // If NewSessionViewModel handles deletion via UoW, then `handleDeleteFromEditor` just needs to dismiss and refresh.
+            // But if `handleDeleteFromEditor` previously did the logic...
             
-            let serviceUnit = service.unit.lowercased()
-            let serviceRate = service.rate
+            // NewSessionViewModel code (viewed): `executeDelete` calls `unitOfWork.sessions.delete(...)`.
+            // So logic IS in NewSessionViewModel.
+            // `onDelete` is just a callback "Delete performed".
             
-            // Calculate session duration in hours for hourly rates
-            if serviceUnit == "hour" {
-                if let startTime = session.startTime, let endTime = session.endTime, endTime > startTime {
-                    let durationInSeconds = endTime.timeIntervalSince(startTime)
-                    let durationInHours = durationInSeconds / 3600.0
-                    total += serviceRate * durationInHours
-                }
-            } else if !serviceUnit.isEmpty {
-                // For non-hourly units, add the rate directly
-                total += serviceRate
-            }
-        }
-        
-        return total
-    }
-
-    // --- Computed: All visible session instances (timed + all-day) ---
-    var visibleSessionInstances: [DisplayableCalendarItem] {
-        timedItems.filter { $0.isSession } + allDayItems.filter { $0.isSession }
-    }
-
-    // --- Computed: Billable hours for visible session instances ---
-    var visibleBillableHours: Double {
-        visibleSessionInstances.reduce(0.0) { total, item in
-            guard let start = item.startDate, let end = item.endDate, end > start else { return total }
-            let duration = end.timeIntervalSince(start) / 3600.0
-            return total + duration
-        }
-    }
-
-    // --- Computed: Gross income for visible session instances ---
-    var visibleGrossIncome: Double {
-        // Note: This computed property returns 0 as it's synchronous
-        // For accurate calculation, use calculateVisibleGrossIncome() async method
-        return 0.0
-    }
-    
-    /// Calculate visible gross income asynchronously
-    func calculateVisibleGrossIncome() async -> Double {
-        var total: Double = 0.0
-        
-        for item in visibleSessionInstances {
-            guard let session = item.underlyingSession,
-                  let serviceId = session.clientServiceId else { continue }
-            
-            // Fetch service data
-            let service = await fetchClientService(for: serviceId)
-            guard let service = service, service.rate > 0 else { continue }
-            
-            let serviceUnit = service.unit.lowercased()
-            let serviceRate = service.rate
-            
-            // Calculate session duration in hours for hourly rates
-            if serviceUnit == "hour" {
-                if let startTime = item.startDate, let endTime = item.endDate, endTime > startTime {
-                    let durationInSeconds = endTime.timeIntervalSince(startTime)
-                    let durationInHours = durationInSeconds / 3600.0
-                    total += serviceRate * durationInHours
-                }
-            } else if !serviceUnit.isEmpty {
-                // For non-hourly units, add the rate directly
-                total += serviceRate
-            }
-        }
-        
-        return total
-    }
-
-    // Add this computed property for CalendarView selection tracking
-    var selectedSessionEquatableID: String? {
-        selectedSessionInfo?.session?.id.uuidString
-    }
-
-    // Add stubs for missing methods used in CalendarView
-    
-    private func convertRecurrenceFrequency(from rule: EKRecurrenceRule?) -> RecurrenceFrequency {
-        guard let rule = rule else { return .none }
-        switch rule.frequency {
-        case .daily: return .daily
-        case .weekly: return .weekly
-        case .monthly: return .monthly
-        case .yearly: return .yearly
-        @unknown default: return .none
+            self.selectedSessionInfo = nil
+            self.eventToConvert = nil
+            self.updateDisplayableItems()
         }
     }
     
     func handleSaveFromEditor(with mode: RecurringEditMode, viewModel: NewSessionViewModel) {
-        Task {
-            if let session = viewModel.sessionToEdit {
-                // Editing existing session
-                // Use instance date from selectedSessionInfo for recurring session edits
-                let instanceDate = session.recurrenceRuleData != nil ? selectedSessionInfo?.instanceStart : nil
-                do {
-                    let modifiedSession = try await viewModel.sessionModificationService.modifySession(
-                        session,
-                        with: viewModel.formModel,
-                        mode: mode,
-                        originalInstanceDate: instanceDate
-                    )
-                    print("[CalendarViewModel] Successfully saved session \(modifiedSession.id)")
-                    await MainActor.run {
-                        updateDisplayableItems()
-                    }
-                } catch {
-                    print("[CalendarViewModel] Failed to save session: \(error.localizedDescription)")
-                }
-            } else {
-                // Creating new session
-                do {
-                    let newSession = try await viewModel.sessionModificationService.createSession(from: viewModel.formModel)
-                    print("[CalendarViewModel] Successfully created session \(newSession.id)")
-                    await MainActor.run {
-                        updateDisplayableItems()
-                    }
-                } catch {
-                    print("[CalendarViewModel] Failed to create session: \(error.localizedDescription)")
-                }
-            }
-        }
+        // Refresh and dismiss
+        self.selectedSessionInfo = nil
+        self.eventToConvert = nil
+        self.updateDisplayableItems()
     }
-
+    
+    // MARK: - Recurring Modification Execution (for drag/drop or resize)
+    
     func executeRecurringModification(with mode: RecurringEditMode) {
-        guard let pending = pendingRecurringModification else { return }
+        guard let (session, modification, originalDate) = pendingRecurringModification else { return }
         
         Task {
-            var formModel = SessionFormModel(from: pending.session)
-            // Update the start time if it's a move, or both if it's a resize
-            switch pending.modification {
-            case .move(let newStartTime):
-                formModel.updateStartTime(newStartTime)
-            case .resize(let newStartTime, let newEndTime):
-                formModel.updateStartTime(newStartTime)
-                formModel.updateEndTime(newEndTime)
-            }
-            
             do {
-                let modifiedSession = try await sessionModificationService.modifySession(
-                    pending.session,
-                    with: formModel,
+                _ = try await sessionModificationService.processRecurringModification(
+                    session: session,
+                    modification: modification,
                     mode: mode,
-                    originalInstanceDate: pending.originalInstanceDate
+                    originalInstanceDate: originalDate
                 )
+                
                 await MainActor.run {
-                    print("[CalendarViewModel] Successfully modified recurring session \(modifiedSession.id)")
-                    updateDisplayableItems()
-                    pendingRecurringModification = nil
-                    showingRecurringModificationDialog = false
+                    self.pendingRecurringModification = nil
+                    self.showingRecurringModificationDialog = false
+                    self.updateDisplayableItems()
                 }
             } catch {
-                print("[CalendarViewModel] Failed to modify recurring session: \(error.localizedDescription)")
+                print("Error processing recurring modification: \(error)")
             }
         }
     }
 
-    // Stub for resizeSession used in CalendarItemBlockView
-    func resizeSession(with masterSessionID: String, originalInstanceDate: Date, edge: CalendarInteractionHandler.ResizeEdge, timeDelta: TimeInterval) {
-        // Find the session by ID using repository
+    // MARK: - Helpers
+    
+    // --- Session Manipulation Methods (called from Views) ---
+    
+    /// Convert an EKEvent to a Session (triggers the event conversion sheet)
+    func convertEventToSession(_ event: EKEvent) {
+        selectedSessionInfo = nil
+        eventToConvert = event
+    }
+    
+    /// Duplicate a session
+    func duplicateSession(_ session: Session) {
         Task {
-            guard let sessionUUID = UUID(uuidString: masterSessionID),
-                  let session = try? await sessionsRepository.fetch(byId: sessionUUID) else {
-                print("[CalendarViewModel] Could not find session with ID: \(masterSessionID)")
-                return
-            }
-            
-            // Create form model from existing session for proper data handling
-            var formModel = SessionFormModel(from: session)
-            
-            // Apply the specific time change based on which edge was resized
-            if edge == .top {
-                // Only adjust start time when resizing the top edge
-                let newStart = formModel.startTime.addingTimeInterval(timeDelta)
-                formModel.updateStartTime(newStart)
-            } else {
-                // Only adjust end time when resizing the bottom edge
-                let newEnd = formModel.endTime.addingTimeInterval(timeDelta)
-                formModel.updateEndTime(newEnd)
-            }
-            
-            // Check if this is a recurring session
-            let isRecurring = session.recurrenceRuleData != nil
-            
-            if isRecurring {
-                // For recurring sessions, show the modification dialog
-                await MainActor.run {
-                    pendingRecurringModification = (
-                        session: session,
-                        modification: RecurringModificationType.resize(newStartTime: formModel.startTime, newEndTime: formModel.endTime),
-                        originalInstanceDate: originalInstanceDate
-                    )
-                    showingRecurringModificationDialog = true
+            do {
+                // Safely unwrap optional dates
+                guard let startTime = session.startTime,
+                      let endTime = session.endTime else {
+                    print("[CalendarViewModel] Cannot duplicate session without start/end times")
+                    return
                 }
-            } else {
-                // For non-recurring sessions, update via repository
-                var updatedSession = session
-                updatedSession = Session(
-                    id: session.id,
+                
+                // Create a duplicate with a new ID and slightly adjusted start time
+                let newSession = Session(
+                    id: UUID(),
                     title: session.title,
-                    startTime: formModel.startTime,
-                    endTime: formModel.endTime,
+                    startTime: startTime.addingTimeInterval(3600), // +1 hour
+                    endTime: endTime.addingTimeInterval(3600),
                     isAllDay: session.isAllDay,
                     location: session.location,
                     notes: session.notes,
                     status: session.status,
                     isTravel: session.isTravel,
+                    isDetached: false,
+                    occurrenceDate: nil,
                     clientId: session.clientId,
                     clientServiceId: session.clientServiceId,
-                    addressId: session.addressId,
-                    groupID: session.groupID,
-                    groupedPosition: session.groupedPosition,
-                    eventIdentifier: session.eventIdentifier,
-                    calendarIdentifier: session.calendarIdentifier,
-                    lastModifiedDate: Date(),
-                    lastSyncTag: session.lastSyncTag,
-                    recurrenceRuleData: session.recurrenceRuleData,
-                    attendeesCount: session.attendeesCount,
-                    derivedFromEKEventID: session.derivedFromEKEventID,
-                    googleColorId: session.googleColorId,
-                    sessionLatitude: session.sessionLatitude,
-                    sessionLongitude: session.sessionLongitude
+                    addressId: session.addressId
                 )
-                
-                do {
-                    let _ = try await sessionsRepository.update(updatedSession)
-                    
-                    // Sync with EventKit using domain model
-                    Task { @MainActor in
-                        eventKitService.sync(session: updatedSession, modelContext: modelContext)
-                    }
-                    
-                    await MainActor.run {
-                        print("[CalendarViewModel] Successfully resized session \(masterSessionID)")
-                        updateDisplayableItems()
-                    }
-                } catch {
-                    print("[CalendarViewModel] Failed to resize session: \(error.localizedDescription)")
+                _ = try await sessionsRepository.create(newSession)
+                await MainActor.run {
+                    updateDisplayableItems()
                 }
+            } catch {
+                print("[CalendarViewModel] Failed to duplicate session: \(error)")
             }
         }
     }
+    
+    /// Reschedule a session to a new date/time
+    func rescheduleSession(with sessionId: UUID, originalInstanceDate: Date?, to newStartDate: Date, isAllDay: Bool = false) {
+        Task {
+            do {
+                guard let session = try await sessionsRepository.fetch(byId: sessionId) else {
+                    print("[CalendarViewModel] Session not found for reschedule")
+                    return
+                }
+                
+                // Safely unwrap optional dates
+                guard let sessionStartTime = session.startTime,
+                      let sessionEndTime = session.endTime else {
+                    print("[CalendarViewModel] Cannot reschedule session without start/end times")
+                    return
+                }
+                
+                // Calculate duration
+                let duration = sessionEndTime.timeIntervalSince(sessionStartTime)
+                let newEndDate = newStartDate.addingTimeInterval(duration)
 
-    // Stub for formatTime used in CalendarItemBlockView
-    func formatTime(for date: Date) -> String {
+                if session.recurrenceRuleData != nil,
+                   let occurrenceDate = originalInstanceDate {
+                    await MainActor.run {
+                        self.pendingRecurringModification = (
+                            session: session,
+                            modification: .move(newStartTime: newStartDate),
+                            originalInstanceDate: occurrenceDate
+                        )
+                        self.showingRecurringModificationDialog = true
+                    }
+                    return
+                }
+                
+                // Create updated session
+                let updatedSession = Session(
+                    id: session.id,
+                    title: session.title,
+                    startTime: newStartDate,
+                    endTime: newEndDate,
+                    isAllDay: isAllDay,
+                    location: session.location,
+                    notes: session.notes,
+                    status: session.status,
+                    isTravel: session.isTravel,
+                    isDetached: session.isDetached,
+                    occurrenceDate: session.occurrenceDate,
+                    clientId: session.clientId,
+                    clientServiceId: session.clientServiceId,
+                    addressId: session.addressId
+                )
+                
+                _ = try await sessionsRepository.update(updatedSession)
+                await MainActor.run {
+                    updateDisplayableItems()
+                }
+            } catch {
+                print("[CalendarViewModel] Failed to reschedule session: \(error)")
+            }
+        }
+    }
+    
+    /// Resize a session (change end time)
+    func resizeSession(_ session: Session, newEndTime: Date) {
+        Task {
+            do {
+                let updatedSession = Session(
+                    id: session.id,
+                    title: session.title,
+                    startTime: session.startTime,
+                    endTime: newEndTime,
+                    isAllDay: session.isAllDay,
+                    location: session.location,
+                    notes: session.notes,
+                    status: session.status,
+                    isTravel: session.isTravel,
+                    isDetached: session.isDetached,
+                    occurrenceDate: session.occurrenceDate,
+                    clientId: session.clientId,
+                    clientServiceId: session.clientServiceId,
+                    addressId: session.addressId
+                )
+                
+                _ = try await sessionsRepository.update(updatedSession)
+                await MainActor.run {
+                    updateDisplayableItems()
+                }
+            } catch {
+                print("[CalendarViewModel] Failed to resize session: \(error)")
+            }
+        }
+    }
+    
+    /// Resize a session from the calendar view (drag handle interaction)
+    func resizeSession(with instanceId: UUID, originalInstanceDate: Date, edge: CalendarInteractionHandler.ResizeEdge, timeDelta: TimeInterval) {
+        Task {
+            var session = visibleSessionInstances.first(where: { $0.id == instanceId })
+            if session == nil {
+                session = try? await sessionsRepository.fetch(byId: instanceId)
+            }
+            guard let session else {
+                print("Session not found for resize: \(instanceId)")
+                return
+            }
+
+            // Determine new start/end times based on edge
+            var newStartTime = session.startTime ?? originalInstanceDate
+            var newEndTime = session.endTime ?? originalInstanceDate.addingTimeInterval(3600)
+            
+            if edge == .top {
+                newStartTime = newStartTime.addingTimeInterval(timeDelta)
+            } else {
+                newEndTime = newEndTime.addingTimeInterval(timeDelta)
+            }
+            
+            // Check validity
+            if newEndTime <= newStartTime { return }
+
+            if session.recurrenceRuleData != nil {
+                await MainActor.run {
+                    self.pendingRecurringModification = (
+                        session: session,
+                        modification: .resize(newStartTime: newStartTime, newEndTime: newEndTime),
+                        originalInstanceDate: originalInstanceDate
+                    )
+                    self.showingRecurringModificationDialog = true
+                }
+                return
+            }
+            
+            // Create updated session
+            let updatedSession = Session(
+                id: session.id,
+                title: session.title,
+                startTime: newStartTime,
+                endTime: newEndTime,
+                isAllDay: session.isAllDay,
+                location: session.location,
+                notes: session.notes,
+                status: session.status,
+                isTravel: session.isTravel,
+                isDetached: session.isDetached,
+                occurrenceDate: session.occurrenceDate,
+                clientId: session.clientId,
+                clientServiceId: session.clientServiceId,
+                addressId: session.addressId
+            )
+            
+            do {
+                _ = try await sessionsRepository.update(updatedSession)
+                await MainActor.run {
+                    updateDisplayableItems()
+                }
+            } catch {
+                print("[CalendarViewModel] Failed to resize session: \(error)")
+            }
+        }
+    }
+    
+    /// Format a date as time string
+    func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
     
-    // MARK: - Calendar Visibility Management
+    /// Visible session instances for the current view
+    var visibleSessionInstances: [Session] {
+        return filteredSessions
+    }
     
-    // MARK: - Bulk Operations
-    @Published var isBulkSelectionMode: Bool = false
-    @Published var selectedItemIDs: Set<String> = []
+    /// Check if a calendar is visible
+    func isCalendarVisible(id: String) -> Bool {
+        visibleCalendarIdentifiers.contains(id)
+    }
     
-    /// Toggle bulk selection mode
-    func toggleBulkSelectionMode() {
-        isBulkSelectionMode.toggle()
-        if !isBulkSelectionMode {
-            selectedItemIDs.removeAll()
+    /// Total billable hours from visible sessions
+    var visibleBillableHours: Double {
+        filteredSessions.reduce(0) { total, session in
+            guard let start = session.startTime, let end = session.endTime else { return total }
+            let hours = end.timeIntervalSince(start) / 3600
+            return total + hours
         }
     }
     
-    /// Toggle selection of a specific item
-    func toggleItemSelection(_ itemID: String) {
-        if selectedItemIDs.contains(itemID) {
-            selectedItemIDs.remove(itemID)
-        } else {
-            selectedItemIDs.insert(itemID)
+    /// Estimated gross income from visible sessions
+    var visibleGrossIncome: Double {
+        filteredSessions.reduce(0) { total, session in
+            guard let rate = session.assignedRate,
+                  let start = session.startTime,
+                  let end = session.endTime else { return total }
+            let hours = end.timeIntervalSince(start) / 3600
+            return total + (rate * hours)
         }
     }
     
-    /// Select all items
-    func selectAllItems() {
-        selectedItemIDs = Set(displayableItems.map { $0.id })
-    }
-    
-    /// Deselect all items
-    func deselectAllItems() {
-        selectedItemIDs.removeAll()
-    }
-    
-    /// Get selected sessions (filter out events since we can't modify them)
+    /// Selected sessions for bulk operations
     var selectedSessions: [Session] {
-        return displayableItems.compactMap { item in
-            guard selectedItemIDs.contains(item.id) else { return nil }
-            switch item {
-            case .session(let session):
-                return session
-            case .recurringSessionInstance(let template, _, _, _):
-                return template
-            case .event, .eventSegment:
-                return nil // Can't modify external events
-            }
-        }
+        filteredSessions.filter { bulkSelectedSessionIDs.contains($0.id) }
     }
     
-    /// Bulk status change
-    func bulkChangeStatus(to newStatus: String) {
-        let sessions = selectedSessions
-        Task {
-            do {
-                // Update all sessions in parallel
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    for session in sessions {
-                        group.addTask {
-                            try await self.sessionsRepository.updateStatus(id: session.id, status: newStatus)
-                        }
-                    }
-                    try await group.waitForAll()
-                }
-                
-                await MainActor.run {
-                    updateDisplayableItems()
-                    // Exit bulk selection mode
-                    isBulkSelectionMode = false
-                    selectedItemIDs.removeAll()
-                }
-            } catch {
-                print("[CalendarViewModel] Failed to bulk change status: \(error.localizedDescription)")
-            }
-        }
+    /// Selected item IDs (alias for bulk selection)
+    var selectedItemIDs: Set<UUID> {
+        bulkSelectedSessionIDs
     }
     
-    /// Bulk delete sessions
+    /// Bulk delete selected sessions
     func bulkDeleteSessions() {
-        let sessions = selectedSessions
         Task {
-            do {
-                // Delete all sessions in parallel
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    for session in sessions {
-                        group.addTask {
-                            try await self.sessionsRepository.delete(id: session.id)
-                        }
-                    }
-                    try await group.waitForAll()
-                }
-                
-                await MainActor.run {
-                    updateDisplayableItems()
-                    // Exit bulk selection mode
-                    isBulkSelectionMode = false
-                    selectedItemIDs.removeAll()
-                }
-            } catch {
-                print("[CalendarViewModel] Failed to bulk delete sessions: \(error.localizedDescription)")
-            }
-        }
-    }
-    
-    /// Toggle the visibility of a specific calendar
-    func toggleCalendarVisibility(calendarIdentifier: String) {
-        if visibleCalendarIdentifiers.contains(calendarIdentifier) {
-            visibleCalendarIdentifiers.remove(calendarIdentifier)
-        } else {
-            visibleCalendarIdentifiers.insert(calendarIdentifier)
-        }
-        
-        // Trigger UI update
-        objectWillChange.send()
-        updateDisplayableItems()
-    }
-    
-    /// Get monitored calendars for visibility toggling
-    var availableCalendars: [EKCalendar] {
-        // Only show calendars that are being monitored/synced
-        return eventKitService.availableCalendars.filter { calendar in
-            eventKitService.monitoredCalendarIdentifiers.contains(calendar.calendarIdentifier)
-        }
-    }
-    
-    /// Check if a calendar is currently visible
-    func isCalendarVisible(calendarIdentifier: String) -> Bool {
-        return visibleCalendarIdentifiers.contains(calendarIdentifier)
-    }
-    
-    /// Initialize calendar visibility from EventKitSyncService
-    func initializeCalendarVisibility() {
-        // Only work with monitored calendars
-        let monitoredCalendars = eventKitService.availableCalendars.filter { calendar in
-            eventKitService.monitoredCalendarIdentifiers.contains(calendar.calendarIdentifier)
-        }
-        
-        // Start with all monitored calendars visible
-        visibleCalendarIdentifiers = Set(monitoredCalendars.map { $0.calendarIdentifier })
-        
-        // Initialization complete
-    }
-
-    // MARK: - EventKit External Changes Handling
-    private func handleEventKitExternalChanges() async {
-        print("[CalendarViewModel] Handling EventKit external changes")
-        guard eventKitService.accessGranted, eventKitService.syncEnabled else { 
-            print("[CalendarViewModel] Skipping external changes - access not granted or sync disabled")
-            return 
-        }
-        
-        await MainActor.run {
-            let calendar = Calendar.current
-            let start = calendar.date(byAdding: .year, value: -1, to: Date())!
-            let end = calendar.date(byAdding: .year, value: 1, to: Date())!
-            
-            // Fetch all events from monitored calendars
-            let remoteEvents = eventKitService.fetchEvents(start: start, end: end)
-            print("[CalendarViewModel] Fetched \(remoteEvents.count) remote events")
-            var remoteEventsById = [String: EKEvent]()
-            for event in remoteEvents {
-                if let id = event.eventIdentifier, remoteEventsById[id] == nil {
-                    remoteEventsById[id] = event
+            for sessionId in bulkSelectedSessionIDs {
+                do {
+                    try await sessionsRepository.delete(id: sessionId)
+                } catch {
+                    print("[CalendarViewModel] Failed to delete session \(sessionId): \(error)")
                 }
             }
-            
-            // Fetch all local sessions with eventIdentifier in this range using FetchDescriptor
-            let fetchDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate {
-                $0.eventIdentifier != ""
-            })
-            
-            // Filter by date range in Swift
-            let localSessions = ((try? modelContext.fetch(fetchDescriptor)) ?? []).filter {
-                ($0.startTime ?? Date.distantPast) >= start &&
-                ($0.endTime ?? Date.distantFuture) <= end
-            }
-            print("[CalendarViewModel] Fetched \(localSessions.count) local sessions")
-            var localSessionsById: [String: SessionEntity] = [:]
-            for session in localSessions {
-                if !session.eventIdentifier.isEmpty {
-                    localSessionsById[session.eventIdentifier] = session
-                }
-            }
-            
-            // 1. Update local sessions from remote events (do not create new sessions)
-            var updatedCount = 0
-            for (eventId, remoteEvent) in remoteEventsById {
-                if let localSession = localSessionsById[eventId] {
-                    let localLastModified = localSession.lastModifiedDate ?? Date.distantPast
-                    let remoteLastModified = remoteEvent.lastModifiedDate ?? Date.distantPast
-                    let lastSyncTag = localSession.lastSyncTag.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date.distantPast
-                    let localChanged = localLastModified > lastSyncTag
-                    let remoteChanged = remoteLastModified > lastSyncTag
-                    if remoteChanged && (!localChanged || remoteLastModified > localLastModified) {
-                        // Remote is newer, update local
-                        eventKitService.updateSessionFromRemote(session: localSession, remoteEvent: remoteEvent, modelContext: modelContext)
-                        updatedCount += 1
-                    }
-                }
-            }
-            print("[CalendarViewModel] Updated \(updatedCount) local sessions from remote events")
-            
-            // 2. Handle local sessions whose eventIdentifier is not found in remote events
-            // NOTE: We should NOT delete local sessions just because the remote event is missing.
-            // Sessions are enhanced EKEvents with additional application functionality.
-            // The remote event might not exist yet, be outside the fetch range, or the sync hasn't happened.
-            let remoteEventIds = Set(remoteEventsById.keys)
-            var missingRemoteCount = 0
-            for (localId, localSession) in localSessionsById {
-                if !remoteEventIds.contains(localId) {
-                    // Remote event not found - this could mean:
-                    // 1. Event was deleted remotely (but we should preserve local session)
-                    // 2. Event exists outside current fetch range
-                    // 3. Event hasn't been synced yet
-                    // 4. Event is in a different calendar
-                    // 
-                    // For now, we'll preserve the local session and log the situation
-                    missingRemoteCount += 1
-                    print("[CalendarViewModel] Local session '\(localSession.title)' has no matching remote event (eventIdentifier: \(localId)). Preserving local session.")
-                }
-            }
-            if missingRemoteCount > 0 {
-                print("[CalendarViewModel] Found \(missingRemoteCount) local sessions without matching remote events. All preserved.")
-            }
-            
-            // Save context if there are changes
-            do {
-                try modelContext.save()
-                print("[CalendarViewModel] Successfully saved context after external changes")
-                
-                // Update the displayable items to reflect the changes
+            await MainActor.run {
+                bulkSelectedSessionIDs.removeAll()
+                isBulkSelectionMode = false
                 updateDisplayableItems()
-            } catch {
-                print("[CalendarViewModel] Error saving after pull: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func fetchClientService(for serviceId: UUID) async -> ClientService? {
+        if let cached = clientServiceCache[serviceId] {
+            return cached
+        }
+        
+        // Use repo
+        if let service = try? await clientServicesRepository.fetch(by: serviceId) {
+            clientServiceCache[serviceId] = service
+            return service
+        }
+        return nil
+    }
+    
+    // --- Calendar Visibility ---
+    
+    func initializeCalendarVisibility() {
+        let calendars = eventKitService.getCalendars()
+        // If no preference saved, show all by default
+        if UserDefaults.standard.object(forKey: "VisibleCalendars") == nil {
+            visibleCalendarIdentifiers = Set(calendars.map { $0.calendarIdentifier })
+        } else {
+            let savedIds = UserDefaults.standard.stringArray(forKey: "VisibleCalendars") ?? []
+            visibleCalendarIdentifiers = Set(savedIds)
+        }
+    }
+    
+    func toggleCalendarVisibility(id: String) {
+        if visibleCalendarIdentifiers.contains(id) {
+            visibleCalendarIdentifiers.remove(id)
+        } else {
+            visibleCalendarIdentifiers.insert(id)
+        }
+        saveCalendarVisibility()
+        updateDisplayableItems() // Refresh to hide/show events
+    }
+    
+    func saveCalendarVisibility() {
+        UserDefaults.standard.set(Array(visibleCalendarIdentifiers), forKey: "VisibleCalendars")
+    }
+    
+    // --- EventKit External Changes ---
+    
+    func handleEventKitExternalChanges() async {
+        print("CalendarViewModel: Handling external EventKit changes...")
+        // We need to use the service to process changes.
+        // This usually triggers a refresh if things changed.
+        await eventKitService.processExternalChanges(unitOfWork: unitOfWork)
+        await MainActor.run {
+            self.updateDisplayableItems()
+        }
+    }
+    
+    // --- Filtering Helpers ---
+    
+    private func updateAvailableFilters() {
+        Task {
+            // Update client filters based on FETCHED sessions
+            // (Or we could filter based on all clients in repo, but filtering based on visible sessions is better context)
+            // Actually, we want to allow filtering by ANY client, or just the ones in the view?
+            // Similar to searching.
+            // For now, let's just get unique client IDs from the cached sessions to populate the filter list dynamically.
+            
+            let clientIds = Set(filteredSessions.compactMap { $0.clientId })
+            
+            var clientOptions: [(label: String, value: UUID?, color: Color?)] = [("All Clients", nil, nil)]
+            
+            for id in clientIds {
+                if let name = await fetchClientName(for: id) {
+                    let color = ColorSystem.Client.color(for: id)
+                    clientOptions.append((label: name, value: id, color: color))
+                }
+            }
+            // Sort by name
+            clientOptions.sort { $0.label < $1.label }
+            
+            await MainActor.run {
+                self.availableFilterClients = clientOptions
+                
+                // Update statuses from sessions
+                let statuses = Set(filteredSessions.compactMap { session in
+                    SessionStatus(normalized: session.status ?? "")?.token
+                })
+                var statusOptions: [(label: String, value: String?)] = [("All Statuses", nil)]
+                for status in statuses {
+                    if let normalizedStatus = SessionStatus(normalized: status) {
+                        statusOptions.append((label: normalizedStatus.displayName, value: status))
+                    }
+                }
+                self.availableFilterStatuses = statusOptions
             }
         }
     }
     
-}
-
-// Ensure Date extension for chunked exists (add if needed, e.g., in Utilities)
-
-extension Array {
-    func chunked(into size: Int) -> [[Element]] {
-        return stride(from: 0, to: count, by: size).map {
-            Array(self[$0 ..< Swift.min($0 + size, count)])
+    func fetchClientName(for clientId: UUID) async -> String? {
+        if let name = clientNameCache[clientId] {
+            return name
         }
-    }
-}
-
-
-// Helper extension for end of day/month for fetching
-extension Date {
-    var endOfWeekPlusOneDay: Date {
-        Calendar.current.date(byAdding: .day, value: 1, to: self.endOfWeek) ?? self.endOfWeek
-    }
-    var endOfMonthPlusOneDay: Date {
-        Calendar.current.date(byAdding: .day, value: 1, to: self.endOfMonth) ?? self.endOfMonth
-    }
-}
-
-private extension Calendar {
-    func endOfDay(for date: Date) -> Date {
-        let startOfDay = self.startOfDay(for: date)
-        // Add one day and subtract one second to get 23:59:59
-        return self.date(byAdding: .day, value: 1, to: startOfDay)!.addingTimeInterval(-1)
+        if let client = try? await clientsRepository.fetch(by: clientId) {
+             let name = client.fullName
+             clientNameCache[clientId] = name
+             return name
+        }
+        return nil
     }
 }

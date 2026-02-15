@@ -3,6 +3,7 @@ import EventKit
 import SwiftUI
 import Combine
 import SwiftData
+import CoreLocation
 import Core
 
 // MARK: - Notification Names
@@ -15,8 +16,35 @@ extension Notification.Name {
 @MainActor
 public final class EventKitSyncService: ObservableObject {
     public static let shared = EventKitSyncService()
-    private let eventStore = EKEventStore()
+    public let eventStore = EKEventStore()
     private var isSyncing = false
+    private var reverseGeocodeCache: [String: EventKitLocationParser.ParsedLocation] = [:]
+    private var externalChangeSnapshot: [String: Date] = [:]
+    private let maxEventFetchWindowYears = 4
+
+    private static let syncTagWriteFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let syncTagReadFormatters: [ISO8601DateFormatter] = {
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let internetDateTime = ISO8601DateFormatter()
+        internetDateTime.formatOptions = [.withInternetDateTime]
+
+        return [withFractional, internetDateTime]
+    }()
+
+    private static let legacySyncTagFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
+        return formatter
+    }()
 
     // MARK: - Published Properties for Settings
     @Published public private(set) var accessGranted: Bool = false
@@ -73,7 +101,14 @@ public final class EventKitSyncService: ObservableObject {
             break
         case .preferCalendar:
             if let remote = prompt.remoteEvent {
-                self.updateSessionFromRemote(session: prompt.session, remoteEvent: remote, modelContext: modelContext)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.updateSessionFromRemote(
+                        session: prompt.session,
+                        remoteEvent: remote,
+                        modelContext: modelContext
+                    )
+                }
             }
             return
         case .skip:
@@ -90,6 +125,288 @@ public final class EventKitSyncService: ObservableObject {
     }
 
     private var cancellables = Set<AnyCancellable>()
+
+    private func encodeSyncTag(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        return Self.syncTagWriteFormatter.string(from: date)
+    }
+
+    private func decodeSyncTag(_ rawValue: String?) -> Date? {
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+
+        for formatter in Self.syncTagReadFormatters {
+            if let parsed = formatter.date(from: rawValue) {
+                return parsed
+            }
+        }
+
+        return Self.legacySyncTagFormatter.date(from: rawValue)
+    }
+
+    private func monitoredCalendarsForFetch() -> [EKCalendar]? {
+        let identifiers = monitoredCalendarIdentifiers
+        guard !identifiers.isEmpty else { return nil }
+
+        let calendars = identifiers.compactMap { eventStore.calendar(withIdentifier: $0) }
+        return calendars.isEmpty ? nil : calendars
+    }
+
+    private func normalizedDateRange(start: Date, end: Date) -> (Date, Date)? {
+        if start == end { return nil }
+        return start < end ? (start, end) : (end, start)
+    }
+
+    private func fetchSegments(start: Date, end: Date) -> [DateInterval] {
+        guard let (normalizedStart, normalizedEnd) = normalizedDateRange(start: start, end: end) else {
+            return []
+        }
+
+        let calendar = Calendar.current
+        var segments: [DateInterval] = []
+        var cursor = normalizedStart
+
+        while cursor < normalizedEnd {
+            let nextBoundary = calendar.date(
+                byAdding: .year,
+                value: maxEventFetchWindowYears,
+                to: cursor
+            ) ?? normalizedEnd
+            let segmentEnd = min(nextBoundary, normalizedEnd)
+            segments.append(DateInterval(start: cursor, end: segmentEnd))
+            cursor = segmentEnd
+        }
+
+        return segments
+    }
+
+    private func sortedUniqueEvents(_ events: [EKEvent]) -> [EKEvent] {
+        var uniqueEvents: [String: EKEvent] = [:]
+        uniqueEvents.reserveCapacity(events.count)
+
+        for event in events {
+            // Recurring occurrences can share identifiers. Include temporal anchor
+            // so separate instances are preserved while still deduping window overlap.
+            let baseKey = event.eventIdentifier
+                ?? event.calendarItemExternalIdentifier
+                ?? event.calendarItemIdentifier
+            let startAnchor = event.startDate.timeIntervalSinceReferenceDate
+            let endAnchor = event.endDate.timeIntervalSinceReferenceDate
+            let occurrenceAnchor = (event.occurrenceDate ?? event.startDate).timeIntervalSinceReferenceDate
+            let dedupeKey = "\(baseKey)|\(occurrenceAnchor)|\(startAnchor)|\(endAnchor)"
+            uniqueEvents[dedupeKey] = event
+        }
+
+        return uniqueEvents.values.sorted { lhs, rhs in
+            if lhs.startDate != rhs.startDate { return lhs.startDate < rhs.startDate }
+            if lhs.endDate != rhs.endDate { return lhs.endDate < rhs.endDate }
+            return (lhs.title ?? "") < (rhs.title ?? "")
+        }
+    }
+
+    private func identityKeys(for event: EKEvent) -> [String] {
+        var keys: [String] = []
+        if let identifier = event.eventIdentifier, !identifier.isEmpty {
+            keys.append("event:\(identifier)")
+        }
+        if let externalIdentifier = event.calendarItemExternalIdentifier, !externalIdentifier.isEmpty {
+            keys.append("external:\(externalIdentifier)")
+        }
+        return keys
+    }
+
+    private func identityKeys(for session: SessionEntity) -> [String] {
+        var keys: [String] = []
+        if !session.eventIdentifier.isEmpty {
+            keys.append("event:\(session.eventIdentifier)")
+        }
+        if let externalIdentifier = session.eventExternalIdentifier, !externalIdentifier.isEmpty {
+            keys.append("external:\(externalIdentifier)")
+        }
+        return keys
+    }
+
+    private func fetchEvents(start: Date, end: Date, calendars: [EKCalendar]?) -> [EKEvent] {
+        let segments = fetchSegments(start: start, end: end)
+        guard !segments.isEmpty else { return [] }
+
+        var allEvents: [EKEvent] = []
+        allEvents.reserveCapacity(segments.count * 64)
+
+        for segment in segments {
+            let predicate = eventStore.predicateForEvents(
+                withStart: segment.start,
+                end: segment.end,
+                calendars: calendars
+            )
+            allEvents.append(contentsOf: eventStore.events(matching: predicate))
+        }
+
+        return sortedUniqueEvents(allEvents)
+    }
+
+    private func findRemoteEvent(for session: SessionEntity) -> EKEvent? {
+        guard canPerformReadWriteEventOperations() else { return nil }
+
+        // Detached rows represent a specific recurring occurrence and must be
+        // resolved by temporal anchor, not just by series identifier.
+        if session.isDetached, let occurrenceAnchor = session.occurrenceDate {
+            let calendar = Calendar.current
+            let searchStart = calendar.date(byAdding: .day, value: -30, to: occurrenceAnchor) ?? occurrenceAnchor
+            let searchEnd = calendar.date(byAdding: .day, value: 30, to: occurrenceAnchor) ?? occurrenceAnchor
+            let candidateEvents = fetchEvents(
+                start: searchStart,
+                end: searchEnd,
+                calendars: monitoredCalendarsForFetch()
+            )
+
+            let normalizedTarget: Date = {
+                if session.isAllDay {
+                    return calendar.startOfDay(for: occurrenceAnchor)
+                }
+                let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: occurrenceAnchor)
+                return calendar.date(from: comps) ?? occurrenceAnchor
+            }()
+
+            let preferred = candidateEvents.first { candidate in
+                guard let candidateAnchor = candidate.occurrenceDate ?? candidate.startDate else {
+                    return false
+                }
+                let normalizedCandidate: Date = {
+                    if session.isAllDay {
+                        return calendar.startOfDay(for: candidateAnchor)
+                    }
+                    let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: candidateAnchor)
+                    return calendar.date(from: comps) ?? candidateAnchor
+                }()
+
+                guard normalizedCandidate == normalizedTarget else { return false }
+
+                if let external = session.eventExternalIdentifier, !external.isEmpty {
+                    return candidate.calendarItemExternalIdentifier == external
+                }
+                if !session.eventIdentifier.isEmpty {
+                    return candidate.eventIdentifier == session.eventIdentifier
+                }
+                return true
+            }
+
+            if let preferred { return preferred }
+        }
+
+        if !session.eventIdentifier.isEmpty,
+           let event = eventStore.event(withIdentifier: session.eventIdentifier) {
+            return event
+        }
+
+        guard let externalIdentifier = session.eventExternalIdentifier,
+              !externalIdentifier.isEmpty else {
+            return nil
+        }
+
+        let baseStart = session.startTime ?? Date()
+        let baseEnd = session.endTime ?? baseStart.addingTimeInterval(3600)
+        let calendar = Calendar.current
+        let searchStart = calendar.date(byAdding: .year, value: -2, to: baseStart) ?? baseStart
+        let searchEnd = calendar.date(byAdding: .year, value: 2, to: baseEnd) ?? baseEnd
+        let calendars = monitoredCalendarsForFetch()
+
+        let matchingEvents = fetchEvents(start: searchStart, end: searchEnd, calendars: calendars)
+        return matchingEvents.first { $0.calendarItemExternalIdentifier == externalIdentifier }
+    }
+
+    private func resolvePersistedEventIdentity(
+        savedEvent: EKEvent,
+        session: SessionEntity,
+        span: EKSpan,
+        previousIdentifier: String
+    ) -> EKEvent {
+        if let identifier = savedEvent.eventIdentifier,
+           !identifier.isEmpty,
+           let reloaded = eventStore.event(withIdentifier: identifier) {
+            if span != .futureEvents || identifier != previousIdentifier {
+                return reloaded
+            }
+        }
+
+        guard span == .futureEvents else {
+            return savedEvent
+        }
+
+        if let splitMaster = refetchFutureSeriesMaster(
+            for: session,
+            preferredCalendar: savedEvent.calendar,
+            previousIdentifier: previousIdentifier
+        ) {
+            return splitMaster
+        }
+
+        if let identifier = savedEvent.eventIdentifier,
+           !identifier.isEmpty,
+           let reloaded = eventStore.event(withIdentifier: identifier) {
+            return reloaded
+        }
+
+        return savedEvent
+    }
+
+    private func refetchFutureSeriesMaster(
+        for session: SessionEntity,
+        preferredCalendar: EKCalendar?,
+        previousIdentifier: String
+    ) -> EKEvent? {
+        guard let anchor = session.startTime else { return nil }
+
+        let calendar = Calendar.current
+        let windowStart = calendar.date(byAdding: .day, value: -14, to: anchor) ?? anchor
+        let windowEnd = calendar.date(byAdding: .day, value: 365, to: anchor) ?? anchor.addingTimeInterval(365 * 24 * 60 * 60)
+        let calendars: [EKCalendar]? = preferredCalendar.map { [$0] } ?? monitoredCalendarsForFetch()
+        let expectedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedExternalIdentifier = session.eventExternalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedHasRecurrence = session.recurrenceRuleData != nil
+
+        let candidates = fetchEvents(start: windowStart, end: windowEnd, calendars: calendars)
+            .filter { candidate in
+                guard let candidateStart = candidate.startDate else { return false }
+                guard abs(candidateStart.timeIntervalSince(anchor)) <= 60 else { return false }
+
+                if !expectedTitle.isEmpty {
+                    let candidateTitle = candidate.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard candidateTitle == expectedTitle else { return false }
+                }
+
+                if expectedHasRecurrence {
+                    guard candidate.recurrenceRules?.isEmpty == false else { return false }
+                }
+
+                return true
+            }
+
+        if let expectedExternalIdentifier, !expectedExternalIdentifier.isEmpty {
+            if let externalMatch = candidates.first(where: {
+                ($0.calendarItemExternalIdentifier ?? "") == expectedExternalIdentifier &&
+                    ($0.eventIdentifier ?? "") != previousIdentifier
+            }) {
+                return externalMatch
+            }
+        }
+
+        if let rebasedIdentifierMatch = candidates.first(where: {
+            let identifier = $0.eventIdentifier ?? ""
+            return !identifier.isEmpty && identifier != previousIdentifier
+        }) {
+            return rebasedIdentifierMatch
+        }
+
+        return candidates.first
+    }
+
+    private func canPerformReadWriteEventOperations() -> Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(iOS 17.0, macOS 14.0, *) {
+            return status == .fullAccess
+        }
+        return status == .authorized
+    }
 
     private init() {
         print("[EventKitSyncService] Initializing EventKitSyncService...")
@@ -117,12 +434,10 @@ public final class EventKitSyncService: ObservableObject {
     func checkInitialAccessAndFetchCalendars() {
         let status = EKEventStore.authorizationStatus(for: .event)
         print("[EventKitSyncService] Initial authorization status: \(status)")
-        let isAuthorized: Bool
-        if #available(macOS 14.0, *) {
-            isAuthorized = (status == .fullAccess || status == .writeOnly)
-        } else {
-            isAuthorized = (status == .authorized)
+        if #available(iOS 17.0, macOS 14.0, *), status == .writeOnly {
+            print("[EventKitSyncService] Write-only Calendar access detected. Full access is required for sync and recurrence management.")
         }
+        let isAuthorized = canPerformReadWriteEventOperations()
         print("[EventKitSyncService] Is authorized: \(isAuthorized)")
         self.accessGranted = isAuthorized
         if isAuthorized && self.syncEnabled {
@@ -138,8 +453,8 @@ public final class EventKitSyncService: ObservableObject {
     public func requestAccess() async -> Bool {
         print("[EventKitSyncService] Requesting calendar access...")
         return await withCheckedContinuation { continuation in
-            if #available(macOS 14.0, *) {
-                print("[EventKitSyncService] Using requestFullAccessToEvents (macOS 14.0+)")
+            if #available(iOS 17.0, macOS 14.0, *) {
+                print("[EventKitSyncService] Using requestFullAccessToEvents (iOS 17+/macOS 14+)")
                 eventStore.requestFullAccessToEvents { [weak self] granted, error in
                     print("[EventKitSyncService] Full access request result: granted=\(granted), error=\(error?.localizedDescription ?? "none")")
                     Task { @MainActor in
@@ -156,7 +471,7 @@ public final class EventKitSyncService: ObservableObject {
                     }
                 }
             } else {
-                print("[EventKitSyncService] Using requestAccess(to: .event) (pre-macOS 14.0)")
+                print("[EventKitSyncService] Using requestAccess(to: .event) (legacy OS)")
                 eventStore.requestAccess(to: .event) { [weak self] granted, error in
                     print("[EventKitSyncService] Basic access request result: granted=\(granted), error=\(error?.localizedDescription ?? "none")")
                     Task { @MainActor in
@@ -213,18 +528,27 @@ public final class EventKitSyncService: ObservableObject {
     }
 
     /// Synchronize a Session domain model with EventKit (domain model version)
-    public func sync(session: Session, modelContext: ModelContext) {
+    public func sync(session: Session, modelContext: ModelContext, span: EKSpan = .thisEvent) {
         // Fetch entity for sync operation
-        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
-        guard let sessionEntity = try? modelContext.fetch(descriptor).first else {
+        let resolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? resolver.resolveSession(id: session.id) else {
             print("[EventKitSyncService] Failed to find SessionEntity for session \(session.id)")
             return
         }
-        sync(session: sessionEntity, modelContext: modelContext)
+        sync(session: sessionEntity, modelContext: modelContext, span: span)
+    }
+    
+    /// Synchronize a Session using the UnitOfWork pattern (Bridge to legacy entity implementation)
+    public func sync(session: Session, unitOfWork: UnitOfWorkService, span: EKSpan = .thisEvent) {
+        if let swiftDataUoW = unitOfWork as? SwiftDataUnitOfWork {
+            sync(session: session, modelContext: swiftDataUoW.eventKitModelContext, span: span)
+        } else {
+            print("[EventKitSyncService] Error: Sync requires SwiftDataUnitOfWork for legacy entity resolution.")
+        }
     }
     
     /// Synchronize a SessionEntity with EventKit, respecting sync direction and conflict resolution policy.
-    public func sync(session: SessionEntity, modelContext: ModelContext) {
+    public func sync(session: SessionEntity, modelContext: ModelContext, span: EKSpan = .thisEvent) {
         // Update sync status to syncing
         self.syncStatus = .syncing
         self.syncProgress = 0.0
@@ -240,6 +564,15 @@ public final class EventKitSyncService: ObservableObject {
             self.syncStatus = .error
             return // Do not push if only pulling
         }
+        guard canPerformReadWriteEventOperations() else {
+            self.error = NSError(
+                domain: "EventKitSyncService",
+                code: 110,
+                userInfo: [NSLocalizedDescriptionKey: "Full Calendar access is required for two-way calendar sync."]
+            )
+            self.syncStatus = .error
+            return
+        }
         guard let calendar = selectedCalendar else {
             self.error = NSError(domain: "EventKitSyncService", code: 103, userInfo: [NSLocalizedDescriptionKey: "No calendar selected. Please choose a writable calendar in Settings."])
             self.syncStatus = .error
@@ -254,13 +587,10 @@ public final class EventKitSyncService: ObservableObject {
         // Run the remainder on MainActor as an async task
         Task { @MainActor in
             // Fetch the remote event if it exists
-            var remoteEvent: EKEvent? = nil
-            if !session.eventIdentifier.isEmpty {
-                remoteEvent = self.eventStore.event(withIdentifier: session.eventIdentifier)
-            }
+            let remoteEvent = self.findRemoteEvent(for: session)
             let localLastModified = session.lastModifiedDate ?? Date.distantPast
             let remoteLastModified = remoteEvent?.lastModifiedDate ?? Date.distantPast
-            let lastSyncTag = session.lastSyncTag.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date.distantPast
+            let lastSyncTag = self.decodeSyncTag(session.lastSyncTag) ?? Date.distantPast
             let localChanged = localLastModified > lastSyncTag
             let remoteChanged = remoteLastModified > lastSyncTag
             let isRecurring = session.recurrenceRuleData != nil || (remoteEvent?.recurrenceRules?.isEmpty == false)
@@ -290,7 +620,7 @@ public final class EventKitSyncService: ObservableObject {
                         break // push local
                     case .preferCalendar, .remoteWins:
                         if let remote = remoteEvent {
-                            self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
+                            await self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
                         }
                         return
                     case .prompt:
@@ -306,7 +636,7 @@ public final class EventKitSyncService: ObservableObject {
                     case .preferCalendar, .remoteWins:
                         // Overwrite local with remote
                         if let remote = remoteEvent {
-                            self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
+                            await self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
                         }
                         return
                     case .prompt:
@@ -319,7 +649,7 @@ public final class EventKitSyncService: ObservableObject {
                         break
                     case .preferCalendar, .remoteWins:
                         if let remote = remoteEvent {
-                            self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
+                            await self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
                         }
                         return
                     case .prompt:
@@ -338,7 +668,7 @@ public final class EventKitSyncService: ObservableObject {
             } else if self.syncDirection == .bidirectional && remoteChanged && !localChanged {
                 // Remote changed, local did not: update local
                 if let remote = remoteEvent {
-                    self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
+                    await self.updateSessionFromRemote(session: session, remoteEvent: remote, modelContext: modelContext)
                 }
                 return
             } else if self.syncDirection == .bidirectional && localChanged && !remoteChanged {
@@ -350,19 +680,24 @@ public final class EventKitSyncService: ObservableObject {
             }
             // Robust handling for detached/series recurring event conflicts
             if isRecurring {
-                // Merging of detached/exception instances between local and remote
-                // would involve comparing the recurrence rules and exceptions,
-                // and merging changes at the instance level. If both sides have changes
-                // to different instances, merge them. If both sides have changes to the
-                // same instance, resolve according to policy or prompt the user.
-                // For now, this is a stub.
+                // Recurring instance merge is handled above via extractLocalExceptions, 
+                // extractRemoteExceptions, mergeExceptions, and applyMergedExceptions.
+                // Per-instance conflicts are queued in pendingInstanceConflicts for user resolution.
             }
-            let ekEvent: EKEvent
-            if !session.eventIdentifier.isEmpty, let event = self.eventStore.event(withIdentifier: session.eventIdentifier) {
+            var ekEvent: EKEvent
+            let isExistingEvent: Bool
+            if let event = remoteEvent {
                 // Event exists, update it
                 ekEvent = event
+                isExistingEvent = true
+
+                // Refresh to reduce "last writer wins" overwrite races.
+                _ = ekEvent.refresh()
+
                 // Conflict resolution: check if calendar event is newer
-                if let remoteModDate = ekEvent.lastModifiedDate, let localSyncTag = session.lastSyncTag, remoteModDate.description > localSyncTag {
+                if let remoteModDate = ekEvent.lastModifiedDate,
+                   remoteModDate > lastSyncTag,
+                   !localChanged {
                     let msg = "Conflict detected for '\(session.title)'. Remote event is newer. Aborting push."
                     print("[SyncService] \(msg)")
                     self.error = NSError(domain: "EventKitSyncService", code: 105, userInfo: [NSLocalizedDescriptionKey: msg])
@@ -373,14 +708,27 @@ public final class EventKitSyncService: ObservableObject {
                 // New event, create it
                 ekEvent = EKEvent(eventStore: self.eventStore)
                 ekEvent.calendar = calendar
+                isExistingEvent = false
             }
-            self.mapSessionToEvent(session, event: ekEvent)
+            let previousIdentifier = session.eventIdentifier
+            self.mapSessionToEvent(session, event: ekEvent, preserveExistingMetadata: isExistingEvent)
             
             do {
-                try self.eventStore.save(ekEvent, span: .thisEvent, commit: true)
-                session.eventIdentifier = ekEvent.eventIdentifier
-                session.lastSyncTag = ekEvent.lastModifiedDate?.description
-                session.calendarIdentifier = ekEvent.calendar.calendarIdentifier
+                try self.eventStore.save(ekEvent, span: span, commit: true)
+                let resolvedEvent = self.resolvePersistedEventIdentity(
+                    savedEvent: ekEvent,
+                    session: session,
+                    span: span,
+                    previousIdentifier: previousIdentifier
+                )
+                await self.applyRemoteEventToSession(
+                    remoteEvent: resolvedEvent,
+                    session: session,
+                    includeCoreFields: false
+                )
+                if previousIdentifier != session.eventIdentifier {
+                    print("[SyncService] Event identifier rebased after save span \(span): \(previousIdentifier) -> \(session.eventIdentifier)")
+                }
                 // No explicit save needed for session, changes are tracked by ModelContext automatically
                 print("[SyncService] Successfully synced session: \(session.title)")
                 
@@ -404,9 +752,13 @@ public final class EventKitSyncService: ObservableObject {
         }
     }
 
-    public func delete(syncIdentifier: String) {
+    public func delete(syncIdentifier: String, span: EKSpan = .thisEvent) {
         guard syncEnabled else {
             self.error = NSError(domain: "EventKitSyncService", code: 107, userInfo: [NSLocalizedDescriptionKey: "Sync is disabled. Cannot delete event from calendar."])
+            return
+        }
+        guard canPerformReadWriteEventOperations() else {
+            self.error = NSError(domain: "EventKitSyncService", code: 110, userInfo: [NSLocalizedDescriptionKey: "Full Calendar access is required for two-way calendar sync."])
             return
         }
         guard let event = eventStore.event(withIdentifier: syncIdentifier) else {
@@ -414,7 +766,7 @@ public final class EventKitSyncService: ObservableObject {
             return
         }
         do {
-            try eventStore.remove(event, span: .thisEvent, commit: true)
+            try eventStore.remove(event, span: span, commit: true)
             print("[SyncService] Successfully deleted event from calendar.")
             self.error = nil
         } catch {
@@ -426,8 +778,8 @@ public final class EventKitSyncService: ObservableObject {
 
     /// Fetch events from EventKit for a given date range
     public func fetchEvents(start: Date, end: Date) -> [EKEvent] {
-        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: nil)
-        return eventStore.events(matching: predicate)
+        guard canPerformReadWriteEventOperations() else { return [] }
+        return fetchEvents(start: start, end: end, calendars: monitoredCalendarsForFetch())
     }
 
     private func handleExternalChanges() async {
@@ -446,96 +798,154 @@ public final class EventKitSyncService: ObservableObject {
         Task { await fetchAvailableCalendars() }
     }
     
-    /// Handle external changes with a specific ModelContext
-    /// This method should be called from code that has access to the ModelContext
-    func handleExternalChangesWithContext(_ modelContext: ModelContext) async {
+
+
+    // MARK: - Legacy / Helper Methods (Aliases)
+    
+    /// Get available calendars (alias for property access)
+    public func getCalendars() -> [EKCalendar] {
+        return self.availableCalendars
+    }
+    
+    /// Process external changes (alias for handleExternalChangesWithContext)
+    public func processExternalChanges(context: ModelContext) async {
+        await self.handleExternalChangesWithContext(context)
+    }
+    
+    /// Process external changes using UnitOfWork (Bridge to legacy ModelContext)
+    public func processExternalChanges(unitOfWork: UnitOfWorkService) async {
+        if let swiftDataUoW = unitOfWork as? SwiftDataUnitOfWork {
+            await self.handleExternalChangesWithContext(swiftDataUoW.eventKitModelContext)
+        } else {
+            print("[EventKitSyncService] Error: processExternalChanges requires SwiftDataUnitOfWork for legacy operations.")
+        }
+    }
+    
+    public func handleExternalChangesWithContext(_ modelContext: ModelContext) async {
         print("[SyncService] Processing external changes with provided ModelContext")
         guard accessGranted, syncEnabled else { 
             print("[SyncService] Skipping external changes - access not granted or sync disabled")
             return 
         }
         
-        await MainActor.run {
-            let calendar = Calendar.current
-            let start = calendar.date(byAdding: .year, value: -1, to: Date())!
-            let end = calendar.date(byAdding: .year, value: 1, to: Date())!
-            
-            // Fetch all events from monitored calendars
-            let remoteEvents = self.fetchEvents(start: start, end: end)
-            print("[SyncService] Fetched \(remoteEvents.count) remote events")
-            var remoteEventsById = [String: EKEvent]()
-            for event in remoteEvents {
-                if let id = event.eventIdentifier, remoteEventsById[id] == nil {
-                    remoteEventsById[id] = event
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: .year, value: -1, to: Date())!
+        let end = calendar.date(byAdding: .year, value: 1, to: Date())!
+        
+        // Fetch all events from monitored calendars
+        let remoteEvents = self.fetchEvents(start: start, end: end)
+        print("[SyncService] Fetched \(remoteEvents.count) remote events")
+        var remoteEventsById = [String: EKEvent]()
+        var remoteEventsByExternalId = [String: EKEvent]()
+        var newSnapshot: [String: Date] = [:]
+        for event in remoteEvents {
+            if let id = event.eventIdentifier, remoteEventsById[id] == nil {
+                remoteEventsById[id] = event
+            }
+            if let externalId = event.calendarItemExternalIdentifier,
+               !externalId.isEmpty,
+               remoteEventsByExternalId[externalId] == nil {
+                remoteEventsByExternalId[externalId] = event
+            }
+
+            let lastModified = event.lastModifiedDate ?? event.startDate ?? Date.distantPast
+            for key in identityKeys(for: event) {
+                let existing = newSnapshot[key]
+                if existing == nil || (existing ?? .distantPast) < lastModified {
+                    newSnapshot[key] = lastModified
                 }
             }
-            
-            // Fetch all local sessions with eventIdentifier in this range using FetchDescriptor
-            let fetchDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate {
-                $0.eventIdentifier != ""
-            })
-            
-            // Filter by date range in Swift
-            let localSessions = ((try? modelContext.fetch(fetchDescriptor)) ?? []).filter {
-                ($0.startTime ?? Date.distantPast) >= start &&
-                ($0.endTime ?? Date.distantFuture) <= end
-            }
-            print("[SyncService] Fetched \(localSessions.count) local sessions")
-            var localSessionsById: [String: SessionEntity] = [:]
-            for session in localSessions {
-                if !session.eventIdentifier.isEmpty {
-                    localSessionsById[session.eventIdentifier] = session
+        }
+
+        let changedKeys = Set(newSnapshot.keys.filter { externalChangeSnapshot[$0] != newSnapshot[$0] })
+        let deletedKeys = Set(externalChangeSnapshot.keys).subtracting(newSnapshot.keys)
+        externalChangeSnapshot = newSnapshot
+        
+        // Fetch all local sessions with eventIdentifier in this range using EntityResolutionService
+        let resolver = EntityResolutionService(context: modelContext)
+        let localSessions = resolver.resolveSessionsWithEventIdentifier(start: start, end: end)
+        
+        print("[SyncService] Fetched \(localSessions.count) local sessions")
+        
+        // 1. Update local sessions from remote events (do not create new sessions)
+        var updatedCount = 0
+        for localSession in localSessions {
+            let remoteEvent: EKEvent? = {
+                if !localSession.eventIdentifier.isEmpty,
+                   let matchedByIdentifier = remoteEventsById[localSession.eventIdentifier] {
+                    return matchedByIdentifier
                 }
-            }
-            
-            // 1. Update local sessions from remote events (do not create new sessions)
-            var updatedCount = 0
-            for (eventId, remoteEvent) in remoteEventsById {
-                if let localSession = localSessionsById[eventId] {
-                    let localLastModified = localSession.lastModifiedDate ?? Date.distantPast
-                    let remoteLastModified = remoteEvent.lastModifiedDate ?? Date.distantPast
-                    let lastSyncTag = localSession.lastSyncTag.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date.distantPast
-                    let localChanged = localLastModified > lastSyncTag
-                    let remoteChanged = remoteLastModified > lastSyncTag
-                    if remoteChanged && (!localChanged || remoteLastModified > localLastModified) {
-                        // Remote is newer, update local
-                        self.updateSessionFromRemote(session: localSession, remoteEvent: remoteEvent, modelContext: modelContext)
-                        updatedCount += 1
-                    }
+
+                if let externalIdentifier = localSession.eventExternalIdentifier,
+                   !externalIdentifier.isEmpty,
+                   let matchedByExternalIdentifier = remoteEventsByExternalId[externalIdentifier] {
+                    return matchedByExternalIdentifier
                 }
+
+                return nil
+            }()
+
+            guard let remoteEvent else {
+                continue
             }
-            print("[SyncService] Updated \(updatedCount) local sessions from remote events")
-            
-            // 2. Handle local sessions whose eventIdentifier is not found in remote events
-            // NOTE: We should NOT delete local sessions just because the remote event is missing.
-            // Sessions are enhanced EKEvents with additional application functionality.
-            // The remote event might not exist yet, be outside the fetch range, or the sync hasn't happened.
-            let remoteEventIds = Set(remoteEventsById.keys)
-            var missingRemoteCount = 0
-            for (localId, localSession) in localSessionsById {
-                if !remoteEventIds.contains(localId) {
-                    // Remote event not found - this could mean:
-                    // 1. Event was deleted remotely (but we should preserve local session)
-                    // 2. Event exists outside current fetch range
-                    // 3. Event hasn't been synced yet
-                    // 4. Event is in a different calendar
-                    // 
-                    // For now, we'll preserve the local session and log the situation
-                    missingRemoteCount += 1
-                    print("[SyncService] Local session '\(localSession.title)' has no matching remote event (eventIdentifier: \(localId)). Preserving local session.")
-                }
+
+            let localIdentityKeys = Set(identityKeys(for: localSession))
+            let shouldProcess = !changedKeys.isDisjoint(with: localIdentityKeys) ||
+                !deletedKeys.isDisjoint(with: localIdentityKeys)
+            if !shouldProcess {
+                continue
             }
-            if missingRemoteCount > 0 {
-                print("[SyncService] Found \(missingRemoteCount) local sessions without matching remote events. All preserved.")
+
+            let localLastModified = localSession.lastModifiedDate ?? Date.distantPast
+            let remoteLastModified = remoteEvent.lastModifiedDate ?? Date.distantPast
+            let lastSyncTag = decodeSyncTag(localSession.lastSyncTag) ?? Date.distantPast
+            let localChanged = localLastModified > lastSyncTag
+            let remoteChanged = remoteLastModified > lastSyncTag
+
+            if remoteChanged && (!localChanged || remoteLastModified > localLastModified) {
+                // Remote is newer, update local
+                await self.updateSessionFromRemote(
+                    session: localSession,
+                    remoteEvent: remoteEvent,
+                    modelContext: modelContext
+                )
+                updatedCount += 1
             }
-            
-            // Save context if there are changes
-            do {
-                try modelContext.save()
-                print("[SyncService] Successfully saved context after external changes")
-            } catch {
-                print("[SyncService] Error saving after pull: \(error.localizedDescription)")
+        }
+        print("[SyncService] Updated \(updatedCount) local sessions from remote events")
+        
+        // 2. Handle local sessions whose eventIdentifier is not found in remote events
+        // NOTE: We should NOT delete local sessions just because the remote event is missing.
+        // Sessions are enhanced EKEvents with additional application functionality.
+        // The remote event might not exist yet, be outside the fetch range, or the sync hasn't happened.
+        var missingRemoteCount = 0
+        for localSession in localSessions {
+            let hasRemoteMatch = (!localSession.eventIdentifier.isEmpty && remoteEventsById[localSession.eventIdentifier] != nil) ||
+                ((localSession.eventExternalIdentifier?.isEmpty == false) &&
+                 remoteEventsByExternalId[localSession.eventExternalIdentifier ?? ""] != nil)
+
+            if !hasRemoteMatch {
+                // Remote event not found - this could mean:
+                // 1. Event was deleted remotely (but we should preserve local session)
+                // 2. Event exists outside current fetch range
+                // 3. Event hasn't been synced yet
+                // 4. Event is in a different calendar
+                // 
+                // For now, we'll preserve the local session and log the situation
+                missingRemoteCount += 1
+                print("[SyncService] Local session '\(localSession.title)' has no matching remote event (eventIdentifier: \(localSession.eventIdentifier), external: \(localSession.eventExternalIdentifier ?? "nil")). Preserving local session.")
             }
+        }
+        if missingRemoteCount > 0 {
+            print("[SyncService] Found \(missingRemoteCount) local sessions without matching remote events. All preserved.")
+        }
+        
+        // Save context if there are changes
+        do {
+            try modelContext.save()
+            print("[SyncService] Successfully saved context after external changes")
+        } catch {
+            print("[SyncService] Error saving after pull: \(error.localizedDescription)")
         }
     }
     
@@ -547,40 +957,387 @@ public final class EventKitSyncService: ObservableObject {
         }
     }
 
-    private func mapSessionToEvent(_ session: SessionEntity, event: EKEvent) {
+    private struct SerializedAlarm: Codable {
+        let relativeOffset: TimeInterval?
+        let absoluteDate: Date?
+        let proximityRaw: Int?
+        let structuredTitle: String?
+        let latitude: Double?
+        let longitude: Double?
+    }
+    
+    private func normalizeLocationText(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let normalized = rawValue
+            .replacingOccurrences(of: "\n", with: ", ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+    
+    private func preferredLocation(from event: EKEvent) -> String? {
+        EventKitLocationParser.preferredLocation(from: event)
+    }
+    
+    private func serializeAlarms(_ alarms: [EKAlarm]?) -> Data? {
+        guard let alarms, !alarms.isEmpty else { return nil }
+        
+        let payload = alarms.map { alarm in
+            let coordinate = alarm.structuredLocation?.geoLocation?.coordinate
+            return SerializedAlarm(
+                relativeOffset: alarm.absoluteDate == nil ? alarm.relativeOffset : nil,
+                absoluteDate: alarm.absoluteDate,
+                proximityRaw: alarm.proximity.rawValue,
+                structuredTitle: alarm.structuredLocation?.title,
+                latitude: coordinate?.latitude,
+                longitude: coordinate?.longitude
+            )
+        }
+        
+        return try? JSONEncoder().encode(payload)
+    }
+    
+    private func deserializeAlarms(_ data: Data?) -> [EKAlarm]? {
+        guard let data else { return nil }
+        
+        if let payload = try? JSONDecoder().decode([SerializedAlarm].self, from: data) {
+            return payload.compactMap { item in
+                let alarm: EKAlarm
+                if let absoluteDate = item.absoluteDate {
+                    alarm = EKAlarm(absoluteDate: absoluteDate)
+                } else if let relativeOffset = item.relativeOffset {
+                    alarm = EKAlarm(relativeOffset: relativeOffset)
+                } else {
+                    return nil
+                }
+                
+                if let proximityRaw = item.proximityRaw,
+                   let proximity = EKAlarmProximity(rawValue: proximityRaw) {
+                    alarm.proximity = proximity
+                }
+                
+                if item.structuredTitle != nil || (item.latitude != nil && item.longitude != nil) {
+                    let structuredLocation = EKStructuredLocation(title: item.structuredTitle ?? "Reminder")
+                    if let latitude = item.latitude, let longitude = item.longitude {
+                        structuredLocation.geoLocation = CLLocation(latitude: latitude, longitude: longitude)
+                    }
+                    alarm.structuredLocation = structuredLocation
+                }
+                
+                return alarm
+            }
+        }
+        
+        // Backward compatibility: support previously archived EKAlarm arrays if present.
+        if let legacyAlarms = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? [EKAlarm] {
+            return legacyAlarms
+        }
+        
+        return nil
+    }
+
+    private func hasCoordinates(latitude: Double, longitude: Double) -> Bool {
+        latitude != 0 || longitude != 0
+    }
+
+    private func resolvedCoordinate(for session: SessionEntity) -> CLLocationCoordinate2D? {
+        if hasCoordinates(latitude: session.sessionLatitude, longitude: session.sessionLongitude) {
+            return CLLocationCoordinate2D(latitude: session.sessionLatitude, longitude: session.sessionLongitude)
+        }
+
+        if let address = session.address,
+           hasCoordinates(latitude: address.latitude, longitude: address.longitude) {
+            return CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude)
+        }
+
+        return nil
+    }
+
+    private func resolvedLocationText(for session: SessionEntity) -> String? {
+        let explicitLocation = normalizeLocationText(session.location)
+        if explicitLocation != nil {
+            return explicitLocation
+        }
+
+        if let addressText = normalizeLocationText(session.address?.fullAddressText) {
+            return addressText
+        }
+
+        return normalizeLocationText(session.address?.fullFormattedAddress)
+    }
+
+    private func applyParsedAddressToSession(
+        _ parsedLocation: EventKitLocationParser.ParsedLocation,
+        session: SessionEntity
+    ) {
+        guard parsedLocation.hasAnyAddressData else {
+            session.address = nil
+            return
+        }
+
+        let addressEntity: AddressEntity
+        if let existingAddress = session.address {
+            addressEntity = existingAddress
+        } else {
+            let createdAddress = AddressEntity()
+            createdAddress.id = session.id
+            if createdAddress.modelContext == nil {
+                session.modelContext?.insert(createdAddress)
+            }
+            session.address = createdAddress
+            addressEntity = createdAddress
+        }
+
+        addressEntity.id = session.id
+        addressEntity.unitNumber = parsedLocation.unitNumber
+        addressEntity.streetNumber = parsedLocation.streetNumber
+        addressEntity.streetName = parsedLocation.streetName
+        addressEntity.suburb = parsedLocation.suburb
+        addressEntity.city = parsedLocation.city
+        addressEntity.state = parsedLocation.state
+        addressEntity.postcode = parsedLocation.postcode
+        addressEntity.country = parsedLocation.country
+        addressEntity.poBox = parsedLocation.poBox
+        addressEntity.fullAddressText = parsedLocation.fullAddressText
+
+        if parsedLocation.hasCoordinates {
+            addressEntity.latitude = parsedLocation.latitude
+            addressEntity.longitude = parsedLocation.longitude
+        } else {
+            addressEntity.latitude = 0
+            addressEntity.longitude = 0
+        }
+    }
+    
+    private func firstNonEmptyString(_ values: String?...) -> String? {
+        values.first(where: {
+            guard let value = $0 else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) ?? nil
+    }
+
+    private func mergedParsedLocation(
+        primary: EventKitLocationParser.ParsedLocation,
+        fallback: EventKitLocationParser.ParsedLocation,
+        preferredLocationOverride: String?
+    ) -> EventKitLocationParser.ParsedLocation {
+        let shouldPreferFallbackAddress = !primary.hasGranularAddressData && !fallback.fullAddressText.isEmpty
+        let resolvedPreferredLocation = firstNonEmptyString(
+            preferredLocationOverride,
+            primary.preferredLocation,
+            fallback.preferredLocation
+        )
+        let resolvedFullAddress = shouldPreferFallbackAddress
+            ? fallback.fullAddressText
+            : (firstNonEmptyString(
+                primary.fullAddressText,
+                fallback.fullAddressText,
+                resolvedPreferredLocation
+            ) ?? "")
+
+        let resolvedSuburb = firstNonEmptyString(primary.suburb, fallback.suburb, primary.city, fallback.city) ?? ""
+        let resolvedCity = firstNonEmptyString(primary.city, fallback.city, resolvedSuburb) ?? ""
+        let resolvedLatitude = primary.hasCoordinates ? primary.latitude : fallback.latitude
+        let resolvedLongitude = primary.hasCoordinates ? primary.longitude : fallback.longitude
+
+        return EventKitLocationParser.ParsedLocation(
+            preferredLocation: resolvedPreferredLocation,
+            fullAddressText: resolvedFullAddress,
+            unitNumber: firstNonEmptyString(primary.unitNumber, fallback.unitNumber) ?? "",
+            streetNumber: firstNonEmptyString(primary.streetNumber, fallback.streetNumber) ?? "",
+            streetName: firstNonEmptyString(primary.streetName, fallback.streetName) ?? "",
+            suburb: resolvedSuburb,
+            city: resolvedCity,
+            state: firstNonEmptyString(primary.state, fallback.state) ?? "",
+            postcode: firstNonEmptyString(primary.postcode, fallback.postcode) ?? "",
+            country: firstNonEmptyString(primary.country, fallback.country) ?? "",
+            poBox: firstNonEmptyString(primary.poBox, fallback.poBox) ?? "",
+            latitude: resolvedLatitude,
+            longitude: resolvedLongitude
+        )
+    }
+
+    private func reverseGeocodeCacheKey(for coordinate: CLLocationCoordinate2D) -> String {
+        String(format: "%.6f,%.6f", coordinate.latitude, coordinate.longitude)
+    }
+
+    private func parsedLocation(for remoteEvent: EKEvent) async -> EventKitLocationParser.ParsedLocation {
+        let baseParsedLocation = EventKitLocationParser.parse(event: remoteEvent)
+        guard baseParsedLocation.hasCoordinates else {
+            return baseParsedLocation
+        }
+
+        let shouldReverseGeocode = !baseParsedLocation.hasGranularAddressData || baseParsedLocation.fullAddressText.isEmpty
+        guard shouldReverseGeocode else {
+            return baseParsedLocation
+        }
+
+        let coordinate = CLLocationCoordinate2D(
+            latitude: baseParsedLocation.latitude,
+            longitude: baseParsedLocation.longitude
+        )
+        let preferredLocationOverride = firstNonEmptyString(
+            normalizeLocationText(remoteEvent.location),
+            normalizeLocationText(remoteEvent.structuredLocation?.title)
+        )
+        let cacheKey = reverseGeocodeCacheKey(for: coordinate)
+        if let cached = reverseGeocodeCache[cacheKey] {
+            return mergedParsedLocation(
+                primary: baseParsedLocation,
+                fallback: cached,
+                preferredLocationOverride: preferredLocationOverride
+            )
+        }
+
+        do {
+            guard let reverseGeocoded = try await MapKitAddressResolver.parseAddress(from: coordinate) else {
+                return baseParsedLocation
+            }
+            reverseGeocodeCache[cacheKey] = reverseGeocoded
+            return mergedParsedLocation(
+                primary: baseParsedLocation,
+                fallback: reverseGeocoded,
+                preferredLocationOverride: preferredLocationOverride
+            )
+        } catch {
+            print("[EventKitSyncService] Reverse geocode failed for EKEvent \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
+            return baseParsedLocation
+        }
+    }
+
+    private func applyRemoteEventToSession(
+        remoteEvent: EKEvent,
+        session: SessionEntity,
+        includeCoreFields: Bool
+    ) async {
+        let parsedLocation = await parsedLocation(for: remoteEvent)
+
+        if includeCoreFields {
+            let trimmedTitle = remoteEvent.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            session.title = (trimmedTitle?.isEmpty == false) ? (trimmedTitle ?? "Untitled") : "Untitled"
+            session.startTime = remoteEvent.startDate
+            session.endTime = remoteEvent.endDate
+            session.isAllDay = remoteEvent.isAllDay
+            session.location = firstNonEmptyString(
+                normalizeLocationText(remoteEvent.location),
+                normalizeLocationText(remoteEvent.structuredLocation?.title),
+                parsedLocation.preferredLocation
+            )
+            session.notes = remoteEvent.notes
+            session.occurrenceDate = remoteEvent.occurrenceDate
+        }
+
+        // Preserve temporal anchor identity for recurring instances/exceptions.
+        if let occurrenceDate = remoteEvent.occurrenceDate {
+            session.occurrenceDate = occurrenceDate
+        } else if includeCoreFields {
+            session.occurrenceDate = nil
+        }
+        
+        session.eventIdentifier = remoteEvent.eventIdentifier ?? ""
+        session.eventExternalIdentifier = remoteEvent.calendarItemExternalIdentifier
+        session.calendarIdentifier = remoteEvent.calendar.calendarIdentifier
+        session.calendarSourceIdentifier = remoteEvent.calendar.source?.sourceIdentifier
+        session.lastModifiedDate = remoteEvent.lastModifiedDate
+        session.lastSyncTag = encodeSyncTag(remoteEvent.lastModifiedDate ?? Date())
+        session.ekCreationDate = remoteEvent.creationDate
+        session.ekEventAvailabilityRaw = Int16(remoteEvent.availability.rawValue)
+        session.ekEventStatusRaw = Int16(remoteEvent.status.rawValue)
+        session.organizerName = remoteEvent.organizer?.name
+        session.organizerURL = remoteEvent.organizer?.url.absoluteString
+        session.timeZone = remoteEvent.timeZone?.identifier
+        session.url = remoteEvent.url?.absoluteString
+        session.attendeesCount = Int32(remoteEvent.attendees?.count ?? 0)
+        session.googleColorId = GoogleCalendarColors.getGoogleEventColorId(remoteEvent)
+        
+        session.hasEKAlarms = !(remoteEvent.alarms?.isEmpty ?? true)
+        session.alarmsData = serializeAlarms(remoteEvent.alarms)
+        
+        if let rules = remoteEvent.recurrenceRules, let firstRule = rules.first {
+            session.recurrenceRuleData = RecurrenceRuleManager.shared.serialize(firstRule)
+            session.ekRecurrenceRuleDescription = rules.map(\.description).joined(separator: "\n")
+        } else {
+            session.recurrenceRuleData = nil
+            session.ekRecurrenceRuleDescription = nil
+        }
+        
+        if parsedLocation.hasCoordinates {
+            session.sessionLatitude = parsedLocation.latitude
+            session.sessionLongitude = parsedLocation.longitude
+        } else if includeCoreFields {
+            session.sessionLatitude = 0
+            session.sessionLongitude = 0
+        }
+
+        if includeCoreFields {
+            applyParsedAddressToSession(parsedLocation, session: session)
+        }
+    }
+    
+    private func mapSessionToEvent(
+        _ session: SessionEntity,
+        event: EKEvent,
+        preserveExistingMetadata: Bool = false
+    ) {
         event.title = session.title
         event.startDate = session.startTime
         event.endDate = session.endTime
         event.isAllDay = session.isAllDay
-        event.location = session.location
+        event.location = resolvedLocationText(for: session)
         
         // Only store the session's notes, not any app-specific or internal data
         event.notes = session.notes
-
+        
+        if let timeZoneIdentifier = session.timeZone,
+           !timeZoneIdentifier.isEmpty,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            event.timeZone = timeZone
+        } else if !preserveExistingMetadata {
+            event.timeZone = nil
+        }
+        
+        if let rawURL = session.url?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawURL.isEmpty,
+           let parsedURL = URL(string: rawURL) {
+            event.url = parsedURL
+        } else if !preserveExistingMetadata {
+            event.url = nil
+        }
+        
         // Map recurrence
-        if let ruleData = session.recurrenceRuleData {
-            // Suppress deprecation: EKRecurrenceRule does NOT support NSSecureCoding, so this is required
-            // swiftlint:disable:next deprecated_api_usage
-            if let rule = RecurrenceRuleManager.shared.deserialize(ruleData) {
-                event.recurrenceRules = [rule]
+        if let ruleData = session.recurrenceRuleData,
+           let rule = RecurrenceRuleManager.shared.deserialize(ruleData) {
+            event.recurrenceRules = [rule]
+        } else {
+            event.recurrenceRules = nil
+        }
+        
+        if session.hasEKAlarms || session.alarmsData != nil {
+            event.alarms = deserializeAlarms(session.alarmsData)
+        } else if !preserveExistingMetadata {
+            event.alarms = nil
+        }
+        
+        if let coordinate = resolvedCoordinate(for: session) {
+            let structuredTitle = resolvedLocationText(for: session) ?? session.title
+            let structuredLocation = EKStructuredLocation(title: structuredTitle)
+            structuredLocation.geoLocation = CLLocation(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
+            )
+            event.structuredLocation = structuredLocation
+            if event.location == nil {
+                event.location = structuredTitle
             }
+        } else if !preserveExistingMetadata {
+            event.structuredLocation = nil
         }
     }
 
     /// Update a SessionEntity from a remote EKEvent (used for preferCalendar and auto-resolve)
-    public func updateSessionFromRemote(session: SessionEntity, remoteEvent: EKEvent, modelContext: ModelContext) {
-        Task { @MainActor in
-            session.title = remoteEvent.title ?? "Untitled"
-            session.startTime = remoteEvent.startDate
-            session.endTime = remoteEvent.endDate
-            session.isAllDay = remoteEvent.isAllDay
-            session.location = remoteEvent.location
-            session.notes = remoteEvent.notes
-            session.eventIdentifier = remoteEvent.eventIdentifier
-            session.lastSyncTag = remoteEvent.lastModifiedDate?.description
-            session.calendarIdentifier = remoteEvent.calendar.calendarIdentifier
-            // No explicit save needed in SwiftData; changes are auto-tracked
-        }
+    public func updateSessionFromRemote(session: SessionEntity, remoteEvent: EKEvent, modelContext _: ModelContext) async {
+        await applyRemoteEventToSession(remoteEvent: remoteEvent, session: session, includeCoreFields: true)
+        // No explicit save needed in SwiftData; changes are auto-tracked
     }
 
     // --- Recurring Instance Merge Utilities ---
@@ -608,11 +1365,24 @@ public final class EventKitSyncService: ObservableObject {
             let calendar = Calendar.current
             let start = calendar.date(byAdding: .year, value: -1, to: Date())!
             let end = calendar.date(byAdding: .year, value: 1, to: Date())!
-            let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: [event.calendar])
-            let events = eventStore.events(matching: predicate)
-            for occ in events where occ.eventIdentifier != event.eventIdentifier && occ.recurrenceRules != nil {
-                if let date = occ.startDate {
-                    result[date] = occ
+            let events = fetchEvents(start: start, end: end, calendars: [event.calendar])
+            for occ in events {
+                let belongsToSeries = (
+                    (occ.calendarItemExternalIdentifier ?? "") == (event.calendarItemExternalIdentifier ?? "")
+                ) || (
+                    (occ.eventIdentifier ?? "") == (event.eventIdentifier ?? "")
+                )
+                guard belongsToSeries else { continue }
+
+                // `occurrenceDate` is the stable temporal anchor for modified instances.
+                if let occurrenceDate = occ.occurrenceDate {
+                    result[occurrenceDate] = occ
+                    continue
+                }
+
+                // Fallback for providers that surface detached instances without occurrenceDate.
+                if (occ.eventIdentifier ?? "") != (event.eventIdentifier ?? "") {
+                    result[occ.startDate] = occ
                 }
             }
         }
@@ -625,14 +1395,14 @@ public final class EventKitSyncService: ObservableObject {
         let (date, sessionID, remoteEvent, localID, remote, modelContext) = pendingInstanceConflicts.removeFirst()
         
         // Re-fetch the session using the ID
-        let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id.uuidString == sessionID })
-        guard let session = try? modelContext.fetch(sessionDescriptor).first else { return }
+        let resolver = EntityResolutionService(context: modelContext)
+        guard let uuid = UUID(uuidString: sessionID),
+              let session = try? resolver.resolveSession(id: uuid) else { return }
         
         // Re-fetch local instance if needed
         var local: SessionEntity? = nil
-        if let localID = localID {
-            let localDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id.uuidString == localID })
-            local = try? modelContext.fetch(localDescriptor).first
+        if let localIDStr = localID, let localUUID = UUID(uuidString: localIDStr) {
+            local = try? resolver.resolveSession(id: localUUID)
         }
         
         pendingConflict = ConflictPrompt(
@@ -694,7 +1464,7 @@ public final class EventKitSyncService: ObservableObject {
     ) {
         Task { @MainActor in
             for (date, (localInstance, remoteInstance)) in merged {
-                // If both exist and policy is .prompt, skip for now (will be handled by conflict queue)
+                // If both exist and policy is .prompt, defer to the conflict queue.
                 if localInstance != nil && remoteInstance != nil && conflictResolutionPolicy == .prompt {
                     continue
                 }
@@ -702,19 +1472,28 @@ public final class EventKitSyncService: ObservableObject {
                     // Local only: ensure this instance is saved locally and pushed to remote if needed
                     // --- PUSH LOGIC ---
                     let ekEvent: EKEvent
-                    if !local.eventIdentifier.isEmpty, let existing = self.eventStore.event(withIdentifier: local.eventIdentifier) {
+                    let isExistingEvent: Bool
+                    if let existing = self.findRemoteEvent(for: local) {
                         ekEvent = existing
+                        isExistingEvent = true
                     } else {
                         ekEvent = EKEvent(eventStore: self.eventStore)
                         ekEvent.calendar = self.selectedCalendar
+                        isExistingEvent = false
                     }
-                    self.mapSessionToEvent(local, event: ekEvent)
+                    self.mapSessionToEvent(
+                        local,
+                        event: ekEvent,
+                        preserveExistingMetadata: isExistingEvent
+                    )
                     ekEvent.recurrenceRules = nil
                     do {
                         try self.eventStore.save(ekEvent, span: .thisEvent, commit: true)
-                        local.eventIdentifier = ekEvent.eventIdentifier
-                        local.lastSyncTag = ekEvent.lastModifiedDate?.description
-                        local.calendarIdentifier = ekEvent.calendar.calendarIdentifier
+                        await self.applyRemoteEventToSession(
+                            remoteEvent: ekEvent,
+                            session: local,
+                            includeCoreFields: false
+                        )
                         // No explicit save needed for local, changes are tracked by ModelContext
                         print("[SyncService] Pushed detached instance to calendar: \(local.title) @ \(date)")
                     } catch {
@@ -739,16 +1518,14 @@ public final class EventKitSyncService: ObservableObject {
                         detached = sessionFactory.createDetachedInstance(from: session, at: date) { _ in }
                     }
                     
-                    detached.title = remote.title
-                    detached.startTime = remote.startDate
-                    detached.endTime = remote.endDate
-                    detached.isAllDay = remote.isAllDay
-                    detached.location = remote.location
-                    detached.notes = remote.notes
+                    await self.applyRemoteEventToSession(
+                        remoteEvent: remote,
+                        session: detached,
+                        includeCoreFields: true
+                    )
                     detached.status = session.status
-                    detached.eventIdentifier = remote.eventIdentifier
-                    detached.lastSyncTag = remote.lastModifiedDate?.description
-                    detached.calendarIdentifier = remote.calendar.calendarIdentifier
+                    detached.recurrenceRuleData = nil
+                    detached.ekRecurrenceRuleDescription = nil
                     // No explicit save needed for detached, changes are tracked by ModelContext
                     print("[SyncService] Created detached instance from remote: \(detached.title) @ \(date)")
                 }
@@ -770,19 +1547,28 @@ public final class EventKitSyncService: ObservableObject {
                 // Keep local, optionally push to remote
                 if let local = local {
                     let ekEvent: EKEvent
-                    if !local.eventIdentifier.isEmpty, let existing = self.eventStore.event(withIdentifier: local.eventIdentifier) {
+                    let isExistingEvent: Bool
+                    if let existing = self.findRemoteEvent(for: local) {
                         ekEvent = existing
+                        isExistingEvent = true
                     } else {
                         ekEvent = EKEvent(eventStore: self.eventStore)
                         ekEvent.calendar = self.selectedCalendar
+                        isExistingEvent = false
                     }
-                    self.mapSessionToEvent(local, event: ekEvent)
+                    self.mapSessionToEvent(
+                        local,
+                        event: ekEvent,
+                        preserveExistingMetadata: isExistingEvent
+                    )
                     ekEvent.recurrenceRules = nil
                     do {
                         try self.eventStore.save(ekEvent, span: .thisEvent, commit: true)
-                        local.eventIdentifier = ekEvent.eventIdentifier
-                        local.lastSyncTag = ekEvent.lastModifiedDate?.description
-                        local.calendarIdentifier = ekEvent.calendar.calendarIdentifier
+                        await self.applyRemoteEventToSession(
+                            remoteEvent: ekEvent,
+                            session: local,
+                            includeCoreFields: false
+                        )
                         // No explicit save needed for local, changes are tracked by ModelContext
                         print("[SyncService] Pushed detached instance to calendar (user preferApp): \(local.title) @ \(date)")
                     } catch {
@@ -810,20 +1596,16 @@ public final class EventKitSyncService: ObservableObject {
                         detached = sessionFactory.createDetachedInstance(from: session, at: date) { _ in }
                     }
                     
-                    detached.title = remote.title
-                    detached.startTime = remote.startDate
-                    detached.endTime = remote.endDate
-                    detached.isAllDay = remote.isAllDay
-                    detached.location = remote.location
-                    detached.notes = remote.notes
+                    await self.applyRemoteEventToSession(
+                        remoteEvent: remote,
+                        session: detached,
+                        includeCoreFields: true
+                    )
                     detached.status = session.status
                     detached.client = session.client
                     detached.clientService = session.clientService
                     detached.recurrenceRuleData = nil
                     detached.ekRecurrenceRuleDescription = nil
-                    detached.eventIdentifier = remote.eventIdentifier
-                    detached.lastSyncTag = remote.lastModifiedDate?.description
-                    detached.calendarIdentifier = remote.calendar.calendarIdentifier
                     // No explicit save needed for detached, changes are tracked by ModelContext
                     print("[SyncService] Pulled detached instance from calendar (user preferCalendar): \(detached.title) @ \(date)")
                 }
@@ -835,4 +1617,3 @@ public final class EventKitSyncService: ObservableObject {
     }
     // --- End Recurring Instance Merge Utilities ---
 } 
-

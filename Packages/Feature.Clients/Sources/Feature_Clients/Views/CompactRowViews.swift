@@ -8,6 +8,9 @@ import SharedUI
 
 struct CompactServiceRowView: View {
     let service: ClientService
+    @State private var isHovering = false
+    
+    private let rowInsets = EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
     
     var body: some View {
         HStack(spacing: 8) {
@@ -17,7 +20,7 @@ struct CompactServiceRowView: View {
                     .foregroundColor(Color("Text", bundle: .sharedUI))
                 Text("\(service.unit) • $\(service.rate, specifier: "%.2f")")
                     .font(.system(size: 11))
-                    .foregroundColor(Color("Gray20", bundle: .sharedUI))
+                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
             
             Spacer()
@@ -27,39 +30,59 @@ struct CompactServiceRowView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .glassEffect(.regular.interactive(true), in: .rect(cornerRadius: 6))
+        .contentShape(.rect(cornerRadius: 6))
+        .background(Color.primary.opacity(isHovering ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+        .padding(rowInsets)
     }
 }
 
 struct CompactInvoiceRowView: View {
     let invoice: Invoice
+    @State private var isHovering = false
+    
+    private let rowInsets = EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
     
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(invoice.invoiceNumber)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundColor(Color("Text", bundle: .sharedUI))
                 Text("$\(invoice.totalAmount, specifier: "%.2f") • \(invoice.issueDate.formatted(date: .abbreviated, time: .omitted))")
                     .font(.system(size: 11))
-                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
             
             Spacer()
             
-            StatusBadge(status: invoice.status ?? "Draft")
+            StatusBadge(status: invoice.status)
                 .scaleEffect(0.8)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .glassEffect(.regular.interactive(true), in: .rect(cornerRadius: 6))
+        .contentShape(.rect(cornerRadius: 6))
+        .background(Color.primary.opacity(isHovering ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+        .padding(rowInsets)
     }
 }
 
 struct CompactClientRowView: View {
     let client: Client
+    @State private var isHovering = false
+    
+    private let rowInsets = EdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
     
     var body: some View {
         HStack(spacing: 8) {
@@ -70,11 +93,11 @@ struct CompactClientRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.fullName)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundColor(Color("Text", bundle: .sharedUI))
                 if !client.ndisNumber.isEmpty {
                     Text("NDIS: \(client.ndisNumber)")
                         .font(.system(size: 11))
-                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
             }
             
@@ -85,7 +108,14 @@ struct CompactClientRowView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .glassEffect(.regular.interactive(true), in: .rect(cornerRadius: 6))
+        .contentShape(.rect(cornerRadius: 6))
+        .background(Color.primary.opacity(isHovering ? 0.1 : 0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.2), value: isHovering)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+        .padding(rowInsets)
     }
 } 

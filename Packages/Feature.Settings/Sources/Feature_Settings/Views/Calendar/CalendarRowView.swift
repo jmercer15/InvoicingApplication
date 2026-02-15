@@ -25,6 +25,7 @@ struct CalendarRowView: View {
                     .font(.system(size: 16))
                     .foregroundColor(isSelected ? .accentColor : .white.opacity(0.6))
             }
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             
             // Calendar name
@@ -45,6 +46,7 @@ struct CalendarRowView: View {
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
             }
+            .contentShape(Circle())
             .buttonStyle(.plain)
             .popover(isPresented: $showingColorPicker) {
                 VStack(spacing: 16) {

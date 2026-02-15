@@ -3,59 +3,59 @@ import Foundation
 /// Domain model for an invoice
 public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let id: UUID
-    public let invoiceNumber: String
-    public let totalAmount: Double
-    public let taxRate: Double
-    public let creditApplied: Double
-    public let discount: Double
-    public let date: Date
-    public let dueDate: Date?
-    public let invoiceID: Int32?
-    public let issueDate: Date
-    public let notes: String?
-    public let paidDate: Date?
-    public let paymentTerms: String?
-    public let status: String?
-    public let sentDate: Date?
-    public let currencyCode: String
+    public var invoiceNumber: String
+    public var totalAmount: Double
+    public var taxRate: Double
+    public var creditApplied: Double
+    public var discount: Double
+    public var date: Date
+    public var dueDate: Date?
+    public var issueDate: Date
+    public var notes: String?
+    public var paidDate: Date?
+    public var paymentTerms: String?
+    public var status: String
+    public var sentDate: Date?
+    public var currencyCode: String
     
     // Business Information (snapshot)
-    public let businessName: String?
-    public let businessABN: String?
-    public let businessEmail: String?
-    public let businessAddress: String?
-    public let businessPhone: String?
+    public var businessName: String?
+    public var businessABN: String?
+    public var businessEmail: String?
+    public var businessAddress: Address?
+    public var businessPhone: String?
     
     // Client Information (snapshot)
-    public let clientName: String?
-    public let clientNDISNumber: String?
-    public let clientEmail: String?
-    public let clientPhone: String?
-    public let clientAddress: String?
+    public var clientName: String?
+    public var clientNDISNumber: String?
+    public var clientEmail: String?
+    public var clientPhone: String?
+    public var clientAddress: Address?
     
     // Billing Information (snapshot)
-    public let billingAuthority: String?
-    public let billToName: String?
-    public let billToEmail: String?
-    public let billToAddress: String?
+    public var billingAuthority: String?
+    public var billToName: String?
+    public var billToEmail: String?
+    public var billToAddress: Address?
     
     // Payee Information (snapshot)
-    public let payeeName: String?
-    public let payeeEmail: String?
-    public let payeePhone: String?
-    public let payeeAddress: String?
+    public var payeeName: String?
+    public var payeeEmail: String?
+    public var payeePhone: String?
+    public var payeeAddress: Address?
     
     // Payment Details (snapshot)
-    public let bankName: String?
-    public let bankAccountName: String?
-    public let bankBSB: String?
-    public let bankAccountNumber: String?
+    public var bankName: String?
+    public var bankAccountName: String?
+    public var bankBSB: String?
+    public var bankAccountNumber: String?
     
     // Relationships
-    public let clientId: UUID?
-    public let businessId: UUID?
-    public let payeeId: UUID?
-    public let sessionIds: [UUID]
+    public var clientId: UUID?
+    public var businessId: UUID?
+    public var payeeId: UUID?
+    public var templateId: UUID?
+    public var sessionIds: [UUID]
     
     public init(
         id: UUID,
@@ -66,32 +66,31 @@ public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
         discount: Double = 0.0,
         date: Date = Date(),
         dueDate: Date? = nil,
-        invoiceID: Int32? = nil,
         issueDate: Date = Date(),
         notes: String? = nil,
         paidDate: Date? = nil,
         paymentTerms: String? = nil,
-        status: String? = nil,
+        status: String = "review_draft",
         sentDate: Date? = nil,
         currencyCode: String = "AUD",
         businessName: String? = nil,
         businessABN: String? = nil,
         businessEmail: String? = nil,
-        businessAddress: String? = nil,
+        businessAddress: Address? = nil,
         businessPhone: String? = nil,
         clientName: String? = nil,
         clientNDISNumber: String? = nil,
         clientEmail: String? = nil,
         clientPhone: String? = nil,
-        clientAddress: String? = nil,
+        clientAddress: Address? = nil,
         billingAuthority: String? = nil,
         billToName: String? = nil,
         billToEmail: String? = nil,
-        billToAddress: String? = nil,
+        billToAddress: Address? = nil,
         payeeName: String? = nil,
         payeeEmail: String? = nil,
         payeePhone: String? = nil,
-        payeeAddress: String? = nil,
+        payeeAddress: Address? = nil,
         bankName: String? = nil,
         bankAccountName: String? = nil,
         bankBSB: String? = nil,
@@ -99,6 +98,7 @@ public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
         clientId: UUID? = nil,
         businessId: UUID? = nil,
         payeeId: UUID? = nil,
+        templateId: UUID? = nil,
         sessionIds: [UUID] = []
     ) {
         self.id = id
@@ -109,7 +109,6 @@ public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.discount = discount
         self.date = date
         self.dueDate = dueDate
-        self.invoiceID = invoiceID
         self.issueDate = issueDate
         self.notes = notes
         self.paidDate = paidDate
@@ -142,13 +141,15 @@ public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.clientId = clientId
         self.businessId = businessId
         self.payeeId = payeeId
+        self.templateId = templateId
         self.sessionIds = sessionIds
     }
     
     /// Check if invoice is overdue
     public var isOverdue: Bool {
         guard let dueDate = dueDate else { return false }
-        return dueDate < Date() && status != "paid"
+        let isSettled = status == "received"
+        return dueDate < Date() && !isSettled
     }
     
     /// Days until due (negative if overdue)
@@ -165,14 +166,34 @@ public struct Invoice: Identifiable, Codable, Equatable, Hashable, Sendable {
 
 /// Domain model for an invoice item
 public struct InvoiceItem: Identifiable, Codable, Equatable, Sendable {
-    public let id: UUID
-    public let invoiceId: UUID
-    public let sessionId: UUID?
-    public let clientServiceId: UUID?
-    public let itemDescription: String
-    public let quantity: Double
-    public let rate: Double
-    public let position: Int32
+    public var id: UUID
+    public var invoiceId: UUID
+    public var sessionId: UUID?
+    public var clientServiceId: UUID?
+    public var itemDescription: String
+    public var quantity: Double
+    public var rate: Double
+    public var position: Int32
+    
+    // Snapshot fields
+    public var serviceDate: Date
+    public var ndisItemNumber: String?
+    public var claimType: String?
+    public var unit: String?
+    public var gstCode: String?
+    public var taxRate: Double
+    
+    // NDIS Fields
+    public var ndisSupportCategory: String?
+    public var ndisRegistrationGroup: String?
+    public var ndisOutcomeDomain: String?
+    public var ndisSupportPurpose: String?
+    public var isComplexBehaviour: Bool
+    public var isHighIntensity: Bool
+    public var geographicLoading: Double
+    public var timeModifier: Double
+    public var groupModifier: Double
+    public var finalRateLimit: Double
     
     public init(
         id: UUID,
@@ -182,7 +203,23 @@ public struct InvoiceItem: Identifiable, Codable, Equatable, Sendable {
         itemDescription: String,
         quantity: Double,
         rate: Double,
-        position: Int32 = 0
+        position: Int32 = 0,
+        serviceDate: Date = Date(),
+        ndisItemNumber: String? = nil,
+        claimType: String? = nil,
+        unit: String? = nil,
+        gstCode: String? = nil,
+        taxRate: Double = 0.0,
+        ndisSupportCategory: String? = nil,
+        ndisRegistrationGroup: String? = nil,
+        ndisOutcomeDomain: String? = nil,
+        ndisSupportPurpose: String? = nil,
+        isComplexBehaviour: Bool = false,
+        isHighIntensity: Bool = false,
+        geographicLoading: Double = 1.0,
+        timeModifier: Double = 1.0,
+        groupModifier: Double = 1.0,
+        finalRateLimit: Double = 0.0
     ) {
         self.id = id
         self.invoiceId = invoiceId
@@ -192,6 +229,22 @@ public struct InvoiceItem: Identifiable, Codable, Equatable, Sendable {
         self.quantity = quantity
         self.rate = rate
         self.position = position
+        self.serviceDate = serviceDate
+        self.ndisItemNumber = ndisItemNumber
+        self.claimType = claimType
+        self.unit = unit
+        self.gstCode = gstCode
+        self.taxRate = taxRate
+        self.ndisSupportCategory = ndisSupportCategory
+        self.ndisRegistrationGroup = ndisRegistrationGroup
+        self.ndisOutcomeDomain = ndisOutcomeDomain
+        self.ndisSupportPurpose = ndisSupportPurpose
+        self.isComplexBehaviour = isComplexBehaviour
+        self.isHighIntensity = isHighIntensity
+        self.geographicLoading = geographicLoading
+        self.timeModifier = timeModifier
+        self.groupModifier = groupModifier
+        self.finalRateLimit = finalRateLimit
     }
     
     /// Calculated line total

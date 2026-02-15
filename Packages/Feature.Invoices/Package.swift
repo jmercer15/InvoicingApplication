@@ -10,9 +10,27 @@ let package = Package(
     dependencies: [
         .package(path: "../Core"),
         .package(path: "../Data"),
-        .package(path: "../SharedUI")
+        .package(path: "../SharedUI"),
+        .package(path: "../Feature.InvoiceTemplateEditor")
     ],
     targets: [
-        .target(name: "Feature_Invoices", dependencies: ["Core", "Data", "SharedUI"])
+        .target(
+            name: "Feature_Invoices",
+            dependencies: [
+                "Core",
+                "Data",
+                "SharedUI",
+                .product(name: "Feature_InvoiceTemplateEditor", package: "Feature.InvoiceTemplateEditor")
+            ]
+        ),
+        .testTarget(
+            name: "Feature_InvoicesTests",
+            dependencies: [
+                "Feature_Invoices",
+                "Core",
+                "Data",
+                .product(name: "Feature_InvoiceTemplateEditor", package: "Feature.InvoiceTemplateEditor")
+            ]
+        )
     ]
 )

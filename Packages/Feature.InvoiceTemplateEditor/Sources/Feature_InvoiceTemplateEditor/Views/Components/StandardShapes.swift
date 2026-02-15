@@ -135,3 +135,68 @@ struct ImagePlaceholder: Shape {
         return path
     }
 }
+
+// MARK: - Previews
+
+#Preview("Triangle - Directions") {
+    HStack(spacing: 20) {
+        ForEach([TriangleDirection.up, .down, .left, .right], id: \.self) { direction in
+            Triangle(direction: direction)
+                .fill(Color.accentColor)
+                .frame(width: 60, height: 60)
+        }
+    }
+    .padding()
+}
+
+#Preview("Line - Decorators") {
+    VStack(spacing: 20) {
+        HStack(spacing: 30) {
+            VStack {
+                Line(startDecorator: .none, endDecorator: .arrow, thickness: 2)
+                    .stroke(Color.primary, lineWidth: 2)
+                    .frame(width: 80, height: 20)
+                Text("Arrow").font(.caption)
+            }
+            
+            VStack {
+                Line(startDecorator: .circle, endDecorator: .circle, thickness: 2)
+                    .stroke(Color.primary, lineWidth: 2)
+                    .frame(width: 80, height: 20)
+                Text("Circle").font(.caption)
+            }
+            
+            VStack {
+                Line(startDecorator: .square, endDecorator: .arrow, thickness: 2)
+                    .stroke(Color.primary, lineWidth: 2)
+                    .frame(width: 80, height: 20)
+                Text("Mixed").font(.caption)
+            }
+        }
+    }
+    .padding()
+}
+
+#Preview("Star - Variations") {
+    HStack(spacing: 20) {
+        Star(points: 5, smoothness: 0.5)
+            .fill(Color.yellow)
+            .frame(width: 60, height: 60)
+        
+        Star(points: 6, smoothness: 0.4)
+            .fill(Color.orange)
+            .frame(width: 60, height: 60)
+        
+        Star(points: 8, smoothness: 0.6)
+            .fill(Color.red)
+            .frame(width: 60, height: 60)
+    }
+    .padding()
+}
+
+#Preview("ImagePlaceholder") {
+    ImagePlaceholder()
+        .stroke(Color.gray.opacity(0.5), lineWidth: 1)
+        .frame(width: 100, height: 80)
+        .padding()
+}

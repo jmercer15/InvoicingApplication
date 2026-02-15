@@ -19,9 +19,9 @@ public struct Client: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let payee: Payee?
     
     // Email recipient preferences
-    public let sendInvoicesToClient: Bool?
-    public let sendInvoicesToPayee: Bool?
-    public let sendInvoicesToPlanManager: Bool?
+    public var sendInvoicesToClient: Bool?
+    public var sendInvoicesToPayee: Bool?
+    public var sendInvoicesToPlanManager: Bool?
     
     public init(
         id: UUID,

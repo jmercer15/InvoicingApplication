@@ -61,4 +61,15 @@ public protocol SessionsRepository: Sendable {
     
     /// Count sessions by status
     func count(by status: String) async throws -> Int
+    
+    /// Fetch session by EventKit identifier
+    func fetch(byEventIdentifier eventIdentifier: String) async throws -> Session?
+    
+    /// Fetch session by derived EventKit identifier
+    func fetch(byDerivedFromEKEventID derivedId: String) async throws -> [Session]
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias SessionsRepositoryProtocol = SessionsRepository

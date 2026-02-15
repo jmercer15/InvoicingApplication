@@ -4,8 +4,11 @@ import SwiftUI
 import Combine
 import PDFKit
 import AppKit
+import os
 import Core
+import Data
 import SharedUI
+import Feature_InvoiceTemplateEditor
 
 // The data race warnings below are false positives for ObservableObject usage on main thread
 
@@ -27,14 +30,22 @@ public class InvoicesContainerViewModel: ObservableObject {
     let invoicesRepository: InvoicesRepository
     let clientServicesRepository: ClientServicesRepository
     let clientsRepository: ClientsRepository
+    let payeesRepository: PayeeRepository
+    let planManagersRepository: PlanManagerRepository
+    let sharingService: InvoiceSharingService
+    let complianceValidator: NDISComplianceValidator?
+    let complianceBlockingEnabled: Bool
+    let complianceLogger = Logger(subsystem: "com.invoicing.compliance", category: "InvoicesContainer")
+    static let complianceBlockerDowngradeKey = "debug.compliance.downgradeBlockersToWarnings"
     
     // MARK: - Published State
     @Published public var selectedInvoice: Invoice?
+    @Published public var isLoading: Bool = false
     @Published private(set) var allInvoices: [Invoice] = []
     @Published var invoiceSearchText: String = ""
     @Published var invoiceFilterStatus: Set<String> = []
     @Published var invoiceSortOrder: InvoicesSortOrder = .dateDesc
-    @Published var groupBy: GroupBy = .status
+    @Published var groupBy: GroupBy = .none
     
     // Sorting controls
     @Published var sortField: SortField = .date
@@ -46,6 +57,36 @@ public class InvoicesContainerViewModel: ObservableObject {
     @Published private(set) var invoiceEditorViewModel: InvoiceEditorViewModel?
     @Published var isEditingInvoice: Bool = false
     @Published var showingInvoiceGeneratorSheet: Bool = false
+    @Published var complianceStatusMessage: String?
+    @Published var complianceStatusIsBlocker: Bool = false
+    
+    // Date Range Filter (nil means not filtered)
+    @Published var filterStartDate: Date? = nil
+    @Published var filterEndDate: Date? = nil
+    
+    // Amount Range Filter (nil means not filtered)
+    @Published var filterMinAmount: Double? = nil
+    @Published var filterMaxAmount: Double? = nil
+    
+    // Client Filter (nil or empty means show all)
+    @Published var filterClients: Set<String> = []
+    
+    // Computed helpers for filter active state
+    var isDateFilterActive: Bool {
+        filterStartDate != nil || filterEndDate != nil
+    }
+    var isAmountFilterActive: Bool {
+        filterMinAmount != nil || filterMaxAmount != nil
+    }
+    var isClientFilterActive: Bool {
+        !filterClients.isEmpty
+    }
+    
+    // Get unique client names from all invoices
+    var uniqueClientNames: [String] {
+        let names = allInvoices.compactMap { $0.clientName }.filter { !$0.isEmpty }
+        return Array(Set(names)).sorted()
+    }
     
     // UI state
     @Published var isGenerateButtonHovered: Bool = false
@@ -60,10 +101,24 @@ public class InvoicesContainerViewModel: ObservableObject {
     private var emailSharingService: NSSharingService?
     
     // MARK: - Initializer
-    public init(invoicesRepository: InvoicesRepository, clientServicesRepository: ClientServicesRepository, clientsRepository: ClientsRepository) {
+    public init(
+        invoicesRepository: InvoicesRepository,
+        clientServicesRepository: ClientServicesRepository,
+        clientsRepository: ClientsRepository,
+        payeesRepository: PayeeRepository,
+        planManagersRepository: PlanManagerRepository,
+        sharingService: InvoiceSharingService,
+        complianceValidator: NDISComplianceValidator? = nil,
+        complianceBlockingEnabled: Bool = true
+    ) { 
         self.invoicesRepository = invoicesRepository
         self.clientServicesRepository = clientServicesRepository
         self.clientsRepository = clientsRepository
+        self.payeesRepository = payeesRepository
+        self.planManagersRepository = planManagersRepository
+        self.sharingService = sharingService
+        self.complianceValidator = complianceValidator
+        self.complianceBlockingEnabled = complianceBlockingEnabled
         setupBindings()
         Task {
             await fetchAllInvoices()
@@ -72,6 +127,9 @@ public class InvoicesContainerViewModel: ObservableObject {
     
     // MARK: - Data Fetching
     func fetchAllInvoices() async {
+        await MainActor.run { self.isLoading = true }
+        defer { Task { @MainActor in self.isLoading = false } }
+        
         do {
             allInvoices = try await invoicesRepository.fetchAll()
         } catch {
@@ -104,6 +162,14 @@ public class InvoicesContainerViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] newInvoice in
                 self?.handleInvoiceSelectionChange(newInvoice: newInvoice)
+            }
+            .store(in: &cancellables)
+        
+        // Subscribe to cross-feature invoice refresh notifications
+        InvoiceChangePublisher.shared.invoicesRefreshNeeded
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { await self?.fetchAllInvoices() }
             }
             .store(in: &cancellables)
         
@@ -193,8 +259,13 @@ public class InvoicesContainerViewModel: ObservableObject {
             invoicesRepository: invoicesRepository,
             clientServicesRepository: clientServicesRepository,
             clientsRepository: clientsRepository,
+            payeesRepository: payeesRepository,
+            planManagersRepository: planManagersRepository,
+            sharingService: sharingService,
             invoice: invoice,
-            isNew: isNew
+            isNew: isNew,
+            complianceValidator: complianceValidator,
+            complianceBlockingEnabled: complianceBlockingEnabled
         )
         viewModel.onInvoiceDeleted = { [weak self] in
             // Clear the selected invoice when deleted
@@ -210,6 +281,25 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
     
     // MARK: - Public Methods
+    public func selectInvoice(byId id: UUID) {
+        Task { @MainActor in
+            // Try to find in loaded invoices first to avoid refetch
+            if let invoice = allInvoices.first(where: { $0.id == id }) {
+                self.selectedInvoice = invoice
+                return
+            }
+            
+            // Try fetching from repository
+            do {
+                if let invoice = try await invoicesRepository.fetch(by: id) {
+                    self.selectedInvoice = invoice
+                }
+            } catch {
+                print("❌ [InvoicesContainerViewModel] Error fetching invoice for selection: \(error)")
+            }
+        }
+    }
+
     func initializeIfNeeded() {
         // Initialize displayedInvoice and viewModel when the view appears
         if let initialInvoice = selectedInvoice, self.displayedInvoice == nil {
@@ -291,10 +381,11 @@ public class InvoicesContainerViewModel: ObservableObject {
             creditApplied: 0.0,
             discount: 0.0,
             date: issueDate,
-            dueDate: Calendar.current.date(byAdding: .day, value: AppConstants.defaultInvoiceDueDays, to: issueDate),
+            dueDate: Calendar.current.date(byAdding: .day, value: UserDefaults.standard.integer(forKey: "defaultPaymentTerms"), to: issueDate) ?? issueDate,
             issueDate: issueDate,
-            paymentTerms: UserDefaults.standard.string(forKey: "defaultPaymentTerms") ?? "\(AppConstants.defaultInvoiceDueDays) days",
-            status: "draft",
+            notes: UserDefaults.standard.string(forKey: "defaultNotes"),
+            paymentTerms: UserDefaults.standard.string(forKey: "defaultPaymentTermsText"),
+            status: AppConstants.invoiceStatusReviewDraft,
             currencyCode: "AUD"
         )
         selectedInvoice = newInvoice
@@ -332,7 +423,10 @@ public class InvoicesContainerViewModel: ObservableObject {
         // Fetch invoice items for PDF generation
         do {
             let invoiceItems = try await invoicesRepository.fetchItems(by: invoice.id)
-            return InvoiceSharingService.renderPDFData(invoice: invoice, invoiceItems: invoiceItems)
+            return await sharingService.renderPDFData(
+                invoice: invoice,
+                invoiceItems: invoiceItems
+            )
         } catch {
             print("❌ [InvoicesContainerViewModel] Error fetching invoice items for PDF: \(error)")
             return nil
@@ -340,13 +434,30 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
     
     func updateInvoiceStatus(_ invoiceId: UUID, status: String) async {
+        if let invoice = allInvoices.first(where: { $0.id == invoiceId }) {
+            if let validation = await validateInvoiceTransitionIfNeeded(
+                invoice: invoice,
+                targetStatus: status,
+                action: .statusChange
+            ) {
+                if validation.isBlocked {
+                    applyComplianceMessage(blockerSummary(for: validation), isBlocker: true)
+                    return
+                }
+                if !validation.warnings.isEmpty {
+                    applyComplianceMessage(warningSummary(for: validation), isBlocker: false)
+                }
+            }
+        }
         do {
             try await invoicesRepository.updateStatus(id: invoiceId, status: status)
             // If status is paid, also update paidDate via repository
-            if status == AppConstants.invoiceStatusPaid {
+            if status == AppConstants.invoiceStatusReceived {
                 // Note: Repository should handle paidDate update in updateStatus
                 // If not, we may need to fetch, update, and save
             }
+            // Notify other features about the change
+            InvoiceChangePublisher.shared.notifyChange(invoiceId: invoiceId)
         } catch {
             print("❌ [InvoicesContainerViewModel] Error updating invoice status: \(error)")
         }
@@ -404,8 +515,27 @@ public class InvoicesContainerViewModel: ObservableObject {
                 service.perform(withItems: [body as NSString, pdfFileURL as NSURL])
                 
                 // Update invoice status via repository
-                if invoice.status == AppConstants.invoiceStatusDraft {
-                    try? await invoicesRepository.updateStatus(id: invoice.id, status: "sent")
+                if invoice.status != AppConstants.invoiceStatusPending
+                    && invoice.status != AppConstants.invoiceStatusReceived {
+                    if let validation = await self.validateInvoiceTransitionIfNeeded(
+                        invoice: invoice,
+                        targetStatus: AppConstants.invoiceStatusPending,
+                        action: .sendInvoice
+                    ) {
+                        if validation.isBlocked {
+                            await MainActor.run {
+                                self.applyComplianceMessage(self.blockerSummary(for: validation), isBlocker: true)
+                            }
+                            return
+                        }
+                        if !validation.warnings.isEmpty {
+                            await MainActor.run {
+                                self.applyComplianceMessage(self.warningSummary(for: validation), isBlocker: false)
+                            }
+                        }
+                    }
+                    try? await invoicesRepository.updateStatus(id: invoice.id, status: AppConstants.invoiceStatusPending)
+                    InvoiceChangePublisher.shared.notifyChange(invoiceId: invoice.id)
                 }
             }
         }
@@ -428,6 +558,144 @@ public class InvoicesContainerViewModel: ObservableObject {
     }
 
     // Note: Context update removed - repositories handle persistence
+}
+
+private extension InvoicesContainerViewModel {
+    func validateInvoiceTransitionIfNeeded(
+        invoice: Invoice,
+        targetStatus: String,
+        action: ComplianceAction
+    ) async -> ComplianceValidationResult? {
+        guard complianceBlockingEnabled, let complianceValidator else { return nil }
+        guard isForwardInvoiceTransition(from: invoice.status, to: targetStatus) else { return nil }
+        do {
+            let result = try await complianceValidator.validateInvoiceTransition(
+                invoiceId: invoice.id,
+                action: action,
+                targetStatus: targetStatus
+            )
+            let adjustedResult = applyDebugBlockerDowngradeIfNeeded(
+                result,
+                invoiceId: invoice.id,
+                action: action,
+                targetStatus: targetStatus
+            )
+            logComplianceValidationResult(
+                adjustedResult,
+                invoiceId: invoice.id,
+                action: action,
+                targetStatus: targetStatus
+            )
+            return adjustedResult
+        } catch {
+            complianceLogger.error(
+                "validation_failed action=\(action.rawValue, privacy: .public) invoice_id=\(invoice.id.uuidString, privacy: .public) target_status=\(targetStatus, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+            return ComplianceValidationResult(
+                blockers: [
+                    ComplianceIssue(
+                        id: "COMPLIANCE-VAL-001",
+                        severity: .blocker,
+                        message: "Unable to validate compliance: \(error.localizedDescription)",
+                        entityId: invoice.id
+                    )
+                ]
+            )
+        }
+    }
+
+    func applyComplianceMessage(_ message: String, isBlocker: Bool) {
+        complianceStatusMessage = message
+        complianceStatusIsBlocker = isBlocker
+    }
+
+    func blockerSummary(for result: ComplianceValidationResult) -> String {
+        let messages = result.blockers.prefix(2).map(\.message).joined(separator: " ")
+        return "Blocked by compliance (\(result.blockers.count)): \(messages)"
+    }
+
+    func warningSummary(for result: ComplianceValidationResult) -> String {
+        let messages = result.warnings.prefix(2).map(\.message).joined(separator: " ")
+        return "Compliance warnings (\(result.warnings.count)): \(messages)"
+    }
+
+    var complianceBlockerDowngradeEnabled: Bool {
+#if DEBUG
+        UserDefaults.standard.bool(forKey: Self.complianceBlockerDowngradeKey)
+#else
+        false
+#endif
+    }
+
+    func applyDebugBlockerDowngradeIfNeeded(
+        _ result: ComplianceValidationResult,
+        invoiceId: UUID,
+        action: ComplianceAction,
+        targetStatus: String
+    ) -> ComplianceValidationResult {
+        guard complianceBlockerDowngradeEnabled, !result.blockers.isEmpty else { return result }
+        let downgradedWarnings = result.blockers.map {
+            ComplianceIssue(
+                id: $0.id,
+                severity: .warning,
+                message: $0.message,
+                entityId: $0.entityId,
+                field: $0.field
+            )
+        }
+        complianceLogger.warning(
+            "debug_downgrade_enabled action=\(action.rawValue, privacy: .public) invoice_id=\(invoiceId.uuidString, privacy: .public) target_status=\(targetStatus, privacy: .public) downgraded_blocker_count=\(result.blockers.count, privacy: .public)"
+        )
+        return ComplianceValidationResult(
+            warnings: result.warnings + downgradedWarnings,
+            blockers: []
+        )
+    }
+
+    func logComplianceValidationResult(
+        _ result: ComplianceValidationResult,
+        invoiceId: UUID,
+        action: ComplianceAction,
+        targetStatus: String
+    ) {
+        if !result.blockers.isEmpty {
+            let ruleIds = result.blockers.map(\.id).joined(separator: ",")
+            let issueEntityIds = result.blockers.compactMap(\.entityId).map(\.uuidString).joined(separator: ",")
+            complianceLogger.error(
+                "block_event action=\(action.rawValue, privacy: .public) invoice_id=\(invoiceId.uuidString, privacy: .public) target_status=\(targetStatus, privacy: .public) blocker_count=\(result.blockers.count, privacy: .public) rule_ids=\(ruleIds, privacy: .public) issue_entity_ids=\(issueEntityIds, privacy: .public)"
+            )
+        }
+
+        if !result.warnings.isEmpty {
+            let ruleIds = result.warnings.map(\.id).joined(separator: ",")
+            complianceLogger.info(
+                "warning_event action=\(action.rawValue, privacy: .public) invoice_id=\(invoiceId.uuidString, privacy: .public) target_status=\(targetStatus, privacy: .public) warning_count=\(result.warnings.count, privacy: .public) rule_ids=\(ruleIds, privacy: .public)"
+            )
+        }
+    }
+
+    func isForwardInvoiceTransition(from current: String, to target: String) -> Bool {
+        guard let currentRank = workflowRank(for: current),
+              let targetRank = workflowRank(for: target) else {
+            return false
+        }
+        return targetRank > currentRank
+    }
+
+    func workflowRank(for status: String) -> Int? {
+        switch status {
+        case AppConstants.invoiceStatusReviewDraft:
+            return 0
+        case AppConstants.invoiceStatusReadyToSend:
+            return 1
+        case AppConstants.invoiceStatusPending, AppConstants.invoiceStatusOverdue:
+            return 2
+        case AppConstants.invoiceStatusReceived:
+            return 3
+        default:
+            return nil
+        }
+    }
 }
 
 private let dateFormatter: DateFormatter = {

@@ -32,10 +32,13 @@ enum CalendarColorProvider {
 }
 
 struct CalendarItemBlockView: View {
+    private static let leadingColumnPadding: CGFloat = 1
+    private static let trailingColumnPadding: CGFloat = 3
     let item: DisplayableCalendarItem
     @ObservedObject var viewModel: CalendarViewModel
     let hourHeight: CGFloat
     let columnWidth: CGFloat
+    @State private var isHovered = false
 
     // --- Use computed properties from DisplayableCalendarItem ---
     private var statusColor: Color { item.displayColor }
@@ -94,127 +97,77 @@ struct CalendarItemBlockView: View {
         f.dateFormat = "h:mm a"
         return "\(f.string(from: startTime)) - \(f.string(from: endTime))"
     }
+    private var cardHeight: CGFloat { max(10, durationHours * hourHeight - 2) }
+    private var showTimeLine: Bool { cardHeight >= 20 }
+    private var showPrimaryDetailLine: Bool { cardHeight >= 34 }
+    private var showSecondaryDetailLine: Bool { cardHeight >= 52 }
+    private var showTertiaryDetailLine: Bool { cardHeight >= 72 }
+    private var contentTextColor: Color { Color("Text", bundle: .sharedUI) }
 
     // --- Type-specific computed properties ---
     private var isSession: Bool { item.isSession }
     private var isEvent: Bool { item.isEvent }
 
     // Adapt status/state properties based on item type
+    private var sessionStatusToken: String? {
+        SessionStatus(normalized: item.underlyingSession?.status ?? "")?.token
+    }
     private var isCompleted: Bool { 
-        item.isSession && item.underlyingSession?.status == SessionStatus.completed.rawValue 
+        item.isSession && sessionStatusToken == SessionStatus.completed.token
     }
     private var isCancelled: Bool { 
-        item.isSession && item.underlyingSession?.status == SessionStatus.cancelled.rawValue 
+        item.isSession && sessionStatusToken == SessionStatus.cancelled.token
     }
     private var isPast: Bool { (item.endDate ?? .distantFuture) < Date() } // Common check
     private var isConfirmed: Bool { 
-        item.isSession && item.underlyingSession?.status == SessionStatus.scheduled.rawValue 
+        item.isSession && sessionStatusToken == SessionStatus.scheduled.token
     }
     private var isPending: Bool { 
-        item.isSession && item.underlyingSession?.status == SessionStatus.scheduled.rawValue 
+        item.isSession && sessionStatusToken == SessionStatus.scheduled.token
     }
 
     // Adapt background opacity based on type and state
     private var backgroundOpacity: Double {
-        if isEvent { return 0.15 }
-        if isCompleted { return 0.15 }
-        if isCancelled { return 0.12 }
-        if isPast { return 0.1 }
-        if isConfirmed { return 0.2 }
-        if isPending { return 0.18 }
-        return 0.2 // Default for sessions
+        if isEvent { return 0.36 }
+        if isCompleted { return 0.36 }
+        if isCancelled { return 0.34 }
+        if isPast { return 0.32 }
+        if isConfirmed { return 0.42 }
+        if isPending { return 0.40 }
+        return 0.42 // Default for sessions
     }
-
-    @State private var isHovering = false
-    @State private var isTopHandleHovered = false
-    @State private var isBottomHandleHovered = false
 
     // Define SessionStatus enum locally for context menu actions
 
     @EnvironmentObject var eventKitService: EventKitSyncService
-    @Environment(\.modelContext) private var modelContext
+
+    private var isBeingResized: Bool {
+        viewModel.interactionHandler.resizingSessionInfo?.instanceID == item.id
+    }
+
+    private var shouldShowResizeControls: Bool {
+        !isEvent && (isHovered || isBeingResized)
+    }
 
     var body: some View {
-        let isBeingResized = viewModel.interactionHandler.resizingSessionInfo?.instanceID == item.id
-        let calculatedWidth = columnWidth - StyleGuide.Dimensions.paddingLarge
+        let calculatedWidth = max(0, columnWidth - Self.leadingColumnPadding - Self.trailingColumnPadding)
         let (calculatedHeight, _) = calculateHeightAndOffset(isBeingResized: isBeingResized)
-
-        // Track if any handle is being hovered for UI feedback
-        let _ = isTopHandleHovered || isBottomHandleHovered
         
         ZStack(alignment: .top) {
             // Main content of the block
             VStack(alignment: .leading, spacing: 0) {
-                RightRoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(StyleGuide.Opacity.faint),
-                                Color.white.opacity(StyleGuide.Opacity.faint),
-                                Color.white.opacity(StyleGuide.Opacity.light)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .background(
-                        RightRoundedRectangle(cornerRadius: 8)
-                            .fill(.ultraThinMaterial)
-                    )
+                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous)
+                    .fill(cardColor.opacity(backgroundOpacity))
                     .overlay(
-                        RightRoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(StyleGuide.Opacity.medium),
-                                        Color.white.opacity(StyleGuide.Opacity.faint),
-                                        Color.white.opacity(StyleGuide.Opacity.light)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous)
+                            .stroke(cardColor.opacity(0.78), lineWidth: 0.8)
                     )
-                    .overlay(
-                        // Diagonal Linear Gradient
-                        RightRoundedRectangle(cornerRadius: 8)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        clientColor.opacity(0.7),
-                                        clientColor.opacity(0.6),
-                                        clientColor.opacity(0.5),
-                                        clientColor.opacity(0.4),
-                                        clientColor.opacity(0.35),
-                                        clientColor.opacity(0.3)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    )
-                    .overlay(
-                        // Dynamic Edge Highlight Effect
-                        RightRoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        clientColor.opacity(0.8),
-                                        clientColor.opacity(0.6),
-                                        clientColor.opacity(0.4),
-                                        clientColor.opacity(0.2),
-                                        clientColor.opacity(0.1)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1.5
-                            )
-                    )
-                    .overlay { contentVStack() }
+                    .overlay(alignment: .topLeading) {
+                        contentVStack()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
             }
-            .appInteractiveCursor()
+
 
             // Resize handles overlay
             VStack {
@@ -222,37 +175,40 @@ struct CalendarItemBlockView: View {
                     edge: .top,
                     item: item,
                     viewModel: viewModel,
-                    hourHeight: hourHeight,
-                    isHandleHovered: $isTopHandleHovered
+                    hourHeight: hourHeight
                 )
                 Spacer()
                 ResizeHandleView(
                     edge: .bottom,
                     item: item,
                     viewModel: viewModel,
-                    hourHeight: hourHeight,
-                    isHandleHovered: $isBottomHandleHovered
+                    hourHeight: hourHeight
                 )
             }
             .padding(.vertical, -5) // Pulls the handles outward by 5pt each, centering them on the edge.
-            .allowsHitTesting(isHovering && !isEvent) // Make handles hittable only when card is hovered
-            .opacity(isHovering && !isEvent ? 1 : 0) // Only show on hover and for sessions
+            .allowsHitTesting(shouldShowResizeControls)
+            .opacity(shouldShowResizeControls ? 1 : 0)
         }
         .frame(width: calculatedWidth, height: calculatedHeight)
         .shadow(
-            color: Color.black.opacity(isHovering || isBeingResized ? 0.3 : 0.1),
-            radius: isHovering || isBeingResized ? 8 : 3,
+            color: Color.black.opacity(isBeingResized ? 0.3 : 0.1),
+            radius: isBeingResized ? 8 : 3,
             x: 0,
-            y: isHovering || isBeingResized ? 4 : 2
+            y: isBeingResized ? 4 : 2
         )
         .opacity(isCancelled ? 0.7 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovering || isBeingResized)
-        .zIndex(isHovering || isBeingResized ? 10 : (isEvent ? 2 : 1))
+        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isBeingResized)
+        .zIndex(isBeingResized ? 10 : (isEvent ? 2 : 1))
+        .contentShape(Rectangle())
+        .pointerStyle(.link)
         .contextMenu { makeContextMenu() }
         .onTapGesture { handleTap() }
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
         }
+
         .onDrag {
             guard !isBeingResized,
                   let session = item.underlyingSession,
@@ -280,18 +236,10 @@ struct CalendarItemBlockView: View {
         switch item {
         case .session(let session):
             // It's a non-recurring session, show the editor directly.
-            // Reset selection first to ensure onChange triggers even for same session
-            viewModel.selectedSessionInfo = nil
-            DispatchQueue.main.async {
-                viewModel.selectedSessionInfo = (session: session, instanceStart: session.startTime, instanceEnd: session.endTime)
-            }
+            viewModel.selectedSessionInfo = (session: session, instanceStart: session.startTime, instanceEnd: session.endTime)
         case .recurringSessionInstance(let template, let instanceStartDate, let instanceEndDate, _):
             // It's a recurring instance, show the editor for this specific instance.
-            // Reset selection first to ensure onChange triggers even for same session
-            viewModel.selectedSessionInfo = nil
-            DispatchQueue.main.async {
-                viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
-            }
+            viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
         case .event(let event):
             // It's an EKEvent, trigger the conversion flow.
             viewModel.convertEventToSession(event)
@@ -304,45 +252,111 @@ struct CalendarItemBlockView: View {
 
     @ViewBuilder
     private func contentVStack() -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .lineLimit(1)
-                    
-                    if !isEvent {
-                        Text(timeRangeText)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                            .lineLimit(1)
-                    }
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .top, spacing: 4) {
+                Text(item.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(contentTextColor)
+                    .lineLimit(showSecondaryDetailLine ? 2 : 1)
+                    .multilineTextAlignment(.leading)
+
+                Spacer(minLength: 2)
+                
+                // Status indicator badge for sessions
+                if let session = item.underlyingSession {
+                    statusBadge(for: session)
                 }
-                
-                Spacer()
-                
-                // Add resize indicator for sessions
-                if !isEvent {
+
+                // Keep the resize affordance for sessions without stealing much space.
+                if shouldShowResizeControls {
                     Image(systemName: "arrow.up.and.down")
                         .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                        .opacity(isHovering ? 1.0 : StyleGuide.Opacity.strong)
-                        .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: isHovering)
+                        .foregroundColor(contentTextColor)
+                        .opacity(StyleGuide.Opacity.strong)
                 }
             }
-            
-            if let session = item.underlyingSession, let clientId = session.clientId {
-                ClientNameView(
-                    clientId: clientId,
-                    viewModel: viewModel
-                )
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+
+            if showTimeLine {
+                compactMetaRow(icon: "clock", text: timeRangeText)
+            }
+
+            if let session = item.underlyingSession {
+                if showPrimaryDetailLine, let clientId = session.clientId {
+                    ClientNameView(
+                        clientId: clientId,
+                        viewModel: viewModel,
+                        fontSize: 9,
+                        textColor: contentTextColor
+                    )
+                }
+
+                if showSecondaryDetailLine, let serviceId = session.clientServiceId {
+                    ServiceNameView(
+                        serviceId: serviceId,
+                        viewModel: viewModel,
+                        fontSize: 9,
+                        textColor: contentTextColor
+                    )
+                }
+
+                if showTertiaryDetailLine, let location = session.location, !location.isEmpty {
+                    compactMetaRow(icon: "mappin.and.ellipse", text: location, allowsTruncation: false)
+                }
+            } else if let event = item.underlyingEvent {
+                if showPrimaryDetailLine {
+                    compactMetaRow(icon: "calendar", text: event.calendar.title)
+                }
+
+                if showSecondaryDetailLine, let location = event.location, !location.isEmpty {
+                    compactMetaRow(icon: "mappin.and.ellipse", text: location, allowsTruncation: false)
+                }
             }
         }
-        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall + 1)
         .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
+    }
+
+    @ViewBuilder
+    private func compactMetaRow(icon: String, text: String, allowsTruncation: Bool = true) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(contentTextColor)
+            Text(text)
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(contentTextColor)
+                .lineLimit(allowsTruncation ? 1 : nil)
+                .fixedSize(horizontal: false, vertical: !allowsTruncation)
+                .multilineTextAlignment(.leading)
+        }
+    }
+    
+    @ViewBuilder
+    private func statusBadge(for session: Session) -> some View {
+        let statusToken = SessionStatus(normalized: session.status ?? "")?.token
+        
+        if let token = statusToken {
+            let (icon, badgeColor): (String, Color) = {
+                switch token {
+                case SessionStatus.completed.token:
+                    return ("checkmark.circle.fill", .green)
+                case SessionStatus.cancelled.token:
+                    return ("xmark.circle.fill", .red)
+                case SessionStatus.scheduled.token:
+                    return ("calendar.circle.fill", .blue)
+                case SessionStatus.noShow.token:
+                    return ("exclamationmark.circle.fill", .orange)
+                default:
+                    return ("", .clear)
+                }
+            }()
+            
+            if !icon.isEmpty {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(badgeColor)
+            }
+        }
     }
 
 
@@ -364,20 +378,25 @@ struct CalendarItemBlockView: View {
                 // Navigation logic
             }
 
-            if !isCompleted && !isCancelled {
-                Divider()
-                Button(action: { markSessionAs(.completed, session: session) }) {
-                    Label("Mark as Completed", systemImage: "checkmark.circle.fill")
-                }
-                Button(action: { markSessionAs(.cancelled, session: session) }) {
-                    Label("Mark as Cancelled", systemImage: "xmark.circle.fill")
-                }
-            }
+            let statusToken = SessionStatus(normalized: session.status ?? "")?.token
+            let canEditCalendarStatus = isCalendarLifecycleStatus(statusToken)
 
-            if isCompleted || isCancelled {
-                Divider()
-                Button(action: { markSessionAs(.scheduled, session: session) }) {
-                    Label("Mark as Planned", systemImage: "calendar")
+            if canEditCalendarStatus {
+                if !isCompleted && !isCancelled {
+                    Divider()
+                    Button(action: { markSessionAs(.completed, session: session) }) {
+                        Label("Mark as Completed", systemImage: "checkmark.circle.fill")
+                    }
+                    Button(action: { markSessionAs(.cancelled, session: session) }) {
+                        Label("Mark as Cancelled", systemImage: "xmark.circle.fill")
+                    }
+                }
+
+                if isCompleted || isCancelled {
+                    Divider()
+                    Button(action: { markSessionAs(.scheduled, session: session) }) {
+                        Label("Mark as Planned", systemImage: "calendar")
+                    }
                 }
             }
 
@@ -433,21 +452,10 @@ struct CalendarItemBlockView: View {
     // MARK: - Action Handlers
 
     private func markSessionAs(_ status: SessionStatus, session: Session) {
-        let newStatus: String
-        switch status {
-        case .scheduled: newStatus = String.sessionStatusPlanned
-        case .completed: newStatus = String.sessionStatusCompleted
-        case .cancelled: newStatus = String.sessionStatusCancelled
-        case .noShow: newStatus = "No Show"
-        case .rescheduled: newStatus = "Rescheduled"
-        case .grouped: newStatus = "Grouped"
-        case .needsServices: newStatus = "Needs Services"
-        case .needsTravel: newStatus = "Needs Travel"
-        case .reviewDraft: newStatus = "Review Draft"
-        case .readyToSend: newStatus = "Ready To Send"
-        case .pending: newStatus = "Pending"
-        case .received: newStatus = "Received"
+        guard isCalendarLifecycleStatus(SessionStatus(normalized: session.status ?? "")?.token) else {
+            return
         }
+        let newStatus = status.token
         
         // Update session status via repository
         Task {
@@ -459,6 +467,15 @@ struct CalendarItemBlockView: View {
             } catch {
                 print("[CalendarItemBlockView] Failed to update session status: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func isCalendarLifecycleStatus(_ token: String?) -> Bool {
+        switch token {
+        case "scheduled", "completed", "cancelled", "no_show", "rescheduled":
+            return true
+        default:
+            return false
         }
     }
 
@@ -496,7 +513,8 @@ struct CalendarItemBlockView: View {
         if let session = item.underlyingSession, let clientId = session.clientId {
             ClientNameView(
                 clientId: clientId,
-                viewModel: viewModel
+                viewModel: viewModel,
+                textColor: contentTextColor
             )
         }
     }
@@ -506,7 +524,8 @@ struct CalendarItemBlockView: View {
         if let session = item.underlyingSession, let serviceId = session.clientServiceId {
             ServiceNameView(
                 serviceId: serviceId,
-                viewModel: viewModel
+                viewModel: viewModel,
+                textColor: contentTextColor
             )
         }
     }
@@ -570,9 +589,7 @@ struct ResizeHandleView: View {
     let item: DisplayableCalendarItem
     @ObservedObject var viewModel: CalendarViewModel
     let hourHeight: CGFloat
-    @Binding var isHandleHovered: Bool
-    @State private var isHovering = false
-    @Environment(\.modelContext) private var modelContext
+
 
     private var isActive: Bool {
         viewModel.interactionHandler.resizingSessionInfo?.instanceID == item.id && viewModel.interactionHandler.resizingSessionInfo?.edge == edge
@@ -624,12 +641,14 @@ struct ResizeHandleView: View {
                     timeDelta = finalDate.timeIntervalSince(info.initialEndTime)
                 }
 
-                viewModel.resizeSession(
-                    with: info.masterSessionID,
-                    originalInstanceDate: item.startDate ?? Date(),
-                    edge: edge,
-                    timeDelta: timeDelta
-                )
+                if let sessionID = UUID(uuidString: info.masterSessionID) {
+                    viewModel.resizeSession(
+                        with: sessionID,
+                        originalInstanceDate: item.startDate ?? Date(),
+                        edge: edge,
+                        timeDelta: timeDelta
+                    )
+                }
                 
                 viewModel.interactionHandler.resizingSessionInfo = nil
                 viewModel.interactionHandler.resizePreviewDate = nil
@@ -640,7 +659,7 @@ struct ResizeHandleView: View {
         ZStack {
             // Main handle visible part
             Capsule()
-                .fill(isActive ? Color.accentColor : (isHovering ? Color.white : Color.white.opacity(0.9)))
+                .fill(isActive ? Color.accentColor : Color.white.opacity(0.9))
                 .frame(width: isActive ? 44 : 34, height: isActive ? 8 : 6)
                 .allowsHitTesting(false) // The visible capsule is purely decorative
 
@@ -649,13 +668,10 @@ struct ResizeHandleView: View {
                 .contentShape(Rectangle())
                 .gesture(gesture)
                 .pointerStyle(.rowResize)
-                .onHover { hovering in
-                    isHandleHovered = hovering
-                }
 
             // Live time preview text
             if isActive, let time = viewModel.interactionHandler.resizePreviewDate {
-                Text(viewModel.formatTime(for: time))
+                Text(viewModel.formatTime(time))
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
                     .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
@@ -671,30 +687,3 @@ struct ResizeHandleView: View {
         .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: isActive)
     }
 }
-
-// MARK: - Custom Shape Definition
-
-struct RightRoundedRectangle: Shape {
-    var cornerRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-
-        // Start at top-left
-        path.move(to: CGPoint(x: 0, y: 0))
-        // Top edge
-        path.addLine(to: CGPoint(x: rect.width - cornerRadius, y: 0))
-        // Top-right corner
-        path.addArc(center: CGPoint(x: rect.width - cornerRadius, y: cornerRadius), radius: cornerRadius, startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
-        // Right edge
-        path.addLine(to: CGPoint(x: rect.width, y: rect.height - cornerRadius))
-        // Bottom-right corner
-        path.addArc(center: CGPoint(x: rect.width - cornerRadius, y: rect.height - cornerRadius), radius: cornerRadius, startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 90), clockwise: false)
-        // Bottom edge
-        path.addLine(to: CGPoint(x: 0, y: rect.height))
-        // Close path
-        path.closeSubpath()
-
-        return path
-    }
-} 

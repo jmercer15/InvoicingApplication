@@ -35,7 +35,11 @@ final class PerformanceMappingTests: XCTestCase {
             InvoiceItemEntity.self,
             ClientServiceEntity.self,
             NDISItemEntity.self,
-            RegionalPriceEntity.self
+            RegionalPriceEntity.self,
+            ServiceAgreementEntity.self,
+            SupportLogEntity.self,
+            BulkClaimBatchEntity.self,
+            BulkClaimLineEntity.self
         ])
         
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -140,7 +144,6 @@ final class PerformanceMappingTests: XCTestCase {
             entity.phone = "0412345678"
             entity.status = index % 2 == 0 ? "active" : "inactive"
             entity.relationToClient = index % 3 == 0 ? "parent" : "guardian"
-            entity.payeeID = Int32(index)
             return entity
         }
         
@@ -363,7 +366,6 @@ final class PerformanceMappingTests: XCTestCase {
             entity.phone = "0412345678"
             entity.status = index % 2 == 0 ? "active" : "inactive"
             entity.relationToClient = index % 3 == 0 ? "parent" : "guardian"
-            entity.payeeID = Int32(index)
             return entity
         }
         

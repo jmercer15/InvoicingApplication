@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Core
+import SharedUI
 
 
 struct ModernTemplateManagementView: View {
@@ -33,45 +34,41 @@ struct ModernTemplateManagementView: View {
     }
     
     var body: some View {
-        ZStack {
-            AppMeshBackdrop()
-            NavigationStack(path: $navigationPath) {
-                VStack(alignment: .leading, spacing: 18) {
-                    headerView
-                    TemplateLibraryGrid(
-                        templates: filteredTemplates,
-                        selectedID: $highlightedTemplateID,
-                        isProcessingAction: isProcessingAction,
-                        isLoadingTemplates: workspace.isLoadingTemplates,
-                        isOpeningTemplate: workspace.isOpeningTemplate,
-                        loadError: workspace.templateLoadError,
-                        onOpen: handleTemplateSelection,
-                        onDuplicate: duplicateTemplate,
-                        onEdit: beginEditingTemplate,
-                        onDelete: promptDeleteTemplate
-                    )
-                }
-                .foregroundColor(Color.primaryText)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
+        NavigationStack(path: $navigationPath) {
+            VStack(alignment: .leading, spacing: 18) {
+                headerView
+                TemplateLibraryGrid(
+                    templates: filteredTemplates,
+                    selectedID: $highlightedTemplateID,
+                    isProcessingAction: isProcessingAction,
+                    isLoadingTemplates: workspace.isLoadingTemplates,
+                    isOpeningTemplate: workspace.isOpeningTemplate,
+                    loadError: workspace.templateLoadError,
+                    onOpen: handleTemplateSelection,
+                    onDuplicate: duplicateTemplate,
+                    onEdit: beginEditingTemplate,
+                    onDelete: promptDeleteTemplate
+                )
             }
-            .navigationDestination(for: TemplateItem.self) { template in
-                ZStack {
-                    AppMeshBackdrop()
-                    ModernTemplateEditor(
-                        template: template,
-                        workspace: workspace,
-                        onBackToTemplates: handleBackToTemplates,
-                        isInspectorVisible: $isInspectorVisible
-                    )
-                    .environmentObject(workspace)
-                    .environmentObject(workspace.editorViewModel)
-                    .environmentObject(workspace.editorViewModel.document)
-                    .environmentObject(templateDataService)
-                }
-                .onAppear { highlightedTemplateID = workspace.activeTemplate?.id ?? template.id }
-                .onDisappear { highlightedTemplateID = nil }
-            }
+            .foregroundColor(Color.primaryText)
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+        }
+        .background(PanelShellTokens.panelBackground.ignoresSafeArea())
+        .navigationDestination(for: TemplateItem.self) { template in
+            ModernTemplateEditor(
+                template: template,
+                workspace: workspace,
+                onBackToTemplates: handleBackToTemplates,
+                isInspectorVisible: $isInspectorVisible
+            )
+            .environmentObject(workspace)
+            .environmentObject(workspace.editorViewModel)
+            .environmentObject(workspace.editorViewModel.document)
+            .environmentObject(templateDataService)
+            .background(PanelShellTokens.panelBackground.ignoresSafeArea())
+            .onAppear { highlightedTemplateID = workspace.activeTemplate?.id ?? template.id }
+            .onDisappear { highlightedTemplateID = nil }
         }
         .animation(.easeInOut(duration: 0.25), value: navigationPath)
         .task {
@@ -135,7 +132,7 @@ struct ModernTemplateManagementView: View {
                     onDuplicate: currentSelection.isPersisted ? { duplicateTemplate(currentSelection) } : nil,
                     onDelete: currentSelection.isPersisted ? { promptDeleteTemplate(currentSelection) } : nil
                 )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.opacity)
                 .contentShape(Rectangle())
                 .clipped()
             }
@@ -275,7 +272,11 @@ struct ModernTemplateManagementView: View {
                         .foregroundColor(Color.secondary)
                 }
             } icon: {
-                Image(systemName: "square.grid.2x2")
+                Image("fluent-ic_fluent_grid_20_regular", bundle: .module)
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
                     .font(.title3)
                     .foregroundStyle(Color.accentColor)
             }
@@ -284,8 +285,16 @@ struct ModernTemplateManagementView: View {
             Spacer()
 
             Button(action: handleCreateNewSelection) {
-                Label("New Template", systemImage: "plus")
-                    .foregroundColor(Color.accentText)
+                Label {
+                    Text("New Template")
+                } icon: {
+                    Image("fluent-ic_fluent_add_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                }
+                .foregroundColor(Color.accentText)
             }
             .pointerStyle(.link)
             .buttonStyle(.borderedProminent)
@@ -297,7 +306,11 @@ struct ModernTemplateManagementView: View {
 
     private var searchField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
+            Image("fluent-ic_fluent_search_20_regular", bundle: .module)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
                 .fontWeight(.semibold)
                 .foregroundColor(Color.secondary)
             TextField("Search templates", text: $searchText)
@@ -325,7 +338,7 @@ struct ModernTemplateManagementView: View {
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.18),
+                                    Color(NSColor.separatorColor).opacity(0.2),
                                     Color.primaryOutline.opacity(0.2)
                                 ],
                                 startPoint: .topLeading,
@@ -431,7 +444,7 @@ private struct TemplateLibraryGrid: View {
         ProgressView(text)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 12)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .transition(.opacity)
             .tint(Color.accentColor)
     }
 
@@ -441,7 +454,7 @@ private struct TemplateLibraryGrid: View {
             .foregroundColor(Color.warningColor)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .transition(.opacity)
     }
 
 }
@@ -478,8 +491,16 @@ private struct TemplateSelectionToolbar: View {
                 Spacer()
 
                 Button(action: onOpen) {
-                    Label("Open", systemImage: "arrow.forward.square")
-                        .font(.system(size: 13, weight: .medium))
+                    Label {
+                        Text("Open")
+                    } icon: {
+                        Image("fluent-ic_fluent_arrow_right_20_regular", bundle: .module)
+                            .resizable()
+                            .renderingMode(.template)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 16, height: 16)
+                    }
+                    .font(.system(size: 13, weight: .medium))
                 }
                 .pointerStyle(.link)
                 .buttonStyle(.borderedProminent)
@@ -491,8 +512,16 @@ private struct TemplateSelectionToolbar: View {
                 HStack(spacing: 10) {
                     if let onEdit {
                         Button(action: onEdit) {
-                            Label("Edit Details", systemImage: "pencil")
-                                .font(.system(size: 12, weight: .medium))
+                            Label {
+                                Text("Edit Details")
+                            } icon: {
+                                Image("fluent-ic_fluent_edit_20_regular", bundle: .module)
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 14, height: 14)
+                            }
+                            .font(.system(size: 12, weight: .medium))
                         }
                         .pointerStyle(.link)
                         .buttonStyle(.bordered)
@@ -502,8 +531,16 @@ private struct TemplateSelectionToolbar: View {
 
                     if let onDuplicate {
                         Button(action: onDuplicate) {
-                            Label("Duplicate", systemImage: "square.on.square")
-                                .font(.system(size: 12, weight: .medium))
+                            Label {
+                                Text("Duplicate")
+                            } icon: {
+                                Image("fluent-ic_fluent_document_copy_20_regular", bundle: .module)
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 14, height: 14)
+                            }
+                            .font(.system(size: 12, weight: .medium))
                         }
                         .pointerStyle(.link)
                         .buttonStyle(.bordered)
@@ -513,8 +550,16 @@ private struct TemplateSelectionToolbar: View {
 
                     if let onDelete {
                         Button(role: .destructive, action: onDelete) {
-                            Label("Delete", systemImage: "trash")
-                                .font(.system(size: 12, weight: .medium))
+                            Label {
+                                Text("Delete")
+                            } icon: {
+                                Image("fluent-ic_fluent_delete_20_regular", bundle: .module)
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 14, height: 14)
+                            }
+                            .font(.system(size: 12, weight: .medium))
                         }
                         .pointerStyle(.link)
                         .buttonStyle(.bordered)
@@ -572,7 +617,7 @@ private struct TemplateMetadataEditorSheet: View {
             }
             .disabled(isProcessing)
             .scrollContentBackground(.hidden)
-            .background(Color.primarySurface)
+            .background(PanelShellTokens.panelBackground)
             .navigationTitle("Edit Template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -591,12 +636,12 @@ private struct TemplateMetadataEditorSheet: View {
                 if isProcessing {
                     ProgressView()
                         .padding()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }
         .frame(minWidth: 420, minHeight: 360)
-        .background(Color.primaryBackground.ignoresSafeArea())
+        .background(PanelShellTokens.panelBackground.ignoresSafeArea())
     }
 }
 

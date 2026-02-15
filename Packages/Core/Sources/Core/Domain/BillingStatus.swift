@@ -4,7 +4,6 @@ import Foundation
 public enum BillingStatus: String, CaseIterable, Codable, Sendable {
     case completed = "completed"
     case grouped = "grouped"
-    case assignServices = "needs_services"
     case addTravel = "needs_travel"
     case reviewDrafts = "review_draft"
     case readyToSend = "ready_to_send"
@@ -16,7 +15,6 @@ public enum BillingStatus: String, CaseIterable, Codable, Sendable {
         switch self {
         case .completed: return "Completed"
         case .grouped: return "Grouped"
-        case .assignServices: return "Assign Services"
         case .addTravel: return "Add Travel"
         case .reviewDrafts: return "Review Drafts"
         case .readyToSend: return "Ready to Send"
@@ -30,7 +28,7 @@ public enum BillingStatus: String, CaseIterable, Codable, Sendable {
         switch self {
         case .completed, .grouped:
             return .preparing
-        case .assignServices, .addTravel, .reviewDrafts, .readyToSend:
+        case .addTravel, .reviewDrafts, .readyToSend:
             return .processing
         case .pending, .received:
             return .payment

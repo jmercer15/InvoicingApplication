@@ -95,11 +95,37 @@ enum DayOfWeekOption: Int, CaseIterable, Identifiable {
     }
     
     var ekDayOfWeek: EKRecurrenceDayOfWeek {
-        return EKRecurrenceDayOfWeek(EKWeekday(rawValue: self.rawValue)!)
+        // Kept for compatibility with existing callers that expect a single value.
+        // Composite options (.day, .weekday, .weekendDay) return Sunday here;
+        // callers that need full coverage should use `ekDaysOfWeek`.
+        return ekDaysOfWeek?.first ?? EKRecurrenceDayOfWeek(.sunday)
     }
-    
+
     var ekDaysOfWeek: [EKRecurrenceDayOfWeek]? {
-        return [ekDayOfWeek]
+        let weekdays: [EKWeekday]
+        switch self {
+        case .day:
+            weekdays = [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday]
+        case .weekday:
+            weekdays = [.monday, .tuesday, .wednesday, .thursday, .friday]
+        case .weekendDay:
+            weekdays = [.saturday, .sunday]
+        case .sunday:
+            weekdays = [.sunday]
+        case .monday:
+            weekdays = [.monday]
+        case .tuesday:
+            weekdays = [.tuesday]
+        case .wednesday:
+            weekdays = [.wednesday]
+        case .thursday:
+            weekdays = [.thursday]
+        case .friday:
+            weekdays = [.friday]
+        case .saturday:
+            weekdays = [.saturday]
+        }
+        return weekdays.map { EKRecurrenceDayOfWeek($0) }
     }
 }
 
@@ -158,10 +184,6 @@ enum OrdinalSelection: Int, CaseIterable, Identifiable {
         case .fourth: return "Fourth"
         case .last: return "Last"
         }
-    }
-    
-    var ekRecurrenceOrdinal: EKRecurrenceDayOfWeek {
-        return EKRecurrenceDayOfWeek(EKWeekday(rawValue: self.rawValue)!)
     }
     
     init?(intValue: Int) {

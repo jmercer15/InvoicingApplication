@@ -91,47 +91,18 @@ struct PlanManagerDetailView: View {
     }
 
     // Initializer for existing plan managers
-    // Initializer for existing plan managers (entity-based - for compatibility)
-    init(planManager: PlanManagerEntity, context: ModelContext, onSave: (() -> Void)? = nil) {
-        // Convert entity to domain model
-        // Note: Using extension from Data.Mapping module
-        let planManagerDomain = planManagerFromEntity(planManager)
-        // Create temporary repositories for initialization
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        
-        self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
-            planManager: planManagerDomain,
-            planManagersRepository: planManagersRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
-            isCreating: false
-        ))
-        viewModel.dismiss = onSave ?? {}
-    }
-    
-    // Convenience initializer for domain model (preferred)
-    init(planManager: PlanManager, context: ModelContext, onSave: (() -> Void)? = nil) {
-        // Create temporary repositories for initialization
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        
+    // Initializer for existing plan managers
+    init(planManager: PlanManager, unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
         self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
             planManager: planManager,
-            planManagersRepository: planManagersRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
+            unitOfWork: unitOfWork,
             isCreating: false
         ))
-        viewModel.dismiss = onSave ?? {}
+        _viewModel.wrappedValue.dismiss = onSave ?? {}
     }
 
     // Initializer for creating a new plan manager
-    init(context: ModelContext, onSave: (() -> Void)? = nil) {
+    init(unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
         // Create new plan manager domain model
         let newPlanManager = PlanManager(
             id: UUID(),
@@ -141,20 +112,13 @@ struct PlanManagerDetailView: View {
             address: nil,
             abn: ""
         )
-        // Create temporary repositories for initialization
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
         
         self._viewModel = StateObject(wrappedValue: PlanManagerDetailViewModel(
             planManager: newPlanManager,
-            planManagersRepository: planManagersRepository,
-            clientsRepository: clientsRepository,
-            invoicesRepository: invoicesRepository,
-            modelContext: context,
+            unitOfWork: unitOfWork,
             isCreating: true
         ))
-        viewModel.dismiss = onSave ?? {}
+        _viewModel.wrappedValue.dismiss = onSave ?? {}
     }
 
     var body: some View {
@@ -163,45 +127,18 @@ struct PlanManagerDetailView: View {
             planManagerHeaderBar
             
             // Main Content
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                // Main content with ViewThatFits for adaptive layout
-                ViewThatFits {
-                    // Primary layout: 2x2 grid (2 columns, 2 rows)
-                    VStack(spacing: 20) {
-                        // Row 1: 2 columns
-                        HStack(spacing: 20) {
-                            planManagerInfoCard
-                                .frame(maxWidth: .infinity)
-                            managedClientsSection
-                                .frame(maxWidth: .infinity)
-                        }
-                        
-                        // Row 2: 2 columns
-                        HStack(spacing: 20) {
-                            invoicesSection
-                                .frame(maxWidth: .infinity)
-                            Spacer()
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    
-                    // Fallback layout: 1x3 grid (1 column, 3 rows)
-                    VStack(spacing: 20) {
-                        planManagerInfoCard
-                        managedClientsSection
-                        invoicesSection
-                    }
-                }
-            }
-            .padding(24)
+            DetailCardsLayout(minCardWidth: DetailSectionTokens.detailCardMinimumWidth) {
+                planManagerInfoCard
+                managedClientsSection
+                invoicesSection
             }
         }
-        .background { AppMeshBackdrop() }
+        .background(.clear)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundColor(Color(NSColor.labelColor))
         .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
-            .appInteractiveCursor()
+            .pointerStyle(.link)
         } message: {
             Text(viewModel.alertMessage)
         }
@@ -273,19 +210,7 @@ struct PlanManagerDetailView: View {
     // MARK: - Subviews
 
     private var planManagerInfoCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "building.2")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Plan Manager Information")
-                .font(.title3.weight(.bold))
-                .foregroundColor(Color("Text", bundle: .sharedUI))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 16) {
                     // Business Name
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -304,8 +229,10 @@ struct PlanManagerDetailView: View {
                                     Button(action: { viewModel.copyToClipboard(viewModel.editableBusinessName) }) {
                                         Image(systemName: "doc.on.doc")
                                             .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                            .contentShape(.rect)
                                     }
                                     .buttonStyle(.plain)
+                                    .pointerStyle(.link)
                                 }
                                 
                                 if let error = viewModel.businessNameError {
@@ -333,8 +260,10 @@ struct PlanManagerDetailView: View {
                                 Button(action: { viewModel.copyToClipboard(viewModel.editableAbn) }) {
                                     Image(systemName: "doc.on.doc")
                                         .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                        .contentShape(.rect)
                                 }
                                 .buttonStyle(.plain)
+                                .pointerStyle(.link)
                             }
                             
                             if let error = viewModel.abnError {
@@ -366,8 +295,10 @@ struct PlanManagerDetailView: View {
                                 Button(action: { viewModel.copyToClipboard(viewModel.emailValidator.email) }) {
                                     Image(systemName: "doc.on.doc")
                                         .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                        .contentShape(.rect)
                                 }
                                 .buttonStyle(.plain)
+                                .pointerStyle(.link)
                             }
                             
                             if let error = viewModel.emailValidator.validationMessage {
@@ -399,8 +330,11 @@ struct PlanManagerDetailView: View {
                                 Button(action: { viewModel.copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
                                     Image(systemName: "doc.on.doc")
                                         .foregroundColor(Color(NSColor.secondaryLabelColor))
+                                        .padding(4)
+                                        .contentShape(.rect)
                                 }
                                 .buttonStyle(.plain)
+                                .pointerStyle(.link)
                             }
                             
                             if let error = viewModel.phoneFormatter.validationMessage {
@@ -418,12 +352,11 @@ struct PlanManagerDetailView: View {
                 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+            .padding(DetailSectionTokens.contentPadding)
+        } label: {
+            DetailSectionHeader(icon: "building.2", title: "Plan Manager Information")
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading plan manager information...")
     }
 
     // MARK: - Address Helper Methods
@@ -448,7 +381,6 @@ struct PlanManagerDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 } else {
                     Text("No address added")
                         .font(.system(size: 14))
@@ -457,7 +389,6 @@ struct PlanManagerDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 }
                 
                 if hasAddressData {
@@ -468,11 +399,11 @@ struct PlanManagerDetailView: View {
                             Image(systemName: "map")
                                 .foregroundColor(Color("Primary", bundle: .sharedUI))
                                 .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
                         
                         Button(action: {
                             showingAddressEditingSheet = true
@@ -480,11 +411,11 @@ struct PlanManagerDetailView: View {
                             Image(systemName: "pencil")
                                 .foregroundColor(Color("Inactive", bundle: .sharedUI))
                                 .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
                     }
                 } else {
                     Button(action: {
@@ -493,131 +424,63 @@ struct PlanManagerDetailView: View {
                         Image(systemName: "plus")
                             .foregroundColor(Color("Active", bundle: .sharedUI))
                             .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 4))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-    
+
     private var managedClientsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.3")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Managed Clients")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $clientsSortOrder) {
-                    ForEach(ClientsSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 12) {
-                if !managedClients.isEmpty {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedClients, id: \.id) { client in
-                                CompactClientRowView(client: client)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
+                DetailListBody(
+                    isEmpty: managedClients.isEmpty,
+                    emptyMessage: "No clients are using this plan manager"
+                ) {
+                    ForEach(sortedClients, id: \.id) { client in
+                        CompactClientRowView(client: client)
                     }
-                    .frame(maxHeight: 200)
-                } else {
-                    Text("No clients are using this plan manager")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                        .padding(.vertical, 8)
                 }
                 
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "person.3", title: "Managed Clients") {
+                DetailSectionSortPicker(selection: $clientsSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading managed clients...")
     }
     
     private var invoicesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.text")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Invoices")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $invoicesSortOrder) {
-                    ForEach(InvoicesSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 12) {
-                if filteredInvoices.isEmpty {
-                    Text("No invoices found")
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedInvoices, id: \.id) { invoice in
-                                CompactInvoiceRowView(invoice: invoice)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
+                DetailListBody(
+                    isEmpty: filteredInvoices.isEmpty,
+                    emptyMessage: "No invoices found"
+                ) {
+                    ForEach(sortedInvoices, id: \.id) { invoice in
+                        CompactInvoiceRowView(invoice: invoice)
                     }
-                    .frame(maxHeight: 200)
                 }
                 
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "doc.text", title: "Invoices") {
+                DetailSectionSortPicker(selection: $invoicesSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading invoices...")
     }
 }
 
 
 
-// MARK: - Plan Manager Address Editing Sheet (ViewModel-based)
+// MARK: - PlanManagerAddressEditingSheetView
 
 struct PlanManagerAddressEditingSheetView: View {
     @ObservedObject var viewModel: PlanManagerDetailViewModel
@@ -732,7 +595,7 @@ struct PlanManagerAddressEditingSheetView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: .rect())
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
             // Load existing address data from ViewModel
@@ -875,8 +738,3 @@ struct PlanManagerAddressEditingSheetView: View {
         }
     }
 }
-
-
-
-
- 

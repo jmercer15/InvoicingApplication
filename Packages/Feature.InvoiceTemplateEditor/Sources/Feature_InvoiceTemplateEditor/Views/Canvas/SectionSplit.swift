@@ -10,22 +10,29 @@ import Core
 import SwiftUI
 
 /// Model representing a split section that can be recursively subdivided
-struct SectionSplit: Codable {
-    struct PaddingInsets: Codable, Equatable {
-        var top: CGFloat
-        var leading: CGFloat
-        var bottom: CGFloat
-        var trailing: CGFloat
+public struct SectionSplit: Codable, Sendable {
+    public struct PaddingInsets: Codable, Equatable, Sendable {
+        public var top: CGFloat
+        public var leading: CGFloat
+        public var bottom: CGFloat
+        public var trailing: CGFloat
         
-        static let zero = PaddingInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        public static let zero = PaddingInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        
+        public init(top: CGFloat, leading: CGFloat, bottom: CGFloat, trailing: CGFloat) {
+            self.top = top
+            self.leading = leading
+            self.bottom = bottom
+            self.trailing = trailing
+        }
     }
     
-    enum SizingMode: String, Codable, CaseIterable {
+    public enum SizingMode: String, Codable, CaseIterable, Sendable {
         case fixed // Ratio-based (default)
         case expand // Takes remaining space
         case shrink // Shrinks to fit content
         
-        var displayName: String {
+        public var displayName: String {
             switch self {
             case .fixed: return "Fixed Ratio"
             case .expand: return "Expand"
@@ -33,7 +40,7 @@ struct SectionSplit: Codable {
             }
         }
         
-        var icon: String {
+        public var icon: String {
             switch self {
             case .fixed: return "arrow.left.and.right"
             case .expand: return "arrow.up.left.and.arrow.down.right"
@@ -43,28 +50,36 @@ struct SectionSplit: Codable {
     }
     
     
-    let direction: SplitDirection
-    let splitCount: Int
-    var splitRatios: [CGFloat] // For custom sizing - now mutable
-    var children: [SectionSplit?] // Nested subsections
-    var childComponents: [Int: [InvoiceComponent]] = [:] // Components per child index (for leaf children)
-    var childLabels: [Int: String] = [:] // Labels for each child section
-    var childAlignments: [Int: LeafAlignment] = [:] // Alignment for each leaf child section
-    var childWidthSizingModes: [SizingMode] = [] // Width sizing mode for each child
-    var childHeightSizingModes: [SizingMode] = [] // Height sizing mode for each child
-    var childPaddings: [PaddingInsets] = [] // Internal padding per child
-    var childSpacing: CGFloat = 0 // Spacing between children
-    var padding: CGFloat = 0 // Internal padding
-    var margin: CGFloat = 0 // External padding around the split
-    let id: UUID
+    public let direction: SplitDirection
+    public var splitRatios: [CGFloat] // For custom sizing - now mutable
+    public var children: [SectionSplit?] // Nested subsections
+    public var childComponents: [Int: [InvoiceComponent]] = [:] // Components per child index (for leaf children)
+    public var childLabels: [Int: String] = [:] // Labels for each child section
+    public var childAlignments: [Int: LeafAlignment] = [:] // Alignment for each leaf child section
+    public var childWidthSizingModes: [SizingMode] = [] // Width sizing mode for each child
+    public var childHeightSizingModes: [SizingMode] = [] // Height sizing mode for each child
+    public var childPaddings: [PaddingInsets] = [] // Internal padding per child
+    public var childSpacing: CGFloat = 0 // Spacing between children
+    public var padding: CGFloat = 0 // Internal padding
+    public var margin: CGFloat = 0 // External padding around the split
+    public let id: UUID
     
     // Grid-specific properties
-    var gridRows: Int = 2
-    var gridColumns: Int = 2
-    var heightRatios: [CGFloat] = [] // For grid: row height ratios
-    var widthRatios: [CGFloat] = [] // For grid: column width ratios
-    var rowSizingModes: [SizingMode] = [] // Sizing mode for each row
-    var columnSizingModes: [SizingMode] = [] // Sizing mode for each column
+    public var gridRows: Int = 2
+    public var gridColumns: Int = 2
+    public var heightRatios: [CGFloat] = [] // For grid: row height ratios
+    public var widthRatios: [CGFloat] = [] // For grid: column width ratios
+    public var rowSizingModes: [SizingMode] = [] // Sizing mode for each row
+    public var columnSizingModes: [SizingMode] = [] // Sizing mode for each column
+    
+    /// The number of children in this split (computed from children array or grid dimensions)
+    public var splitCount: Int {
+        if direction == .grid {
+            return gridRows * gridColumns
+        } else {
+            return children.count
+        }
+    }
     
     // CodingKeys for custom decoding
     private enum CodingKeys: String, CodingKey {
@@ -75,9 +90,8 @@ struct SectionSplit: Codable {
         case id, gridRows, gridColumns, heightRatios, widthRatios, rowSizingModes, columnSizingModes
     }
     
-    init(direction: SplitDirection, splitCount: Int, splitRatios: [CGFloat]? = nil) {
+    public init(direction: SplitDirection, splitCount: Int, splitRatios: [CGFloat]? = nil) {
         self.direction = direction
-        self.splitCount = splitCount
         self.id = UUID()
         
         if let ratios = splitRatios, ratios.count == splitCount {
@@ -110,12 +124,13 @@ struct SectionSplit: Codable {
     }
     
     // Grid-specific initializer
-    init(gridRows: Int, gridColumns: Int, heightRatios: [CGFloat]? = nil, widthRatios: [CGFloat]? = nil) {
+    public init(gridRows: Int, gridColumns: Int, heightRatios: [CGFloat]? = nil, widthRatios: [CGFloat]? = nil) {
         self.direction = .grid
-        self.splitCount = gridRows * gridColumns
         self.id = UUID()
         self.gridRows = gridRows
         self.gridColumns = gridColumns
+        
+        let splitCount = gridRows * gridColumns
         
         // Initialize children as nil (unsplit)
         self.children = Array(repeating: nil, count: splitCount)
@@ -149,17 +164,24 @@ struct SectionSplit: Codable {
     }
     
     // Custom decoding to handle migration
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         direction = try container.decode(SplitDirection.self, forKey: .direction)
-        splitCount = try container.decode(Int.self, forKey: .splitCount)
+        // splitCount is now computed, but we read it for validation/backward compatibility
+        let decodedSplitCount = try container.decode(Int.self, forKey: .splitCount)
         splitRatios = try container.decode([CGFloat].self, forKey: .splitRatios)
         children = try container.decode([SectionSplit?].self, forKey: .children)
         childComponents = try container.decodeIfPresent([Int: [InvoiceComponent]].self, forKey: .childComponents) ?? [:]
         childLabels = try container.decodeIfPresent([Int: String].self, forKey: .childLabels) ?? [:]
         childAlignments = try container.decodeIfPresent([Int: LeafAlignment].self, forKey: .childAlignments) ?? [:]
         id = try container.decode(UUID.self, forKey: .id)
+        
+        gridRows = try container.decodeIfPresent(Int.self, forKey: .gridRows) ?? 2
+        gridColumns = try container.decodeIfPresent(Int.self, forKey: .gridColumns) ?? 2
+        
+        // Use the decoded splitCount for array initialization
+        let splitCount = decodedSplitCount
         
         // Try decoding new properties, fallback to defaults
         // Handle migration from old childSizingModes to new width/height arrays
@@ -190,8 +212,6 @@ struct SectionSplit: Codable {
         padding = try container.decodeIfPresent(CGFloat.self, forKey: .padding) ?? 0
         margin = try container.decodeIfPresent(CGFloat.self, forKey: .margin) ?? 0
         
-        gridRows = try container.decodeIfPresent(Int.self, forKey: .gridRows) ?? 2
-        gridColumns = try container.decodeIfPresent(Int.self, forKey: .gridColumns) ?? 2
         heightRatios = try container.decodeIfPresent([CGFloat].self, forKey: .heightRatios) ?? []
         widthRatios = try container.decodeIfPresent([CGFloat].self, forKey: .widthRatios) ?? []
         
@@ -205,13 +225,13 @@ struct SectionSplit: Codable {
         if columnSizingModes.count != gridColumns {
             columnSizingModes = Array(repeating: .fixed, count: gridColumns)
         }
-        if childPaddings.count != splitCount {
-            childPaddings = Array(repeating: .zero, count: splitCount)
+        if childPaddings.count != self.splitCount {
+            childPaddings = Array(repeating: .zero, count: self.splitCount)
         }
     }
     
     // Custom encoding
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         
         try container.encode(direction, forKey: .direction)
@@ -343,22 +363,668 @@ struct SectionSplit: Codable {
         children[index] = nil
     }
     
+    /// Insert a new child at the specified index, shifting existing children
+    mutating func insertChild(at index: Int) {
+        guard index >= 0 && index <= splitCount else { return }
+        
+        let newCount = splitCount + 1
+        
+        if direction == .grid {
+            // For grid, we need to recalculate dimensions
+            let newRows = Int(sqrt(Double(newCount)))
+            let newColumns = (newCount + newRows - 1) / newRows
+            
+            // Collect existing content
+            var existingChildren: [SectionSplit?] = children
+            var existingComponents: [Int: [InvoiceComponent]] = childComponents
+            var existingLabels: [Int: String] = childLabels
+            var existingAlignments: [Int: LeafAlignment] = childAlignments
+            var existingWidthModes: [SizingMode] = childWidthSizingModes
+            var existingHeightModes: [SizingMode] = childHeightSizingModes
+            var existingPaddings: [PaddingInsets] = childPaddings
+            
+            // Update grid dimensions
+            gridRows = newRows
+            gridColumns = newColumns
+            
+            // Create new arrays with inserted nil child
+            children = Array(repeating: nil, count: newCount)
+            childComponents = [:]
+            childLabels = [:]
+            childAlignments = [:]
+            childWidthSizingModes = Array(repeating: .fixed, count: newCount)
+            childHeightSizingModes = Array(repeating: .fixed, count: newCount)
+            childPaddings = Array(repeating: .zero, count: newCount)
+            
+            // Redistribute content, shifting indices after insertion point
+            for i in 0..<newCount {
+                if i < index {
+                    children[i] = existingChildren[i]
+                    if let components = existingComponents[i] {
+                        childComponents[i] = components
+                    }
+                    if let label = existingLabels[i] {
+                        childLabels[i] = label
+                    }
+                    if let alignment = existingAlignments[i] {
+                        childAlignments[i] = alignment
+                    }
+                    if i < existingWidthModes.count {
+                        childWidthSizingModes[i] = existingWidthModes[i]
+                    }
+                    if i < existingHeightModes.count {
+                        childHeightSizingModes[i] = existingHeightModes[i]
+                    }
+                    if i < existingPaddings.count {
+                        childPaddings[i] = existingPaddings[i]
+                    }
+                } else if i == index {
+                    // New child stays nil
+                } else {
+                    let oldIndex = i - 1
+                    children[i] = existingChildren[oldIndex]
+                    if let components = existingComponents[oldIndex] {
+                        childComponents[i] = components
+                    }
+                    if let label = existingLabels[oldIndex] {
+                        childLabels[i] = label
+                    }
+                    if let alignment = existingAlignments[oldIndex] {
+                        childAlignments[i] = alignment
+                    }
+                    if oldIndex < existingWidthModes.count {
+                        childWidthSizingModes[i] = existingWidthModes[oldIndex]
+                    }
+                    if oldIndex < existingHeightModes.count {
+                        childHeightSizingModes[i] = existingHeightModes[oldIndex]
+                    }
+                    if oldIndex < existingPaddings.count {
+                        childPaddings[i] = existingPaddings[oldIndex]
+                    }
+                }
+            }
+            
+            // Update ratios
+            splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+            heightRatios = Array(repeating: 1.0 / CGFloat(newRows), count: newRows)
+            widthRatios = Array(repeating: 1.0 / CGFloat(newColumns), count: newColumns)
+            rowSizingModes = Array(repeating: .fixed, count: newRows)
+            columnSizingModes = Array(repeating: .fixed, count: newColumns)
+            
+        } else {
+            // For linear splits
+            var newChildren: [SectionSplit?] = []
+            var newComponents: [Int: [InvoiceComponent]] = [:]
+            var newLabels: [Int: String] = [:]
+            var newAlignments: [Int: LeafAlignment] = [:]
+            var newWidthModes: [SizingMode] = []
+            var newHeightModes: [SizingMode] = []
+            var newPaddings: [PaddingInsets] = []
+            
+            for i in 0..<newCount {
+                if i < index {
+                    // Before insertion point - keep as is
+                    newChildren.append(children[i])
+                    if let components = childComponents[i] {
+                        newComponents[i] = components
+                    }
+                    if let label = childLabels[i] {
+                        newLabels[i] = label
+                    }
+                    if let alignment = childAlignments[i] {
+                        newAlignments[i] = alignment
+                    }
+                    if i < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[i])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if i < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[i])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if i < childPaddings.count {
+                        newPaddings.append(childPaddings[i])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                } else if i == index {
+                    // Insertion point - add new nil child
+                    newChildren.append(nil)
+                    newWidthModes.append(.fixed)
+                    newHeightModes.append(.fixed)
+                    newPaddings.append(.zero)
+                } else {
+                    // After insertion point - shift from old index
+                    let oldIndex = i - 1
+                    newChildren.append(children[oldIndex])
+                    if let components = childComponents[oldIndex] {
+                        newComponents[i] = components
+                    }
+                    if let label = childLabels[oldIndex] {
+                        newLabels[i] = label
+                    }
+                    if let alignment = childAlignments[oldIndex] {
+                        newAlignments[i] = alignment
+                    }
+                    if oldIndex < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[oldIndex])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if oldIndex < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[oldIndex])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if oldIndex < childPaddings.count {
+                        newPaddings.append(childPaddings[oldIndex])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                }
+            }
+            
+            children = newChildren
+            childComponents = newComponents
+            childLabels = newLabels
+            childAlignments = newAlignments
+            childWidthSizingModes = newWidthModes
+            childHeightSizingModes = newHeightModes
+            childPaddings = newPaddings
+            splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        }
+    }
+    
+    /// Delete a child at the specified index, shifting remaining children
+    mutating func deleteChild(at index: Int) -> [InvoiceComponent] {
+        guard index >= 0 && index < splitCount && splitCount > 1 else { return [] }
+        
+        let newCount = splitCount - 1
+        var orphanedComponents: [InvoiceComponent] = []
+        
+        // Collect components from the deleted child
+        if let childSplit = children[index] {
+            orphanedComponents = childSplit.getAllComponents()
+        } else if let components = childComponents[index] {
+            orphanedComponents = components
+        }
+        
+        if direction == .grid {
+            // For grid, recalculate dimensions
+            let newRows = Int(sqrt(Double(newCount)))
+            let newColumns = (newCount + newRows - 1) / newRows
+            
+            var newChildren: [SectionSplit?] = []
+            var newComponents: [Int: [InvoiceComponent]] = [:]
+            var newLabels: [Int: String] = [:]
+            var newAlignments: [Int: LeafAlignment] = [:]
+            var newWidthModes: [SizingMode] = []
+            var newHeightModes: [SizingMode] = []
+            var newPaddings: [PaddingInsets] = []
+            
+            var newIndex = 0
+            for i in 0..<splitCount {
+                if i == index {
+                    continue // Skip deleted child
+                }
+                
+                newChildren.append(children[i])
+                if let components = childComponents[i] {
+                    newComponents[newIndex] = components
+                }
+                if let label = childLabels[i] {
+                    newLabels[newIndex] = label
+                }
+                if let alignment = childAlignments[i] {
+                    newAlignments[newIndex] = alignment
+                }
+                if i < childWidthSizingModes.count {
+                    newWidthModes.append(childWidthSizingModes[i])
+                }
+                if i < childHeightSizingModes.count {
+                    newHeightModes.append(childHeightSizingModes[i])
+                }
+                if i < childPaddings.count {
+                    newPaddings.append(childPaddings[i])
+                }
+                newIndex += 1
+            }
+            
+            gridRows = newRows
+            gridColumns = newColumns
+            children = newChildren
+            childComponents = newComponents
+            childLabels = newLabels
+            childAlignments = newAlignments
+            childWidthSizingModes = newWidthModes
+            childHeightSizingModes = newHeightModes
+            childPaddings = newPaddings
+            splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+            heightRatios = Array(repeating: 1.0 / CGFloat(newRows), count: newRows)
+            widthRatios = Array(repeating: 1.0 / CGFloat(newColumns), count: newColumns)
+            rowSizingModes = Array(repeating: .fixed, count: newRows)
+            columnSizingModes = Array(repeating: .fixed, count: newColumns)
+            
+        } else {
+            // For linear splits
+            var newChildren: [SectionSplit?] = []
+            var newComponents: [Int: [InvoiceComponent]] = [:]
+            var newLabels: [Int: String] = [:]
+            var newAlignments: [Int: LeafAlignment] = [:]
+            var newWidthModes: [SizingMode] = []
+            var newHeightModes: [SizingMode] = []
+            var newPaddings: [PaddingInsets] = []
+            
+            var newIndex = 0
+            for i in 0..<splitCount {
+                if i == index {
+                    continue // Skip deleted child
+                }
+                
+                newChildren.append(children[i])
+                if let components = childComponents[i] {
+                    newComponents[newIndex] = components
+                }
+                if let label = childLabels[i] {
+                    newLabels[newIndex] = label
+                }
+                if let alignment = childAlignments[i] {
+                    newAlignments[newIndex] = alignment
+                }
+                if i < childWidthSizingModes.count {
+                    newWidthModes.append(childWidthSizingModes[i])
+                }
+                if i < childHeightSizingModes.count {
+                    newHeightModes.append(childHeightSizingModes[i])
+                }
+                if i < childPaddings.count {
+                    newPaddings.append(childPaddings[i])
+                }
+                newIndex += 1
+            }
+            
+            children = newChildren
+            childComponents = newComponents
+            childLabels = newLabels
+            childAlignments = newAlignments
+            childWidthSizingModes = newWidthModes
+            childHeightSizingModes = newHeightModes
+            childPaddings = newPaddings
+            splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        }
+        
+        return orphanedComponents
+    }
+    
+    // MARK: - Grid-specific insert/delete operations
+    
+    /// Insert a new row in a grid split at the specified row index
+    mutating func insertGridRow(at rowIndex: Int) {
+        guard direction == .grid, rowIndex >= 0, rowIndex <= gridRows else { return }
+        
+        let newRows = gridRows + 1
+        let newCount = newRows * gridColumns
+        
+        // Collect existing content
+        var newChildren: [SectionSplit?] = []
+        var newComponents: [Int: [InvoiceComponent]] = [:]
+        var newLabels: [Int: String] = [:]
+        var newAlignments: [Int: LeafAlignment] = [:]
+        var newWidthModes: [SizingMode] = []
+        var newHeightModes: [SizingMode] = []
+        var newPaddings: [PaddingInsets] = []
+        
+        // Rebuild grid with new row inserted
+        for row in 0..<newRows {
+            for col in 0..<gridColumns {
+                if row < rowIndex {
+                    // Before insertion - copy from old grid
+                    let oldIndex = cellIndex(row: row, column: col)
+                    newChildren.append(children[oldIndex])
+                    if let components = childComponents[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newComponents[newIndex] = components
+                    }
+                    if let label = childLabels[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newLabels[newIndex] = label
+                    }
+                    if let alignment = childAlignments[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newAlignments[newIndex] = alignment
+                    }
+                    if oldIndex < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[oldIndex])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if oldIndex < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[oldIndex])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if oldIndex < childPaddings.count {
+                        newPaddings.append(childPaddings[oldIndex])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                } else if row == rowIndex {
+                    // New row - add empty cells
+                    newChildren.append(nil)
+                    newWidthModes.append(.fixed)
+                    newHeightModes.append(.fixed)
+                    newPaddings.append(.zero)
+                } else {
+                    // After insertion - copy from old grid (shifted by one row)
+                    let oldIndex = cellIndex(row: row - 1, column: col)
+                    newChildren.append(children[oldIndex])
+                    if let components = childComponents[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newComponents[newIndex] = components
+                    }
+                    if let label = childLabels[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newLabels[newIndex] = label
+                    }
+                    if let alignment = childAlignments[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newAlignments[newIndex] = alignment
+                    }
+                    if oldIndex < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[oldIndex])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if oldIndex < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[oldIndex])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if oldIndex < childPaddings.count {
+                        newPaddings.append(childPaddings[oldIndex])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                }
+            }
+        }
+        
+        gridRows = newRows
+        children = newChildren
+        childComponents = newComponents
+        childLabels = newLabels
+        childAlignments = newAlignments
+        childWidthSizingModes = newWidthModes
+        childHeightSizingModes = newHeightModes
+        childPaddings = newPaddings
+        splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        heightRatios = Array(repeating: 1.0 / CGFloat(newRows), count: newRows)
+        rowSizingModes = Array(repeating: .fixed, count: newRows)
+    }
+    
+    /// Insert a new column in a grid split at the specified column index
+    mutating func insertGridColumn(at columnIndex: Int) {
+        guard direction == .grid, columnIndex >= 0, columnIndex <= gridColumns else { return }
+        
+        let newColumns = gridColumns + 1
+        let newCount = gridRows * newColumns
+        
+        // Collect existing content
+        var newChildren: [SectionSplit?] = []
+        var newComponents: [Int: [InvoiceComponent]] = [:]
+        var newLabels: [Int: String] = [:]
+        var newAlignments: [Int: LeafAlignment] = [:]
+        var newWidthModes: [SizingMode] = []
+        var newHeightModes: [SizingMode] = []
+        var newPaddings: [PaddingInsets] = []
+        
+        // Rebuild grid with new column inserted
+        for row in 0..<gridRows {
+            for col in 0..<newColumns {
+                if col < columnIndex {
+                    // Before insertion - copy from old grid
+                    let oldIndex = cellIndex(row: row, column: col)
+                    newChildren.append(children[oldIndex])
+                    if let components = childComponents[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newComponents[newIndex] = components
+                    }
+                    if let label = childLabels[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newLabels[newIndex] = label
+                    }
+                    if let alignment = childAlignments[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newAlignments[newIndex] = alignment
+                    }
+                    if oldIndex < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[oldIndex])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if oldIndex < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[oldIndex])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if oldIndex < childPaddings.count {
+                        newPaddings.append(childPaddings[oldIndex])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                } else if col == columnIndex {
+                    // New column - add empty cell
+                    newChildren.append(nil)
+                    newWidthModes.append(.fixed)
+                    newHeightModes.append(.fixed)
+                    newPaddings.append(.zero)
+                } else {
+                    // After insertion - copy from old grid (shifted by one column)
+                    let oldIndex = cellIndex(row: row, column: col - 1)
+                    newChildren.append(children[oldIndex])
+                    if let components = childComponents[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newComponents[newIndex] = components
+                    }
+                    if let label = childLabels[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newLabels[newIndex] = label
+                    }
+                    if let alignment = childAlignments[oldIndex] {
+                        let newIndex = newChildren.count - 1
+                        newAlignments[newIndex] = alignment
+                    }
+                    if oldIndex < childWidthSizingModes.count {
+                        newWidthModes.append(childWidthSizingModes[oldIndex])
+                    } else {
+                        newWidthModes.append(.fixed)
+                    }
+                    if oldIndex < childHeightSizingModes.count {
+                        newHeightModes.append(childHeightSizingModes[oldIndex])
+                    } else {
+                        newHeightModes.append(.fixed)
+                    }
+                    if oldIndex < childPaddings.count {
+                        newPaddings.append(childPaddings[oldIndex])
+                    } else {
+                        newPaddings.append(.zero)
+                    }
+                }
+            }
+        }
+        
+        gridColumns = newColumns
+        children = newChildren
+        childComponents = newComponents
+        childLabels = newLabels
+        childAlignments = newAlignments
+        childWidthSizingModes = newWidthModes
+        childHeightSizingModes = newHeightModes
+        childPaddings = newPaddings
+        splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        widthRatios = Array(repeating: 1.0 / CGFloat(newColumns), count: newColumns)
+        columnSizingModes = Array(repeating: .fixed, count: newColumns)
+    }
+    
+    /// Delete a row from a grid split
+    mutating func deleteGridRow(at rowIndex: Int) -> [InvoiceComponent] {
+        guard direction == .grid, rowIndex >= 0, rowIndex < gridRows, gridRows > 1 else { return [] }
+        
+        var orphanedComponents: [InvoiceComponent] = []
+        let newRows = gridRows - 1
+        let newCount = newRows * gridColumns
+        
+        // Collect orphaned components from deleted row
+        for col in 0..<gridColumns {
+            let deletedIndex = cellIndex(row: rowIndex, column: col)
+            if let childSplit = children[deletedIndex] {
+                orphanedComponents.append(contentsOf: childSplit.getAllComponents())
+            } else if let components = childComponents[deletedIndex] {
+                orphanedComponents.append(contentsOf: components)
+            }
+        }
+        
+        // Rebuild grid without deleted row
+        var newChildren: [SectionSplit?] = []
+        var newComponents: [Int: [InvoiceComponent]] = [:]
+        var newLabels: [Int: String] = [:]
+        var newAlignments: [Int: LeafAlignment] = [:]
+        var newWidthModes: [SizingMode] = []
+        var newHeightModes: [SizingMode] = []
+        var newPaddings: [PaddingInsets] = []
+        
+        for row in 0..<gridRows {
+            if row == rowIndex {
+                continue // Skip deleted row
+            }
+            
+            for col in 0..<gridColumns {
+                let oldIndex = cellIndex(row: row, column: col)
+                newChildren.append(children[oldIndex])
+                
+                let newIndex = newChildren.count - 1
+                if let components = childComponents[oldIndex] {
+                    newComponents[newIndex] = components
+                }
+                if let label = childLabels[oldIndex] {
+                    newLabels[newIndex] = label
+                }
+                if let alignment = childAlignments[oldIndex] {
+                    newAlignments[newIndex] = alignment
+                }
+                if oldIndex < childWidthSizingModes.count {
+                    newWidthModes.append(childWidthSizingModes[oldIndex])
+                }
+                if oldIndex < childHeightSizingModes.count {
+                    newHeightModes.append(childHeightSizingModes[oldIndex])
+                }
+                if oldIndex < childPaddings.count {
+                    newPaddings.append(childPaddings[oldIndex])
+                }
+            }
+        }
+        
+        gridRows = newRows
+        children = newChildren
+        childComponents = newComponents
+        childLabels = newLabels
+        childAlignments = newAlignments
+        childWidthSizingModes = newWidthModes
+        childHeightSizingModes = newHeightModes
+        childPaddings = newPaddings
+        splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        heightRatios = Array(repeating: 1.0 / CGFloat(newRows), count: newRows)
+        rowSizingModes = Array(repeating: .fixed, count: newRows)
+        
+        return orphanedComponents
+    }
+    
+    /// Delete a column from a grid split
+    mutating func deleteGridColumn(at columnIndex: Int) -> [InvoiceComponent] {
+        guard direction == .grid, columnIndex >= 0, columnIndex < gridColumns, gridColumns > 1 else { return [] }
+        
+        var orphanedComponents: [InvoiceComponent] = []
+        let newColumns = gridColumns - 1
+        let newCount = gridRows * newColumns
+        
+        // Collect orphaned components from deleted column
+        for row in 0..<gridRows {
+            let deletedIndex = cellIndex(row: row, column: columnIndex)
+            if let childSplit = children[deletedIndex] {
+                orphanedComponents.append(contentsOf: childSplit.getAllComponents())
+            } else if let components = childComponents[deletedIndex] {
+                orphanedComponents.append(contentsOf: components)
+            }
+        }
+        
+        // Rebuild grid without deleted column
+        var newChildren: [SectionSplit?] = []
+        var newComponents: [Int: [InvoiceComponent]] = [:]
+        var newLabels: [Int: String] = [:]
+        var newAlignments: [Int: LeafAlignment] = [:]
+        var newWidthModes: [SizingMode] = []
+        var newHeightModes: [SizingMode] = []
+        var newPaddings: [PaddingInsets] = []
+        
+        for row in 0..<gridRows {
+            for col in 0..<gridColumns {
+                if col == columnIndex {
+                    continue // Skip deleted column
+                }
+                
+                let oldIndex = cellIndex(row: row, column: col)
+                newChildren.append(children[oldIndex])
+                
+                let newIndex = newChildren.count - 1
+                if let components = childComponents[oldIndex] {
+                    newComponents[newIndex] = components
+                }
+                if let label = childLabels[oldIndex] {
+                    newLabels[newIndex] = label
+                }
+                if let alignment = childAlignments[oldIndex] {
+                    newAlignments[newIndex] = alignment
+                }
+                if oldIndex < childWidthSizingModes.count {
+                    newWidthModes.append(childWidthSizingModes[oldIndex])
+                }
+                if oldIndex < childHeightSizingModes.count {
+                    newHeightModes.append(childHeightSizingModes[oldIndex])
+                }
+                if oldIndex < childPaddings.count {
+                    newPaddings.append(childPaddings[oldIndex])
+                }
+            }
+        }
+        
+        gridColumns = newColumns
+        children = newChildren
+        childComponents = newComponents
+        childLabels = newLabels
+        childAlignments = newAlignments
+        childWidthSizingModes = newWidthModes
+        childHeightSizingModes = newHeightModes
+        childPaddings = newPaddings
+        splitRatios = Array(repeating: 1.0 / CGFloat(newCount), count: newCount)
+        widthRatios = Array(repeating: 1.0 / CGFloat(newColumns), count: newColumns)
+        columnSizingModes = Array(repeating: .fixed, count: newColumns)
+        
+        return orphanedComponents
+    }
+    
     // Component management methods
     mutating func addComponent(_ component: InvoiceComponent, toChild childIndex: Int) {
-        print("   🔧 SectionSplit.addComponent: Adding component \(component.id) to child \(childIndex)")
         var components = childComponents[childIndex] ?? []
-        print("      Child \(childIndex) components before: \(components.count)")
         
         // Check if component already exists to prevent duplicates
         if components.contains(where: { $0.id == component.id }) {
-            print("      ⚠️ Component \(component.id) already exists in child \(childIndex), skipping duplicate")
             return
         }
         
         components.append(component)
         childComponents[childIndex] = components
-        print("      Child \(childIndex) components after: \(components.count)")
-        print("      Child \(childIndex) component IDs: \(components.map { $0.id })")
     }
     
     mutating func removeComponent(id: UUID) -> Bool {
@@ -534,12 +1200,12 @@ struct SectionSplit: Codable {
         
         switch direction {
         case .horizontal:
-            return "Section \(childIndex + 1)"
+            return "Column \(childIndex + 1)"
         case .vertical:
             return "Row \(childIndex + 1)"
         case .grid:
             let (row, column) = rowColumn(for: childIndex)
-            return "Cell \(row + 1),\(column + 1)"
+            return "Cell R\(row + 1)C\(column + 1)"
         }
     }
     
@@ -551,18 +1217,23 @@ struct SectionSplit: Codable {
     // MARK: - Alignment Management
     
     /// Alignment configuration for leaf node content
-    struct LeafAlignment: Codable, Equatable {
-        var horizontal: HorizontalAlignment
-        var vertical: VerticalAlignment
+    public struct LeafAlignment: Codable, Equatable, Sendable {
+        public var horizontal: HorizontalAlignment
+        public var vertical: VerticalAlignment
         
-        static let `default` = LeafAlignment(horizontal: .leading, vertical: .top)
+        public static let `default` = LeafAlignment(horizontal: .leading, vertical: .top)
         
-        enum HorizontalAlignment: String, Codable, CaseIterable {
+        public init(horizontal: HorizontalAlignment, vertical: VerticalAlignment) {
+            self.horizontal = horizontal
+            self.vertical = vertical
+        }
+        
+        public enum HorizontalAlignment: String, Codable, CaseIterable, Sendable {
             case leading
             case center
             case trailing
             
-            var swiftUIAlignment: SwiftUI.HorizontalAlignment {
+            public var swiftUIAlignment: SwiftUI.HorizontalAlignment {
                 switch self {
                 case .leading: return .leading
                 case .center: return .center
@@ -571,12 +1242,12 @@ struct SectionSplit: Codable {
             }
         }
         
-        enum VerticalAlignment: String, Codable, CaseIterable {
+        public enum VerticalAlignment: String, Codable, CaseIterable, Sendable {
             case top
             case center
             case bottom
             
-            var swiftUIAlignment: SwiftUI.VerticalAlignment {
+            public var swiftUIAlignment: SwiftUI.VerticalAlignment {
                 switch self {
                 case .top: return .top
                 case .center: return .center
@@ -587,12 +1258,12 @@ struct SectionSplit: Codable {
     }
     
     /// Set alignment for a specific leaf child section
-    mutating func setAlignment(_ alignment: LeafAlignment, forChild childIndex: Int) {
+    public mutating func setAlignment(_ alignment: LeafAlignment, forChild childIndex: Int) {
         childAlignments[childIndex] = alignment
     }
     
     /// Get the alignment for a specific leaf child section
-    func getAlignment(forChild childIndex: Int) -> LeafAlignment {
+    public func getAlignment(forChild childIndex: Int) -> LeafAlignment {
         return childAlignments[childIndex] ?? .default
     }
     
@@ -671,12 +1342,12 @@ struct SectionSplit: Codable {
         )
     }
     
-    enum SplitDirection: String, CaseIterable, Codable {
+    public enum SplitDirection: String, CaseIterable, Codable, Sendable {
         case horizontal
         case vertical
         case grid // For grid splits
         
-        var displayName: String {
+        public var displayName: String {
             switch self {
             case .horizontal: return "Horizontal"
             case .vertical: return "Vertical"
@@ -684,11 +1355,11 @@ struct SectionSplit: Codable {
             }
         }
         
-        var icon: String {
+        public var icon: String {
             switch self {
-            case .horizontal: return "rectangle.split.1x2"
-            case .vertical: return "rectangle.split.2x1"
-            case .grid: return "rectangle.split.2x2"
+            case .horizontal: return "fluent-ic_fluent_split_horizontal_20_regular"
+            case .vertical: return "fluent-ic_fluent_split_vertical_20_regular"
+            case .grid: return "fluent-ic_fluent_grid_20_regular"
             }
         }
     }

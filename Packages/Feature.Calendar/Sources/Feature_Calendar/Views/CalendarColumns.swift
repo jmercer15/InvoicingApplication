@@ -6,70 +6,54 @@ import SharedUI
 
 public struct CalendarContentColumn: View {
     @ObservedObject private var containerViewModel: CalendarContainerViewModel
-    @Binding private var showInspector: Bool
-    @State private var showCalendarSettings = false
     @State private var showViewOptions = false
-    @Environment(\.modelContext) private var modelContext
+
     @EnvironmentObject private var eventKitService: EventKitSyncService
 
-    public init(viewModel: CalendarContainerViewModel, showInspector: Binding<Bool>) {
+    public init(viewModel: CalendarContainerViewModel) {
         self._containerViewModel = ObservedObject(wrappedValue: viewModel)
-        self._showInspector = showInspector
     }
 
     public var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             if containerViewModel.calendarViewModel.isBulkSelectionMode {
                 CalendarBulkOperationsToolbar(viewModel: containerViewModel.calendarViewModel)
-                    .fluidListTransition()
             }
 
-            CalendarView(viewModel: containerViewModel.calendarViewModel, showInspector: $showInspector)
+            CalendarView(viewModel: containerViewModel.calendarViewModel)
                 .environmentObject(eventKitService)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .background(.clear)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(content: toolbarContent)
-        .environment(\.modelContext, modelContext)
-        .onAppear {
-            containerViewModel.updateContextIfNeeded(modelContext)
-        }
-        .preference(
-            key: InspectorContentPreferenceKey.self,
-            value: InspectorContent(id: "CalendarInspector", view: AnyView(currentSidebarContent))
-        )
     }
 
     @ToolbarContentBuilder
     private func toolbarContent() -> some ToolbarContent {
-        ToolbarItem(id: "nav", placement: .automatic) {
+        ToolbarItem(placement: .automatic) {
             ControlGroup {
                 Button(role: .none) {
-                    print("🔘 Calendar: Previous button tapped")
                     containerViewModel.goToPrevious()
                 } label: { Image(systemName: "chevron.left") }
                 .help("Previous")
-                .appInteractiveCursor()
+
 
                 Button("Today") { 
-                    print("🔘 Calendar: Today button tapped")
                     containerViewModel.goToToday() 
                 }
                     .help("Jump to today")
-                    .appInteractiveCursor()
+
 
                 Button(role: .none) {
-                    print("🔘 Calendar: Next button tapped")
                     containerViewModel.goToNext()
                 } label: { Image(systemName: "chevron.right") }
                 .help("Next")
-                .appInteractiveCursor()
+
             }
             .controlGroupStyle(.navigation)
+            .pointerStyle(.link)
         }
 
-        ToolbarItem(id: "jumpToDate", placement: .automatic) {
+        ToolbarItem(placement: .automatic) {
             Button {
                 containerViewModel.showDatePicker.toggle()
             } label: { Label("Jump to Date", systemImage: "calendar.badge.clock") }
@@ -86,7 +70,8 @@ public struct CalendarContentColumn: View {
                 .frame(width: 320, height: 380)
             }
             .help("Jump to a specific date")
-            .appInteractiveCursor()
+            .pointerStyle(.link)
+
         }
 
         // View type switching is now handled by TabView - no toolbar picker needed
@@ -97,7 +82,7 @@ public struct CalendarContentColumn: View {
             clientMenu
         }
 
-        ToolbarItem(id: "viewOptions", placement: .automatic) {
+        ToolbarItem(placement: .automatic) {
             Button {
                 showViewOptions.toggle()
             } label: { Label("View Options", systemImage: "slider.horizontal.3") }
@@ -116,28 +101,21 @@ public struct CalendarContentColumn: View {
                 .frame(width: 300)
             }
             .help("Layout & density")
-            .appInteractiveCursor()
+            .pointerStyle(.link)
+
         }
 
-        ToolbarItem(id: "newSession", placement: .automatic) {
+        ToolbarItem(placement: .automatic) {
             Button("New Session", systemImage: "plus", action: { 
-                print("🔘 Calendar: New Session button tapped")
                 containerViewModel.createNewSession() 
             })
                 .keyboardShortcut("n")
                 .glassEffect(.regular.tint(.blue).interactive(), in: .buttonBorder)
-                .appInteractiveCursor()
+                .help("Create a new session")
+                .pointerStyle(.link)
+
         }
 
-        ToolbarItem(placement: .automatic) {
-            Button {
-                showInspector.toggle()
-            } label: {
-                Label("Inspector", systemImage: "sidebar.trailing")
-            }
-            .help("Show or hide inspector")
-            .appInteractiveCursor()
-        }
     }
 
     private var calendarsMenu: some View {
@@ -159,7 +137,7 @@ public struct CalendarContentColumn: View {
             ForEach(all, id: \.calendarIdentifier) { calendar in
                 Button {
                     containerViewModel.calendarViewModel
-                        .toggleCalendarVisibility(calendarIdentifier: calendar.calendarIdentifier)
+                        .toggleCalendarVisibility(id: calendar.calendarIdentifier)
                 } label: {
                     HStack {
                         Circle()
@@ -169,15 +147,24 @@ public struct CalendarContentColumn: View {
                         Spacer()
                         Image(systemName:
                               containerViewModel.calendarViewModel
-                                .isCalendarVisible(calendarIdentifier: calendar.calendarIdentifier)
+                                .isCalendarVisible(id: calendar.calendarIdentifier)
                               ? "eye.fill" : "eye.slash"
                         ).foregroundStyle(.secondary)
                     }
                 }
             }
-        } label: { Label("Calendars", systemImage: "calendar") }
+        } label: {
+            Label {
+                let hiddenCount = containerViewModel.calendarViewModel.availableCalendars.count - containerViewModel.calendarViewModel.visibleCalendarIdentifiers.count
+                Text(hiddenCount == 0 ? "Calendars" : "Calendars (-\(hiddenCount))")
+            } icon: {
+                let allVisible = containerViewModel.calendarViewModel.visibleCalendarIdentifiers.count == containerViewModel.calendarViewModel.availableCalendars.count
+                Image(systemName: allVisible ? "calendar" : "calendar.badge.minus")
+            }
+        }
         .help("Choose which calendars are visible")
-        .appInteractiveCursor()
+        .pointerStyle(.link)
+
     }
 
     private var statusMenu: some View {
@@ -209,17 +196,15 @@ public struct CalendarContentColumn: View {
                 }
             }
         } label: {
-            HStack {
-                Image(systemName: "circle.grid.2x2.topleft.checkmark.filled")
-                if !containerViewModel.selectedStatusFilters.isEmpty {
-                    Text("(\(containerViewModel.selectedStatusFilters.count))")
-                        .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                }
+            Label {
+                Text(containerViewModel.selectedStatusFilters.isEmpty ? "Status" : "Status (\(containerViewModel.selectedStatusFilters.count))")
+            } icon: {
+                Image(systemName: containerViewModel.selectedStatusFilters.isEmpty ? "circle.grid.2x2" : "circle.grid.2x2.fill")
             }
         }
         .help("Filter by status")
-        .appInteractiveCursor()
+        .pointerStyle(.link)
+
     }
 
     private var clientMenu: some View {
@@ -254,53 +239,15 @@ public struct CalendarContentColumn: View {
                 }
             }
         } label: {
-            HStack {
-                Image(systemName: "person.2")
-                if !containerViewModel.selectedClientFilters.isEmpty {
-                    Text("(\(containerViewModel.selectedClientFilters.count))")
-                        .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                }
+            Label {
+                Text(containerViewModel.selectedClientFilters.isEmpty ? "Client" : "Client (\(containerViewModel.selectedClientFilters.count))")
+            } icon: {
+                Image(systemName: containerViewModel.selectedClientFilters.isEmpty ? "person.2" : "person.2.fill")
             }
         }
         .help("Filter by client")
-        .appInteractiveCursor()
+        .pointerStyle(.link)
+
     }
 
-    private var currentSidebarContent: some View {
-        let viewModel = containerViewModel.calendarViewModel
-        switch viewModel.calendarViewType {
-        case .week:
-            return AnyView(WeekSidebarView(viewModel: viewModel))
-        case .month:
-            return AnyView(MonthSidebarView(viewModel: viewModel))
-        }
-    }
-}
-
-public struct CalendarDetailColumn: View {
-    @ObservedObject private var containerViewModel: CalendarContainerViewModel
-    @EnvironmentObject private var eventKitService: EventKitSyncService
-
-    public init(viewModel: CalendarContainerViewModel) {
-        self._containerViewModel = ObservedObject(wrappedValue: viewModel)
-    }
-
-    public var body: some View {
-        currentSidebarContent
-            .environmentObject(eventKitService)
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.clear)
-    }
-
-    private var currentSidebarContent: some View {
-        let viewModel = containerViewModel.calendarViewModel
-        switch viewModel.calendarViewType {
-        case .week:
-            return AnyView(WeekSidebarView(viewModel: viewModel))
-        case .month:
-            return AnyView(MonthSidebarView(viewModel: viewModel))
-        }
-    }
 }

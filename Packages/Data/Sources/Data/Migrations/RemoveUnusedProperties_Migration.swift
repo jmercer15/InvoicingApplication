@@ -179,6 +179,7 @@ public struct RemoveUnusedProperties_Migration {
 }
 
 /// Migration test utilities for unused properties removal
+#if DEBUG
 public struct UnusedPropertiesMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -258,6 +259,7 @@ public struct UnusedPropertiesMigrationTestUtils {
         print("✅ Unused properties removal migration test completed successfully")
     }
 }
+#endif
 
 /// Migration configuration for unused properties removal
 public struct UnusedPropertiesMigrationConfig {

@@ -7,8 +7,12 @@ import SharedUI
 // MARK: - Main View
 
 public struct CalendarSettingsView: View {
-    @StateObject private var viewModel = CalendarSettingsViewModel()
-    @Environment(\.modelContext) private var modelContext
+// Placeholder to ensure line removal
+    @StateObject private var viewModel: CalendarSettingsViewModel
+    
+    public init(viewModel: @autoclosure @escaping () -> CalendarSettingsViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel())
+    }
     
     private var maxLabelWidth: CGFloat {
         let labels = [
@@ -102,7 +106,11 @@ public struct CalendarSettingsView: View {
                 set: { viewModel.showingClearSessionsConfirmation = $0 }
             )
         ) {
-            Button("Delete All Sessions", role: .destructive) { viewModel.clearAllSessions(modelContext: modelContext) }
+            Button("Delete All Sessions", role: .destructive) {
+                Task {
+                    await viewModel.clearAllSessions()
+                }
+            }
             Button("Cancel", role: .cancel) {}
         }
         .onAppear {
@@ -119,7 +127,7 @@ public struct CalendarSettingsView: View {
             if viewModel.isLoading {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.thinMaterial)
+                    .glassEffect(.regular, in: .rect())
             }
             if let error = viewModel.errorMessage {
                 VStack(spacing: 8) {

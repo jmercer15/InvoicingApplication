@@ -102,9 +102,10 @@ struct ServiceBulkEditorView: View {
                                     .frame(width: 36, height: 36)
                                     .background(Circle().fill(Color.red.opacity(0.7)))
                                     .foregroundColor(Color("Text", bundle: .sharedUI))
+                                    .contentShape(Circle())
                             }
                             .buttonStyle(.plain)
-                            .appInteractiveCursor()
+                            .pointerStyle(.link)
                         }
                     }
                 }
@@ -134,7 +135,7 @@ struct ServiceBulkEditorView: View {
             .padding()
             .background(.bar)
         }
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: .rect())
     }
 
     private func removeTemplate(at index: Int) {
@@ -162,23 +163,24 @@ struct ServiceTemplateRow: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(template.serviceName)
-                .font(.headline)
-                .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(white: 0.2))
-                .overlay(
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(Color.white.opacity(0.1)),
-                    alignment: .bottom
-                )
+            FormField("Service Name") {
+                TextField("Service Name", text: $template.serviceName)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(.regular, in: .rect())
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color.white.opacity(0.1)),
+                alignment: .bottom
+            )
 
             HStack(alignment: .top, spacing: 16) {
                 FormField("NDIS Code") {
                     TextField("NDIS Code", text: $template.ndisCode)
                         .textFieldStyle(.roundedBorder)
-                        .disabled(true)
                 }
                 FormField("Price Mode") {
                     Picker("", selection: $template.priceMode) {
@@ -228,13 +230,11 @@ struct ServiceTemplateRow: View {
                 FormField("Unit") {
                     TextField("Unit", text: $template.unit)
                         .textFieldStyle(.roundedBorder)
-                        .disabled(true)
                 }
             }
             .padding(16)
         }
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 8))
         .overlay(
              RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)

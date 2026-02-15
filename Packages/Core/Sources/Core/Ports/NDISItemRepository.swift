@@ -28,5 +28,20 @@ public protocol NDISItemRepository: Sendable {
     
     /// Count current NDIS items
     func countCurrent() async throws -> Int
+    
+    // MARK: - Maintenance Operations
+    
+    /// Recalculates 'isCurrent' flags for all items based on effective dates
+    @discardableResult
+    func recalculateAllCurrentFlags() async throws -> Int
+    
+    /// Removes all NDIS items and related data (e.g., regional prices)
+    /// Returns a breakdown of deleted counts (items, prices)
+    @discardableResult
+    func removeAll() async throws -> (deletedItems: Int, deletedPrices: Int)
 }
 
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias NDISItemRepositoryProtocol = NDISItemRepository

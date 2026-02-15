@@ -3,7 +3,7 @@ import SwiftUI
 @MainActor
 public final class TemplateEditorWorkspaceViewModel: ObservableObject {
     // MARK: - Dependencies
-    private let templateManager: TemplateManager
+    public let templateManager: TemplateManager
     
     public let editorViewModel: InvoiceTemplateEditorViewModel
 
@@ -17,7 +17,9 @@ public final class TemplateEditorWorkspaceViewModel: ObservableObject {
     @Published var lastAvailableSize: CGSize = .zero
     @Published var showRulers = true
     @Published var showMargins = false
+    @Published var showDividers = true
     @Published var isPaletteVisible = true
+    @Published var isSectionsPanelVisible = true
     @Published var rulerUnit: RulerUnit = .points
     @Published var showMarginsOverlay = false
     @Published var marginLeftStr = ""

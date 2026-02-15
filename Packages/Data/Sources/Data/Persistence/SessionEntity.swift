@@ -26,14 +26,18 @@ import SwiftData
     public var groupedPosition: Int32 = 0
     public var sessionLatitude: Double = 0.0
     public var sessionLongitude: Double = 0.0
+    public var travelDistanceKM: Double?
+    public var travelTimeMinutes: Double?
+    public var travelTollsAmount: Double?
     @Relationship(deleteRule: .nullify, inverse: \ClientEntity.sessions) public var client: ClientEntity?
     @Relationship(deleteRule: .nullify) public var clientService: ClientServiceEntity?
-    @Relationship(deleteRule: .nullify) var invoice: InvoiceEntity?
+    @Relationship(deleteRule: .nullify) public var invoice: InvoiceEntity?
 
     @Relationship(deleteRule: .nullify) public var address: AddressEntity?
     @Relationship(deleteRule: .nullify, inverse: \InvoiceItemEntity.session) public var invoiceItems: [InvoiceItemEntity] = []
     @Relationship(deleteRule: .nullify, inverse: \TravelChargeEntity.linkedSession) var travelCharges: [TravelChargeEntity] = []
-    @Relationship(deleteRule: .cascade) public var reviewItems: [TravelChargeReviewItem] = []
+    @Relationship(deleteRule: .cascade) public var supportLogs: [SupportLogEntity] = []
+    @Relationship(deleteRule: .cascade) public var reviewItems: [TravelChargeReviewItemEntity] = []
     // EventRepresentable protocol properties
     public var calendarIdentifier: String?
     public var ekCreationDate: Date?
@@ -42,6 +46,7 @@ import SwiftData
     public var ekRecurrenceRuleDescription: String?
     public var endTime: Date?
     public var eventIdentifier: String = ""
+    public var eventExternalIdentifier: String?
     public var hasEKAlarms: Bool = false
     public var alarmsData: Data?
     public var isAllDay: Bool = false

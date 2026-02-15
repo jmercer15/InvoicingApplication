@@ -41,6 +41,7 @@ struct LinearSplitView: View {
             containerSize: containerSize,
             spacing: split.childSpacing,
             padding: split.padding,
+            showDividers: context.showDividers,
             onResize: { childIndex, delta in
                 var updatedSplit = split
                 
@@ -80,7 +81,10 @@ struct LinearSplitView: View {
                     updatedSplit.updateRatio(at: childIndex + 1, newRatio: newNextRatio)
                 default: break
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, nil)
+            },
+            onResizeStart: {
+                context.onResizeStart?(sectionIndex)
             }
         ) { subIndex, calculatedChildSize in
             let childPadding = split.childPaddings.count > subIndex ? split.childPaddings[subIndex] : .zero
@@ -104,12 +108,12 @@ struct LinearSplitView: View {
             onSplitChild: { childIndex, direction, count, rows, columns in
                 var updatedSplit = split
                 updatedSplit.splitChild(at: childIndex, direction: direction, splitCount: count, gridRows: rows ?? 2, gridColumns: columns ?? 2)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Split Section")
             },
             onUnsplitChild: { childIndex in
                 var updatedSplit = split
                 updatedSplit.unsplitChild(at: childIndex)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Unsplit Section")
             },
             onResize: { childIndex, delta in
                 // This is called when a child (which is a split) resizes ITS children.
@@ -140,7 +144,7 @@ struct LinearSplitView: View {
                 // But for safety/completeness:
                 context.onResize(childIndex, delta)
             },
-            onUpdateSplit: { updatedChildSplit in
+            onUpdateSplit: { updatedChildSplit, actionName in
                 var updatedSplit = split
                 
                 // Logic to handle "Alignment Only" splits (merging back to parent if needed)
@@ -171,7 +175,7 @@ struct LinearSplitView: View {
                         updatedSplit.childComponents.removeValue(forKey: index)
                     }
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, actionName)
             },
             onAddComponent: { childIdx, component in
                 var updatedSplit = split
@@ -181,7 +185,7 @@ struct LinearSplitView: View {
                 } else {
                     updatedSplit.addComponent(component, toChild: index)
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Add Component")
             },
             onSetLabel: { childIdx, label in
                 // If the child is a leaf, childIdx should be `index` (relative to this split).
@@ -194,7 +198,7 @@ struct LinearSplitView: View {
                 } else {
                     updatedSplit.removeLabel(forChild: index)
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Change Label")
             },
             onReorderChildren: context.onReorderChildren,
             onComponentSelect: context.onComponentSelect,
@@ -203,15 +207,20 @@ struct LinearSplitView: View {
                 // Horizontal splits control width
                 var updatedSplit = split
                 updatedSplit.setWidthSizingMode(mode, forChild: index)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Change Width Mode")
             } : nil,
             onSetHeightSizingMode: direction == .vertical ? { childIdx, mode in
                 // Vertical splits control height
                 var updatedSplit = split
                 updatedSplit.setHeightSizingMode(mode, forChild: index)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Change Height Mode")
             } : nil,
-            onSetGridSizingMode: nil // Linear splits don't use grid sizing
+            onSetGridSizingMode: nil, // Linear splits don't use grid sizing
+            currentWidthSizingMode: direction == .horizontal && split.childWidthSizingModes.indices.contains(index) ? split.childWidthSizingModes[index] : nil,
+            currentHeightSizingMode: direction == .vertical && split.childHeightSizingModes.indices.contains(index) ? split.childHeightSizingModes[index] : nil,
+            currentRowSizingMode: nil,
+            currentColumnSizingMode: nil,
+            showDividers: context.showDividers
         )
     }
 }

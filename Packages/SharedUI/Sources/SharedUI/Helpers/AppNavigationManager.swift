@@ -372,7 +372,7 @@ extension View {
 extension AppTab {
     var supportsEntityNavigation: Bool {
         switch self {
-        case .relationships, .calendar, .invoices, .billingHub, .ndisCatalogue, .ndisBilling, .invoiceTemplateEditor, .testingArea:
+        case .relationships, .calendar, .invoices, .billingHub, .ndisCatalogue, .invoiceTemplateEditor:
             return true
         case .settings:
             return false

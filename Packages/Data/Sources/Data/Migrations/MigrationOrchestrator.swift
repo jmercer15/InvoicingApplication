@@ -18,6 +18,7 @@ import SwiftData
 /// provides comprehensive logging and error handling, and ensures data integrity
 /// throughout the migration process.
 public class MigrationOrchestrator {
+    private static let migrationHistoryUserDefaultsKey = "com.invoicingapp.migrations.applied"
     
     /// Migration result types
     public enum MigrationResult {
@@ -98,6 +99,22 @@ public class MigrationOrchestrator {
             description: "Remove notes column from PayeeEntity",
             execute: { try RemovePayeeNotesColumn_Migration.execute(modelContext: $0) },
             rollback: { try RemovePayeeNotesColumn_Migration.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "normalize_invoice_status_values",
+            name: "Normalize invoice status values",
+            version: "1.0.0",
+            description: "Rewrite persisted invoice statuses to canonical tokens",
+            execute: { try NormalizeInvoiceStatusValues_Migration.execute(modelContext: $0) },
+            rollback: { try NormalizeInvoiceStatusValues_Migration.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "add_compliance_foundation_fields_v1",
+            name: "Add compliance foundation fields",
+            version: "1.0.0",
+            description: "Initialize claiming config defaults on business profile",
+            execute: { try AddComplianceFoundationFields_v1.execute(modelContext: $0) },
+            rollback: { try AddComplianceFoundationFields_v1.rollback(modelContext: $0) }
         )
     ]
     
@@ -211,9 +228,8 @@ public class MigrationOrchestrator {
     /// - Returns: True if the migration has been applied
     /// - Throws: MigrationError if the check fails
     private func isMigrationApplied(_ migrationId: String, modelContext: ModelContext) throws -> Bool {
-        // For now, we'll assume migrations haven't been applied
-        // In a real implementation, you'd check a migration history table
-        return false
+        _ = modelContext
+        return appliedMigrationIDs().contains(migrationId)
     }
     
     /// Mark a migration as applied
@@ -223,9 +239,16 @@ public class MigrationOrchestrator {
     ///   - modelContext: The Swift Data model context
     /// - Throws: MigrationError if the marking fails
     private func markMigrationAsApplied(_ migrationId: String, modelContext: ModelContext) throws {
-        // For now, we'll just log that the migration was applied
-        // In a real implementation, you'd update a migration history table
+        _ = modelContext
+        var applied = appliedMigrationIDs()
+        applied.insert(migrationId)
+        UserDefaults.standard.set(Array(applied).sorted(), forKey: Self.migrationHistoryUserDefaultsKey)
         print("📝 Marking migration \(migrationId) as applied")
+    }
+
+    private func appliedMigrationIDs() -> Set<String> {
+        let stored = UserDefaults.standard.stringArray(forKey: Self.migrationHistoryUserDefaultsKey) ?? []
+        return Set(stored)
     }
     
     /// Rollback all migrations
@@ -272,6 +295,7 @@ public class MigrationOrchestrator {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
+    #if DEBUG
     public func testAllMigrations(modelContext: ModelContext) throws {
         print("🧪 Testing all migrations")
         
@@ -287,9 +311,15 @@ public class MigrationOrchestrator {
                 throw MigrationError.testFailed("Test failed for \(migration.name): \(error.localizedDescription)")
             }
         }
-        
+
         print("🎉 All migration tests passed!")
     }
+    #else
+    public func testAllMigrations(modelContext: ModelContext) throws {
+        _ = modelContext
+        throw MigrationError.testFailed("Migration tests are only available in DEBUG builds.")
+    }
+    #endif
     
     /// Test a single migration
     /// 
@@ -297,6 +327,7 @@ public class MigrationOrchestrator {
     ///   - migration: The migration to test
     ///   - modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
+    #if DEBUG
     private func testMigration(_ migration: MigrationInfo, modelContext: ModelContext) throws {
         // Create test data based on migration type
         switch migration.id {
@@ -312,10 +343,13 @@ public class MigrationOrchestrator {
             try ColorHexColumnsMigrationTestUtils.testMigration(modelContext: modelContext)
         case "remove_payee_notes_column":
             try PayeeNotesColumnMigrationTestUtils.testMigration(modelContext: modelContext)
+        case "add_compliance_foundation_fields_v1":
+            break
         default:
             throw MigrationError.testFailed("Unknown migration type: \(migration.id)")
         }
     }
+    #endif
 }
 
 /// Migration error types
@@ -343,6 +377,7 @@ public enum MigrationError: Error, LocalizedError {
 }
 
 /// Migration test utilities
+#if DEBUG
 public struct MigrationTestUtils {
     
     /// Test AddressEntity migration
@@ -384,3 +419,4 @@ public struct MigrationTestUtils {
         print("✅ Address migration test completed successfully")
     }
 }
+#endif

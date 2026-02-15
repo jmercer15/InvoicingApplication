@@ -16,13 +16,53 @@ import Core
 
 private struct BillingHubPreviewView: View {
     @StateObject private var viewModel: BillingHubViewModel
+    @State private var container: ModelContainer
     @State private var selectedCard: KanbanCardData? = nil
     @State private var isEditingPanelVisible: Bool = false
 
     init() {
-        // Use an in-memory SwiftData container
+        // Create container that persists with the view
+        let container = Self.makeContainer()
+        _container = State(initialValue: container)
+        
+        let context = ModelContext(container)
+        Self.populatePreviewData(in: context)
+        
+        // Create repositories for preview
+        let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
+        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
+        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
+        let travelChargeRepository = TravelChargeRepositorySwiftData(modelContext: context)
+        let businessRepository = BusinessRepositorySwiftData(modelContext: context)
+        let ndisItemRepository = NDISItemRepositorySwiftData(modelContext: context)
+        
+        let unitOfWork = SwiftDataUnitOfWork(modelContext: context, modelContainer: container)
+        let billingService = NDISBillingService(modelContext: context, repository: ndisItemRepository)
+        
+        let ndisBillingIntegrationService = NDISBillingIntegrationService(
+            invoicesRepository: invoicesRepository,
+            clientsRepository: clientsRepository,
+            businessRepository: businessRepository,
+            clientServicesRepository: clientServicesRepository,
+            ndisItemsRepository: ndisItemRepository,
+            billingService: billingService,
+            unitOfWork: unitOfWork
+        )
+        
+        _viewModel = StateObject(wrappedValue: BillingHubViewModel(
+            sessionsRepository: sessionsRepository,
+            invoicesRepository: invoicesRepository,
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            travelChargeRepository: travelChargeRepository,
+            ndisBillingIntegrationService: ndisBillingIntegrationService
+        ))
+    }
+    
+    private static func makeContainer() -> ModelContainer {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try! ModelContainer(
+        return try! ModelContainer(
             for: ClientEntity.self,
                  BusinessEntity.self,
                  AddressEntity.self,
@@ -34,14 +74,19 @@ private struct BillingHubPreviewView: View {
                  SessionEntity.self,
                  TravelChargeEntity.self,
                  TravelChargeAuditLog.self,
-                 TravelChargeReviewItem.self,
+                 TravelChargeReviewItemEntity.self,
                  CreditHistoryEntryEntity.self,
                  NDISItemEntity.self,
                  RegionalPriceEntity.self,
+                 ServiceAgreementEntity.self,
+                 SupportLogEntity.self,
+                 BulkClaimBatchEntity.self,
+                 BulkClaimLineEntity.self,
             configurations: config
         )
-        let context = ModelContext(container)
-
+    }
+    
+    private static func populatePreviewData(in context: ModelContext) {
         // Mock clients and services
         let clientA = ClientEntity(id: UUID(), ndisNumber: "410000010", fullName: "Alex Rivers", status: .active)
         let clientB = ClientEntity(id: UUID(), ndisNumber: "410000011", fullName: "Jamie Lee", status: .active)
@@ -57,7 +102,7 @@ private struct BillingHubPreviewView: View {
             s.clientService = svc
             s.startTime = start
             s.endTime = end
-            s.status = SessionStatus(rawValue: status) ?? .scheduled
+            s.status = SessionStatus(normalized: status) ?? .scheduled
             s.groupID = groupID
             return s
         }
@@ -65,7 +110,7 @@ private struct BillingHubPreviewView: View {
         func makeInvoice(client: ClientEntity, number: String, status: String, amount: Double, firstItemDesc: String) -> InvoiceEntity {
             let inv = InvoiceEntity(id: UUID(), invoiceNumber: number)
             inv.client = client
-            inv.status = InvoiceStatus(rawValue: status) ?? .draft
+            inv.status = InvoiceStatus(rawValue: status) ?? .reviewDraft
             inv.issueDate = Date()
             inv.dueDate = Calendar.current.date(byAdding: .day, value: 14, to: Date())
             inv.totalAmount = amount
@@ -90,22 +135,22 @@ private struct BillingHubPreviewView: View {
             makeSession(client: clientA, svc: serviceA, title: "PM Support", start: now.addingTimeInterval(-68*3600), end: now.addingTimeInterval(-67*3600), status: "grouped", groupID: g1),
             makeSession(client: clientB, svc: serviceB, title: "Transport", start: now.addingTimeInterval(-40*3600), end: now.addingTimeInterval(-39*3600), status: "grouped", groupID: nil),
             // Needs services / travel
-            makeSession(client: clientA, svc: serviceA, title: "Household Tasks", start: now.addingTimeInterval(-10*3600), end: now.addingTimeInterval(-9*3600), status: "needs_services"),
-            makeSession(client: clientB, svc: serviceB, title: "Meal Planning", start: now.addingTimeInterval(-12*3600), end: now.addingTimeInterval(-11*3600), status: "needs_services"),
+            makeSession(client: clientA, svc: serviceA, title: "Household Tasks", start: now.addingTimeInterval(-10*3600), end: now.addingTimeInterval(-9*3600), status: "needs_travel"),
+            makeSession(client: clientB, svc: serviceB, title: "Meal Planning", start: now.addingTimeInterval(-12*3600), end: now.addingTimeInterval(-11*3600), status: "needs_travel"),
             makeSession(client: clientA, svc: serviceA, title: "Transport to Appointment", start: now.addingTimeInterval(-8*3600), end: now.addingTimeInterval(-7.5*3600), status: "needs_travel"),
             makeSession(client: clientB, svc: serviceB, title: "Community Event", start: now.addingTimeInterval(-7*3600), end: now.addingTimeInterval(-6.5*3600), status: "needs_travel")
         ]
 
         // Invoices across subcolumns
         let invoices: [InvoiceEntity] = [
-            makeInvoice(client: clientA, number: "INV-PREV-0001", status: "draft", amount: 220.0, firstItemDesc: "Support Hours"),
-            makeInvoice(client: clientB, number: "INV-PREV-0002", status: "draft", amount: 140.0, firstItemDesc: "Transport"),
-            makeInvoice(client: clientA, number: "INV-PREV-0003", status: "ready", amount: 310.0, firstItemDesc: "Support + Travel"),
-            makeInvoice(client: clientB, number: "INV-PREV-0004", status: "ready", amount: 95.0, firstItemDesc: "Community Access"),
-            makeInvoice(client: clientA, number: "INV-PREV-0005", status: "sent", amount: 175.0, firstItemDesc: "Support"),
-            makeInvoice(client: clientB, number: "INV-PREV-0006", status: "sent", amount: 260.0, firstItemDesc: "Support Services"),
-            makeInvoice(client: clientA, number: "INV-PREV-0007", status: "paid", amount: 420.0, firstItemDesc: "Support Bundle"),
-            makeInvoice(client: clientB, number: "INV-PREV-0008", status: "paid", amount: 80.0, firstItemDesc: "Transport Fee")
+            makeInvoice(client: clientA, number: "INV-PREV-0001", status: "review_draft", amount: 220.0, firstItemDesc: "Support Hours"),
+            makeInvoice(client: clientB, number: "INV-PREV-0002", status: "review_draft", amount: 140.0, firstItemDesc: "Transport"),
+            makeInvoice(client: clientA, number: "INV-PREV-0003", status: "ready_to_send", amount: 310.0, firstItemDesc: "Support + Travel"),
+            makeInvoice(client: clientB, number: "INV-PREV-0004", status: "ready_to_send", amount: 95.0, firstItemDesc: "Community Access"),
+            makeInvoice(client: clientA, number: "INV-PREV-0005", status: "pending", amount: 175.0, firstItemDesc: "Support"),
+            makeInvoice(client: clientB, number: "INV-PREV-0006", status: "pending", amount: 260.0, firstItemDesc: "Support Services"),
+            makeInvoice(client: clientA, number: "INV-PREV-0007", status: "received", amount: 420.0, firstItemDesc: "Support Bundle"),
+            makeInvoice(client: clientB, number: "INV-PREV-0008", status: "received", amount: 80.0, firstItemDesc: "Transport Fee")
         ]
 
         // Persist
@@ -116,17 +161,6 @@ private struct BillingHubPreviewView: View {
         sessions.forEach { context.insert($0) }
         invoices.forEach { context.insert($0) }
         try? context.save()
-
-        // Create repositories for preview
-        let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        
-        _viewModel = StateObject(wrappedValue: BillingHubViewModel(
-            sessionsRepository: sessionsRepository,
-            invoicesRepository: invoicesRepository,
-            clientsRepository: clientsRepository
-        ))
     }
 
     public var body: some View {
@@ -134,4 +168,3 @@ private struct BillingHubPreviewView: View {
             .frame(minHeight: 720)
     }
 }
-

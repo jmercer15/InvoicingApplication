@@ -6,8 +6,13 @@ import Core
 public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unchecked Sendable {
     private let modelContext: ModelContext
     
+    private let mapper: PlanManagerMapper
+    private let addressMapper: AddressMapper
+    
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        self.mapper = PlanManagerMapper()
+        self.addressMapper = AddressMapper()
     }
     
     public func fetchAll() async throws -> [PlanManager] {
@@ -16,7 +21,7 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { PlanManager(from: $0) }
+            return entities.map { mapper.mapToDomain($0) }
         }
     }
     
@@ -27,7 +32,7 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
         let descriptor = FetchDescriptor<PlanManagerEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return PlanManager(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -38,7 +43,7 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
         let descriptor = FetchDescriptor<PlanManagerEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return PlanManager(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -49,15 +54,16 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
             let idDescriptor = FetchDescriptor<PlanManagerEntity>(predicate: idPredicate)
             if let existingEntity = try? modelContext.fetch(idDescriptor).first {
                 // Entity already exists, update it instead
-                existingEntity.update(from: planManager)
+                var mutableEntity = existingEntity
+                mapper.updateEntity(&mutableEntity, from: planManager)
                 
                 // Handle address update or clearing
                 if let address = planManager.address {
-                    if let existingAddress = existingEntity.address {
-                        existingAddress.update(from: address)
+                    if var existingAddress = existingEntity.address {
+                        addressMapper.updateEntity(&existingAddress, from: address)
                     } else {
-                        let addressEntity = AddressEntity()
-                        addressEntity.update(from: address)
+                        var addressEntity = AddressEntity()
+                        addressMapper.updateEntity(&addressEntity, from: address)
                         // Insert address before assigning to relationship
                         if addressEntity.modelContext == nil {
                             modelContext.insert(addressEntity)
@@ -70,28 +76,28 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
                 }
                 
                 do {
-                try modelContext.save()
+                    try modelContext.save()
                 } catch {
                     modelContext.rollback()
                     throw RepositoryError.saveFailed
                 }
-                return PlanManager(from: existingEntity)
+                return mapper.mapToDomain(existingEntity)
             }
             
             // Check if entity with same ABN already exists (ABN is unique)
             let abnPredicate = #Predicate<PlanManagerEntity> { m in m.abn == planManager.abn }
             let abnDescriptor = FetchDescriptor<PlanManagerEntity>(predicate: abnPredicate)
-            if let existingByABN = try? modelContext.fetch(abnDescriptor).first {
+            if var existingByABN = try? modelContext.fetch(abnDescriptor).first {
                 // Update existing entity instead of creating duplicate
-                existingByABN.update(from: planManager)
+                mapper.updateEntity(&existingByABN, from: planManager)
                 
                 // Handle address update or clearing
                 if let address = planManager.address {
-                    if let existingAddress = existingByABN.address {
-                        existingAddress.update(from: address)
+                    if var existingAddress = existingByABN.address {
+                        addressMapper.updateEntity(&existingAddress, from: address)
                     } else {
-                        let addressEntity = AddressEntity()
-                        addressEntity.update(from: address)
+                        var addressEntity = AddressEntity()
+                        addressMapper.updateEntity(&addressEntity, from: address)
                         // Insert address before assigning to relationship
                         if addressEntity.modelContext == nil {
                             modelContext.insert(addressEntity)
@@ -104,17 +110,20 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
                 }
                 
                 do {
-                try modelContext.save()
+                    try modelContext.save()
                 } catch {
                     modelContext.rollback()
                     throw RepositoryError.saveFailed
                 }
-                return PlanManager(from: existingByABN)
+                return mapper.mapToDomain(existingByABN)
             }
             
             // Create new entity
-            let entity = PlanManagerEntity(id: planManager.id, abn: planManager.abn)
-            entity.update(from: planManager)
+            var entity = PlanManagerEntity(
+                id: planManager.id,
+                abn: planManager.abn
+            )
+            mapper.updateEntity(&entity, from: planManager)
             
             // Insert entity first before assigning relationships
             // This ensures entity is registered and prevents duplicate insertion
@@ -124,26 +133,25 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
             
             // Handle address if provided
             if let address = planManager.address {
-                let addressEntity = AddressEntity()
-                addressEntity.update(from: address)
+                var addressEntity = AddressEntity()
+                addressMapper.updateEntity(&addressEntity, from: address)
                 // Insert address before assigning to relationship
                 if addressEntity.modelContext == nil {
                     modelContext.insert(addressEntity)
                 }
-                // Now assign relationship (entity is already registered)
+                // Now assign relationship
                 entity.address = addressEntity
             } else {
-                // Explicitly clear address relationship if not provided
                 entity.address = nil
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return PlanManager(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -154,17 +162,18 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: planManager)
+            var mutableEntity = entity
+            mapper.updateEntity(&mutableEntity, from: planManager)
             
             // Handle address update or clearing
             if let address = planManager.address {
-                if let existingAddress = entity.address {
+                if var existingAddress = entity.address {
                     // Update existing address using domain model
-                    existingAddress.update(from: address)
+                    addressMapper.updateEntity(&existingAddress, from: address)
                 } else {
                     // Create new address
-                    let addressEntity = AddressEntity()
-                    addressEntity.update(from: address)
+                    var addressEntity = AddressEntity()
+                    addressMapper.updateEntity(&addressEntity, from: address)
                     // Insert address before assigning to relationship
                     if addressEntity.modelContext == nil {
                         modelContext.insert(addressEntity)
@@ -177,12 +186,12 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return PlanManager(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -195,7 +204,7 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
             }
             modelContext.delete(entity)
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
@@ -219,7 +228,7 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { PlanManager(from: $0) }
+            return entities.map { mapper.mapToDomain($0) }
         }
     }
     
@@ -231,7 +240,6 @@ public final class PlanManagerRepositorySwiftData: PlanManagerRepository, @unche
     }
     
     // MARK: - Private Helpers
-    // Note: fetchEntity and fetchEntityByABN helpers removed - all entity operations now happen directly within MainActor.run blocks
-    // to avoid Sendable conformance issues with PlanManagerEntity
+    // Note: fetchEntity helpers removed
 }
 

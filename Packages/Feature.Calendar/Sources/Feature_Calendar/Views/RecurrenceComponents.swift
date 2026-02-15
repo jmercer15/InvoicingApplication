@@ -30,8 +30,10 @@ struct MonthDayGridView: View {
                             Circle()
                                 .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
                         )
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+
             }
         }
         .padding(8)
@@ -62,7 +64,10 @@ struct OrdinalPickerView: View {
             
             Picker("Day of Week", selection: $dayOfWeekSelection) {
                 Text("Select...").tag(nil as DayOfWeekOption?)
-                ForEach(DayOfWeekOption.allCases, id: \.self) { dayOption in
+                ForEach(
+                    DayOfWeekOption.allCases.filter { $0.rawValue >= DayOfWeekOption.sunday.rawValue },
+                    id: \.self
+                ) { dayOption in
                     Text(dayOption.displayName).tag(dayOption as DayOfWeekOption?)
                 }
             }

@@ -18,6 +18,7 @@ import Core
 // MARK: - Preparing Sessions Preview
 private struct PreparingSessionsColumnPreview: View {
     @StateObject private var viewModel: BillingHubViewModel
+    @State private var container: ModelContainer
     @State private var selectedCard: KanbanCardData? = nil
     @State private var isEditingPanelVisible: Bool = false
     @State private var isCollapsed: Bool = false
@@ -37,12 +38,17 @@ private struct PreparingSessionsColumnPreview: View {
                  SessionEntity.self,
                  TravelChargeEntity.self,
                  TravelChargeAuditLog.self,
-                 TravelChargeReviewItem.self,
+                 TravelChargeReviewItemEntity.self,
                  CreditHistoryEntryEntity.self,
                  NDISItemEntity.self,
                  RegionalPriceEntity.self,
+                 ServiceAgreementEntity.self,
+                 SupportLogEntity.self,
+                 BulkClaimBatchEntity.self,
+                 BulkClaimLineEntity.self,
             configurations: config
         )
+        _container = State(initialValue: container)
         let context = ModelContext(container)
 
         // Seed mock data
@@ -57,7 +63,7 @@ private struct PreparingSessionsColumnPreview: View {
             s.clientService = service
             s.startTime = start
             s.endTime = end
-            s.status = SessionStatus(rawValue: status) ?? .scheduled
+            s.status = SessionStatus(normalized: status) ?? .scheduled
             return s
         }
 
@@ -77,11 +83,31 @@ private struct PreparingSessionsColumnPreview: View {
         let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
         let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
         let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
+        let travelChargeRepository = TravelChargeRepositorySwiftData(modelContext: context)
+        let businessRepository = BusinessRepositorySwiftData(modelContext: context)
+        let ndisItemRepository = NDISItemRepositorySwiftData(modelContext: context)
+        
+        let unitOfWork = SwiftDataUnitOfWork(modelContext: context, modelContainer: container)
+        let billingService = NDISBillingService(modelContext: context, repository: ndisItemRepository)
+        
+        let ndisBillingIntegrationService = NDISBillingIntegrationService(
+            invoicesRepository: invoicesRepository,
+            clientsRepository: clientsRepository,
+            businessRepository: businessRepository,
+            clientServicesRepository: clientServicesRepository,
+            ndisItemsRepository: ndisItemRepository,
+            billingService: billingService,
+            unitOfWork: unitOfWork
+        )
         
         _viewModel = StateObject(wrappedValue: BillingHubViewModel(
             sessionsRepository: sessionsRepository,
             invoicesRepository: invoicesRepository,
-            clientsRepository: clientsRepository
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            travelChargeRepository: travelChargeRepository,
+            ndisBillingIntegrationService: ndisBillingIntegrationService
         ))
     }
 
@@ -103,11 +129,13 @@ private struct PreparingSessionsColumnPreview: View {
         .frame(height: 520)
         .padding()
         .background(StyleGuide.Colors.secondary)
+        .environmentObject(viewModel)
     }
 }
 
 private struct FullKanbanBoardPreview: View {
     @StateObject private var viewModel: BillingHubViewModel
+    @State private var container: ModelContainer
     @State private var selectedCard: KanbanCardData? = nil
     @State private var isEditingPanelVisible: Bool = false
 
@@ -126,12 +154,17 @@ private struct FullKanbanBoardPreview: View {
                  SessionEntity.self,
                  TravelChargeEntity.self,
                  TravelChargeAuditLog.self,
-                 TravelChargeReviewItem.self,
+                 TravelChargeReviewItemEntity.self,
                  CreditHistoryEntryEntity.self,
                  NDISItemEntity.self,
                  RegionalPriceEntity.self,
+                 ServiceAgreementEntity.self,
+                 SupportLogEntity.self,
+                 BulkClaimBatchEntity.self,
+                 BulkClaimLineEntity.self,
             configurations: config
         )
+        _container = State(initialValue: container)
         let context = ModelContext(container)
 
         // Mock data
@@ -150,7 +183,7 @@ private struct FullKanbanBoardPreview: View {
             s.clientService = svc
             s.startTime = start
             s.endTime = end
-            s.status = SessionStatus(rawValue: status) ?? .scheduled
+            s.status = SessionStatus(normalized: status) ?? .scheduled
             s.groupID = groupID
             return s
         }
@@ -158,7 +191,7 @@ private struct FullKanbanBoardPreview: View {
         func makeInvoice(client: ClientEntity, number: String, status: String, amount: Double, firstItemDesc: String) -> InvoiceEntity {
             let inv = InvoiceEntity(id: UUID(), invoiceNumber: number)
             inv.client = client
-            inv.status = InvoiceStatus(rawValue: status) ?? .draft
+            inv.status = InvoiceStatus(rawValue: status) ?? .reviewDraft
             inv.issueDate = Date()
             inv.dueDate = Calendar.current.date(byAdding: .day, value: 14, to: Date())
             inv.totalAmount = amount
@@ -194,16 +227,16 @@ private struct FullKanbanBoardPreview: View {
             makeSession(client: clientB, svc: serviceB, title: "Community Event", start: now.addingTimeInterval(-7*3600), end: now.addingTimeInterval(-6.5*3600), status: "needs_travel")
         ]
 
-        // Draft/Ready/Pending/Received invoices
+        // Review Draft/Ready To Send/Pending/Received invoices
         let invoices: [InvoiceEntity] = [
-            makeInvoice(client: clientA, number: "INV-TEST-0001", status: "draft", amount: 220.0, firstItemDesc: "Support Hours"),
-            makeInvoice(client: clientB, number: "INV-TEST-0002", status: "draft", amount: 140.0, firstItemDesc: "Transport"),
-            makeInvoice(client: clientA, number: "INV-TEST-0003", status: "ready", amount: 310.0, firstItemDesc: "Support + Travel"),
-            makeInvoice(client: clientB, number: "INV-TEST-0004", status: "ready", amount: 95.0, firstItemDesc: "Community Access"),
-            makeInvoice(client: clientA, number: "INV-TEST-0005", status: "sent", amount: 175.0, firstItemDesc: "Support"),
-            makeInvoice(client: clientB, number: "INV-TEST-0006", status: "sent", amount: 260.0, firstItemDesc: "Support Services"),
-            makeInvoice(client: clientA, number: "INV-TEST-0007", status: "paid", amount: 420.0, firstItemDesc: "Support Bundle"),
-            makeInvoice(client: clientB, number: "INV-TEST-0008", status: "paid", amount: 80.0, firstItemDesc: "Transport Fee")
+            makeInvoice(client: clientA, number: "INV-TEST-0001", status: "review_draft", amount: 220.0, firstItemDesc: "Support Hours"),
+            makeInvoice(client: clientB, number: "INV-TEST-0002", status: "review_draft", amount: 140.0, firstItemDesc: "Transport"),
+            makeInvoice(client: clientA, number: "INV-TEST-0003", status: "ready_to_send", amount: 310.0, firstItemDesc: "Support + Travel"),
+            makeInvoice(client: clientB, number: "INV-TEST-0004", status: "ready_to_send", amount: 95.0, firstItemDesc: "Community Access"),
+            makeInvoice(client: clientA, number: "INV-TEST-0005", status: "pending", amount: 175.0, firstItemDesc: "Support"),
+            makeInvoice(client: clientB, number: "INV-TEST-0006", status: "pending", amount: 260.0, firstItemDesc: "Support Services"),
+            makeInvoice(client: clientA, number: "INV-TEST-0007", status: "received", amount: 420.0, firstItemDesc: "Support Bundle"),
+            makeInvoice(client: clientB, number: "INV-TEST-0008", status: "received", amount: 80.0, firstItemDesc: "Transport Fee")
         ]
 
         // Persist
@@ -219,11 +252,31 @@ private struct FullKanbanBoardPreview: View {
         let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
         let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
         let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
+        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
+        let travelChargeRepository = TravelChargeRepositorySwiftData(modelContext: context)
+        let businessRepository = BusinessRepositorySwiftData(modelContext: context)
+        let ndisItemRepository = NDISItemRepositorySwiftData(modelContext: context)
+        
+        let unitOfWork = SwiftDataUnitOfWork(modelContext: context, modelContainer: container)
+        let billingService = NDISBillingService(modelContext: context, repository: ndisItemRepository)
+        
+        let ndisBillingIntegrationService = NDISBillingIntegrationService(
+            invoicesRepository: invoicesRepository,
+            clientsRepository: clientsRepository,
+            businessRepository: businessRepository,
+            clientServicesRepository: clientServicesRepository,
+            ndisItemsRepository: ndisItemRepository,
+            billingService: billingService,
+            unitOfWork: unitOfWork
+        )
         
         _viewModel = StateObject(wrappedValue: BillingHubViewModel(
             sessionsRepository: sessionsRepository,
             invoicesRepository: invoicesRepository,
-            clientsRepository: clientsRepository
+            clientsRepository: clientsRepository,
+            clientServicesRepository: clientServicesRepository,
+            travelChargeRepository: travelChargeRepository,
+            ndisBillingIntegrationService: ndisBillingIntegrationService
         ))
     }
 
@@ -236,6 +289,6 @@ private struct FullKanbanBoardPreview: View {
         .frame(minHeight: 680)
         .padding()
         .background(StyleGuide.Colors.secondary)
+        .environmentObject(viewModel)
     }
 }
-

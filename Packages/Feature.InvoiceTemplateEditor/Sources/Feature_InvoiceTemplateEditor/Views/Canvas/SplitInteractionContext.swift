@@ -13,7 +13,8 @@ struct SplitInteractionContext {
     let onSplitChild: (Int, SectionSplit.SplitDirection, Int, Int?, Int?) -> Void
     let onUnsplitChild: (Int) -> Void
     let onResize: (Int, CGFloat) -> Void
-    let onUpdateSplit: (SectionSplit) -> Void
+    var onResizeStart: ((Int) -> Void)? = nil
+    let onUpdateSplit: (SectionSplit, String?) -> Void
     let onAddComponent: (Int, InvoiceComponent) -> Void
     let onSetLabel: ((Int, String?) -> Void)?
     let onReorderChildren: ((Int, Int) -> Void)?
@@ -22,4 +23,9 @@ struct SplitInteractionContext {
     let onSetWidthSizingMode: ((Int, SectionSplit.SizingMode) -> Void)?
     let onSetHeightSizingMode: ((Int, SectionSplit.SizingMode) -> Void)?
     let onSetGridSizingMode: ((Int, Bool, SectionSplit.SizingMode) -> Void)? // index, isRow, mode
+    let currentWidthSizingMode: SectionSplit.SizingMode?
+    let currentHeightSizingMode: SectionSplit.SizingMode?
+    let currentRowSizingMode: SectionSplit.SizingMode?
+    let currentColumnSizingMode: SectionSplit.SizingMode?
+    let showDividers: Bool
 }

@@ -27,3 +27,7 @@ public protocol PlanManagerRepository: Sendable {
     func count() async throws -> Int
 }
 
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias PlanManagerRepositoryProtocol = PlanManagerRepository

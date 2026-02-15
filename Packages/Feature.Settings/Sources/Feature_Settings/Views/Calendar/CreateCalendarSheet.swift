@@ -39,7 +39,7 @@ struct CreateCalendarSheet: View {
                     presentationMode.wrappedValue.dismiss()
                 }
                 .buttonStyle(.glass)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
                 
                 Spacer()
                 
@@ -55,7 +55,7 @@ struct CreateCalendarSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .fontWeight(.bold)
                 .buttonStyle(.glassProminent)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
             }
         }
         .padding(32)

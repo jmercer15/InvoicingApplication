@@ -26,7 +26,7 @@ struct DayColumnView: View {
     }
     private let hours = Array(0...23)
 
-    @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -51,7 +51,7 @@ struct DayColumnView: View {
                         .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
                         .zIndex(20)
 
-                        Text(viewModel.formatTime(for: resizePreviewDate))
+                        Text(viewModel.formatTime(resizePreviewDate))
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                             .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
@@ -70,8 +70,7 @@ struct DayColumnView: View {
         .frame(width: columnWidth)
         .background(columnBackground)
         .overlay(columnBorder)
-        .onHover { hovering in isHovering = hovering }
-        .onDrop(of: [.text], delegate: DayColumnDropDelegate(day: day, viewModel: viewModel, effectiveHourHeight: effectiveHourHeight, isTargeted: $isHovering))
+        .onDrop(of: [.text], delegate: DayColumnDropDelegate(day: day, viewModel: viewModel, effectiveHourHeight: effectiveHourHeight, isTargeted: $isDropTargeted))
     }
 
     // Builds the grid lines for the hours
@@ -125,7 +124,7 @@ struct DayColumnView: View {
                 let centerX = placeholder.centerX
                 let centerY = placeholder.centerY
                 
-                DropPlaceholderView(height: calculatedHeight, time: viewModel.formatTime(for: targetTime))
+                DropPlaceholderView(height: calculatedHeight, time: viewModel.formatTime(targetTime))
                     .position(x: centerX, y: centerY)
                     .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: targetTime)
             }
@@ -158,6 +157,8 @@ struct DayColumnView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.0001)) // Ensure it captures clicks
+        .contentShape(Rectangle())
+
         .onTapGesture(coordinateSpace: .local) { location in
 
         }
@@ -166,7 +167,7 @@ struct DayColumnView: View {
 
     // Background color for the column
     private var columnBackground: some View {
-        let isDropTarget = isHovering && viewModel.interactionHandler.draggingSessionInfo != nil
+        let isDropTarget = isDropTargeted && viewModel.interactionHandler.draggingSessionInfo != nil
         return Rectangle()
             .fill(
                 isDropTarget ? Color.accentColor.opacity(0.15) :
@@ -183,10 +184,10 @@ struct DayColumnView: View {
                 isToday
                     ? Color.accentColor.opacity(0.4)
                     : Color.secondary.opacity(0.3),
-                lineWidth: isToday || isHovering ? 1 : 0.5
+                lineWidth: isToday ? 1 : 0.5
             )
             .frame(maxWidth: .infinity)
-            .animation(.easeOut(duration: 0.2), value: isHovering)
+            .animation(.easeOut(duration: 0.2), value: isToday)
     }
 }
 
@@ -269,14 +270,16 @@ struct DayColumnDropDelegate: DropDelegate {
         let newStartDate = calculateTargetTime(from: info.location)
         
         // Finalize the drop
-        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo {
+        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo,
+           let sessionID = UUID(uuidString: draggedItem.sessionID) {
             viewModel.rescheduleSession(
-                with: draggedItem.sessionID,
+                with: sessionID,
                 originalInstanceDate: draggedItem.originalInstanceDate,
                 to: newStartDate,
                 isAllDay: false
             )
         }
+
         
         // Reset dragging state
         viewModel.interactionHandler.draggingSessionInfo = nil

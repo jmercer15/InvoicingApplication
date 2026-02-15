@@ -15,6 +15,7 @@ import SwiftData
     // Existing properties
     public var id: UUID
     public var mmmZoneName: String?
+    public var calculatedAmount: Double?
     public var travelDistance: Double?
     public var travelDuration: Double?
     public var vehicleType: VehicleType?

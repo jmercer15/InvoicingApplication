@@ -5,18 +5,24 @@ import Core
 /// SwiftData implementation of ClientsRepository
 public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sendable {
     private let modelContext: ModelContext
+    private let mapper: ClientMapper
+    private let addressMapper: AddressMapper
     
-    public init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext, mapper: ClientMapper = ClientMapper(), addressMapper: AddressMapper = AddressMapper()) {
         self.modelContext = modelContext
+        self.mapper = mapper
+        self.addressMapper = addressMapper
     }
     
+    // ... (fetchAll, fetchActive, fetch x2 unchanged)
+
     public func fetchAll() async throws -> [Client] {
         let descriptor = FetchDescriptor<ClientEntity>(
             sortBy: [SortDescriptor(\.fullName, order: .forward)]
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -30,7 +36,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -41,7 +47,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Client(from: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -52,7 +58,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Client(from: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -61,83 +67,46 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         return try await MainActor.run {
             let predicate = #Predicate<ClientEntity> { c in c.id == client.id }
             let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-            if let existingEntity = try? modelContext.fetch(descriptor).first {
+            if var existingEntity = try? modelContext.fetch(descriptor).first {
                 // Entity already exists, update it instead
-                existingEntity.update(from: client)
-                
-                // Set or clear payee relationship
-                if let payeeId = client.payee?.id {
-                    let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
-                    let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
-                    if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
-                        existingEntity.payee = payeeEntity
-                    } else {
-                        existingEntity.payee = nil
-                    }
-                } else {
-                    existingEntity.payee = nil
-                }
+                self.mapper.updateEntity(&existingEntity, from: client)
+                self.updateRelationships(entity: existingEntity, client: client)
                 
                 do {
-                try modelContext.save()
+                    try modelContext.save()
                 } catch {
                     modelContext.rollback()
                     throw RepositoryError.saveFailed
                 }
-                return Client(from: existingEntity)
+                return self.mapper.mapToDomain(existingEntity)
             }
             
             // Check if entity with same NDIS number already exists (NDIS number is unique)
             let ndisPredicate = #Predicate<ClientEntity> { c in c.ndisNumber == client.ndisNumber }
             let ndisDescriptor = FetchDescriptor<ClientEntity>(predicate: ndisPredicate)
-            if let existingByNDIS = try? modelContext.fetch(ndisDescriptor).first {
+            if var existingByNDIS = try? modelContext.fetch(ndisDescriptor).first {
                 // Update existing entity instead of creating duplicate
-                existingByNDIS.update(from: client)
-                
-                // Set or clear payee relationship
-                if let payeeId = client.payee?.id {
-                    let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
-                    let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
-                    if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
-                        existingByNDIS.payee = payeeEntity
-                    } else {
-                        existingByNDIS.payee = nil
-                    }
-                } else {
-                    existingByNDIS.payee = nil
-                }
+                self.mapper.updateEntity(&existingByNDIS, from: client)
+                self.updateRelationships(entity: existingByNDIS, client: client)
                 
                 do {
-                try modelContext.save()
+                    try modelContext.save()
                 } catch {
                     modelContext.rollback()
                     throw RepositoryError.saveFailed
                 }
-                return Client(from: existingByNDIS)
+                return self.mapper.mapToDomain(existingByNDIS)
             }
             
             // Create new entity
-            let entity = ClientEntity(
+            var entity = ClientEntity(
                 id: client.id,
                 ndisNumber: client.ndisNumber,
                 fullName: client.fullName,
-                status: ClientStatus(rawValue: client.status) ?? .active,
-                // colorHex property removed - no longer supported
+                status: ClientStatus(rawValue: client.status) ?? .active
             )
-            entity.update(from: client)
-            
-            // Set or clear payee relationship
-            if let payeeId = client.payee?.id {
-                let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
-                let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
-                if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
-                    entity.payee = payeeEntity
-                } else {
-                    entity.payee = nil
-                }
-            } else {
-                entity.payee = nil
-            }
+            self.mapper.updateEntity(&entity, from: client)
+            self.updateRelationships(entity: entity, client: client)
             
             // Only insert if not already in context
             if entity.modelContext == nil {
@@ -145,12 +114,12 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Client(from: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -158,33 +127,61 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         return try await MainActor.run {
             let predicate = #Predicate<ClientEntity> { c in c.id == client.id }
             let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
-            guard let entity = try modelContext.fetch(descriptor).first else {
+            guard var entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: client)
-            
-            // Set or clear payee relationship
-            if let payeeId = client.payee?.id {
-                let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
-                let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
-                if let payeeEntity = try modelContext.fetch(payeeDescriptor).first {
-                    entity.payee = payeeEntity
-                } else {
-                    // Payee not found, clear relationship
-                    entity.payee = nil
-                }
-            } else {
-                // Explicitly clear relationship if no payee provided
-                entity.payee = nil
-            }
+            self.mapper.updateEntity(&entity, from: client)
+            self.updateRelationships(entity: entity, client: client)
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Client(from: entity)
+            return self.mapper.mapToDomain(entity)
+        }
+    }
+    
+    // Helper to update relationships
+    private func updateRelationships(entity: ClientEntity, client: Client) {
+        // Update Payee
+        if let payeeId = client.payee?.id {
+            let payeePredicate = #Predicate<PayeeEntity> { $0.id == payeeId }
+            let payeeDescriptor = FetchDescriptor<PayeeEntity>(predicate: payeePredicate)
+            if let payeeEntity = try? modelContext.fetch(payeeDescriptor).first {
+                entity.payee = payeeEntity
+            } else {
+                entity.payee = nil
+            }
+        } else {
+            entity.payee = nil
+        }
+        
+        // Update Address
+        if let address = client.address {
+            // Check if entity already has an address
+            if var addressEntity = entity.address {
+                // Update existing address
+                addressMapper.updateEntity(&addressEntity, from: address)
+            } else {
+                // Check if address entity exists in context (by ID)
+                let addressId = address.id
+                let addressPredicate = #Predicate<AddressEntity> { $0.id == addressId }
+                let addressDescriptor = FetchDescriptor<AddressEntity>(predicate: addressPredicate)
+                
+                if var existingAddress = try? modelContext.fetch(addressDescriptor).first {
+                    addressMapper.updateEntity(&existingAddress, from: address)
+                    entity.address = existingAddress
+                } else {
+                    // Create new address entity
+                    let newAddress = addressMapper.mapToEntity(address)
+                    modelContext.insert(newAddress)
+                    entity.address = newAddress
+                }
+            }
+        } else {
+            entity.address = nil
         }
     }
     
@@ -271,7 +268,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -284,7 +281,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -315,7 +312,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -329,7 +326,7 @@ public final class ClientsRepositorySwiftData: ClientsRepository, @unchecked Sen
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Client(from: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     

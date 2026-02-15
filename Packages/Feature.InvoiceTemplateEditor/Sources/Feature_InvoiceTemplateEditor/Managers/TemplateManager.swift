@@ -155,7 +155,14 @@ public class TemplateManager: ObservableObject, @unchecked Sendable {
         workspace.marginTopStr = String(format: "%.0f", document.margins.top)
         workspace.marginBottomStr = String(format: "%.0f", document.margins.bottom)
         
-        let thumbnailView = ModernCanvasView()
+        let thumbnailView = ModernCanvasView(
+            zoomScale: .constant(1.0),
+            viewportOffset: .constant(.zero),
+            showPalette: false,
+            showInspector: false,
+            paletteContent: { EmptyView() },
+            inspectorContent: { EmptyView() }
+        )
             .environmentObject(workspace)
             .environmentObject(workspace.editorViewModel)
             .environmentObject(document)

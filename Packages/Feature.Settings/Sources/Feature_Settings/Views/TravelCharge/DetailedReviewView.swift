@@ -73,7 +73,7 @@ struct DetailedReviewView: View {
                     dismiss()
                 }
                 .buttonStyle(.glass)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
                 
                 Spacer()
                 
@@ -81,7 +81,7 @@ struct DetailedReviewView: View {
                     applyAction()
                 }
                 .buttonStyle(.glassProminent)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
             }
             
             Spacer(minLength: 0)

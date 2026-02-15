@@ -57,6 +57,9 @@ struct InvoiceKanbanCardData: Identifiable, Equatable {
     let date: String
     let workflowStatus: KanbanCardData.WorkflowStatus
     let columnType: KanbanCardData.BillingColumnType
+    let isOverdue: Bool
+    let daysOverdue: Int?
+    let rawDate: Date?
 
     static func == (lhs: InvoiceKanbanCardData, rhs: InvoiceKanbanCardData) -> Bool {
         lhs.id == rhs.id
@@ -95,7 +98,7 @@ enum KanbanCardData: Identifiable, Equatable {
     }
 
     enum BillingColumnType: String, CaseIterable, Identifiable, Codable {
-        case completed, grouped, assignServices, addTravel, reviewDrafts, readyToSend, pending, received
+        case completed, grouped, addTravel, reviewDrafts, readyToSend, pending, received
         
         var id: String { rawValue }
     }
@@ -104,7 +107,8 @@ enum KanbanCardData: Identifiable, Equatable {
         lhs.id == rhs.id
     }
 
-    // Factory method for creating sample data (will be replaced with real data)
+    /// Factory method for creating preview/test data only. Real data flows through BillingHubViewModel.
+    /// - Note: This method is used exclusively by SwiftUI previews and unit tests.
     static func createSample(for column: BillingColumnType, index: Int) -> KanbanCardData {
         let clients = ["Sarah Johnson", "David Thompson", "Lisa Rodriguez", "James Anderson", "Emma Wilson"]
         let services = ["Personal Care", "Household Tasks", "Transport Support", "Community Access", "NDIS Plan Management"]
@@ -148,7 +152,7 @@ enum KanbanCardData: Identifiable, Equatable {
         switch column {
         case .completed, .grouped:
             return BillingHubTheme.Columns.preparing
-        case .assignServices, .addTravel, .reviewDrafts, .readyToSend:
+        case .addTravel, .reviewDrafts, .readyToSend:
             return BillingHubTheme.Columns.processing
         case .pending, .received:
             return BillingHubTheme.Columns.payment
@@ -159,7 +163,7 @@ enum KanbanCardData: Identifiable, Equatable {
         switch column {
         case .completed: return .completed
         case .grouped: return .grouped
-        case .assignServices, .addTravel: return .readyToInvoice
+        case .addTravel: return .readyToInvoice
         case .reviewDrafts: return .draftReview
         case .readyToSend: return .readyToSend
         case .pending: return .pendingPayment

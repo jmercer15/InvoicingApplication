@@ -31,48 +31,82 @@ public enum ClientStatus: String, CaseIterable, Codable {
 
 // MARK: - Invoice Status
 public enum InvoiceStatus: String, CaseIterable, Codable {
-    case draft = "Draft"
-    case sent = "Sent"
-    case paid = "Paid"
-    case overdue = "Overdue"
-    case cancelled = "Cancelled"
-    case voided = "Voided"
-    case ready = "Ready"
+    case reviewDraft = "review_draft"
+    case readyToSend = "ready_to_send"
+    case pending = "pending"
+    case received = "received"
+    case overdue = "overdue"
+    case cancelled = "cancelled"
+    case voided = "voided"
     
     public var displayName: String {
-        return self.rawValue
+        switch self {
+        case .reviewDraft: return "Review Draft"
+        case .readyToSend: return "Ready To Send"
+        case .pending: return "Pending"
+        case .received: return "Received"
+        case .overdue: return "Overdue"
+        case .cancelled: return "Cancelled"
+        case .voided: return "Voided"
+        }
     }
     
     public var color: String {
         switch self {
-        case .draft: return "gray"
-        case .sent: return "blue"
-        case .paid: return "green"
+        case .reviewDraft: return "gray"
+        case .readyToSend: return "yellow"
+        case .pending: return "blue"
+        case .received: return "green"
         case .overdue: return "red"
         case .cancelled: return "orange"
         case .voided: return "purple"
-        case .ready: return "yellow"
         }
+    }
+
+    /// Whether this status represents a settled invoice.
+    public var isSettled: Bool {
+        self == .received
+    }
+
+    /// Parses invoice statuses using canonical tokens only.
+    public init?(normalized status: String) {
+        self.init(rawValue: status)
     }
 }
 
 // MARK: - Session Status
 public enum SessionStatus: String, CaseIterable, Codable {
-    case scheduled = "Scheduled"
-    case completed = "Completed"
-    case cancelled = "Cancelled"
-    case noShow = "No Show"
-    case rescheduled = "Rescheduled"
-    case grouped = "Grouped"
-    case needsServices = "Needs Services"
-    case needsTravel = "Needs Travel"
-    case reviewDraft = "Review Draft"
-    case readyToSend = "Ready To Send"
-    case pending = "Pending"
-    case received = "Received"
+    case scheduled = "scheduled"
+    case completed = "completed"
+    case cancelled = "cancelled"
+    case noShow = "no_show"
+    case rescheduled = "rescheduled"
+    case grouped = "grouped"
+    case needsTravel = "needs_travel"
+    case reviewDraft = "review_draft"
+    case readyToSend = "ready_to_send"
+    case pending = "pending"
+    case received = "received"
     
     public var displayName: String {
-        return self.rawValue
+        switch self {
+        case .scheduled: return "Scheduled"
+        case .completed: return "Completed"
+        case .cancelled: return "Cancelled"
+        case .noShow: return "No Show"
+        case .rescheduled: return "Rescheduled"
+        case .grouped: return "Grouped"
+        case .needsTravel: return "Needs Travel"
+        case .reviewDraft: return "Review Draft"
+        case .readyToSend: return "Ready to Send"
+        case .pending: return "Pending"
+        case .received: return "Received"
+        }
+    }
+
+    /// Canonical token used across workflow features.
+    public var token: String {
+        rawValue
     }
     
     public var color: String {
@@ -83,13 +117,17 @@ public enum SessionStatus: String, CaseIterable, Codable {
         case .noShow: return "orange"
         case .rescheduled: return "yellow"
         case .grouped: return "indigo"
-        case .needsServices: return "yellow"
         case .needsTravel: return "cyan"
         case .reviewDraft: return "orange"
         case .readyToSend: return "blue"
         case .pending: return "gray"
         case .received: return "green"
         }
+    }
+
+    /// Parses normalized status strings used across features.
+    public init?(normalized status: String) {
+        self.init(rawValue: status)
     }
 }
 
@@ -122,6 +160,9 @@ public enum NDISClaimType: String, CaseIterable, Codable {
 
 // MARK: - Travel Charge Type
 public enum TravelChargeType: String, CaseIterable, Codable {
+    case labour = "labour"
+    case nonLabour = "non-labour"
+    case activityBased = "activity-based"
     case standard = "Standard"
     case tolls = "Tolls"
     case parking = "Parking"
@@ -136,6 +177,8 @@ public enum TravelChargeType: String, CaseIterable, Codable {
 
 // MARK: - Vehicle Type
 public enum VehicleType: String, CaseIterable, Codable {
+    case standardCar = "Standard Car"
+    case modifiedBus = "Modified/Bus"
     case car = "Car"
     case motorcycle = "Motorcycle"
     case bicycle = "Bicycle"
@@ -151,6 +194,8 @@ public enum VehicleType: String, CaseIterable, Codable {
 
 // MARK: - Travel Direction
 public enum TravelChargeDirection: String, CaseIterable, Codable {
+    case before = "before"
+    case after = "after"
     case toClient = "To Client"
     case fromClient = "From Client"
     case roundTrip = "Round Trip"

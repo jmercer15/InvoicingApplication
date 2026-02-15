@@ -16,7 +16,6 @@ import SwiftData
     public var serviceName: String = ""
     public var unit: String = ""
     public var rate: Double = 0.0
-    public var clientServiceID: Int32? = 0
     public var endDate: Date?
     public var isActive: Bool = true
     public var ndisCode: String?
@@ -48,4 +47,3 @@ import SwiftData
         return unit
     }
 }
-

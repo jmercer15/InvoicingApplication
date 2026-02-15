@@ -12,62 +12,47 @@ import Feature_Settings
 import Feature_NDIS
 import Feature_InvoiceTemplateEditor
 
-// Note: Repository types from Data module are used directly in makeInvoicesViewModel()
-
-// Helper function to create ModelContainer using Data module entities
-// This avoids the ambiguity between Foundation.Data and Data module, and between SharedUI/Data ModelContainerHelper
-private func createModelContainerSafely() -> ModelContainer? {
-    do {
-        let schema = Schema([
-            ClientEntity.self,
-            BusinessEntity.self,
-            AddressEntity.self,
-            InvoiceEntity.self,
-            InvoiceItemEntity.self,
-            ClientServiceEntity.self,
-            PayeeEntity.self,
-            PlanManagerEntity.self,
-            SessionEntity.self,
-            TravelChargeEntity.self,
-            TravelChargeAuditLog.self,
-            TravelChargeReviewItem.self,
-            CreditHistoryEntryEntity.self,
-            NDISItemEntity.self,
-            RegionalPriceEntity.self
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
-        print("Created ModelContainer with persistent storage")
-        return container
-    } catch {
-        print("Failed to create ModelContainer: \(error)")
-        return nil
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject private var appAssembly: AppAssembly
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedFeature: AppTab? = .invoices
-    @State private var navigationPath = NavigationPath()
     @State private var navigationHistory: [AppTab] = [.invoices]
     @State private var forwardHistory: [AppTab] = []
     @State private var canNavigateBack = false
     @State private var canNavigateForward = false
-    @StateObject private var invoicesViewModel = ContentView.makeInvoicesViewModel()
-    @StateObject private var relationshipsViewModel = ContentView.makeRelationshipsViewModel()
-    @StateObject private var calendarViewModel = ContentView.makeCalendarViewModel()
-    @StateObject private var templateEditorWorkspace: TemplateEditorWorkspaceViewModel = {
-        // Temporary initialization - will be replaced by AppAssembly in onAppear
-        let manager = TemplateManager()
-        let editor = InvoiceTemplateEditorViewModel(templateManager: manager)
-        return TemplateEditorWorkspaceViewModel(templateManager: manager, editorViewModel: editor)
-    }()
-    @StateObject private var settingsViewModel = ContentView.makeSettingsViewModel()
-    @StateObject private var ndisCatalogueViewModel = ContentView.makeNDISCatalogueViewModel()
-    @StateObject private var ndisBillingViewModel = ContentView.makeNDISBillingViewModel()
+    @State private var isHistoryNavigation = false
+    
+    // Inspector state for invoices feature
+    @State private var showInvoiceInspector = false
 
+    private var invoicesViewModel: InvoicesContainerViewModel {
+        appAssembly.makeInvoicesViewModel()
+    }
+
+    private var billingHubViewModel: BillingHubViewModel {
+        appAssembly.makeBillingHubViewModel()
+    }
+
+    private var relationshipsViewModel: RelationshipsContainerViewModel {
+        appAssembly.makeRelationshipsViewModel()
+    }
+
+    private var calendarViewModel: CalendarContainerViewModel {
+        appAssembly.makeCalendarContainerViewModel()
+    }
+
+    private var templateEditorWorkspace: TemplateEditorWorkspaceViewModel {
+        appAssembly.makeTemplateEditorWorkspace()
+    }
+
+    private var settingsViewModel: SettingsWorkspaceViewModel {
+        appAssembly.makeSettingsWorkspaceViewModel()
+    }
+
+    private var ndisCatalogueViewModel: NDISContainerViewModel {
+        appAssembly.makeNDISContainerViewModel()
+    }
 
     private var maxTabLabelWidth: CGFloat {
         let font = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -77,14 +62,96 @@ struct ContentView: View {
         return 20 + 8 + maxTextWidth + 24 + 16
     }
 
-    @ViewBuilder
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            mainContent
+        dynamicSplitView
+            .background(PanelShellTokens.panelBackground.ignoresSafeArea())
+            .navigationSplitViewStyle(.balanced)
+            .onAppear {
+                if let initialFeature = selectedFeature {
+                    updateNavigationHistory(for: initialFeature)
+                }
+            }
+            .onChange(of: selectedFeature) { _, newValue in
+                if let newValue {
+                    updateNavigationHistory(for: newValue)
+                }
+            }
+    }
+
+    @ViewBuilder
+    var dynamicSplitView: some View {
+        let activeFeature = selectedFeature ?? .invoices
+        let widthProfile = activeFeature.widthProfile
+
+        if activeFeature.splitStyle == .workspacePlusContentDetail {
+            NavigationSplitView {
+                sidebarColumn(with: widthProfile.sidebar)
+            } content: {
+                contentColumn(with: widthProfile)
+            } detail: {
+                detailColumn(with: widthProfile)
+            }
+        } else {
+            NavigationSplitView {
+                sidebarColumn(with: widthProfile.sidebar)
+            } detail: {
+                detailColumn(with: widthProfile)
+            }
         }
-        .navigationSplitViewStyle(.balanced)
+    }
+
+    private func sidebarColumn(with width: SplitViewColumnWidthProfile) -> some View {
+        sidebar
+            .background(PanelShellTokens.sidebarPanelBackground)
+            .overlay(alignment: .trailing) {
+                Rectangle()
+                    .fill(PanelShellTokens.sidebarDividerColor)
+                    .frame(width: 1)
+            }
+            .navigationSplitViewColumnWidth(
+                min: width.min,
+                ideal: width.ideal,
+                max: width.max
+            )
+    }
+
+    @ViewBuilder
+    private func contentColumn(with widthProfile: SplitViewWidthProfile) -> some View {
+        if let feature = selectedFeature {
+            featureContent(for: feature)
+                .id(feature)
+                .standardPanelShell(role: .contentPanel)
+                .navigationSplitViewColumnWidth(
+                    min: widthProfile.content?.min ?? 300,
+                    ideal: widthProfile.content?.ideal ?? 360,
+                    max: widthProfile.content?.max ?? 460
+                )
+        } else {
+            ContentUnavailableView("Select a Feature", systemImage: "sidebar.left")
+                .navigationSplitViewColumnWidth(
+                    min: widthProfile.content?.min ?? 300,
+                    ideal: widthProfile.content?.ideal ?? 360,
+                    max: widthProfile.content?.max ?? 460
+                )
+        }
+    }
+
+    @ViewBuilder
+    private func detailColumn(with widthProfile: SplitViewWidthProfile) -> some View {
+        let role: PanelShellRole = widthProfile.content == nil ? .singlePanel : .detailPanel
+        NavigationStack {
+            if let feature = selectedFeature {
+                featureDetail(for: feature)
+            } else {
+                ContentUnavailableView("Select a Feature", systemImage: "sidebar.left")
+            }
+        }
+        .standardPanelShell(role: role)
+        .navigationSplitViewColumnWidth(
+            min: widthProfile.detail.min,
+            ideal: widthProfile.detail.ideal,
+            max: widthProfile.detail.max
+        )
     }
 
     private var sidebar: some View {
@@ -98,64 +165,43 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(PanelShellTokens.sidebarPanelBackground)
         .applyDefaultSidebarRowSize()
         .navigationTitle("Workspace")
         .frame(minWidth: maxTabLabelWidth)
     }
 
-    private var mainContent: some View {
-        Group {
-            if selectedFeature == .invoiceTemplateEditor {
-                // Present template editor without NavigationStack to avoid conflicts
-                featureWorkspace(for: .invoiceTemplateEditor)
-                    .id(AppTab.invoiceTemplateEditor)
-            } else {
-                NavigationStack(path: $navigationPath) {
-                    // Root view - show selected feature or default
-                    Group {
-                        if let selectedFeature = selectedFeature {
-                            featureWorkspace(for: selectedFeature)
-                                .id(selectedFeature)
-                        } else {
-                            featureWorkspace(for: .invoices)
-                                .id(AppTab.invoices)
-                        }
-                    }
-                    .navigationDestination(for: AppTab.self) { feature in
-                        featureWorkspace(for: feature)
-                            .id(feature)
-                            .navigationTitle(feature.title)
-                            .onAppear {
-                                // Update navigation state when destination appears
-                                updateNavigationButtons()
-                            }
-                    }
+    // MARK: - Content Column (List/Middle)
+    @ViewBuilder
+    private func featureContent(for feature: AppTab) -> some View {
+        switch feature {
+        case .invoices:
+            InvoicesContentColumn(viewModel: invoicesViewModel)
+                .environment(\.modelContext, modelContext)
+        case .relationships:
+            RelationshipsContentColumn(viewModel: relationshipsViewModel)
+                .environment(\.modelContext, modelContext)
+        case .ndisCatalogue:
+            NDISCatalogueContentColumn(viewModel: ndisCatalogueViewModel)
+                .environment(\.modelContext, modelContext)
+                .onAppear {
+                    ndisCatalogueViewModel.updateContextIfNeeded(modelContext)
                 }
-            }
+        case .settings:
+            SettingsContentColumn(viewModel: settingsViewModel)
+        default:
+            EmptyView()
         }
+    }
+
+    // MARK: - Detail Column (Right/Main)
+    @ViewBuilder
+    private func featureDetail(for feature: AppTab) -> some View {
+        renderFeatureDetail(for: feature)
+            .id(feature)
         .onAppear {
-            // Initialize navigation path with default selection
-            if navigationPath.isEmpty {
-                let initialFeature = selectedFeature ?? .invoices
-                if initialFeature != .invoiceTemplateEditor {
-                    navigationPath.append(initialFeature)
-                }
-                updateNavigationHistory(for: initialFeature)
-            }
-        }
-        .onChange(of: selectedFeature) { _, newValue in
-            // Update navigation path when selection changes
-            if let newValue = newValue {
-                updateNavigationHistory(for: newValue)
-                if newValue != .invoiceTemplateEditor {
-                    navigationPath = NavigationPath()
-                    navigationPath.append(newValue)
-                }
-            }
-        }
-        .onOpenURL { url in
-            // Handle deep linking
-            handleDeepLink(url: url)
+            updateNavigationButtons()
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -173,205 +219,57 @@ struct ContentView: View {
                 .help("Go Forward")
                 .keyboardShortcut(.rightArrow, modifiers: .command)
             }
-            
-            ToolbarItem(placement: .principal) {
-                if let selectedFeature = selectedFeature {
-                    HStack(spacing: 4) {
-                        Image(systemName: selectedFeature.iconName)
-                            .foregroundColor(.accentColor)
-                        Text(selectedFeature.title)
-                            .font(.headline)
-                    }
-                }
-            }
-            
-            ToolbarItem(placement: .navigation) {
-                Menu {
-                    ForEach(AppTab.allCases) { feature in
-                        Button(action: {
-                            selectedFeature = feature
-                        }) {
-                            HStack {
-                                Image(systemName: feature.iconName)
-                                Text(feature.title)
-                                if selectedFeature == feature {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "list.bullet")
-                }
-            }
         }
     }
-
 
     @ViewBuilder
-    private func featureWorkspace(for feature: AppTab) -> some View {
-        ZStack {
-            AppMeshBackdrop()
-            switch feature {
-        case .invoices:
-            HSplitView {
-                InvoicesContentColumn(viewModel: invoicesViewModel)
+    private func renderFeatureDetail(for feature: AppTab) -> some View {
+        switch feature {
+            case .invoices:
+                InvoicesDetailColumn(viewModel: invoicesViewModel, showInspector: $showInvoiceInspector)
+                    .environment(\.modelContext, modelContext)
+                    .environmentObject(appAssembly.templateDataService)
+                    .environmentObject(templateEditorWorkspace.templateManager)
+
+            case .relationships:
+                 RelationshipsDetailColumn(viewModel: relationshipsViewModel)
                     .environment(\.modelContext, modelContext)
 
-                InvoicesDetailColumn(viewModel: invoicesViewModel, showInspector: .constant(false))
-                    .environment(\.modelContext, modelContext)
-            }
-        case .billingHub:
-            BillingHubView(viewModel: appAssembly.makeBillingHubViewModel())
-                .environment(\.modelContext, modelContext)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .invoiceTemplateEditor:
-            ModernTemplateEditorView(workspace: templateEditorWorkspace)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .environment(\.modelContext, modelContext)
-                .environmentObject(templateEditorWorkspace)
-                .environmentObject(templateEditorWorkspace.editorViewModel)
-                .environmentObject(appAssembly.templateDataService)
-        case .calendar:
-            CalendarContentColumn(viewModel: calendarViewModel, showInspector: .constant(false))
-                .environment(\.modelContext, modelContext)
-                .environmentObject(EventKitSyncService.shared)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear {
-                    calendarViewModel.updateContextIfNeeded(modelContext)
-                }
-        case .relationships:
-            HSplitView {
-                RelationshipsContentColumn(viewModel: relationshipsViewModel)
+            case .ndisCatalogue:
+                 NDISCatalogueDetailColumn(viewModel: ndisCatalogueViewModel)
                     .environment(\.modelContext, modelContext)
 
-                RelationshipsDetailColumn(viewModel: relationshipsViewModel)
-                    .environment(\.modelContext, modelContext)
-            }
-            .onAppear {
-                // Context is managed by ViewModel through repositories
-            }
-        case .ndisCatalogue:
-            HSplitView {
-                NDISCatalogueContentColumn(viewModel: ndisCatalogueViewModel)
-                    .environment(\.modelContext, modelContext)
-
-                NDISCatalogueDetailColumn(viewModel: ndisCatalogueViewModel)
-                    .environment(\.modelContext, modelContext)
-            }
-            .onAppear {
-                ndisCatalogueViewModel.updateContextIfNeeded(modelContext)
-            }
-        case .ndisBilling:
-            HSplitView {
-                NDISBillingContentColumn(viewModel: ndisBillingViewModel)
-                    .environment(\.modelContext, modelContext)
-
-                NDISBillingDetailColumn(viewModel: ndisBillingViewModel)
-            }
-            .onAppear {
-                ndisBillingViewModel.updateContextIfNeeded(modelContext)
-            }
-        case .testingArea:
-            TestingAreaView()
-                .environment(\.modelContext, modelContext)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .settings:
-            HSplitView {
-                SettingsContentColumn(viewModel: settingsViewModel)
-
+            case .settings:
                 SettingsDetailColumn(viewModel: settingsViewModel)
                     .environment(\.modelContext, modelContext)
-            }
-        }
-        }
-    }
 
-    private static func makeInvoicesViewModel() -> InvoicesContainerViewModel {
-        // For preview/initialization purposes, create temporary repositories
-        // Note: In production, this should use AppAssembly.makeInvoicesViewModel()
-        guard let container = createModelContainerSafely() else {
-            fatalError("Failed to create model container for invoices")
+            case .billingHub:
+                BillingHubView(viewModel: billingHubViewModel)
+                    .environment(\.modelContext, modelContext)
+                    .environment(\.openInvoice) { invoiceId in
+                        Task { @MainActor in
+                            selectedFeature = .invoices
+                            invoicesViewModel.selectInvoice(byId: invoiceId)
+                        }
+                    }
+                    .environment(\.openSession) { sessionId in
+                        Task { @MainActor in
+                            selectedFeature = .calendar
+                            await calendarViewModel.openSession(sessionID: sessionId)
+                        }
+                    }
+
+            case .calendar:
+                CalendarContentColumn(viewModel: calendarViewModel)
+                    .environmentObject(EventKitSyncService.shared)
+
+            case .invoiceTemplateEditor:
+                 ModernTemplateEditorView(workspace: templateEditorWorkspace)
+                    .environment(\.modelContext, modelContext)
+                    .environmentObject(templateEditorWorkspace)
+                    .environmentObject(templateEditorWorkspace.editorViewModel)
+                    .environmentObject(appAssembly.templateDataService)
         }
-        let modelContext = ModelContext(container)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
-        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: modelContext)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
-        return InvoicesContainerViewModel(
-            invoicesRepository: invoicesRepository,
-            clientServicesRepository: clientServicesRepository,
-            clientsRepository: clientsRepository
-        )
-    }
-
-    private static func makeRelationshipsViewModel() -> RelationshipsContainerViewModel {
-        // For preview/initialization purposes, create temporary repositories
-        // Note: In production, this should use AppAssembly.makeRelationshipsViewModel()
-        guard let container = createModelContainerSafely() else {
-            fatalError("Failed to create model container for relationships")
-        }
-        let modelContext = ModelContext(container)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: modelContext)
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: modelContext)
-        return RelationshipsContainerViewModel(
-            clientsRepository: clientsRepository,
-            payeesRepository: payeesRepository,
-            planManagersRepository: planManagersRepository,
-            navigationManager: AppNavigationManager.shared,
-            requestRelationshipDelete: { _ in }
-        )
-    }
-
-    private static func makeCalendarViewModel() -> CalendarContainerViewModel {
-        // For preview/initialization purposes, create temporary repositories
-        // Note: In production, this should use AppAssembly.makeCalendarContainerViewModel()
-        guard let container = createModelContainerSafely() else {
-            fatalError("Failed to create model container for calendar")
-        }
-        let dummyContext = ModelContext(container)
-        let sessionsRepository = SessionsRepositorySwiftData(modelContext: dummyContext)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: dummyContext)
-        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: dummyContext)
-        let addressRepository = AddressRepositorySwiftData(modelContext: dummyContext)
-        return CalendarContainerViewModel(
-            sessionsRepository: sessionsRepository,
-            clientsRepository: clientsRepository,
-            clientServicesRepository: clientServicesRepository,
-            addressRepository: addressRepository,
-            modelContext: dummyContext // Needed for EventKit external changes handling
-        )
-    }
-
-
-    private static func makeNDISCatalogueViewModel() -> NDISContainerViewModel {
-        guard let container = createModelContainerSafely() else {
-            fatalError("Failed to create model container for NDIS catalogue")
-        }
-        let dummyContext = ModelContext(container)
-        return NDISContainerViewModel(context: dummyContext)
-    }
-
-    private static func makeNDISBillingViewModel() -> NDISBillingWorkspaceViewModel {
-        guard let container = createModelContainerSafely() else {
-            fatalError("Failed to create model container for NDIS billing")
-        }
-        let dummyContext = ModelContext(container)
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: dummyContext)
-        let sessionsRepository = SessionsRepositorySwiftData(modelContext: dummyContext)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: dummyContext)
-        let ndisBillingService = NDISBillingIntegrationService(modelContext: dummyContext)
-        return NDISBillingWorkspaceViewModel(
-            clientsRepository: clientsRepository,
-            sessionsRepository: sessionsRepository,
-            invoicesRepository: invoicesRepository,
-            ndisBillingService: ndisBillingService,
-            modelContext: dummyContext
-        )
-    }
-
-    private static func makeSettingsViewModel() -> SettingsWorkspaceViewModel {
-        SettingsWorkspaceViewModel()
     }
 
     private var featuresHeader: some View {
@@ -394,9 +292,8 @@ struct ContentView: View {
         navigationHistory.removeLast()
         
         if let previousFeature = navigationHistory.last {
+            isHistoryNavigation = true
             selectedFeature = previousFeature
-            navigationPath = NavigationPath()
-            navigationPath.append(previousFeature)
         }
         
         updateNavigationButtons()
@@ -407,33 +304,31 @@ struct ContentView: View {
         
         // Get the next feature from forward history
         let nextFeature = forwardHistory.removeFirst()
-        
-        // Add current feature to forward history for potential back navigation
-        if let currentFeature = selectedFeature {
-            forwardHistory.insert(currentFeature, at: 0)
+
+        // Mirror browser-like forward navigation:
+        // moving forward should push the destination onto back history.
+        if navigationHistory.last != nextFeature {
+            navigationHistory.append(nextFeature)
+            optimizeNavigationPerformance()
         }
-        
+
         // Navigate to the next feature
+        isHistoryNavigation = true
         selectedFeature = nextFeature
-        navigationPath = NavigationPath()
-        navigationPath.append(nextFeature)
-        
-        // Update navigation history
-        navigationHistory.append(nextFeature)
-        
+
         updateNavigationButtons()
     }
-    
+
     private func updateNavigationHistory(for feature: AppTab) {
-        // Add to history if it's not already the last item
+        if isHistoryNavigation {
+            isHistoryNavigation = false
+            updateNavigationButtons()
+            return
+        }
+
         if navigationHistory.last != feature {
-            // Clear forward history when navigating to a new feature
             forwardHistory.removeAll()
-            
-            // Add to navigation history
             navigationHistory.append(feature)
-            
-            // Optimize navigation performance
             optimizeNavigationPerformance()
         }
         updateNavigationButtons()
@@ -443,48 +338,19 @@ struct ContentView: View {
         canNavigateBack = navigationHistory.count > 1
         canNavigateForward = !forwardHistory.isEmpty
     }
-    
-    // MARK: - Deep Linking Support
-    
-    private func handleDeepLink(url: URL) {
-        guard let scheme = url.scheme,
-              scheme == "invoicingapp" else { return }
-        
-        let pathComponents = url.pathComponents.filter { $0 != "/" }
-        
-        if let firstComponent = pathComponents.first,
-           let feature = AppTab.allCases.first(where: { $0.rawValue == firstComponent }) {
-            selectedFeature = feature
-            updateNavigationHistory(for: feature)
-            navigationPath = NavigationPath()
-            navigationPath.append(feature)
-        }
-    }
-    
-    // MARK: - Navigation Performance Optimization
-    
+
     private func optimizeNavigationPerformance() {
-        // Limit navigation history to prevent memory issues
         if navigationHistory.count > 20 {
             let excessCount = navigationHistory.count - 20
             navigationHistory.removeFirst(excessCount)
         }
-        
-        // Limit forward history to prevent memory issues
+
         if forwardHistory.count > 20 {
             let excessCount = forwardHistory.count - 20
             forwardHistory.removeLast(excessCount)
         }
-        
-        // Clear navigation path if it becomes too deep
-        if navigationPath.count > 10 {
-            navigationPath = NavigationPath()
-            if let currentFeature = selectedFeature {
-                navigationPath.append(currentFeature)
-            }
-        }
     }
-
+    
 }
 
 

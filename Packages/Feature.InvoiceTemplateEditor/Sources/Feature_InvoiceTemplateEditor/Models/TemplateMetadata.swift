@@ -1,17 +1,17 @@
 import Foundation
 
-struct TemplateMetadata: Codable {
-    let id: UUID
-    let name: String
-    let description: String
-    let createdAt: Date
-    let modifiedAt: Date
-    let version: String
-    let author: String
-    let tags: [String]
-    let thumbnailData: Data?
+public struct TemplateMetadata: Codable, Equatable, Sendable {
+    public let id: UUID
+    public let name: String
+    public let description: String
+    public let createdAt: Date
+    public let modifiedAt: Date
+    public let version: String
+    public let author: String
+    public let tags: [String]
+    public let thumbnailData: Data?
     
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         description: String = "",
@@ -34,27 +34,27 @@ struct TemplateMetadata: Codable {
     }
 }
 
-struct TemplateData: Codable {
-    let metadata: TemplateMetadata
-    let document: InvoiceDocumentData
+public struct TemplateData: Codable, Sendable {
+    public let metadata: TemplateMetadata
+    public let document: InvoiceDocumentData
     
-    init(metadata: TemplateMetadata, document: InvoiceDocumentData) {
+    public init(metadata: TemplateMetadata, document: InvoiceDocumentData) {
         self.metadata = metadata
         self.document = document
     }
 }
 
 // Separate data structure for InvoiceDocument to avoid @Published issues
-struct InvoiceDocumentData: Codable {
-    let components: [InvoiceComponent]
-    let margins: DocumentMarginsData
-    let zoom: CGFloat
+public struct InvoiceDocumentData: Codable, Sendable {
+    public let components: [InvoiceComponent]
+    public let margins: DocumentMarginsData
+    public let zoom: CGFloat
     
     // Optional fields for backward compatibility (older templates may not have these)
-    let sectionSplits: [Int: SectionSplit]? // Split structure with components, labels, and alignments
-    let pageSize: CGSize? // Page size (optional for backward compatibility)
+    public let sectionSplits: [Int: SectionSplit]? // Split structure with components, labels, and alignments
+    public let pageSize: CGSize? // Page size (optional for backward compatibility)
     
-    init(from document: InvoiceDocument) {
+    public init(from document: InvoiceDocument) {
         // Save all components (includes both legacy components and components in splits)
         self.components = document.getAllComponents()
         self.margins = DocumentMarginsData(from: document.margins)
@@ -66,7 +66,7 @@ struct InvoiceDocumentData: Codable {
         self.pageSize = document.pageSize
     }
     
-    func apply(to document: InvoiceDocument) {
+    public func apply(to document: InvoiceDocument) {
         // Restore document properties
         document.margins = margins.toDocumentMargins()
         document.zoom = zoom
@@ -95,20 +95,20 @@ struct InvoiceDocumentData: Codable {
     }
 }
 
-struct DocumentMarginsData: Codable {
-    let left: CGFloat
-    let right: CGFloat
-    let top: CGFloat
-    let bottom: CGFloat
+public struct DocumentMarginsData: Codable, Sendable {
+    public let left: CGFloat
+    public let right: CGFloat
+    public let top: CGFloat
+    public let bottom: CGFloat
     
-    init(from margins: InvoiceDocument.DocumentMargins) {
+    public init(from margins: InvoiceDocument.DocumentMargins) {
         self.left = margins.left
         self.right = margins.right
         self.top = margins.top
         self.bottom = margins.bottom
     }
     
-    func toDocumentMargins() -> InvoiceDocument.DocumentMargins {
+    public func toDocumentMargins() -> InvoiceDocument.DocumentMargins {
         return InvoiceDocument.DocumentMargins(
             left: left,
             right: right,

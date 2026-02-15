@@ -14,16 +14,14 @@ import SharedUI
 // MARK: - Billing Authority Enum
 
 struct ClientDetailView: View {
-    @Environment(\.modelContext) private var modelContext
+
     @Environment(\.dismiss) private var dismiss
     
-    // Use @Bindable for better SwiftData integration
-    @Bindable var client: ClientEntity
+    // ViewModel manages all state
+    @StateObject private var viewModel: ClientDetailViewModel
+    
     let isCreatingNew: Bool
     let onSave: (() -> Void)?
-    
-    // Add ViewModel for service management
-    @StateObject private var viewModel: ClientDetailViewModel
     
     // Enhanced state management
     @State private var showingServiceAssignment = false
@@ -49,39 +47,18 @@ struct ClientDetailView: View {
     @State private var servicesSortOrder: ServicesSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
     
-    init(client: ClientEntity, context: ModelContext, onSave: (() -> Void)? = nil) {
-        self.client = client
+    init(client: Client, unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
         self.isCreatingNew = false
         self.onSave = onSave
         
-        // Convert entity to domain model and create repositories
-        // Note: Using extension from Data.Mapping module
-        let clientDomain = clientFromEntity(client)
-        // Create temporary repositories for initialization
-        // In production, these should come from AppAssembly
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        let ndisItemsRepository = NDISItemRepositorySwiftData(modelContext: context)
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
-        
-        // Initialize ViewModel with domain model and repositories
+        // Initialize ViewModel with domain model and UnitOfWork
         self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(
-            client: clientDomain,
-            clientsRepository: clientsRepository,
-            clientServicesRepository: clientServicesRepository,
-            invoicesRepository: invoicesRepository,
-            ndisItemsRepository: ndisItemsRepository,
-            payeesRepository: payeesRepository,
-            planManagersRepository: planManagersRepository,
-            modelContext: context,
+            client: client,
+            unitOfWork: unitOfWork,
             isCreating: false
         ))
         
-        // Note: clientServices and relatedInvoices are loaded by ViewModel
-        
-        // Load existing address data
+        // Load existing address data from domain model
         if let address = client.address {
             _unitNumber = State(initialValue: address.unitNumber)
             _streetNumber = State(initialValue: address.streetNumber)
@@ -95,37 +72,17 @@ struct ClientDetailView: View {
         }
     }
     
-    init(context: ModelContext, onSave: (() -> Void)? = nil) {
-        let newClientEntity = ClientEntity(id: UUID(), ndisNumber: "", fullName: "", status: .active)
-        self.client = newClientEntity
+    init(unitOfWork: UnitOfWorkService, onSave: (() -> Void)? = nil) {
+        let newClient = Client(id: UUID(), ndisNumber: "", fullName: "", status: "Active")
         self.isCreatingNew = true
         self.onSave = onSave
         
-        // Convert entity to domain model
-        // Note: Using extension from Data.Mapping module
-        let clientDomain = clientFromEntity(newClientEntity)
-        // Create temporary repositories for initialization
-        let clientsRepository = ClientsRepositorySwiftData(modelContext: context)
-        let clientServicesRepository = ClientServicesRepositorySwiftData(modelContext: context)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: context)
-        let ndisItemsRepository = NDISItemRepositorySwiftData(modelContext: context)
-        let payeesRepository = PayeeRepositorySwiftData(modelContext: context)
-        let planManagersRepository = PlanManagerRepositorySwiftData(modelContext: context)
-        
         // Initialize ViewModel for new client
         self._viewModel = StateObject(wrappedValue: ClientDetailViewModel(
-            client: clientDomain,
-            clientsRepository: clientsRepository,
-            clientServicesRepository: clientServicesRepository,
-            invoicesRepository: invoicesRepository,
-            ndisItemsRepository: ndisItemsRepository,
-            payeesRepository: payeesRepository,
-            planManagersRepository: planManagersRepository,
-            modelContext: context,
+            client: newClient,
+            unitOfWork: unitOfWork,
             isCreating: true
         ))
-        
-        // Note: clientServices and relatedInvoices are loaded by ViewModel
     }
     
     var body: some View {
@@ -134,47 +91,21 @@ struct ClientDetailView: View {
             clientHeaderBar
             
             // Main Content
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    // Main content with ViewThatFits for adaptive layout
-                    ViewThatFits {
-                        // Primary layout: 2x2 grid (2 columns, 2 rows)
-                        VStack(spacing: 20) {
-                            // Row 1: 2 columns
-                            HStack(spacing: 20) {
-                                clientInfoCard
-                                    .frame(maxWidth: .infinity)
-                                billingInfoCard
-                                    .frame(maxWidth: .infinity)
-                            }
-                            
-                            // Row 2: 2 columns
-                            HStack(spacing: 20) {
-                                servicesCard
-                                    .frame(maxWidth: .infinity)
-                                invoicesCard
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        
-                        // Fallback layout: 1x4 grid (1 column, 4 rows)
-                        VStack(spacing: 20) {
-                            clientInfoCard
-                            billingInfoCard
-                            servicesCard
-                            invoicesCard
-                        }
-                    }
-                }
-                .padding(24)
+            DetailCardsLayout(minCardWidth: DetailSectionTokens.detailCardMinimumWidth) {
+                clientInfoCard
+                billingInfoCard
+                serviceAgreementsCard
+                servicesCard
+                invoicesCard
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.clear)
         .foregroundColor(Color("Text", bundle: .sharedUI))
 
         .sheet(isPresented: $showingServiceAssignment) {
             ServiceAssignmentSheetView(
-                client: client,
+                client: viewModel.client,
                 alreadySelectedItems: viewModel.assignedNDISItems,
                 availableNDISItems: viewModel.availableNDISItems,
                 onProceed: { selectedItems in
@@ -194,6 +125,11 @@ struct ClientDetailView: View {
             .fluidSheetTransition()
             .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isPresentingServiceBulkEditor)
         }
+        .sheet(isPresented: $viewModel.isPresentingServiceAgreementSheet) {
+            ServiceAgreementEditorSheet(viewModel: viewModel)
+                .fluidSheetTransition()
+                .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.isPresentingServiceAgreementSheet)
+        }
         .sheet(isPresented: $showingMapSheet) {
             InteractiveMapView(address: getCurrentAddressString())
             .fluidSheetTransition()
@@ -201,11 +137,34 @@ struct ClientDetailView: View {
         }
         .sheet(isPresented: $showingAddressEditingSheet) {
             ClientAddressEditingSheet(
-                client: client,
+                viewModel: viewModel,
                 isPresented: $showingAddressEditingSheet
             )
             .fluidSheetTransition()
             .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: showingAddressEditingSheet)
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if isCreatingNew {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            
+            ToolbarItem(placement: .confirmationAction) {
+                Button(isCreatingNew ? "Create Client" : "Save Changes") {
+                    viewModel.saveClientDetailsAndDismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.editableFullName.isEmpty)
+            }
+        }
+        .onAppear {
+            viewModel.dismiss = {
+                dismiss()
+                onSave?()
+            }
         }
 
         
@@ -214,83 +173,74 @@ struct ClientDetailView: View {
     // MARK: - Card Views
     
     private var clientInfoCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "person.circle")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Client Information")
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 16) {
-                                    // Name
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Name:")
-                            .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                // Name
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Name:")
+                        .frame(width: maxLabelWidth, alignment: .trailing)
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack {
-                        TextField("Enter client name", text: $client.fullName)
+                        TextField("Enter client name", text: $viewModel.editableFullName)
                             .textFieldStyle(.roundedBorder)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .accentColor(.blue)
+                            .onChange(of: viewModel.editableFullName) { viewModel.updateAndSaveClient() }
                         
-                        Button(action: { copyToClipboard(client.fullName) }) {
+                        Button(action: { copyToClipboard(viewModel.editableFullName) }) {
                             Image(systemName: "doc.on.doc")
                                 .foregroundColor(.gray)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .pointerStyle(.link)
                     }
                 }
                 
-                                    // Email
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Email:")
-                            .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                // Email
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Email:")
+                        .frame(width: maxLabelWidth, alignment: .trailing)
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack {
-                        TextField("Enter email address", text: Binding(
-                            get: { client.email ?? "" },
-                            set: { client.email = $0.isEmpty ? nil : $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        TextField("Enter email address", text: $viewModel.emailValidator.email)
+                            .textFieldStyle(.roundedBorder)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                            .accentColor(.blue)
+                            .onChange(of: viewModel.emailValidator.email) { viewModel.updateAndSaveClient() }
                         
-                        Button(action: { copyToClipboard(client.email ?? "") }) {
+                        Button(action: { copyToClipboard(viewModel.emailValidator.email) }) {
                             Image(systemName: "doc.on.doc")
                                 .foregroundColor(.gray)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .pointerStyle(.link)
                     }
                 }
                 
-                                    // Phone
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Phone:")
-                            .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                // Phone
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Phone:")
+                        .frame(width: maxLabelWidth, alignment: .trailing)
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack {
-                        TextField("Enter phone number", text: Binding(
-                            get: { client.phone ?? "" },
-                            set: { client.phone = $0.isEmpty ? nil : $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
+                        TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
+                            .textFieldStyle(.roundedBorder)
+                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                            .accentColor(.blue)
+                            .onChange(of: viewModel.phoneFormatter.phoneNumber) { viewModel.updateAndSaveClient() }
                         
-                        Button(action: { copyToClipboard(client.phone ?? "") }) {
+                        Button(action: { copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
                             Image(systemName: "doc.on.doc")
                                 .foregroundColor(.gray)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .pointerStyle(.link)
                     }
                 }
                 
@@ -301,7 +251,6 @@ struct ClientDetailView: View {
                 
                 // Divider before NDIS section
                 Divider()
-                    .glassEffect(.regular, in: .rect())
                     .padding(.vertical, 8)
                 
                 // Has NDIS Plan - Top of NDIS section
@@ -310,47 +259,50 @@ struct ClientDetailView: View {
                         .frame(width: maxLabelWidth, alignment: .trailing)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
-                    Toggle("", isOn: $client.hasNdisPlan)
+                    Toggle("", isOn: $viewModel.editableHasNdisPlan)
                         .toggleStyle(.switch)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                         .labelsHidden()
+                        .onChange(of: viewModel.editableHasNdisPlan) { viewModel.updateAndSaveClient() }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // NDIS Number - Only shown when "Has NDIS Plan" is true
-                if client.hasNdisPlan {
+                if viewModel.editableHasNdisPlan {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("NDIS:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
                         HStack {
-                            TextField("Enter NDIS number", text: $client.ndisNumber)
+                            TextField("Enter NDIS number", text: $viewModel.editableNdisNumber)
                                 .textFieldStyle(.roundedBorder)
                                 .foregroundColor(Color("Text", bundle: .sharedUI))
                                 .accentColor(.blue)
+                                .onChange(of: viewModel.editableNdisNumber) { viewModel.updateAndSaveClient() }
                             
-                            Button(action: { copyToClipboard(client.ndisNumber) }) {
+                            Button(action: { copyToClipboard(viewModel.editableNdisNumber) }) {
                                 Image(systemName: "doc.on.doc")
                                     .foregroundColor(.gray)
+                                    .contentShape(.rect)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                     .fluidListTransition()
-                    .animation(.easeInOut(duration: 0.3), value: client.hasNdisPlan)
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.editableHasNdisPlan)
                 }
                 
                 // Plan Management Type - Only shown when "Has NDIS Plan" is true
-                if client.hasNdisPlan {
+                if viewModel.editableHasNdisPlan {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Type:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
                         Picker("", selection: Binding(
-                            get: { client.planManagementType ?? "Self-Managed" },
-                            set: { client.planManagementType = $0 }
+                            get: { viewModel.editablePlanManagementType ?? "Self-Managed" },
+                            set: { viewModel.editablePlanManagementType = $0; viewModel.updateAndSaveClient() }
                         )) {
                             Text("Self-Managed").tag("Self-Managed")
                             Text("Plan-Managed").tag("Plan-Managed")
@@ -359,11 +311,11 @@ struct ClientDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.hasNdisPlan)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.editableHasNdisPlan)
                 }
                 
                 // Plan Manager - Only shown when Type is "Plan-Managed"
-                if client.hasNdisPlan && client.planManagementType == "Plan-Managed" {
+                if viewModel.editableHasNdisPlan && viewModel.editablePlanManagementType == "Plan-Managed" {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Plan Manager:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
@@ -384,17 +336,16 @@ struct ClientDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.planManagementType)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.editablePlanManagementType)
                 }
                 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+            .padding(DetailSectionTokens.contentPadding)
+        } label: {
+            DetailSectionHeader(icon: "person.circle", title: "Client Information")
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading client information...")
     }
     
 
@@ -402,19 +353,7 @@ struct ClientDetailView: View {
 
     
     private var billingInfoCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "creditcard")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Billing Information")
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 12) {
                 // Options - Always shown first
                 HStack(spacing: 16) {
@@ -424,14 +363,15 @@ struct ClientDetailView: View {
                             .frame(width: maxLabelWidth, alignment: .trailing)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                         
-                        Toggle("", isOn: $client.isMinor)
+                        Toggle("", isOn: $viewModel.editableIsMinor)
                             .toggleStyle(.switch)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .labelsHidden()
-                            .onChange(of: client.isMinor) { _, isMinor in
+                            .onChange(of: viewModel.editableIsMinor) { _, isMinor in
                                 if isMinor {
-                                    client.billingAuthority = .parentGuardian
+                                    viewModel.editableBillingAuthority = .parentGuardian
                                 }
+                                viewModel.updateAndSaveClient()
                             }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -447,21 +387,21 @@ struct ClientDetailView: View {
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     Picker("", selection: Binding(
-                        get: { client.billingAuthority?.rawValue ?? "Client" },
-                        set: { client.billingAuthority = BillingAuthority(rawValue: $0) ?? .client }
+                        get: { viewModel.editableBillingAuthority },
+                        set: { viewModel.editableBillingAuthority = $0; viewModel.updateAndSaveClient() }
                     )) {
-                        if !client.isMinor {
-                            Text("Client").tag("Client")
+                        if !viewModel.editableIsMinor {
+                            Text("Client").tag(BillingAuthority.client)
                         }
-                        Text("Parent/Guardian").tag(BillingAuthority.parentGuardian.rawValue)
+                        Text("Parent/Guardian").tag(BillingAuthority.parentGuardian)
                     }
-                    .disabled(client.isMinor)
+                    .disabled(viewModel.editableIsMinor)
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
                 // Parent/Guardian - Only shown when Authority is "Parent/Guardian"
-                if client.billingAuthority == .parentGuardian {
+                if viewModel.editableBillingAuthority == .parentGuardian {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Parent/Guardian:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
@@ -482,7 +422,7 @@ struct ClientDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .fluidListTransition()
-                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: client.billingAuthority)
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.7), value: viewModel.editableBillingAuthority)
                 }
                 
                 // Credit Amount - Always shown
@@ -492,17 +432,16 @@ struct ClientDetailView: View {
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     
                     HStack {
-                        TextField("0.00", text: Binding(
-                            get: { String(format: "%.2f", client.creditAmount) },
-                            set: { client.creditAmount = Double($0) ?? 0.0 }
-                        ))
+                        TextField("0.00", text: $viewModel.editableCreditAmountString)
                             .textFieldStyle(.roundedBorder)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
                             .accentColor(.blue)
+                            .onChange(of: viewModel.editableCreditAmountString) { viewModel.updateAndSaveClient() }
                         
-                        Button(action: { copyToClipboard(String(format: "%.2f", client.creditAmount)) }) {
+                        Button(action: { copyToClipboard(viewModel.editableCreditAmountString) }) {
                             Image(systemName: "doc.on.doc")
                                 .foregroundColor(.gray)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                     }
@@ -510,7 +449,6 @@ struct ClientDetailView: View {
                 
                 // Divider before Email Recipients section
                 Divider()
-                    .glassEffect(.regular, in: .rect())
                     .padding(.vertical, 8)
                 
                 // Email Recipients Section
@@ -521,10 +459,10 @@ struct ClientDetailView: View {
                         .padding(.bottom, 4)
                     
                     // Client Email Recipient
-                    if let clientEmail = client.email, !clientEmail.isEmpty {
+                    if let clientEmail = viewModel.client.email, !clientEmail.isEmpty {
                         HStack(alignment: .center, spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(client.fullName)
+                                Text(viewModel.client.fullName)
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(Color("Text", bundle: .sharedUI))
                                 Text(clientEmail)
@@ -533,19 +471,19 @@ struct ClientDetailView: View {
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { client.sendInvoicesToClient ?? true },
-                                set: { client.sendInvoicesToClient = $0 }
+                                get: { viewModel.client.sendInvoicesToClient ?? true },
+                                set: { viewModel.updateAndSaveClientToggle(sendInvoicesToClient: $0) }
                             ))
                             .toggleStyle(.switch)
                             .labelsHidden()
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
+
                     }
                     
                     // Payee Email Recipient
-                    if let payee = client.payee, let payeeEmail = payee.email, !payeeEmail.isEmpty {
+                    if let payee = viewModel.client.payee, let payeeEmail = payee.email, !payeeEmail.isEmpty {
                         HStack(alignment: .center, spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(payee.fullName)
@@ -557,25 +495,25 @@ struct ClientDetailView: View {
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { client.sendInvoicesToPayee ?? true },
-                                set: { client.sendInvoicesToPayee = $0 }
+                                get: { viewModel.client.sendInvoicesToPayee ?? true },
+                                set: { viewModel.updateAndSaveClientToggle(sendInvoicesToPayee: $0) }
                             ))
                             .toggleStyle(.switch)
                             .labelsHidden()
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
+
                     }
                     
                     // Plan Manager Email Recipient
-                    if client.hasNdisPlan && client.planManagementType == "Plan-Managed", 
-                       let planManager = client.planManager, 
+                    if viewModel.client.hasNdisPlan && viewModel.client.planManagementType == "Plan-Managed", 
+                       let planManager = viewModel.client.planManager, 
                        let planManagerEmail = planManager.email, 
                        !planManagerEmail.isEmpty {
                         HStack(alignment: .center, spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(planManager.name ?? "Unnamed Plan Manager")
+                                Text(planManager.name)
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(Color("Text", bundle: .sharedUI))
                                 Text(planManagerEmail)
@@ -584,86 +522,126 @@ struct ClientDetailView: View {
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { client.sendInvoicesToPlanManager ?? true },
-                                set: { client.sendInvoicesToPlanManager = $0 }
+                                get: { viewModel.client.sendInvoicesToPlanManager ?? true },
+                                set: { viewModel.updateAndSaveClientToggle(sendInvoicesToPlanManager: $0) }
                             ))
                             .toggleStyle(.switch)
                             .labelsHidden()
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
+
                     }
                     
                     // No email recipients message
-                    if (client.email?.isEmpty ?? true) && 
-                       (client.payee?.email?.isEmpty ?? true) && 
-                       (client.planManager?.email?.isEmpty ?? true) {
+                    if (viewModel.client.email?.isEmpty ?? true) && 
+                       (viewModel.client.payee?.email?.isEmpty ?? true) && 
+                       (viewModel.client.planManager?.email?.isEmpty ?? true) {
                         Text("No email addresses available. Add email addresses to the relevant entities to configure invoice recipients.")
                             .font(.system(size: 11))
                             .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .glassEffect(.regular, in: .rect(cornerRadius: 6))
+
                     }
                 }
                 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+            .padding(DetailSectionTokens.contentPadding)
+        } label: {
+            DetailSectionHeader(icon: "creditcard", title: "Billing Information")
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading billing information...")
     }
-    
+
+    private var serviceAgreementsCard: some View {
+        GroupBox {
+            VStack(spacing: 12) {
+                DetailListBody(
+                    isEmpty: viewModel.serviceAgreements.isEmpty,
+                    emptyMessage: "No service agreements"
+                ) {
+                    ForEach(viewModel.serviceAgreements) { agreement in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(serviceAgreementDateRange(agreement))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("Cancellation: \(agreement.cancellationPolicyType)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    if agreement.allowsProviderTravel {
+                                        Label("Travel", systemImage: "car.fill")
+                                            .font(.caption2)
+                                    }
+                                    if agreement.allowsTelehealth {
+                                        Label("Telehealth", systemImage: "video.fill")
+                                            .font(.caption2)
+                                    }
+                                    if agreement.allowsNonFaceToFace {
+                                        Label("NF2F", systemImage: "person.2.fill")
+                                            .font(.caption2)
+                                    }
+                                }
+                                .foregroundStyle(.secondary)
+                                if agreement.isArchived {
+                                    Text("Archived")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Menu {
+                                Button("Edit") {
+                                    viewModel.prepareToEditServiceAgreement(agreement)
+                                }
+                                if !agreement.isArchived {
+                                    Button("Archive", role: .destructive) {
+                                        viewModel.archiveServiceAgreement(agreement)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                            }
+                            .menuStyle(.borderlessButton)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Add Agreement") {
+                        viewModel.prepareToAddServiceAgreement()
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
+                }
+                .padding(DetailSectionTokens.listRowInsets)
+            }
+        } label: {
+            DetailSectionHeader(icon: "doc.text", title: "Service Agreements")
+        }
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading service agreements...")
+    }
 
     
     private var servicesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "list.bullet")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Services")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $servicesSortOrder) {
-                    ForEach(ServicesSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
+        GroupBox {
+            VStack {
+                DetailListBody(
+                    isEmpty: viewModel.clientServices.isEmpty,
+                    emptyMessage: "No services assigned",
+                    maxHeight: DetailSectionTokens.listMinHeight
+                ) {
+                    ForEach(sortedServices) { service in
+                        CompactServiceRowView(service: service)
                     }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
-            VStack(spacing: 12) {
-                if viewModel.clientServices.isEmpty {
-                    Text("No services assigned")
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedServices) { service in
-                                CompactServiceRowView(service: service)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
-                    }
-                    .frame(maxHeight: 200)
                 }
                 
                 HStack {
@@ -674,70 +652,36 @@ struct ClientDetailView: View {
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)
                 }
+                .padding(DetailSectionTokens.listRowInsets)
                 
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "list.bullet", title: "Services") {
+                DetailSectionSortPicker(selection: $servicesSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading services...")
     }
     
     private var invoicesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.text")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                    Text("Invoices")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-                
-                Spacer()
-                
-                Picker("Sort", selection: $invoicesSortOrder) {
-                    ForEach(InvoicesSortOrder.allCases, id: \.self) { sortOrder in
-                        Text(sortOrder.displayName).tag(sortOrder)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            
+        GroupBox {
             VStack(spacing: 12) {
-                if viewModel.relatedInvoices.isEmpty {
-                    Text("No invoices found")
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedInvoices) { invoice in
-                                CompactInvoiceRowView(invoice: invoice)
-                            }
-                        }
-                        .padding(.horizontal, 0)
-                        .padding(.vertical, 4)
+                DetailListBody(
+                    isEmpty: viewModel.relatedInvoices.isEmpty,
+                    emptyMessage: "No invoices found"
+                ) {
+                    ForEach(sortedInvoices) { invoice in
+                        CompactInvoiceRowView(invoice: invoice)
                     }
-                    .frame(maxHeight: 200)
                 }
                 
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .frame(minHeight: 120)
+        } label: {
+            DetailSectionHeader(icon: "doc.text", title: "Invoices") {
+                DetailSectionSortPicker(selection: $invoicesSortOrder)
+            }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
-        
+        .loadingOverlay(isLoading: viewModel.isLoading, message: "Loading invoices...")
     }
     
     // MARK: - Header Bar
@@ -750,7 +694,7 @@ struct ClientDetailView: View {
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(client.fullName.isEmpty ? "New Client" : client.fullName)
+                    Text(viewModel.editableFullName.isEmpty ? "New Client" : viewModel.editableFullName)
                         .font(.largeTitle.weight(.regular))
                         .kerning(5.0)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -773,25 +717,27 @@ struct ClientDetailView: View {
     
     // MARK: - Computed Properties
     
-    /// Convert AddressEntity to AddressData for UI components
+
+    
+    /// Convert domain address to AddressData for UI components
     private var addressData: AddressData {
         get {
-            return client.address != nil ? AddressData(from: client.address!) : AddressData()
+            if let address = viewModel.client.address {
+                return AddressData(
+                    unitNumber: address.unitNumber,
+                    streetNumber: address.streetNumber,
+                    streetName: address.streetName,
+                    suburb: address.suburb,
+                    state: address.state,
+                    postcode: address.postcode,
+                    country: address.country,
+                    poBox: address.poBox
+                )
+            }
+            return AddressData()
         }
         set {
-            if client.address == nil {
-                client.address = newValue.toAddressEntity()
-            } else {
-                // Update existing address
-                client.address?.unitNumber = newValue.unitNumber
-                client.address?.streetNumber = newValue.streetNumber
-                client.address?.streetName = newValue.streetName
-                client.address?.suburb = newValue.suburb
-                client.address?.state = newValue.state
-                client.address?.postcode = newValue.postcode
-                client.address?.country = newValue.country
-                client.address?.poBox = newValue.poBox
-            }
+            // Address data is updated via ViewModel commitAddressChanges
         }
     }
     
@@ -833,15 +779,15 @@ struct ClientDetailView: View {
         case .amountDesc:
             return viewModel.relatedInvoices.sorted { $0.totalAmount > $1.totalAmount }
         case .clientName:
-            return viewModel.relatedInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
+            return viewModel.relatedInvoices.sorted { $0.status < $1.status }
         case .numberAsc:
             return viewModel.relatedInvoices.sorted { $0.invoiceNumber < $1.invoiceNumber }
         case .numberDesc:
             return viewModel.relatedInvoices.sorted { $0.invoiceNumber > $1.invoiceNumber }
         case .statusAsc:
-            return viewModel.relatedInvoices.sorted { ($0.status ?? "") < ($1.status ?? "") }
+            return viewModel.relatedInvoices.sorted { $0.status < $1.status }
         case .statusDesc:
-            return viewModel.relatedInvoices.sorted { ($0.status ?? "") > ($1.status ?? "") }
+            return viewModel.relatedInvoices.sorted { $0.status > $1.status }
         }
     }
     
@@ -873,49 +819,20 @@ struct ClientDetailView: View {
     
     // MARK: - Helper Methods
     
-    private func saveContext() -> Bool {
-        do {
-            try modelContext.save()
-            return true
-        } catch {
-            print("Error saving context: \(error)")
-            return false
-        }
-    }
-    
-    private func createClientAndDismiss() {
-        let trimmedName = client.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedName.isEmpty { return }
-        
-        client.fullName = trimmedName
-        
-        if isCreatingNew {
-            modelContext.insert(client)
-        }
-        
-        if saveContext() {
-            if isCreatingNew && onSave != nil {
-                onSave?()
-            } else {
-                dismiss()
-            }
-        }
-    }
-    
-    private func deleteClientAndDismiss() {
-        modelContext.delete(client)
-        if saveContext() {
-            dismiss()
-        }
-    }
+
     
     private func openInMaps() {
-        guard let address = client.address else { return }
-        let query = address.formattedAddress
-        if let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed),
-           let url = URL(string: "maps://?q=\(encodedQuery)") {
-            NSWorkspace.shared.open(url)
+        viewModel.openInMaps()
+    }
+
+    private func serviceAgreementDateRange(_ agreement: ServiceAgreement) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let from = formatter.string(from: agreement.effectiveFrom)
+        if let to = agreement.effectiveTo {
+            return "\(from) - \(formatter.string(from: to))"
         }
+        return "\(from) onwards"
     }
     
     private func copyToClipboard(_ text: String) {
@@ -1056,8 +973,8 @@ extension ClientDetailView {
         !suburb.isEmpty || !state.isEmpty || !postcode.isEmpty || 
         !country.isEmpty || !poBox.isEmpty
         
-        // Check existing address from entity
-        let hasExistingAddress = client.address != nil && !client.address!.fullAddressText.isEmpty
+        // Check existing address from domain model
+        let hasExistingAddress = viewModel.client.address != nil && !viewModel.client.address!.fullFormattedAddress.isEmpty
         
         return hasStateData || hasExistingAddress
     }
@@ -1077,7 +994,6 @@ extension ClientDetailView {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 } else {
                     Text("No address added")
                         .font(.system(size: 14))
@@ -1086,7 +1002,6 @@ extension ClientDetailView {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 6))
                 }
                 
                 if hasAddressData {
@@ -1097,11 +1012,12 @@ extension ClientDetailView {
                             Image(systemName: "map")
                                 .foregroundColor(.blue)
                                 .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
+                        .pointerStyle(.link)
                         
                         Button(action: {
                             showingAddressEditingSheet = true
@@ -1109,11 +1025,12 @@ extension ClientDetailView {
                             Image(systemName: "pencil")
                                 .foregroundColor(.orange)
                                 .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 4))
+                        .pointerStyle(.link)
                     }
                 } else {
                     Button(action: {
@@ -1122,11 +1039,12 @@ extension ClientDetailView {
                         Image(systemName: "plus")
                             .foregroundColor(.green)
                             .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 4))
+                    .pointerStyle(.link)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1154,72 +1072,19 @@ extension ClientDetailView {
     
     private func getCurrentAddressString() -> String {
         // If we have existing address data, use that
-        if let address = client.address, !address.fullAddressText.isEmpty {
-            return address.formattedAddress
+        if let address = viewModel.client.address, !address.fullFormattedAddress.isEmpty {
+            return address.fullFormattedAddress
         }
         
         // Otherwise use the state variables for compact address
         return formatAddressForDisplay()
-    }
-    
-    private func currentAddressView(_ address: AddressEntity) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Current Address:")
-                    .font(.title3.weight(.bold)).foregroundColor(Color("Text", bundle: .sharedUI)).padding(.bottom, 4)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    Button("Edit") {
-                        // Populate form fields with existing address data
-                        unitNumber = address.unitNumber
-                        streetNumber = address.streetNumber
-                        streetName = address.streetName
-                        suburb = address.suburb
-                        state = address.state
-                        postcode = address.postcode
-                        country = address.country
-                        poBox = address.poBox
-                        addressSearchText = address.fullAddressText
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    
-                    Button("Clear") {
-                        // Clear all address fields
-                        unitNumber = ""
-                        streetNumber = ""
-                        streetName = ""
-                        suburb = ""
-                        state = ""
-                        postcode = ""
-                        country = ""
-                        poBox = ""
-                        addressSearchText = ""
-                        selectedAddress = nil
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    .foregroundColor(.red)
-                }
-            }
-            
-            Text(address.fullFormattedAddress)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                .font(.system(size: 14))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .glassEffect(.regular, in: .rect(cornerRadius: 6))
-        }
     }
 }
 
 // MARK: - Client Address Editing Sheet
 
 struct ClientAddressEditingSheet: View {
-    @Bindable var client: ClientEntity
+    @ObservedObject var viewModel: ClientDetailViewModel
     @Binding var isPresented: Bool
     
     @State private var isManualMode = false
@@ -1239,22 +1104,10 @@ struct ClientAddressEditingSheet: View {
     /// Convert AddressEntity to AddressData for UI components
     private var addressData: AddressData {
         get {
-            return client.address != nil ? AddressData(from: client.address!) : AddressData()
+            return AddressData()
         }
         set {
-            if client.address == nil {
-                client.address = newValue.toAddressEntity()
-            } else {
-                // Update existing address
-                client.address?.unitNumber = newValue.unitNumber
-                client.address?.streetNumber = newValue.streetNumber
-                client.address?.streetName = newValue.streetName
-                client.address?.suburb = newValue.suburb
-                client.address?.state = newValue.state
-                client.address?.postcode = newValue.postcode
-                client.address?.country = newValue.country
-                client.address?.poBox = newValue.poBox
-            }
+            // Unused
         }
     }
     
@@ -1361,7 +1214,7 @@ struct ClientAddressEditingSheet: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: .rect())
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
             loadExistingAddressData()
@@ -1369,31 +1222,56 @@ struct ClientAddressEditingSheet: View {
     }
     
     private func loadExistingAddressData() {
-        if let address = client.address {
-            unitNumber = address.unitNumber
-            streetNumber = address.streetNumber
-            streetName = address.streetName
-            suburb = address.suburb
-            postcode = address.postcode
-            state = address.state
-            country = address.country
-            poBox = address.poBox
-            addressSearchText = address.fullFormattedAddress
-        }
+        // Load from ViewModel (already loaded from entity)
+        unitNumber = viewModel.editableUnitNumber
+        streetNumber = viewModel.editableStreetNumber
+        streetName = viewModel.editableStreetName
+        suburb = viewModel.editableSuburb
+        postcode = viewModel.editablePostcode
+        state = viewModel.editableState
+        country = viewModel.editableCountry
+        poBox = viewModel.editablePoBox
+        
+        // Construct display string from VM properties for search text if needed
+        let address = Address(
+            id: UUID(),
+            unitNumber: unitNumber,
+            streetNumber: streetNumber,
+            streetName: streetName,
+            suburb: suburb,
+            city: viewModel.editableCity,
+            state: state,
+            postcode: postcode,
+            country: country,
+            poBox: poBox,
+            latitude: 0,
+            longitude: 0
+        )
+        addressSearchText = address.fullFormattedAddress
     }
     
     private var hasAddressData: Bool {
         // Check state variables (for editing)
-        let hasStateData = !unitNumber.isEmpty || !streetNumber.isEmpty || !streetName.isEmpty || 
-        !suburb.isEmpty || !state.isEmpty || !postcode.isEmpty || 
-        !country.isEmpty || !poBox.isEmpty
-        
-        // Check existing address from entity
-        let hasExistingAddress = client.address != nil && !client.address!.fullAddressText.isEmpty
-        
-        return hasStateData || hasExistingAddress
+        return !unitNumber.isEmpty || !streetNumber.isEmpty || !streetName.isEmpty || 
+               !suburb.isEmpty || !state.isEmpty || !postcode.isEmpty || 
+               !country.isEmpty || !poBox.isEmpty
     }
     
+    private func commitAddressChanges() {
+        // Update ViewModel properties with form data
+        viewModel.editableUnitNumber = unitNumber
+        viewModel.editableStreetNumber = streetNumber
+        viewModel.editableStreetName = streetName
+        viewModel.editableSuburb = suburb
+        viewModel.editablePostcode = postcode
+        viewModel.editableState = state
+        viewModel.editableCountry = country
+        viewModel.editablePoBox = poBox
+        
+        // Trigger VM to commit changes to client
+        viewModel.commitAddressChanges()
+    }
+
     private var manualAddressFields: some View {
         VStack(spacing: 8) {
             // Header with clear button
@@ -1516,32 +1394,152 @@ struct ClientAddressEditingSheet: View {
         addressSearchText = ""
         selectedAddress = nil
     }
-    
-    private func commitAddressChanges() {
-        // Create AddressData from current form values
-        var addressData = AddressData()
-        addressData.unitNumber = unitNumber
-        addressData.streetNumber = streetNumber
-        addressData.streetName = streetName
-        addressData.suburb = suburb
-        addressData.postcode = postcode
-        addressData.state = state
-        addressData.country = country
-        addressData.poBox = poBox
-        
-        // Update the address directly
-        if client.address == nil {
-            client.address = addressData.toAddressEntity()
-        } else {
-            // Update existing address
-            client.address?.unitNumber = addressData.unitNumber
-            client.address?.streetNumber = addressData.streetNumber
-            client.address?.streetName = addressData.streetName
-            client.address?.suburb = addressData.suburb
-            client.address?.state = addressData.state
-            client.address?.postcode = addressData.postcode
-            client.address?.country = addressData.country
-            client.address?.poBox = addressData.poBox
+}
+
+private struct ServiceAgreementEditorSheet: View {
+    @ObservedObject var viewModel: ClientDetailViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Effective From", selection: binding(\.effectiveFrom, default: Date()), displayedComponents: .date)
+
+                Toggle(
+                    "Open-ended",
+                    isOn: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.effectiveTo == nil },
+                        set: { isOpenEnded in
+                            guard var agreement = viewModel.serviceAgreementToEdit else { return }
+                            if isOpenEnded {
+                                agreement.effectiveTo = nil
+                            } else if agreement.effectiveTo == nil {
+                                agreement.effectiveTo = Calendar.current.date(byAdding: .year, value: 1, to: agreement.effectiveFrom)
+                            }
+                            viewModel.serviceAgreementToEdit = agreement
+                        }
+                    )
+                )
+
+                if viewModel.serviceAgreementToEdit?.effectiveTo != nil {
+                    DatePicker(
+                        "Effective To",
+                        selection: Binding(
+                            get: {
+                                viewModel.serviceAgreementToEdit?.effectiveTo
+                                    ?? Calendar.current.date(byAdding: .year, value: 1, to: Date())
+                                    ?? Date()
+                            },
+                            set: { newDate in
+                                guard var agreement = viewModel.serviceAgreementToEdit else { return }
+                                agreement.effectiveTo = newDate
+                                viewModel.serviceAgreementToEdit = agreement
+                            }
+                        ),
+                        displayedComponents: .date
+                    )
+                }
+
+                Picker("Cancellation Policy", selection: binding(\.cancellationPolicyType, default: CancellationPolicyType.twoClearBusinessDays.rawValue)) {
+                    ForEach(CancellationPolicyType.allCases, id: \.rawValue) { policy in
+                        Text(policy.rawValue).tag(policy.rawValue)
+                    }
+                }
+
+                Toggle("Allows Provider Travel", isOn: binding(\.allowsProviderTravel, default: false))
+                Toggle("Allows Telehealth", isOn: binding(\.allowsTelehealth, default: false))
+                Toggle("Allows Non Face-to-Face", isOn: binding(\.allowsNonFaceToFace, default: false))
+
+                TextField(
+                    "Signatory Name (optional)",
+                    text: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.participantSignatoryName ?? "" },
+                        set: { updateOptionalString(\.participantSignatoryName, to: $0) }
+                    )
+                )
+
+                TextField(
+                    "Signatory Role (optional)",
+                    text: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.participantSignatoryRole ?? "" },
+                        set: { updateOptionalString(\.participantSignatoryRole, to: $0) }
+                    )
+                )
+
+                Picker(
+                    "Signature Method",
+                    selection: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.signatureMethod ?? SignatureMethod.attestation.rawValue },
+                        set: { updateOptionalString(\.signatureMethod, to: $0) }
+                    )
+                ) {
+                    ForEach(SignatureMethod.allCases, id: \.rawValue) { method in
+                        Text(method.rawValue.capitalized).tag(method.rawValue)
+                    }
+                }
+
+                DatePicker(
+                    "Signed At",
+                    selection: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.signedAt ?? Date() },
+                        set: { updateOptionalDate(\.signedAt, to: $0) }
+                    ),
+                    displayedComponents: .date
+                )
+
+                TextField(
+                    "Notes (optional)",
+                    text: Binding(
+                        get: { viewModel.serviceAgreementToEdit?.notes ?? "" },
+                        set: { updateOptionalString(\.notes, to: $0) }
+                    )
+                )
+
+                if let error = viewModel.serviceAgreementValidationError,
+                   !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+            .navigationTitle("Service Agreement")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        viewModel.cancelServiceAgreementEdit()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        viewModel.saveServiceAgreement()
+                    }
+                }
+            }
         }
+    }
+
+    private func binding<T>(_ keyPath: WritableKeyPath<ServiceAgreement, T>, default defaultValue: T) -> Binding<T> {
+        Binding(
+            get: { viewModel.serviceAgreementToEdit?[keyPath: keyPath] ?? defaultValue },
+            set: { newValue in
+                guard var agreement = viewModel.serviceAgreementToEdit else { return }
+                agreement[keyPath: keyPath] = newValue
+                viewModel.serviceAgreementToEdit = agreement
+            }
+        )
+    }
+
+    private func updateOptionalString(_ keyPath: WritableKeyPath<ServiceAgreement, String?>, to value: String) {
+        guard var agreement = viewModel.serviceAgreementToEdit else { return }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        agreement[keyPath: keyPath] = trimmed.isEmpty ? nil : trimmed
+        viewModel.serviceAgreementToEdit = agreement
+    }
+
+    private func updateOptionalDate(_ keyPath: WritableKeyPath<ServiceAgreement, Date?>, to value: Date) {
+        guard var agreement = viewModel.serviceAgreementToEdit else { return }
+        agreement[keyPath: keyPath] = value
+        viewModel.serviceAgreementToEdit = agreement
     }
 }

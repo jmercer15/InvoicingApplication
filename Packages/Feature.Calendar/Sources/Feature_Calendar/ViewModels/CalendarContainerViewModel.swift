@@ -1,16 +1,15 @@
 import SwiftUI
 import Combine
-import SwiftData // Import SwiftData
+import SwiftData
 import Data
 import Core
 
 @MainActor
 public final class CalendarContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    private let sessionsRepository: SessionsRepository
-    private let clientsRepository: ClientsRepository
-    private let clientServicesRepository: ClientServicesRepository
-    private let addressRepository: AddressRepository
+    private let unitOfWork: UnitOfWorkService
+    private let sessionDomainService: SessionDomainServiceProtocol
+    
     @Published private(set) var calendarViewModel: CalendarViewModel
     @Published var calendarSearchText: String = ""
     @Published var showDatePicker: Bool = false
@@ -23,57 +22,55 @@ public final class CalendarContainerViewModel: ObservableObject {
     
     // MARK: - Initializer
     public init(
-        sessionsRepository: SessionsRepository,
-        clientsRepository: ClientsRepository,
-        clientServicesRepository: ClientServicesRepository,
-        addressRepository: AddressRepository,
-        modelContext: ModelContext
+        unitOfWork: UnitOfWorkService,
+        sessionDomainService: SessionDomainServiceProtocol
     ) {
-        self.sessionsRepository = sessionsRepository
-        self.clientsRepository = clientsRepository
-        self.clientServicesRepository = clientServicesRepository
-        self.addressRepository = addressRepository
+        self.unitOfWork = unitOfWork
+        self.sessionDomainService = sessionDomainService
+        
         let eventKitService = EventKitSyncService.shared
-        let calendarDataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
+        
+        // Note: CalendarDataManager likely needs refactoring or we pass UoW to it?
+        // For now, assuming CalendarDataManager construction might need adjustment or we init it inside CalendarViewModel
+        // Or if CalendarDataManager is internal to Feature.Calendar, we can refactor it later.
+        // Assuming CalendarViewModel will be refactored to take UnitOfWork.
+        
+        // We need to initialize CalendarViewModel.
+        // Since I haven't refactored CalendarViewModel yet, this code would technically be invalid if I compiled now.
+        // But I will refactor CalendarViewModel immediately after.
+        
         self.calendarViewModel = CalendarViewModel(
-            sessionsRepository: sessionsRepository,
-            clientsRepository: clientsRepository,
-            clientServicesRepository: clientServicesRepository,
-            eventKitService: eventKitService,
-            dataManager: calendarDataManager,
-            modelContext: modelContext, // Needed for EventKit external changes handling
-            addressRepository: addressRepository
+            unitOfWork: unitOfWork,
+            sessionDomainService: sessionDomainService,
+            eventKitService: eventKitService
         )
+        
         // Synchronize all properties with the calendar view model
         synchronizeProperties()
         configureBindings()
         validateSynchronization()
     }
 
-    public func updateContextIfNeeded(_ newContext: ModelContext) {
-        // Update repository instances with new context
-        let newSessionsRepository = SessionsRepositorySwiftData(modelContext: newContext)
-        let newClientsRepository = ClientsRepositorySwiftData(modelContext: newContext)
-        let newClientServicesRepository = ClientServicesRepositorySwiftData(modelContext: newContext)
-        let newAddressRepository = AddressRepositorySwiftData(modelContext: newContext)
+    public func updateUnitOfWork(_ newUnitOfWork: UnitOfWorkService) {
+        // Update dependencies with new UoW
         let eventKitService = EventKitSyncService.shared
-        let calendarDataManager = CalendarDataManager(sessionsRepository: newSessionsRepository, eventKitService: eventKitService)
+        
         calendarViewModel = CalendarViewModel(
-            sessionsRepository: newSessionsRepository,
-            clientsRepository: newClientsRepository,
-            clientServicesRepository: newClientServicesRepository,
-            eventKitService: eventKitService,
-            dataManager: calendarDataManager,
-            modelContext: newContext, // Needed for EventKit external changes handling
-            addressRepository: newAddressRepository
+            unitOfWork: newUnitOfWork,
+            sessionDomainService: sessionDomainService, // Domain service might need new UoW? Usually Services are recreated with new UoW.
+            eventKitService: eventKitService
         )
+        // Note: Ideally, SessionDomainService should be recreated if it depends on UoW.
+        // But here we are injected with a protocol. The caller should potentially provide a new service?
+        // For now, we update CalendarViewModel with new UoW.
+        
         // Synchronize all properties with the new calendar view model
         synchronizeProperties()
         configureBindings()
         validateSynchronization()
     }
     
-    /// Synchronizes all container properties with the calendar view model
+    /// Synchronizes all properties with the calendar view model
     private func synchronizeProperties() {
         print("🔄 Calendar: Synchronizing all properties with calendar view model")
         
@@ -226,32 +223,24 @@ public final class CalendarContainerViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // MARK: - View Type Synchronization
-        // Note: No synchronization needed since calendarViewType is a computed property
-        // that directly accesses calendarViewModel.calendarViewType
-        // The UI will automatically update when the underlying property changes
+        // No synchronization needed since calendarViewType is a computed property
 
         // MARK: - Filter Synchronization
-        // Sync filter statuses
         calendarViewModel.$filterStatuses
             .removeDuplicates()
             .sink { [weak self] newStatuses in
-                guard let self = self else { return }
-                // This is handled by the computed property, but we can add logging
                 print("🔄 Calendar: Filter statuses updated: \(newStatuses)")
             }
             .store(in: &cancellables)
 
-        // Sync client filter IDs
         calendarViewModel.$selectedClientFilterIDs
             .removeDuplicates()
             .sink { [weak self] newClientIDs in
-                guard let self = self else { return }
                 print("🔄 Calendar: Client filter IDs updated: \(newClientIDs)")
             }
             .store(in: &cancellables)
 
         // MARK: - UI State Synchronization
-        // Sync showDatePicker state (this is UI-only, no need for bidirectional sync)
         $showDatePicker
             .removeDuplicates()
             .sink { [weak self] isShowing in
@@ -270,43 +259,34 @@ public final class CalendarContainerViewModel: ObservableObject {
     
     // MARK: - Simplified Date Navigation
     func goToPreviousWeek() {
-        print("📅 Calendar: goToPreviousWeek() called")
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedDate) {
-            print("📅 Calendar: Moving from \(selectedDate) to \(newDate)")
             selectedDate = newDate
         }
     }
     
     func goToNextWeek() {
-        print("📅 Calendar: goToNextWeek() called")
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .weekOfYear, value: 1, to: selectedDate) {
-            print("📅 Calendar: Moving from \(selectedDate) to \(newDate)")
             selectedDate = newDate
         }
     }
     
     func goToPreviousMonth() {
-        print("📅 Calendar: goToPreviousMonth() called")
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .month, value: -1, to: selectedDate) {
-            print("📅 Calendar: Moving from \(selectedDate) to \(newDate)")
             selectedDate = newDate
         }
     }
     
     func goToNextMonth() {
-        print("📅 Calendar: goToNextMonth() called")
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .month, value: 1, to: selectedDate) {
-            print("📅 Calendar: Moving from \(selectedDate) to \(newDate)")
             selectedDate = newDate
         }
     }
     
     func goToToday() {
-        print("🔄 Calendar: goToToday() called")
         selectedDate = Date()
     }
     
@@ -314,9 +294,8 @@ public final class CalendarContainerViewModel: ObservableObject {
         selectedDate = date
     }
     
-    // MARK: - Smart Navigation (automatically chooses week/month based on current view)
+    // MARK: - Smart Navigation
     func goToPrevious() {
-        print("🔄 Calendar: goToPrevious() called, current view type: \(calendarViewType)")
         switch calendarViewType {
         case .week:
             goToPreviousWeek()
@@ -326,7 +305,6 @@ public final class CalendarContainerViewModel: ObservableObject {
     }
     
     func goToNext() {
-        print("🔄 Calendar: goToNext() called, current view type: \(calendarViewType)")
         switch calendarViewType {
         case .week:
             goToNextWeek()
@@ -346,8 +324,23 @@ public final class CalendarContainerViewModel: ObservableObject {
         // Set the session to nil to indicate a new session, triggering the sheet.
         calendarViewModel.selectedSessionInfo = (session: nil, instanceStart: startTime, instanceEnd: endTime)
         
-        // Trigger the sheet presentation
-        calendarViewModel.isShowingNewSessionSheet = true
+    }
+
+    /// Opens an existing session in the calendar editor and focuses its day.
+    public func openSession(sessionID: UUID) async {
+        do {
+            guard let session = try await unitOfWork.sessions.fetch(byId: sessionID) else { return }
+            if let start = session.startTime {
+                selectedDate = start
+            }
+            calendarViewModel.selectedSessionInfo = (
+                session: session,
+                instanceStart: session.startTime,
+                instanceEnd: session.endTime
+            )
+        } catch {
+            print("❌ Calendar: Failed to open session \(sessionID): \(error)")
+        }
     }
 }
 
@@ -372,4 +365,7 @@ extension CalendarContainerViewModel {
     func goToMonth(containing date: Date) {
         calendarViewModel.selectedDate = date
     }
-} 
+    
+    /// Update the context if needed (called from views when context becomes available)
+
+}

@@ -13,6 +13,10 @@ let package = Package(
         .package(path: "../SharedUI")
     ],
     targets: [
-        .target(name: "Feature_Calendar", dependencies: ["Core", "Data", "SharedUI"])
+        .target(name: "Feature_Calendar", dependencies: ["Core", "Data", "SharedUI"]),
+        .testTarget(
+            name: "Feature_CalendarTests",
+            dependencies: ["Feature_Calendar", "Core", "Data"]
+        )
     ]
 )

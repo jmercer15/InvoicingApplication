@@ -58,6 +58,11 @@ extension SectionSplit {
         childPaddings[index] = value
     }
     
+    mutating func setUniformChildPadding(_ value: CGFloat, forChild index: Int) {
+        guard index < childPaddings.count else { return }
+        childPaddings[index] = PaddingInsets(top: value, leading: value, bottom: value, trailing: value)
+    }
+    
     mutating func setChildSpacing(_ spacing: CGFloat) {
         childSpacing = max(0, spacing)
     }
@@ -84,43 +89,63 @@ extension SectionSplit {
     func intrinsicSizeForChild(at index: Int, along axis: LayoutAxis) -> CGFloat? {
         guard index >= 0, index < splitCount else { return nil }
         
+        var contentSize: CGFloat?
+        var marginAmount: CGFloat = 0
+        
         if let childSplit = children[index] {
-            return childSplit.intrinsicSize(along: axis)
+            contentSize = childSplit.intrinsicSize(along: axis)
+            marginAmount = childSplit.margin * 2
+        } else if let components = childComponents[index], !components.isEmpty {
+            contentSize = intrinsicSize(forLeafComponents: components, along: axis)
         }
         
-        guard let components = childComponents[index], !components.isEmpty else {
-            return nil
-        }
+        guard let size = contentSize else { return nil }
         
-        return intrinsicSize(forLeafComponents: components, along: axis)
+        let padding = childPaddings.count > index ? childPaddings[index] : .zero
+        let paddingAmount = axis == .horizontal ? (padding.leading + padding.trailing) : (padding.top + padding.bottom)
+        
+        return size + paddingAmount + marginAmount
     }
     
     /// Calculate the intrinsic size of this split along an axis, aggregating its children.
     func intrinsicSize(along axis: LayoutAxis) -> CGFloat? {
+        let paddingAmount = axis == .horizontal ? (padding * 2) : (padding * 2) // Padding applies to both axes (all sides)
+        // Note: padding property is a single CGFloat applied to all sides
+        
         switch direction {
         case .horizontal:
             if axis == .horizontal {
-                let total = (0..<splitCount)
+                let childrenSizes = (0..<splitCount)
                     .compactMap { intrinsicSizeForChild(at: $0, along: .horizontal) }
-                    .reduce(0, +)
-                return total > 0 ? total : nil
+                
+                if childrenSizes.isEmpty { return nil }
+                
+                let total = childrenSizes.reduce(0, +)
+                let spacingTotal = childSpacing * CGFloat(max(0, childrenSizes.count - 1))
+                
+                return total + spacingTotal + paddingAmount
             } else {
                 let maxHeight = (0..<splitCount)
                     .compactMap { intrinsicSizeForChild(at: $0, along: .vertical) }
                     .max() ?? 0
-                return maxHeight > 0 ? maxHeight : nil
+                return maxHeight > 0 ? maxHeight + paddingAmount : nil
             }
         case .vertical:
             if axis == .horizontal {
                 let maxWidth = (0..<splitCount)
                     .compactMap { intrinsicSizeForChild(at: $0, along: .horizontal) }
                     .max() ?? 0
-                return maxWidth > 0 ? maxWidth : nil
+                return maxWidth > 0 ? maxWidth + paddingAmount : nil
             } else {
-                let total = (0..<splitCount)
+                let childrenSizes = (0..<splitCount)
                     .compactMap { intrinsicSizeForChild(at: $0, along: .vertical) }
-                    .reduce(0, +)
-                return total > 0 ? total : nil
+                
+                if childrenSizes.isEmpty { return nil }
+                
+                let total = childrenSizes.reduce(0, +)
+                let spacingTotal = childSpacing * CGFloat(max(0, childrenSizes.count - 1))
+                
+                return total + spacingTotal + paddingAmount
             }
         case .grid:
             if axis == .horizontal {
@@ -134,7 +159,10 @@ extension SectionSplit {
                     }
                     totalWidth += maxColumnWidth
                 }
-                return totalWidth > 0 ? totalWidth : nil
+                // Grid spacing logic might be more complex, assuming simple spacing for now
+                // Actually grid usually has spacing between columns
+                let spacingTotal = childSpacing * CGFloat(max(0, gridColumns - 1))
+                return totalWidth > 0 ? totalWidth + spacingTotal + paddingAmount : nil
             } else {
                 var totalHeight: CGFloat = 0
                 for row in 0..<gridRows {
@@ -146,20 +174,35 @@ extension SectionSplit {
                     }
                     totalHeight += maxRowHeight
                 }
-                return totalHeight > 0 ? totalHeight : nil
+                let spacingTotal = childSpacing * CGFloat(max(0, gridRows - 1))
+                return totalHeight > 0 ? totalHeight + spacingTotal + paddingAmount : nil
             }
         }
     }
     
     private func intrinsicSize(forLeafComponents components: [InvoiceComponent], along axis: LayoutAxis) -> CGFloat? {
-        guard !components.isEmpty else { return nil }
+        // ContentRectangleView only renders the first component, so we should only measure the first one.
+        guard let component = components.first else { return nil }
+        
         switch axis {
         case .horizontal:
-            let width = components.map { $0.size.width }.max() ?? 0
-            return width > 0 ? width : nil
+            if let minWidth = component.minIntrinsicWidth {
+                return minWidth
+            }
+            // Use idealSize if available, otherwise fallback to size
+            if let idealWidth = component.idealSize?.width, idealWidth > 0 {
+                return idealWidth
+            }
+            return component.size.width > 0 ? component.size.width : nil
         case .vertical:
-            let height = components.reduce(0) { $0 + $1.size.height }
-            return height > 0 ? height : nil
+            if let minHeight = component.minIntrinsicHeight {
+                return minHeight
+            }
+            // Use idealSize if available, otherwise fallback to size
+            if let idealHeight = component.idealSize?.height, idealHeight > 0 {
+                return idealHeight
+            }
+            return component.size.height > 0 ? component.size.height : nil
         }
     }
 }

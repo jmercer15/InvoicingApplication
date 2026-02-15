@@ -1,11 +1,20 @@
+//
+//  MapKitTravelService.swift
+//  Data
+//
+//  Service for calculating travel details using MapKit directions
+//
+
 import Foundation
 import MapKit
 import CoreLocation
 import SwiftData
+import Core
 
 // swiftlint:disable concurrency
 
 /// Service for calculating travel details using MapKit directions
+@MainActor
 class MapKitTravelService: @unchecked Sendable {
     static let shared = MapKitTravelService()
     
@@ -22,12 +31,85 @@ class MapKitTravelService: @unchecked Sendable {
         }
     }
     
-    /// Calculates travel details from business to session location using MapKit
+    // MARK: - UnitOfWork-Based Methods (Preferred)
+    
+    /// Calculate travel details using UnitOfWorkService (preferred)
     /// - Parameters:
-    ///   - session: The session entity
-    ///   - modelContext: SwiftData model context
+    ///   - fromAddress: Starting address string
+    ///   - toAddress: Destination address string
+    ///   - unitOfWork: Unit of work for business lookup
     /// - Returns: Travel details if successful, nil if calculation fails
-    /// Calculate travel details for a single session using individual parameters
+    func calculateTravelDetails(
+        from fromAddress: String,
+        to toAddress: String,
+        unitOfWork: UnitOfWorkService
+    ) async -> TravelDetails? {
+        // Get business address for default origin if needed
+        guard let business = try? await unitOfWork.business.fetchFirst(),
+              let businessAddress = business.address else {
+            print("🗺️ [MapKit Travel] No business address found via UoW")
+            return nil
+        }
+        
+        // Parse business coordinates
+        let businessCoord = await geocodeAddress(businessAddress.fullFormattedAddress)
+        guard let fromCoord = businessCoord else {
+            print("🗺️ [MapKit Travel] Could not geocode business address")
+            return nil
+        }
+        
+        // Geocode destination
+        guard let toCoord = await geocodeAddress(toAddress) else {
+            print("🗺️ [MapKit Travel] Could not geocode destination address")
+            return nil
+        }
+        
+        return await calculateTravelDetails(from: fromCoord, to: toCoord)
+    }
+    
+    /// Calculate travel details for a session domain model using UoW
+    func calculateTravelDetails(
+        for session: Session,
+        unitOfWork: UnitOfWorkService
+    ) async -> TravelDetails? {
+        print("🗺️ [MapKit Travel] Calculating travel for session via UoW")
+        
+        // Get business address
+        guard let business = try? await unitOfWork.business.fetchFirst(),
+              let businessAddr = business.address else {
+            print("🗺️ [MapKit Travel] No business found")
+            return nil
+        }
+        
+        let businessCoord = CLLocationCoordinate2D(
+            latitude: businessAddr.latitude ?? 0,
+            longitude: businessAddr.longitude ?? 0
+        )
+        
+        guard businessCoord.latitude != 0, businessCoord.longitude != 0 else {
+            print("🗺️ [MapKit Travel] Business has no coordinates")
+            return nil
+        }
+        
+        // Get session location - check if coordinates exist
+        var sessionCoord: CLLocationCoordinate2D?
+        
+        // Try session's location string first via geocoding
+        if let location = session.location, !location.isEmpty {
+            sessionCoord = await geocodeAddress(location)
+        }
+        
+        guard let destCoord = sessionCoord else {
+            print("🗺️ [MapKit Travel] Could not determine session location")
+            return nil
+        }
+        
+        return await calculateTravelDetails(from: businessCoord, to: destCoord)
+    }
+    
+    // MARK: - ModelContext-Based Methods (Legacy)
+    
+    /// Calculate travel details for a single session using individual parameters (legacy)
     func calculateTravelDetailsForSession(
         sessionId: UUID,
         clientId: UUID?,
@@ -35,18 +117,34 @@ class MapKitTravelService: @unchecked Sendable {
         endAddress: String?,
         modelContext: ModelContext
     ) async -> TravelDetails? {
-        // This method works with individual parameters to avoid concurrency issues
-        // For now, return nil as a placeholder - the actual implementation would
-        // geocode the string addresses to coordinates and then call calculateTravelDetails
+        // Get business address coordinates from model context
+        let resolver = EntityResolutionService(context: modelContext)
+        guard let business = try? resolver.resolveBusiness(),
+              let address = business.address,
+              address.latitude != 0 && address.longitude != 0 else {
+            print("🗺️ [MapKit Travel] No business address with coordinates found")
+            return nil
+        }
+        
+        let businessCoord = CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude)
+        
+        // Geocode the end address if provided
+        if let endAddress = endAddress, !endAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let destCoord = await geocodeAddress(endAddress) {
+                return await calculateTravelDetails(from: businessCoord, to: destCoord)
+            }
+        }
+        
         return nil
     }
     
+    /// Calculate travel details for a SessionEntity (legacy)
     func calculateTravelDetails(for session: SessionEntity, modelContext: ModelContext) async -> TravelDetails? {
         print("🗺️ [MapKit Travel] Starting travel calculation for session")
         
         // Get business address
-        let businessDescriptor = FetchDescriptor<BusinessEntity>()
-        guard let business = try? modelContext.fetch(businessDescriptor).first,
+        let resolver = EntityResolutionService(context: modelContext)
+        guard let business = try? resolver.resolveBusiness(),
               let businessAddress = business.address else {
             print("🗺️ [MapKit Travel] No business address found")
             return nil
@@ -92,11 +190,9 @@ class MapKitTravelService: @unchecked Sendable {
         return await calculateTravelDetails(from: businessCoord, to: sessionCoordinate)
     }
     
+    // MARK: - Core Calculation Methods
+    
     /// Calculates travel details between two coordinates using MapKit
-    /// - Parameters:
-    ///   - from: Starting coordinate
-    ///   - to: Destination coordinate
-    /// - Returns: Travel details if successful, nil if calculation fails
     func calculateTravelDetails(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> TravelDetails? {
         print("🗺️ [MapKit Travel] Calculating travel details from MapKit directions")
         
@@ -113,7 +209,6 @@ class MapKitTravelService: @unchecked Sendable {
         let directions = MKDirections(request: request)
         
         do {
-            // Use async/await directly - let orchestrator handle timeouts
             let result = try await directions.calculate()
             
             if let route = result.routes.first {
@@ -133,35 +228,30 @@ class MapKitTravelService: @unchecked Sendable {
         }
     }
     
+    // MARK: - Batch Processing (Legacy)
+    
     /// Ensures travel details are calculated for all sessions in a list
-    /// - Parameters:
-    ///   - sessions: Array of session entities
-    ///   - modelContext: SwiftData model context
-    /// - Returns: Dictionary mapping session ID to travel details
-    nonisolated func ensureTravelDetailsForSessions(_ sessions: [SessionEntity], modelContext: ModelContext) async -> [String: TravelDetails] {
+    func ensureTravelDetailsForSessions(_ sessions: [SessionEntity], modelContext: ModelContext) async -> [String: TravelDetails] {
         print("🗺️ [MapKit Travel] Ensuring travel details for \(sessions.count) sessions")
         
         var travelDetailsMap: [String: TravelDetails] = [:]
         
-        // Process sessions concurrently with a limit to avoid overwhelming the system
         let batchSize = 3
         for i in stride(from: 0, to: sessions.count, by: batchSize) {
             let batch = Array(sessions[i..<min(i + batchSize, sessions.count)])
             
             let modelContextCopy = modelContext
-            // Extract all data outside the TaskGroup to avoid concurrency issues
             let sessionData = batch.map { session in
                 (sessionID: session.id.uuidString, sessionId: session.id, clientId: session.client?.id, location: session.location)
             }
             
-            // Simplified approach: process sessions sequentially to avoid concurrency issues
             var batchResults: [(String, TravelDetails?)] = []
             for (sessionID, sessionId, clientId, location) in sessionData {
                 let details = await MapKitTravelService.shared.calculateTravelDetailsForSession(
                     sessionId: sessionId,
                     clientId: clientId,
                     startAddress: location,
-                    endAddress: location, // Use location for both start and end for now
+                    endAddress: location,
                     modelContext: modelContextCopy
                 )
                 batchResults.append((sessionID, details))
@@ -181,23 +271,36 @@ class MapKitTravelService: @unchecked Sendable {
         return travelDetailsMap
     }
     
-    /// Calculates travel details for a session and updates it with the results
-    nonisolated func calculateTravelDetailsForSession(_ session: SessionEntity, modelContext: ModelContext) async -> TravelDetails? {
-        // Get coordinates from the session
+    /// Calculates travel details for a session and updates it with the results (legacy)
+    func calculateTravelDetailsForSession(_ session: SessionEntity, modelContext: ModelContext) async -> TravelDetails? {
         let sessionLat = session.sessionLatitude
         let sessionLon = session.sessionLongitude
 
-        // If session has coordinates, use them
         if sessionLat != 0 && sessionLon != 0 {
             return await calculateTravelDetails(for: session, modelContext: modelContext)
         }
 
-        // Otherwise, try to get coordinates from the session's address
         if let address = session.address, address.latitude != 0 && address.longitude != 0 {
             return await calculateTravelDetails(for: session, modelContext: modelContext)
         }
 
-        // No coordinates available
         return nil
+    }
+    
+    // MARK: - Helpers
+    
+    /// Geocode an address string to coordinates
+    private func geocodeAddress(_ address: String) async -> CLLocationCoordinate2D? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = address
+        let search = MKLocalSearch(request: request)
+        
+        do {
+            let response = try await search.start()
+            return response.mapItems.first?.location.coordinate
+        } catch {
+            print("🗺️ [MapKit Travel] Geocoding failed for: \(address)")
+            return nil
+        }
     }
 }

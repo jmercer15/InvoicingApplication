@@ -6,16 +6,20 @@
 //
 
 import Foundation
+import CoreLocation
+import os
 
 /// Service for managing NDIS billing configuration and regulatory values
-class NDISBillingConfigService {
+public class NDISBillingConfigService {
+    private let logger = Logger(subsystem: "com.invoicing.ndis", category: "BillingConfig")
     
     // MARK: - Configuration Storage
     
     private var configValues: [String: Any] = [:]
     
-    init() {
+    public init() {
         loadDefaultConfiguration()
+        logger.debug("Initialized NDISBillingConfigService with default configuration")
     }
     
     // MARK: - Configuration Management
@@ -119,16 +123,50 @@ class NDISBillingConfigService {
     
     // MARK: - MMM Zone Lookup
     
-    /// Gets the MMM rating for a postcode
-    func getMmmRating(for postcode: String) -> Int {
-        // This would implement the actual MMM zone lookup logic
-        // For now, return a default value
-        return 1
+    /// Gets the MMM rating for a location
+    func getMmmRating(for location: NDISLocation) -> Int {
+        // Attempt high-accuracy lookup via coordinates first
+        if let lat = location.latitude, let lon = location.longitude {
+            if let mmmValue = MMMZoneLookup.shared.mmm(for: CLLocationCoordinate2D(latitude: lat, longitude: lon)) {
+                return mmmValue
+            }
+        }
+        
+        let postcode = location.postcode
+        let cleaned = postcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let code = Int(cleaned), cleaned.count == 4 else { return 1 }
+
+        switch code {
+        case 6799, 2898...2899:
+            return 7
+        case 800...999, 6000...6998:
+            return 6
+        case 4700...4999, 7200...7999:
+            return 5
+        case 5200...5999, 6200...6798:
+            return 4
+        default:
+            return 1
+        }
     }
     
-    /// Gets the time cap for a postcode based on MMM rating
-    func getTimeCap(for postcode: String) -> Double {
-        let mmmRating = getMmmRating(for: postcode)
+    /// Gets the geographic multiplier for a location
+    func getGeoMultiplier(for location: NDISLocation) -> Double {
+        let mmmRating = getMmmRating(for: location)
+        logger.debug("Applying geographic multiplier for MMM\(mmmRating)")
+        switch mmmRating {
+        case 6:
+            return getConfigValue("GeoLoading.Remote")
+        case 7:
+            return getConfigValue("GeoLoading.VeryRemote")
+        default:
+            return 1.0
+        }
+    }
+    
+    /// Gets the time cap for a location based on MMM rating
+    func getTimeCap(for location: NDISLocation) -> Double {
+        let mmmRating = getMmmRating(for: location)
         
         switch mmmRating {
         case 1...3:
@@ -144,26 +182,99 @@ class NDISBillingConfigService {
     
     // MARK: - Rate Calculations
     
-    /// Gets the centre capital cost rate for a postcode
-    func getCentreCapitalRate(for postcode: String) -> Double {
-        let mmmRating = getMmmRating(for: postcode)
+    /// Gets the centre capital cost rate for a location
+    func getCentreCapitalRate(for location: NDISLocation) -> Double {
+        let mmmRating = getMmmRating(for: location)
         let key = "CentreCapital.Rate.MMM\(mmmRating)"
         return getConfigValue(key)
     }
     
-    /// Gets the establishment fee rate for a postcode
-    func getEstablishmentFeeRate(for postcode: String) -> Double {
-        let mmmRating = getMmmRating(for: postcode)
+    /// Gets the establishment fee rate for a location
+    func getEstablishmentFeeRate(for location: NDISLocation) -> Double {
+        let mmmRating = getMmmRating(for: location)
         let key = "EstablishmentFee.Rate.MMM\(mmmRating)"
         return getConfigValue(key)
+    }
+    
+    /// Gets the time modifier for a date and provider type
+    func getTimeModifier(for date: Date, providerType: String = "DSW") -> Double {
+        if isPublicHoliday(date) {
+            return getConfigValue("TimeModifier.PublicHoliday")
+        }
+        
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: date)
+        
+        if weekday == 1 { // Sunday
+            return getConfigValue("TimeModifier.Sunday")
+        } else if weekday == 7 { // Saturday
+            return getConfigValue("TimeModifier.Saturday")
+        }
+        
+        let hour = calendar.component(.hour, from: date)
+        if providerType == "Nurse" {
+            if hour >= 20 || hour < 6 {
+                return getConfigValue("TimeModifier.Nurse.Night")
+            } else if hour >= 16 {
+                return getConfigValue("TimeModifier.Nurse.Evening")
+            }
+        } else {
+            if hour >= 20 || hour < 6 {
+                return getConfigValue("TimeModifier.DSW.Night")
+            } else if hour >= 16 {
+                return getConfigValue("TimeModifier.DSW.Evening")
+            }
+        }
+        
+        return 1.0
+    }
+    
+    // MARK: - Generic Accessors
+    
+    func getSleepoverIncludedHours() -> Double {
+        return getConfigValue("Sleepover.IncludedActiveHours")
+    }
+    
+    func getSilMaxWeeks() -> Double {
+        return Double(getConfigValueInt("SIL.UnplannedExit.MaxWeeks"))
+    }
+    
+    func getTravelRatePerKm() -> Double {
+        return getConfigValue("TravelRate.NonLabourPerKm")
+    }
+    
+    func getTransportRate(isModified: Bool) -> Double {
+        return isModified ? getConfigValue("TransportRate.ModifiedVehicle") : getConfigValue("TransportRate.StandardVehicle")
     }
     
     // MARK: - Holiday Calendar
     
     /// Checks if a date is a public holiday
     func isPublicHoliday(_ date: Date) -> Bool {
-        // This would implement holiday calendar lookup
-        // For now, return false
+        let calendar = Calendar(identifier: .gregorian)
+        let year = calendar.component(.year, from: date)
+        let dayStart = calendar.startOfDay(for: date)
+
+        let fixedDates = [
+            DateComponents(year: year, month: 1, day: 1),
+            DateComponents(year: year, month: 1, day: 26),
+            DateComponents(year: year, month: 4, day: 25),
+            DateComponents(year: year, month: 12, day: 25),
+            DateComponents(year: year, month: 12, day: 26)
+        ]
+
+        for components in fixedDates {
+            guard let holiday = calendar.date(from: components) else { continue }
+            let holidayStart = calendar.startOfDay(for: holiday)
+            if dayStart == holidayStart {
+                return true
+            }
+            if let observed = observedHolidayDate(for: holiday, calendar: calendar),
+               dayStart == calendar.startOfDay(for: observed) {
+                return true
+            }
+        }
+
         return false
     }
     
@@ -171,44 +282,45 @@ class NDISBillingConfigService {
     
     /// Maps a support item to its complex behaviour equivalent
     func mapToComplexBehaviourItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return the original item number
-        return itemNumber
+        if itemNumber.contains("_0106_") { return itemNumber }
+        let mapped = itemNumber.replacingOccurrences(of: "_0104_", with: "_0106_")
+        return mapped == itemNumber ? itemNumber : mapped
     }
     
     /// Maps a support item to its high intensity equivalent
     func mapToHighIntensityItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return the original item number
-        return itemNumber
+        if itemNumber.contains("_0110_") { return itemNumber }
+        let mapped = itemNumber.replacingOccurrences(of: "_0104_", with: "_0110_")
+        return mapped == itemNumber ? itemNumber : mapped
     }
     
     /// Maps a support item to its travel non-labour equivalent
     func mapToTravelNonLabourItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return a default travel item
-        return "01_799_0106_6_3" // Example travel item
+        if itemNumber.contains("_799_") { return itemNumber }
+        let components = itemNumber.split(separator: "_")
+        guard components.count >= 5 else { return "01_799_0106_6_3" }
+        return "\(components[0])_799_\(components[2])_\(components[3])_\(components[4])"
     }
     
     /// Maps a support item to its activity transport equivalent
     func mapToActivityTransportItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return a default transport item
-        return "09_590_0106_6_3" // Example transport item
+        if itemNumber.contains("_590_") { return itemNumber }
+        let components = itemNumber.split(separator: "_")
+        guard components.count >= 5 else { return "09_590_0106_6_3" }
+        return "09_590_\(components[2])_\(components[3])_\(components[4])"
     }
     
     /// Maps a support item to its centre capital equivalent
     func mapToCentreCapitalItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return a default capital item
-        return "01_799_0106_6_3" // Example capital item
+        if itemNumber.contains("_799_") { return itemNumber }
+        let components = itemNumber.split(separator: "_")
+        guard components.count >= 5 else { return "01_799_0106_6_3" }
+        return "\(components[0])_799_\(components[2])_\(components[3])_\(components[4])"
     }
     
     /// Maps a support item to its establishment fee equivalent
     func mapToEstablishmentFeeItem(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return a default establishment fee item
-        return "01_799_0106_6_3" // Example establishment fee item
+        mapToCentreCapitalItem(itemNumber)
     }
     
     /// Maps a provider type to its bereavement item
@@ -227,9 +339,20 @@ class NDISBillingConfigService {
     
     /// Maps a support item to its hourly equivalent for sleepover calculations
     func mapToHourlyEquivalent(_ itemNumber: String) -> String {
-        // This would implement the mapping logic
-        // For now, return the original item number
-        return itemNumber
+        let transformed = itemNumber.replacingOccurrences(of: "_0136_", with: "_0104_")
+        return transformed
+    }
+
+    private func observedHolidayDate(for holiday: Date, calendar: Calendar) -> Date? {
+        let weekday = calendar.component(.weekday, from: holiday)
+        switch weekday {
+        case 7: // Saturday
+            return calendar.date(byAdding: .day, value: 2, to: holiday)
+        case 1: // Sunday
+            return calendar.date(byAdding: .day, value: 1, to: holiday)
+        default:
+            return nil
+        }
     }
     
     // MARK: - Eligibility Checks

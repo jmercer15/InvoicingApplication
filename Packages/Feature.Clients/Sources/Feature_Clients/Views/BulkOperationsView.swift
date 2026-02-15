@@ -87,7 +87,7 @@ struct BulkOperationsView: View {
                 ProgressView()
                     .scaleEffect(1.5)
                     .padding()
-                    .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+                    .background(.thickMaterial)
                     .cornerRadius(8)
             }
         }
@@ -116,7 +116,7 @@ struct BulkOperationsView: View {
             }
         }
         .padding()
-        .background(Color.gray.opacity(0.1))
+        .glassEffect(.regular, in: .rect(cornerRadius: 8))
         .cornerRadius(8)
     }
     
@@ -165,7 +165,7 @@ struct BulkOperationsView: View {
             }
         }
         .padding()
-        .background(Color.gray.opacity(0.1))
+        .glassEffect(.regular, in: .rect(cornerRadius: 8))
         .cornerRadius(8)
     }
     
@@ -180,7 +180,7 @@ struct BulkOperationsView: View {
             do {
                 // Update clients using repository
                 for clientEntity in selectedClients {
-                    let clientDomain = clientFromEntity(clientEntity)
+                    let clientDomain = ClientMapper().mapToDomain(clientEntity)
                     // Create updated client with new status
                     let updatedClient = Client(
                         id: clientDomain.id,
@@ -207,7 +207,7 @@ struct BulkOperationsView: View {
                 
                 // Update payees using repository
                 for payeeEntity in selectedPayees {
-                    let payeeDomain = payeeFromEntity(payeeEntity)
+                    let payeeDomain = PayeeMapper().mapToDomain(payeeEntity)
                     // Create updated payee with new status
                     let updatedPayee = Payee(
                         id: payeeDomain.id,
@@ -349,7 +349,7 @@ struct BulkOperationsToolbar: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .background(Color.gray.opacity(0.1))
+            .glassEffect(.regular, in: .rect())
         }
     }
 } 

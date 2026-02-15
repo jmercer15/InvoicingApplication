@@ -21,3 +21,5 @@ import SwiftData
         self.id = id
     }
 }
+
+public typealias TravelChargeAuditLogEntity = TravelChargeAuditLog

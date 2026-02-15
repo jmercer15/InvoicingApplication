@@ -53,6 +53,7 @@ struct MonthDayGridView: View {
                         .background(selectedDays.contains(day) ? Color.blue : Color.clear)
                         .foregroundColor(selectedDays.contains(day) ? .white : .primary)
                         .cornerRadius(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
@@ -163,6 +164,7 @@ struct RecurrenceWeeklyOptionsCard: View {
                             }) {
                                 Image(systemName: viewModel.preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? "checkmark.square.fill" : "square")
                                     .foregroundColor(viewModel.preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? .blue : .gray)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             Text(weekday.shortName)
@@ -291,6 +293,7 @@ struct RecurrenceYearlyOptionsCard: View {
                             }) {
                                 Image(systemName: viewModel.preferences.defaultSelectedYearMonths.contains(month.rawValue) ? "checkmark.square.fill" : "square")
                                     .foregroundColor(viewModel.preferences.defaultSelectedYearMonths.contains(month.rawValue) ? .blue : .gray)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             Text(month.shortName)

@@ -138,6 +138,7 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
 }
 
 /// Migration test utilities for PlanManagerEntity
+#if DEBUG
 public struct PlanManagerMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -178,3 +179,4 @@ public struct PlanManagerMigrationTestUtils {
         print("✅ PlanManager migration test completed successfully")
     }
 }
+#endif

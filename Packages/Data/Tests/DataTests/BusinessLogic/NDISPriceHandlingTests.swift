@@ -16,7 +16,11 @@ final class NDISPriceHandlingTests: XCTestCase {
         // Create in-memory model context for testing
         let schema = Schema([
             NDISItemEntity.self,
-            RegionalPriceEntity.self
+            RegionalPriceEntity.self,
+            ServiceAgreementEntity.self,
+            SupportLogEntity.self,
+            BulkClaimBatchEntity.self,
+            BulkClaimLineEntity.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])

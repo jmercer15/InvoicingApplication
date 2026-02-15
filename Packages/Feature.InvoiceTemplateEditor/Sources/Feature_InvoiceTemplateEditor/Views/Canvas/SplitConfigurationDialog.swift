@@ -27,7 +27,12 @@ struct SplitConfigurationDialog: View {
                 // Direction picker
                 Picker("", selection: $direction) {
                     ForEach(SectionSplit.SplitDirection.allCases, id: \.self) { dir in
-                        Label(dir.displayName, systemImage: dir.icon)
+                        Label {
+                            Text(dir.displayName)
+                        } icon: {
+                            Image(dir.icon, bundle: .module)
+                                .renderingMode(.template)
+                        }
                             .tag(dir)
                     }
                 }
@@ -185,8 +190,39 @@ struct SplitPreview: View {
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: direction)
+    .animation(.easeInOut(duration: 0.2), value: direction)
         .animation(.easeInOut(duration: 0.2), value: splitCount)
     }
 }
 
+// MARK: - Previews
+
+#Preview("Split Configuration Dialog") {
+    @Previewable @State var direction: SectionSplit.SplitDirection = .horizontal
+    @Previewable @State var splitCount = 2
+    
+    SplitConfigurationDialog(
+        direction: $direction,
+        splitCount: $splitCount,
+        onConfirm: { _, _, _, _ in },
+        onCancel: {}
+    )
+}
+
+#Preview("Split Preview - Horizontal") {
+    SplitPreview(direction: .horizontal, splitCount: 3, rows: nil, columns: nil)
+        .frame(width: 200, height: 80)
+        .padding()
+}
+
+#Preview("Split Preview - Vertical") {
+    SplitPreview(direction: .vertical, splitCount: 4, rows: nil, columns: nil)
+        .frame(width: 200, height: 120)
+        .padding()
+}
+
+#Preview("Split Preview - Grid") {
+    SplitPreview(direction: .grid, splitCount: 6, rows: 2, columns: 3)
+        .frame(width: 200, height: 120)
+        .padding()
+}

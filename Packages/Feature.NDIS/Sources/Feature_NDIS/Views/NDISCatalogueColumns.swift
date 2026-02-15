@@ -6,20 +6,9 @@ import SharedUI
 
 public struct NDISCatalogueContentColumn: View {
     @ObservedObject private var viewModel: NDISContainerViewModel
-    @Environment(\.modelContext) private var modelContext
-
-    @Query(sort: [
-        SortDescriptor(\NDISItemEntity.itemNumber, order: .forward),
-        SortDescriptor(\NDISItemEntity.effectiveStartDate, order: .reverse)
-    ])
-    private var allItems: [NDISItemEntity]
 
     @State private var showingHistoricalChanges = false
-
-    private var currentItems: [NDISItemEntity] {
-        allItems.filter { $0.isCurrent }
-    }
-
+    
     public init(viewModel: NDISContainerViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
     }
@@ -27,17 +16,20 @@ public struct NDISCatalogueContentColumn: View {
     public var body: some View {
         NDISCatalogueNavigationView(viewModel: viewModel, showingHistoricalChanges: $showingHistoricalChanges)
             .toolbar(content: filterToolbar)
-            .onAppear(perform: synchroniseContext)
-            .onChange(of: allItems) { _, _ in
-                viewModel.setSourceItems(ndisItems: currentItems)
-            }
+
+            .navigationTitle("NDIS Catalogue")
             .sheet(isPresented: $showingHistoricalChanges) {
-                NDISChangesSummaryView()
+                NDISChangesSummaryView(viewModel: viewModel)
             }
     }
+    
+    // ... toolbar code ...
+
+
 
     @ToolbarContentBuilder
     private func filterToolbar() -> some ToolbarContent {
+        // MARK: - Filters & Sort
         ToolbarItemGroup(placement: .automatic) {
             Menu {
                 Button("All Categories") {
@@ -49,10 +41,14 @@ public struct NDISCatalogueContentColumn: View {
                     }
                 }
             } label: {
-                Label("Category", systemImage: "folder")
+                Label {
+                    Text(viewModel.selectedCategoryId == nil ? "Category" : "Category (1)")
+                } icon: {
+                    Image(systemName: viewModel.selectedCategoryId == nil ? "folder" : "folder.fill")
+                }
             }
             .help("Filter by category")
-            .labelStyle(.titleOnly)
+            .pointerStyle(.link)
 
             Menu {
                 ForEach(viewModel.registrationGroupsForMenu, id: \.self) { group in
@@ -61,10 +57,14 @@ public struct NDISCatalogueContentColumn: View {
                     }
                 }
             } label: {
-                Label("Region", systemImage: "tag")
+                Label {
+                    Text(viewModel.selectedRegistrationGroup == nil ? "Region" : "Region (1)")
+                } icon: {
+                    Image(systemName: viewModel.selectedRegistrationGroup == nil ? "tag" : "tag.fill")
+                }
             }
             .help("Filter by registration group")
-            .labelStyle(.titleOnly)
+            .pointerStyle(.link)
 
             Menu {
                 if viewModel.featuresForToolbarMenu.isEmpty {
@@ -83,10 +83,14 @@ public struct NDISCatalogueContentColumn: View {
                     .tint(Color("Red", bundle: .sharedUI).opacity(0.7))
                 }
             } label: {
-                Label("Features", systemImage: "star")
+                Label {
+                    Text(viewModel.currentSelectedFeatures.isEmpty ? "Features" : "Features (\(viewModel.currentSelectedFeatures.count))")
+                } icon: {
+                    Image(systemName: viewModel.currentSelectedFeatures.isEmpty ? "star" : "star.fill")
+                }
             }
             .help("Filter by support item features")
-            .labelStyle(.titleOnly)
+            .pointerStyle(.link)
 
             Menu {
                 ForEach(NDISContainerViewModel.SortOrder.allCases) { order in
@@ -95,29 +99,34 @@ public struct NDISCatalogueContentColumn: View {
                     }
                 }
             } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down.circle")
+                Label {
+                    Text("Sort: \(viewModel.sortOrder.rawValue)")
+                } icon: {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                }
             }
-            .help("Sort support items")
-            .labelStyle(.titleOnly)
+            .help("Sort support items by \(viewModel.sortOrder.rawValue)")
+            .pointerStyle(.link)
 
             Button("Clear") {
                 viewModel.clearAllFilters()
             }
             .help("Clear all filters")
+            .pointerStyle(.link)
         }
 
+        // MARK: - Utilities
         ToolbarItem(placement: .automatic) {
             Button(action: { showingHistoricalChanges = true }) {
                 Label("Historical Changes", systemImage: "clock.arrow.circlepath")
             }
             .help("Show change history for items")
-            .appInteractiveCursor()
+            .pointerStyle(.link)
         }
     }
 
     private func synchroniseContext() {
-        viewModel.updateContextIfNeeded(modelContext)
-        viewModel.setSourceItems(ndisItems: currentItems)
+        // No-op for UoW compatibility
     }
 }
 
@@ -148,9 +157,7 @@ public struct NDISCatalogueDetailColumn: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 40)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
             }
         }
-        .background(.clear)
     }
 }

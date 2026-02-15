@@ -7,6 +7,57 @@
 
 import SwiftUI
 import Core
+import SharedUI
+
+/// Tab selection for the left side panel
+private enum LeftPanelTab: String, CaseIterable {
+    case sections = "Sections"
+    case components = "Components"
+    
+    var icon: String {
+        switch self {
+        case .sections: return "list.bullet.indent"
+        case .components: return "square.grid.2x2"
+        }
+    }
+}
+
+// MARK: - Glass Tab Bar Components
+
+private struct GlassTabBar: View {
+    @Binding var selection: LeftPanelTab
+    let namespace: Namespace.ID
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            ForEach(LeftPanelTab.allCases, id: \.self) { tab in
+                HStack(spacing: 6) {
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 14, weight: .medium))
+                    Text(tab.rawValue)
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(selection == tab ? .white : .primary)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(selection == tab ? Color.accentColor : Color.clear)
+                .contentShape(.rect(cornerRadius: 10))
+                .clipShape(.rect(cornerRadius: 10))
+                .glassEffect(
+                    .regular.interactive(),
+                    in: .rect(cornerRadius: 10)
+                )
+                .glassEffectUnion(id: "tabBar", namespace: namespace)
+                .onTapGesture {
+                    withAnimation(.smooth) {
+                        selection = tab
+                    }
+                }
+            }
+        }
+    }
+}
 
 struct ModernTemplateEditor: View {
     let template: TemplateItem
@@ -19,6 +70,10 @@ struct ModernTemplateEditor: View {
     @State private var alertMessage = ""
     @State private var showingAlert = false
     @State private var statusWorkItem: DispatchWorkItem?
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var viewportOffset: CGSize = .zero
+    @State private var leftPanelTab: LeftPanelTab = .sections
+    @Namespace private var leftPanelNamespace
 
     private var editorViewModel: InvoiceTemplateEditorViewModel {
         workspace.editorViewModel
@@ -64,19 +119,25 @@ struct ModernTemplateEditor: View {
     }
 
     private var editorLayout: some View {
-        HSplitView {
-            palettePanel
-            canvasPanel
-            inspectorPanel
+        ModernCanvasView(
+            zoomScale: $zoomScale,
+            viewportOffset: $viewportOffset,
+            showPalette: workspace.isPaletteVisible,
+            showInspector: isInspectorVisible,
+            paletteContent: { leftPanelContent },
+            inspectorContent: { inspectorContent }
+        )
+        .toolbar {
+            ToolbarSpacer(.flexible)
+            ToolbarItemGroup {
+                saveControl
+                undoRedoControls
+                viewControls
+            }
+            ToolbarSpacer(.flexible)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbarBackgroundVisibility(.hidden)
-        .background { 
-            Color(NSColor.windowBackgroundColor)
-                .ignoresSafeArea()
-            AppMeshBackdrop() 
-                .ignoresSafeArea()
-        }
+        .background(PanelShellTokens.panelBackground.ignoresSafeArea())
     }
 
     private func saveTemplate() {
@@ -111,7 +172,7 @@ struct ModernTemplateEditor: View {
     }
 
     private func runValidation() {
-        editorViewModel.validateDocument()
+        editorViewModel.validateDocument(force: true)
         let errorCount = editorViewModel.validationErrors.count
         if errorCount == 0 {
             showStatus("No validation issues found")
@@ -256,66 +317,82 @@ private extension ModernTemplateEditor {
         }
     }
 
-    @ViewBuilder
-    var palettePanel: some View {
-        if workspace.isPaletteVisible {
-            sidePanel(defaultWidth: 340, minWidth: 300, maxWidth: 480) {
-                ModernComponentPalette()
-            }
-            .toolbarBackgroundVisibility(.hidden)
-        }
-    }
-
-    private var canvasPanel: some View {
-        ZStack {
-            RoundedRectangle(
-                cornerRadius: TemplateEditorPanelStyle.cornerRadius,
-                style: .continuous
-            )
-                .fill(Color.clear)
-                .glassEffect(
-                    .regular,
-                    in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius)
-                )
-
-            ModernCanvasView()
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: TemplateEditorPanelStyle.cornerRadius,
-                        style: .continuous
-                    )
-                )
-                .toolbar {
-                    ToolbarSpacer(.flexible)
-                    ToolbarItemGroup {
-                        saveControl
-                        undoRedoControls
-                        viewControls
+    private var leftPanelContent: some View {
+        SidePanel(configuration: .palette, useGlassEffect: false, fixedVerticalSize: false) {
+            // GlassEffectContainer enables morphing between tab bar and panel
+            GlassEffectContainer(spacing: 20) {
+                VStack(alignment: .center, spacing: 0) {
+                    // Tab bar - buttons use glassEffectUnion with "tabBar" ID
+                    GlassTabBar(selection: $leftPanelTab, namespace: leftPanelNamespace)
+                        .padding(.top, 8)
+                    
+                    // Panel content with glass effect
+                    Group {
+                        switch leftPanelTab {
+                        case .sections:
+                            ScrollView {
+                                DocumentOutlinePanel()
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        case .components:
+                            ModernComponentPalette()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    ToolbarSpacer(.flexible)
+                    .glassEffect(.regular, in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius))
+                    .glassEffectUnion(id: "tabBar", namespace: leftPanelNamespace)
                 }
-                .toolbarBackgroundVisibility(.hidden)
-        }
-        .padding(TemplateEditorPanelStyle.outerPadding)
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        .layoutPriority(1)
-    }
-
-    @ViewBuilder
-    var inspectorPanel: some View {
-        if isInspectorVisible {
-            sidePanel(defaultWidth: 340, minWidth: 300, maxWidth: 480) {
-                ModernInspectorView()
             }
-            .toolbarBackgroundVisibility(.hidden)
+            .padding(TemplateEditorPanelStyle.outerPadding)
         }
+        .contentShape(Rectangle())
+        .clipped()
+        .toolbarBackgroundVisibility(.hidden)
     }
 
-    private func sidePanel<Content: View>(defaultWidth: CGFloat, minWidth: CGFloat, maxWidth: CGFloat, @ViewBuilder content: () -> Content) -> some View {
-        content()
-            .frame(minWidth: minWidth, idealWidth: defaultWidth, maxWidth: maxWidth, maxHeight: .infinity, alignment: .top)
-            .contentShape(Rectangle())
-            .clipped()
+    private var hasSelection: Bool {
+        editorViewModel.document.selectedComponentID != nil || editorViewModel.document.selectedSplitSelection != nil
+    }
+    
+    private var inspectorContent: some View {
+        SidePanel(configuration: .inspector, useGlassEffect: false, fixedVerticalSize: false) {
+            // GlassEffectContainer enables morphing between header and panel
+            GlassEffectContainer(spacing: 20) {
+                VStack(alignment: .center, spacing: 0) {
+                    // Header bar - only shown when something is selected
+                    if hasSelection {
+                        HStack(spacing: 6) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Inspector")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .glassEffect(
+                            .regular.interactive(),
+                            in: .rect(cornerRadius: 10)
+                        )
+                        .glassEffectUnion(id: "inspectorBar", namespace: leftPanelNamespace)
+                        .padding(.top, 8)
+                    }
+                    
+                    // Panel content with glass effect
+                    ScrollView {
+                        ModernInspectorView()
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .glassEffect(.regular, in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius))
+                    .glassEffectUnion(id: hasSelection ? "inspectorBar" : nil, namespace: leftPanelNamespace)
+                }
+            }
+            .padding(TemplateEditorPanelStyle.outerPadding)
+        }
+        .contentShape(Rectangle())
+        .clipped()
+        .toolbarBackgroundVisibility(.hidden)
     }
 
 }

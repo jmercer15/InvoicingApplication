@@ -56,11 +56,8 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Settings list with real-time selection
-            settingsList
-        }
-        .background(.clear)
+        // Settings list with real-time selection
+        settingsList
     }
     
     // MARK: - Settings List
@@ -90,8 +87,7 @@ struct SettingsView: View {
             .padding(.horizontal, 12) // Reduced horizontal padding
             .padding(.vertical, 8)
         }
-        .frame(maxWidth: 400) // Limit list width to match FoldPaperComponents
-        .background(.clear)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -131,9 +127,10 @@ struct SettingsRowView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isSelected ? Color.white.opacity(0.2) : Color.clear, lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
-        .appInteractiveCursor()
+        .pointerStyle(.link)
     }
 }
 

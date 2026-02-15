@@ -19,15 +19,6 @@ struct ModernComponentPalette: View {
     var body: some View {
         VStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Component Library")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(Color.primaryText)
-
-                    Text("Browse available components and drag them into your design.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.secondaryText)
-                }
 
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -37,11 +28,13 @@ struct ModernComponentPalette: View {
                         .pointerStyle(.horizontalText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, weight: .regular))
+                        .frame(minWidth: 50, maxWidth: .infinity)
 
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 12, weight: .semibold))
+                                .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -90,11 +83,6 @@ struct ModernComponentPalette: View {
             )
         }
         .padding(16)
-        .glassEffect(
-            .regular,
-            in: .rect(cornerRadius: TemplateEditorPanelStyle.cornerRadius)
-        )
-        .padding(TemplateEditorPanelStyle.outerPadding)
     }
 
     private func binding(for section: PaletteSection) -> Binding<Bool> {
@@ -231,11 +219,8 @@ struct ModernComponentPalette: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .glassEffect(
-                .regular.interactive(true).tint(Color(NSColor.windowBackgroundColor)),
-                in: .rect(cornerRadius: 12)
-            )
-            .glassEffectTransition(.materialize)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(Color.white.opacity(0.2), lineWidth: 0.6)

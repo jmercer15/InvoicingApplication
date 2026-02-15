@@ -28,9 +28,7 @@ public struct UpdateInvoiceStatus: Sendable {
     
     /// Mark invoice as sent
     public func callAsFunction(markAsSent id: UUID) async throws -> Invoice {
-        // Use the repository's updateStatus method instead of manual property copying
-        // This prevents data loss when new properties are added to the Invoice model
-        try await repository.updateStatus(id: id, status: "sent")
+        try await repository.updateBillingStatus(id: id, status: .pending)
         
         // Fetch and return the updated invoice
         guard let invoice = try await repository.fetch(by: id) else {
@@ -42,9 +40,7 @@ public struct UpdateInvoiceStatus: Sendable {
     
     /// Mark invoice as paid
     public func callAsFunction(markAsPaid id: UUID) async throws -> Invoice {
-        // Use the repository's updateStatus method instead of manual property copying
-        // This prevents data loss when new properties are added to the Invoice model
-        try await repository.updateStatus(id: id, status: "paid")
+        try await repository.updateBillingStatus(id: id, status: .received)
         
         // Fetch and return the updated invoice
         guard let invoice = try await repository.fetch(by: id) else {
@@ -54,4 +50,3 @@ public struct UpdateInvoiceStatus: Sendable {
         return invoice
     }
 }
-

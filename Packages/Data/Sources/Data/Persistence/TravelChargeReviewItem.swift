@@ -10,7 +10,7 @@ import Foundation
 import SwiftData
 
 
-@Model public class TravelChargeReviewItem: @unchecked Sendable {
+@Model public class TravelChargeReviewItemEntity {
     public var id: UUID
     public var reason: String?
     public var timestamp: Date?

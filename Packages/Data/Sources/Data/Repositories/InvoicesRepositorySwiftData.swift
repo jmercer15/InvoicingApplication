@@ -5,9 +5,17 @@ import Core
 /// SwiftData implementation of InvoicesRepository
 public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked Sendable {
     private let modelContext: ModelContext
+    private let invoiceMapper: InvoiceMapper
+    private let invoiceItemMapper: InvoiceItemMapper
     
-    public init(modelContext: ModelContext) {
+    public init(
+        modelContext: ModelContext, 
+        invoiceMapper: InvoiceMapper = InvoiceMapper(),
+        invoiceItemMapper: InvoiceItemMapper = InvoiceItemMapper()
+    ) {
         self.modelContext = modelContext
+        self.invoiceMapper = invoiceMapper
+        self.invoiceItemMapper = invoiceItemMapper
     }
     
     public func fetchAll() async throws -> [Invoice] {
@@ -16,7 +24,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Invoice(fromEntity: $0) }
+            return entities.map { self.invoiceMapper.mapToDomain($0) }
         }
     }
     
@@ -30,26 +38,31 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Invoice(fromEntity: $0) }
+            return entities.map { self.invoiceMapper.mapToDomain($0) }
         }
     }
     
     public func fetch(by status: String) async throws -> [Invoice] {
-        let predicate = #Predicate<InvoiceEntity> { invoice in
-            invoice.status?.rawValue == status
+        guard let normalizedStatus = InvoiceStatus(normalized: status) else {
+            throw RepositoryError.validationFailed(message: "Unsupported invoice status: \(status)")
         }
         let descriptor = FetchDescriptor<InvoiceEntity>(
-            predicate: predicate,
             sortBy: [SortDescriptor(\.issueDate, order: .reverse)]
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Invoice(fromEntity: $0) }
+            return entities
+                .filter { matchesStatus($0.status, target: normalizedStatus) }
+                .map { self.invoiceMapper.mapToDomain($0) }
         }
     }
     
     public func fetch(by billingStatus: BillingStatus) async throws -> [Invoice] {
-        let statusString = mapBillingStatusToInvoiceStatus(billingStatus)
+        guard let statusString = mapBillingStatusToInvoiceStatus(billingStatus) else {
+            throw RepositoryError.validationFailed(
+                message: "Billing status \(billingStatus.rawValue) is not valid for invoices."
+            )
+        }
         return try await fetch(by: statusString)
     }
     
@@ -60,7 +73,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Invoice(fromEntity: entity)
+            return self.invoiceMapper.mapToDomain(entity)
         }
     }
     
@@ -71,14 +84,16 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Invoice(fromEntity: entity)
+            return self.invoiceMapper.mapToDomain(entity)
         }
     }
     
     public func create(_ invoice: Invoice) async throws -> Invoice {
+        try validateInvoiceStatus(invoice.status)
         return try await MainActor.run {
-            let entity = InvoiceEntity(id: invoice.id, invoiceNumber: invoice.invoiceNumber)
-            entity.update(from: invoice)
+            var entity = InvoiceEntity(id: invoice.id, invoiceNumber: invoice.invoiceNumber)
+            self.invoiceMapper.updateEntity(&entity, from: invoice)
+            self.applyWorkflowDates(for: entity)
             
             // Set or clear client relationship
             if let clientId = invoice.clientId {
@@ -132,6 +147,18 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 // Explicitly clear relationship if no businessId provided
                 entity.business = nil
             }
+            
+            // Set session relationships
+            if !invoice.sessionIds.isEmpty {
+                let sessionIds = invoice.sessionIds
+                let sessionPredicate = #Predicate<SessionEntity> { sessionIds.contains($0.id) }
+                let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: sessionPredicate)
+                let sessions = try modelContext.fetch(sessionDescriptor)
+                entity.sessions = sessions
+            } else {
+                entity.sessions = []
+            }
+            syncLinkedSessionStatuses(for: entity)
             
             // Always populate snapshot fields from relationships after setting them
             // This ensures payee data is populated from client.payee when billing authority is Parent/Guardian
@@ -147,19 +174,23 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            self.notifySessionsRefreshIfNeeded(for: entity)
             
-            return Invoice(fromEntity: entity)
+            return self.invoiceMapper.mapToDomain(entity)
         }
     }
     
     public func update(_ invoice: Invoice) async throws -> Invoice {
+        try validateInvoiceStatus(invoice.status)
         return try await MainActor.run {
             let predicate = #Predicate<InvoiceEntity> { i in i.id == invoice.id }
             let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: invoice)
+            var mutableEntity = entity
+            self.invoiceMapper.updateEntity(&mutableEntity, from: invoice)
+            self.applyWorkflowDates(for: entity)
             
             // Set or clear client relationship
             if let clientId = invoice.clientId {
@@ -214,6 +245,18 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 entity.business = nil
             }
             
+            // Set session relationships
+            if !invoice.sessionIds.isEmpty {
+                let sessionIds = invoice.sessionIds
+                let sessionPredicate = #Predicate<SessionEntity> { sessionIds.contains($0.id) }
+                let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: sessionPredicate)
+                let sessions = try modelContext.fetch(sessionDescriptor)
+                entity.sessions = sessions
+            } else {
+                entity.sessions = []
+            }
+            syncLinkedSessionStatuses(for: entity)
+            
             // Always populate snapshot fields from relationships after setting them
             // This ensures payee data is populated from client.payee when billing authority is Parent/Guardian
             entity.snapshotRelatedData()
@@ -224,8 +267,9 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            self.notifySessionsRefreshIfNeeded(for: entity)
             
-            return Invoice(fromEntity: entity)
+            return self.invoiceMapper.mapToDomain(entity)
         }
     }
     
@@ -236,6 +280,9 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
+            let hadLinkedSessions = !(entity.sessions?.isEmpty ?? true)
+
+            resetLinkedSessionStatusesOnDelete(for: entity)
             modelContext.delete(entity)
             do {
             try modelContext.save()
@@ -243,27 +290,26 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            if hadLinkedSessions {
+                SessionChangePublisher.shared.notifyRefreshNeeded()
+            }
         }
     }
     
     public func updateStatus(id: UUID, status: String) async throws {
+        guard let normalizedStatus = InvoiceStatus(normalized: status) else {
+            throw RepositoryError.validationFailed(message: "Unsupported invoice status: \(status)")
+        }
+
         try await MainActor.run {
             let predicate = #Predicate<InvoiceEntity> { i in i.id == id }
             let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.status = InvoiceStatus(rawValue: status) ?? .draft
-            
-            // Set appropriate date fields based on status
-            switch status {
-            case "sent":
-                entity.sentDate = Date()
-            case "paid":
-                entity.paidDate = Date()
-            default:
-                break
-            }
+            entity.status = normalizedStatus
+            applyWorkflowDates(for: entity)
+            syncLinkedSessionStatuses(for: entity)
             
             do {
             try modelContext.save()
@@ -271,24 +317,28 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            self.notifySessionsRefreshIfNeeded(for: entity)
         }
     }
     
     public func updateBillingStatus(id: UUID, status: BillingStatus) async throws {
-        let statusString = mapBillingStatusToInvoiceStatus(status)
+        guard let statusString = mapBillingStatusToInvoiceStatus(status) else {
+            throw RepositoryError.validationFailed(
+                message: "Billing status \(status.rawValue) is not valid for invoices."
+            )
+        }
         try await updateStatus(id: id, status: statusString)
     }
     
     public func createFromSessions(_ sessionIds: [UUID], clientId: UUID) async throws -> Invoice {
-        // This would be implemented to create an invoice from sessions
-        // For now, return a placeholder
+        // Create invoice from sessions with generated invoice number and default payment terms
         let invoiceNumber = try await generateInvoiceNumber()
         let invoice = Invoice(
             id: UUID(),
             invoiceNumber: invoiceNumber,
             dueDate: Calendar.current.date(byAdding: .day, value: 30, to: Date()),
             issueDate: Date(),
-            status: "draft",
+            status: InvoiceStatus.reviewDraft.rawValue,
             clientId: clientId,
             sessionIds: sessionIds
         )
@@ -311,6 +361,26 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
             itemEntity.quantity = item.quantity
             itemEntity.rate = item.rate
             itemEntity.position = item.position
+            itemEntity.serviceDate = item.serviceDate
+            itemEntity.ndisItemNumber = item.ndisItemNumber
+            itemEntity.unit = item.unit
+            itemEntity.gstCode = item.gstCode
+            if let claimTypeStr = item.claimType {
+                itemEntity.claimType = NDISClaimType(rawValue: claimTypeStr)
+            }
+            
+            // Map new NDIS fields
+            itemEntity.taxRate = item.taxRate
+            itemEntity.ndisSupportCategory = item.ndisSupportCategory
+            itemEntity.ndisRegistrationGroup = item.ndisRegistrationGroup
+            itemEntity.ndisOutcomeDomain = item.ndisOutcomeDomain
+            itemEntity.ndisSupportPurpose = item.ndisSupportPurpose
+            itemEntity.isComplexBehaviour = item.isComplexBehaviour
+            itemEntity.isHighIntensity = item.isHighIntensity
+            itemEntity.geographicLoading = item.geographicLoading
+            itemEntity.timeModifier = item.timeModifier
+            itemEntity.groupModifier = item.groupModifier
+            itemEntity.finalRateLimit = item.finalRateLimit
             
             if itemEntity.modelContext == nil {
                 modelContext.insert(itemEntity)
@@ -321,7 +391,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return InvoiceItem(from: itemEntity)
+            return self.invoiceItemMapper.mapToDomain(itemEntity)
         }
     }
     
@@ -336,13 +406,35 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
             entity.quantity = item.quantity
             entity.rate = item.rate
             entity.position = item.position
+            entity.serviceDate = item.serviceDate
+            entity.ndisItemNumber = item.ndisItemNumber
+            entity.unit = item.unit
+            entity.gstCode = item.gstCode
+            if let claimTypeStr = item.claimType {
+                entity.claimType = NDISClaimType(rawValue: claimTypeStr)
+            } else {
+                entity.claimType = nil
+            }
+            
+            // Map new NDIS fields for update
+            entity.taxRate = item.taxRate
+            entity.ndisSupportCategory = item.ndisSupportCategory
+            entity.ndisRegistrationGroup = item.ndisRegistrationGroup
+            entity.ndisOutcomeDomain = item.ndisOutcomeDomain
+            entity.ndisSupportPurpose = item.ndisSupportPurpose
+            entity.isComplexBehaviour = item.isComplexBehaviour
+            entity.isHighIntensity = item.isHighIntensity
+            entity.geographicLoading = item.geographicLoading
+            entity.timeModifier = item.timeModifier
+            entity.groupModifier = item.groupModifier
+            entity.finalRateLimit = item.finalRateLimit
             do {
             try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return InvoiceItem(from: entity)
+            return self.invoiceItemMapper.mapToDomain(entity)
         }
     }
     
@@ -373,7 +465,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { InvoiceItem(from: $0) }
+            return entities.map { self.invoiceItemMapper.mapToDomain($0) }
         }
     }
     
@@ -392,7 +484,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Invoice(fromEntity: $0) }
+            return entities.map { self.invoiceMapper.mapToDomain($0) }
         }
     }
     
@@ -405,7 +497,7 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Invoice(fromEntity: $0) }
+            return entities.map { self.invoiceMapper.mapToDomain($0) }
         }
     }
     
@@ -417,12 +509,17 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
     }
     
     public func count(by status: String) async throws -> Int {
-        let predicate = #Predicate<InvoiceEntity> { invoice in
-            invoice.status?.rawValue == status
+        guard let normalizedStatus = InvoiceStatus(normalized: status) else {
+            throw RepositoryError.validationFailed(message: "Unsupported invoice status: \(status)")
         }
-        let descriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
+        let descriptor = FetchDescriptor<InvoiceEntity>()
         return try await MainActor.run {
-            try modelContext.fetchCount(descriptor)
+            let entities = try modelContext.fetch(descriptor)
+            return entities.reduce(into: 0) { count, entity in
+                if matchesStatus(entity.status, target: normalizedStatus) {
+                    count += 1
+                }
+            }
         }
     }
     
@@ -430,22 +527,132 @@ public final class InvoicesRepositorySwiftData: InvoicesRepository, @unchecked S
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd"
         let dateString = formatter.string(from: Date())
-        
-        let count = try await count()
-        return "INV-\(dateString)-\(String(format: "%04d", count + 1))"
+        let prefix = "INV-\(dateString)-"
+
+        return try await MainActor.run {
+            let descriptor = FetchDescriptor<InvoiceEntity>()
+            let invoices = try modelContext.fetch(descriptor)
+
+            let maxSequence = invoices
+                .map(\.invoiceNumber)
+                .compactMap { number -> Int? in
+                    guard number.hasPrefix(prefix) else { return nil }
+                    return Int(number.dropFirst(prefix.count))
+                }
+                .max() ?? 0
+
+            var nextSequence = maxSequence + 1
+            while true {
+                let candidate = "\(prefix)\(String(format: "%04d", nextSequence))"
+                let predicate = #Predicate<InvoiceEntity> { invoice in
+                    invoice.invoiceNumber == candidate
+                }
+                let existsDescriptor = FetchDescriptor<InvoiceEntity>(predicate: predicate)
+                if try modelContext.fetch(existsDescriptor).isEmpty {
+                    return candidate
+                }
+                nextSequence += 1
+            }
+        }
     }
     
     // MARK: - Private Helpers
     // Note: fetchEntity and fetchItemEntity helpers removed - all entity operations now happen directly within MainActor.run blocks
     // to avoid Sendable conformance issues with InvoiceEntity and InvoiceItemEntity
     
-    private func mapBillingStatusToInvoiceStatus(_ billingStatus: BillingStatus) -> String {
+    private func mapBillingStatusToInvoiceStatus(_ billingStatus: BillingStatus) -> String? {
         switch billingStatus {
-        case .reviewDrafts: return "draft"
-        case .readyToSend: return "ready"
-        case .pending: return "sent"
-        case .received: return "paid"
-        default: return "draft"
+        case .reviewDrafts:
+            return InvoiceStatus.reviewDraft.rawValue
+        case .readyToSend:
+            return InvoiceStatus.readyToSend.rawValue
+        case .pending:
+            return InvoiceStatus.pending.rawValue
+        case .received:
+            return InvoiceStatus.received.rawValue
+        case .completed, .grouped, .addTravel:
+            return nil
         }
+    }
+
+    private func matchesStatus(_ candidate: InvoiceStatus, target: InvoiceStatus) -> Bool {
+        candidate == target
+    }
+
+    private func validateInvoiceStatus(_ status: String) throws {
+        guard InvoiceStatus(normalized: status) != nil else {
+            throw RepositoryError.validationFailed(message: "Unsupported invoice status: \(status)")
+        }
+    }
+
+    private func applyWorkflowDates(for invoice: InvoiceEntity) {
+        switch invoice.status {
+        case .reviewDraft, .readyToSend:
+            invoice.sentDate = nil
+            invoice.paidDate = nil
+        case .pending, .overdue:
+            if invoice.sentDate == nil {
+                invoice.sentDate = Date()
+            }
+            invoice.paidDate = nil
+        case .received:
+            if invoice.sentDate == nil {
+                invoice.sentDate = Date()
+            }
+            if invoice.paidDate == nil {
+                invoice.paidDate = Date()
+            }
+        case .cancelled, .voided:
+            break
+        }
+    }
+
+    private func syncLinkedSessionStatuses(for invoice: InvoiceEntity) {
+        guard let sessionStatus = linkedSessionStatus(for: invoice.status),
+              let sessions = invoice.sessions else {
+            return
+        }
+        for session in sessions {
+            session.status = sessionStatus
+        }
+    }
+
+    private func resetLinkedSessionStatusesOnDelete(for invoice: InvoiceEntity) {
+        guard let sessions = invoice.sessions else { return }
+        let target: SessionStatus?
+        switch invoice.status {
+        case .reviewDraft, .readyToSend:
+            target = .needsTravel
+        case .pending, .overdue, .received:
+            target = .completed
+        case .cancelled, .voided:
+            target = nil
+        }
+
+        guard let target else { return }
+        for session in sessions {
+            session.status = target
+        }
+    }
+
+    private func linkedSessionStatus(for invoiceStatus: InvoiceStatus) -> SessionStatus? {
+        switch invoiceStatus {
+        case .reviewDraft:
+            return .reviewDraft
+        case .readyToSend:
+            return .readyToSend
+        case .pending, .overdue:
+            return .pending
+        case .received:
+            return .received
+        case .cancelled, .voided:
+            return nil
+        }
+    }
+
+    @MainActor
+    private func notifySessionsRefreshIfNeeded(for invoice: InvoiceEntity) {
+        guard let sessions = invoice.sessions, !sessions.isEmpty else { return }
+        SessionChangePublisher.shared.notifyRefreshNeeded()
     }
 }

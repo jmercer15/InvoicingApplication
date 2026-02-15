@@ -20,7 +20,9 @@ struct CalendarDisplayDataProvider {
         if remainingDaysInLastWeek > 0 {
             dates.append(contentsOf: Array(repeating: nil as Date?, count: remainingDaysInLastWeek))
         }
-        return dates.chunked(into: 7)
+        return stride(from: 0, to: dates.count, by: 7).map {
+            Array(dates[$0..<min($0 + 7, dates.count)])
+        }
     }
 }
 

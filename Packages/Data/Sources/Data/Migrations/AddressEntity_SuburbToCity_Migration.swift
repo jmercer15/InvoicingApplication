@@ -210,6 +210,7 @@ private extension DateFormatter {
 }
 
 /// Migration test utilities
+#if DEBUG
 public struct AddressMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -251,3 +252,4 @@ public struct AddressMigrationTestUtils {
         print("✅ Migration test completed successfully")
     }
 }
+#endif

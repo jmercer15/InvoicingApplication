@@ -11,6 +11,51 @@ public class GeocodingService {
     
     private init() {}
     
+    // MARK: - UnitOfWork-Based Methods (Preferred)
+    
+    /// Geocodes an address using UnitOfWorkService (domain model method)
+    /// Returns updated coordinates without persisting - caller is responsible for saving via UoW
+    public func geocodeAddress(_ address: Address) async -> (latitude: Double, longitude: Double)? {
+        let fullAddress = address.fullFormattedAddress
+        guard !fullAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        
+        if let coordinate = await geocodeAddress(fullAddress) {
+            return (coordinate.latitude, coordinate.longitude)
+        }
+        return nil
+    }
+    
+    /// Geocodes an address string and returns coordinates (pure function, no persistence)
+    public func geocodeAddressString(_ addressString: String) async -> (latitude: Double, longitude: Double)? {
+        guard !addressString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        
+        if let coordinate = await geocodeAddress(addressString) {
+            return (coordinate.latitude, coordinate.longitude)
+        }
+        return nil
+    }
+
+    /// Reverse geocodes coordinates into a structured, verbose address payload.
+    public func reverseGeocodeCoordinates(
+        _ coordinate: CLLocationCoordinate2D,
+        preferredLocale: Locale? = nil
+    ) async -> EventKitLocationParser.ParsedLocation? {
+        do {
+            return try await MapKitAddressResolver.parseAddress(
+                from: coordinate,
+                preferredLocale: preferredLocale
+            )
+        } catch {
+            print("🌍 [GeocodingService] Failed reverse geocode for (\(coordinate.latitude), \(coordinate.longitude)): \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    // MARK: - ModelContext-Based Methods (Legacy)
     /// Geocodes an address string and updates the provided SwiftData entity with latitude and longitude.
     ///
     /// - Parameters:
@@ -29,8 +74,8 @@ public class GeocodingService {
         Task {
             if let coordinate = await geocodeAddress(fullAddress) {
                 // Re-fetch the entity using the persistentModelID
-                let descriptor = FetchDescriptor<AddressEntity>(predicate: #Predicate { $0.persistentModelID == entityID })
-                if let entity = try? context.fetch(descriptor).first {
+                let resolver = EntityResolutionService(context: context)
+                if let entity: AddressEntity = resolver.resolve(persistentModelID: entityID) {
                     entity.latitude = coordinate.latitude
                     entity.longitude = coordinate.longitude
                     do {
@@ -59,8 +104,8 @@ public class GeocodingService {
         }
         
         // Fetch entity for update
-        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
-        guard let sessionEntity = try? context.fetch(descriptor).first else {
+        let resolver = EntityResolutionService(context: context)
+        guard let sessionEntity = try? resolver.resolveSession(id: session.id) else {
             completion?()
             return
         }
@@ -84,8 +129,8 @@ public class GeocodingService {
         Task {
             if let coordinate = await geocodeAddress(fullAddress) {
                 // Re-fetch the entity using the persistentModelID
-                let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == entityID })
-                if let entity = try? context.fetch(descriptor).first {
+                let resolver = EntityResolutionService(context: context)
+                if let entity: SessionEntity = resolver.resolve(persistentModelID: entityID) {
                     entity.sessionLatitude = coordinate.latitude
                     entity.sessionLongitude = coordinate.longitude
                     do {
@@ -117,8 +162,8 @@ public class GeocodingService {
         print("🌍 [GeocodingService] Starting async bulk coordinate check for session: \(session.id.uuidString)")
         
         // Fetch entity for coordinate updates
-        let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == session.id })
-        guard let sessionEntity = try? modelContext.fetch(descriptor).first else {
+        let resolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? resolver.resolveSession(id: session.id) else {
             print("🌍 [GeocodingService] Failed to find SessionEntity for session \(session.id)")
             return false
         }
@@ -149,10 +194,10 @@ public class GeocodingService {
         // Ensure all ModelContext operations happen on MainActor
         let entitiesToGeocode = await MainActor.run {
             var entities: [(String, String)] = []
+            let resolver = EntityResolutionService(context: modelContext)
             
             // Re-fetch session to check coordinates
-            let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == sessionID })
-            guard let currentSession = try? modelContext.fetch(sessionDescriptor).first else {
+            guard let currentSession: SessionEntity = resolver.resolve(persistentModelID: sessionID) else {
                 return entities
             }
             
@@ -166,8 +211,7 @@ public class GeocodingService {
             
             // Check session address coordinates
             if let sessionAddressID = sessionAddressID {
-                let addressDescriptor = FetchDescriptor<AddressEntity>(predicate: #Predicate { $0.persistentModelID == sessionAddressID })
-                if let sessionAddress = try? modelContext.fetch(addressDescriptor).first,
+                if let sessionAddress: AddressEntity = resolver.resolve(persistentModelID: sessionAddressID),
                    sessionAddress.latitude == 0 && sessionAddress.longitude == 0 {
                     let addressString = sessionAddress.fullFormattedAddress
                     if !addressString.isEmpty {
@@ -179,8 +223,7 @@ public class GeocodingService {
             
             // Check client address coordinates
             if let clientAddressID = clientAddressID {
-                let clientAddressDescriptor = FetchDescriptor<AddressEntity>(predicate: #Predicate { $0.persistentModelID == clientAddressID })
-                if let clientAddress = try? modelContext.fetch(clientAddressDescriptor).first,
+                if let clientAddress: AddressEntity = resolver.resolve(persistentModelID: clientAddressID),
                    clientAddress.latitude == 0 && clientAddress.longitude == 0 {
                     let addressString = clientAddress.fullFormattedAddress
                     if !addressString.isEmpty {
@@ -191,8 +234,7 @@ public class GeocodingService {
             }
             
             // Check business address coordinates
-            let businessDescriptor = FetchDescriptor<BusinessEntity>()
-            if let business = try? modelContext.fetch(businessDescriptor).first,
+            if let business = try? resolver.resolveBusiness(),
                let businessAddress = business.address {
                 if businessAddress.latitude == 0 && businessAddress.longitude == 0 {
                     let addressString = businessAddress.fullFormattedAddress
@@ -253,12 +295,11 @@ public class GeocodingService {
         print("🌍 [GeocodingService] Async bulk geocoding completed: \(successCount)/\(entitiesToGeocode.count) successful")
         
         // If session coordinates are missing but session address has coordinates, copy them over
-        let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == sessionID })
-        if let currentSession = try? modelContext.fetch(sessionDescriptor).first,
+        let resolver = EntityResolutionService(context: modelContext)
+        if let currentSession: SessionEntity = resolver.resolve(persistentModelID: sessionID),
            currentSession.sessionLatitude == 0 && currentSession.sessionLongitude == 0 {
             if let sessionAddressID = sessionAddressID {
-                let addressDescriptor = FetchDescriptor<AddressEntity>(predicate: #Predicate { $0.persistentModelID == sessionAddressID })
-                if let address = try? modelContext.fetch(addressDescriptor).first, address.latitude != 0 && address.longitude != 0 {
+                if let address: AddressEntity = resolver.resolve(persistentModelID: sessionAddressID), address.latitude != 0 && address.longitude != 0 {
                     currentSession.sessionLatitude = address.latitude
                     currentSession.sessionLongitude = address.longitude
                     print("🌍 [GeocodingService] Copied session address coordinates to session coordinates: (\(address.latitude), \(address.longitude))")
@@ -276,18 +317,17 @@ public class GeocodingService {
     
     /// Updates the appropriate entity with geocoded coordinates
     private func updateEntityCoordinates(entityType: String, sessionID: PersistentIdentifier, coordinates: CLLocationCoordinate2D, modelContext: ModelContext) {
+        let resolver = EntityResolutionService(context: modelContext)
         switch entityType {
         case "session":
-            let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == sessionID })
-            if let session = try? modelContext.fetch(sessionDescriptor).first {
+            if let session: SessionEntity = resolver.resolve(persistentModelID: sessionID) {
                 session.sessionLatitude = coordinates.latitude
                 session.sessionLongitude = coordinates.longitude
                 print("🌍 [GeocodingService] Updated session coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
             }
             
         case "session_address":
-            let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == sessionID })
-            if let session = try? modelContext.fetch(sessionDescriptor).first,
+            if let session: SessionEntity = resolver.resolve(persistentModelID: sessionID),
                let address = session.address {
                 address.latitude = coordinates.latitude
                 address.longitude = coordinates.longitude
@@ -295,8 +335,7 @@ public class GeocodingService {
             }
             
         case "client_address":
-            let sessionDescriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.persistentModelID == sessionID })
-            if let session = try? modelContext.fetch(sessionDescriptor).first,
+            if let session: SessionEntity = resolver.resolve(persistentModelID: sessionID),
                let client = session.client,
                let address = client.address {
                 address.latitude = coordinates.latitude
@@ -305,8 +344,7 @@ public class GeocodingService {
             }
             
         case "business_address":
-            let businessDescriptor = FetchDescriptor<BusinessEntity>()
-            if let business = try? modelContext.fetch(businessDescriptor).first {
+            if let business = try? resolver.resolveBusiness() {
                 business.address?.latitude = coordinates.latitude
                 business.address?.longitude = coordinates.longitude
                 print("🌍 [GeocodingService] Updated business address coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
@@ -334,17 +372,11 @@ public class GeocodingService {
     
     // MARK: - Helpers
     private func geocodeAddress(_ address: String) async -> CLLocationCoordinate2D? {
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = address
-        let search = MKLocalSearch(request: request)
         do {
-            let response = try await search.start()
-            if let item = response.mapItems.first {
-                return item.location.coordinate
-            }
+            return try await MapKitAddressResolver.forwardSearch(query: address)?.location.coordinate
         } catch {
             print("🌍 [GeocodingService] Failed to geocode address: \(address) error: \(error.localizedDescription)")
         }
         return nil
     }
-} 
+}

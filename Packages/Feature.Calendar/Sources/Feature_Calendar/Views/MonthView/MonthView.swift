@@ -8,7 +8,6 @@ import EventKit
 
 struct MonthView: View {
     @ObservedObject var viewModel: CalendarViewModel
-    @Binding var showInspector: Bool
     var precomputedWeeks: [[Date?]]? = nil
     
     // Access precomputed weeks if provided; otherwise fall back to ViewModel
@@ -18,10 +17,6 @@ struct MonthView: View {
         HStack(spacing: 0) {
             // Main month grid/content with optimized styling
             monthGrid()
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                )
                 .shadow(
                     color: Color.black.opacity(0.15),
                     radius: 25,
@@ -37,7 +32,6 @@ struct MonthView: View {
                 .layoutPriority(1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 20))
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
     }
 
     // ════════════════════════════════════════════════════════
@@ -105,6 +99,8 @@ struct MonthView: View {
                 ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor.opacity(0.7), lineWidth: 2)
                 : nil
         )
+        .contentShape(Rectangle())
+
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.15)) { viewModel.selectedDate = date }
         }
@@ -124,6 +120,8 @@ struct MonthView: View {
                 )
                 .fill(Color.black.opacity(0.15))
             )
+            .contentShape(Rectangle())
+
             .overlay(
                 // Top border (for all rows to maintain grid structure)
                 Rectangle()
@@ -152,6 +150,8 @@ struct MonthView: View {
                     .foregroundColor(Color.secondary.opacity(0.2)),
                 alignment: .bottom
             )
+            .contentShape(Rectangle())
+
     }
 }
 

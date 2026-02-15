@@ -15,8 +15,11 @@ struct RatioBasedLayout<Content: View>: View {
     let containerSize: CGSize
     let spacing: CGFloat
     let padding: CGFloat
+    let showDividers: Bool
     let content: (Int, CGSize) -> Content
     let onResize: (Int, CGFloat) -> Void
+    var onResizeStart: (() -> Void)? = nil
+    var onResizeEnd: (() -> Void)? = nil
 
     init(
         ratios: [CGFloat],
@@ -26,7 +29,10 @@ struct RatioBasedLayout<Content: View>: View {
         containerSize: CGSize,
         spacing: CGFloat = 0,
         padding: CGFloat = 0,
+        showDividers: Bool = true,
         onResize: @escaping (Int, CGFloat) -> Void,
+        onResizeStart: (() -> Void)? = nil,
+        onResizeEnd: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (Int, CGSize) -> Content
     ) {
         self.ratios = ratios
@@ -36,7 +42,10 @@ struct RatioBasedLayout<Content: View>: View {
         self.containerSize = containerSize
         self.spacing = spacing
         self.padding = padding
+        self.showDividers = showDividers
         self.onResize = onResize
+        self.onResizeStart = onResizeStart
+        self.onResizeEnd = onResizeEnd
         self.content = content
     }
 
@@ -98,8 +107,12 @@ struct RatioBasedLayout<Content: View>: View {
                                         direction: .horizontal,
                                         onResize: { delta in
                                             onResize(index, delta)
-                                        }
+                                        },
+                                        onResizeStart: onResizeStart,
+                                        onResizeEnd: onResizeEnd,
+                                        isVisible: showDividers
                                     )
+
                                 }
                             }
                     }
@@ -117,8 +130,12 @@ struct RatioBasedLayout<Content: View>: View {
                                         direction: .vertical,
                                         onResize: { delta in
                                             onResize(index, delta)
-                                        }
+                                        },
+                                        onResizeStart: onResizeStart,
+                                        onResizeEnd: onResizeEnd,
+                                        isVisible: showDividers
                                     )
+
                                 }
                             }
                     }
@@ -128,4 +145,42 @@ struct RatioBasedLayout<Content: View>: View {
         .padding(clampedPadding)
         .frame(width: containerSize.width, height: containerSize.height, alignment: .center)
     }
+}
+
+// MARK: - Preview
+
+#Preview("RatioBasedLayout - Horizontal") {
+    RatioBasedLayout(
+        ratios: [0.3, 0.4, 0.3],
+        sizingModes: [.fixed, .fixed, .fixed],
+        direction: .horizontal,
+        containerSize: CGSize(width: 400, height: 200),
+        spacing: 8,
+        padding: 16,
+        showDividers: true,
+        onResize: { _, _ in }
+    ) { index, size in
+        RoundedRectangle(cornerRadius: 8)
+            .fill([Color.blue, Color.green, Color.orange][index].opacity(0.3))
+            .overlay(Text("Panel \(index + 1)"))
+    }
+    .background(Color.gray.opacity(0.1))
+}
+
+#Preview("RatioBasedLayout - Vertical") {
+    RatioBasedLayout(
+        ratios: [0.25, 0.5, 0.25],
+        sizingModes: [.fixed, .fixed, .fixed],
+        direction: .vertical,
+        containerSize: CGSize(width: 300, height: 400),
+        spacing: 8,
+        padding: 16,
+        showDividers: true,
+        onResize: { _, _ in }
+    ) { index, size in
+        RoundedRectangle(cornerRadius: 8)
+            .fill([Color.purple, Color.teal, Color.pink][index].opacity(0.3))
+            .overlay(Text("Row \(index + 1)"))
+    }
+    .background(Color.gray.opacity(0.1))
 }

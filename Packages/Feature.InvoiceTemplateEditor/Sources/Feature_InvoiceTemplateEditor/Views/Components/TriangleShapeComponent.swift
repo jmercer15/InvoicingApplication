@@ -3,29 +3,26 @@ import SwiftUI
 // MARK: - Triangle Shape Component
 
 struct TriangleShapeComponent: View {
-let component: InvoiceComponent
-@EnvironmentObject private var document: InvoiceDocument
+    let component: InvoiceComponent
+    @EnvironmentObject private var document: InvoiceDocument
 
-var body: some View {
-Triangle(direction: component.style.triangleDirection)
-.fill(component.style.backgroundColorSwiftUI)
-.opacity(component.style.backgroundOpacity)
-.overlay {
-if component.style.borderWidth > 0 {
-Triangle(direction: component.style.triangleDirection)
-.stroke(component.style.borderColorSwiftUI, lineWidth: component.style.borderWidth)
-}
-}
-.aspectRatio(component.style.aspectRatio > 0 ? component.style.aspectRatio : 1.0, contentMode: .fit)
-.shadow(
-color: component.style.shadowEnabled ? component.style.shadowColorSwiftUI.opacity(component.style.shadowOpacity) : .clear,
-radius: component.style.shadowRadius,
-x: component.style.shadowOffsetX,
-y: component.style.shadowOffsetY
-)
-.frame(maxWidth: .infinity, maxHeight: .infinity)
-.padding(component.style.padding)
-.padding(component.style.margin)
-}
+    @Environment(\.isMeasuringIdealSize) private var isMeasuringIdealSize
+    
+    var body: some View {
+        Triangle(direction: component.style.triangleDirection)
+            .standardShapeStyle(component: component, document: document)
+    }
 }
 
+// MARK: - Preview
+
+#Preview("TriangleShapeComponent - Visual") {
+    HStack(spacing: 20) {
+        ForEach([TriangleDirection.up, .down, .left, .right], id: \.self) { direction in
+            Triangle(direction: direction)
+                .fill(Color.green)
+                .frame(width: 50, height: 50)
+        }
+    }
+    .padding()
+}

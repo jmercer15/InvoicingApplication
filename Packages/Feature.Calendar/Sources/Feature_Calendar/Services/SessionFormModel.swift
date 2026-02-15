@@ -11,6 +11,25 @@ import EventKit
 import Data
 import SharedUI
 
+struct SessionSupportLogDraft {
+    var isEnabled: Bool = false
+    var participantName: String = ""
+    var participantNdisNumber: String = ""
+    var supportItemNumber: String = ""
+    var serviceDescription: String = ""
+    var location: String = ""
+    var deliveredFrom: Date = Date()
+    var deliveredTo: Date = Date().addingTimeInterval(3600)
+    var deliveredBy: String = ""
+    var attestedBy: String = ""
+    var attestedAt: Date = Date()
+    var signatureMethod: String? = SignatureMethod.attestation.rawValue
+    var signedBy: String? = nil
+    var signedAt: Date? = nil
+    var cancellationReasonCode: String? = nil
+    var notes: String? = nil
+}
+
 /// A simple struct to hold the raw, mutable state of session form fields
 /// Extracted from NewSessionViewModel to separate data from logic
 struct SessionFormModel {
@@ -23,6 +42,7 @@ struct SessionFormModel {
     var status: String = String.sessionStatusPlanned
     var location: String = ""
     var notes: String = ""
+    var supportLogDraft: SessionSupportLogDraft = SessionSupportLogDraft()
     
     // MARK: - Client and Service Selection
     var selectedClientID: UUID? = nil
@@ -33,6 +53,7 @@ struct SessionFormModel {
     var streetNumber: String = ""
     var streetName: String = ""
     var suburb: String = ""
+    var city: String = ""
     var state: String = ""
     var postcode: String = ""
     var country: String = ""
@@ -47,7 +68,9 @@ struct SessionFormModel {
     var googleCalendarColorId: String? = nil
     
     // MARK: - External Calendar Event Tracking
+    // MARK: - External Calendar Event Tracking
     var sourceEventIdentifier: String? = nil
+    var preventEventLinking: Bool = false
     
     // MARK: - Recurrence Configuration
     var recurrenceFrequency: RecurrenceFrequency = .none
@@ -101,7 +124,10 @@ struct SessionFormModel {
         }
         
         var localityParts: [String] = []
-        if !suburb.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { localityParts.append(suburb.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let cityText = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suburbText = suburb.trimmingCharacters(in: .whitespacesAndNewlines)
+        let locality = suburbText.isEmpty ? cityText : suburbText
+        if !locality.isEmpty { localityParts.append(locality) }
         if !state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { localityParts.append(state.trimmingCharacters(in: .whitespacesAndNewlines)) }
         if !postcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { localityParts.append(postcode.trimmingCharacters(in: .whitespacesAndNewlines)) }
         
@@ -132,6 +158,9 @@ struct SessionFormModel {
         self.status = session.status?.rawValue ?? String.sessionStatusPlanned
         self.location = session.location ?? ""
         self.notes = session.notes ?? ""
+        self.supportLogDraft.deliveredFrom = self.startTime
+        self.supportLogDraft.deliveredTo = self.endTime
+        self.supportLogDraft.location = self.location
         
         self.selectedClientID = session.client?.id
         self.selectedClientServiceID = session.clientService?.id
@@ -142,6 +171,7 @@ struct SessionFormModel {
             self.streetNumber = address.streetNumber
             self.streetName = address.streetName
             self.suburb = address.suburb
+            self.city = address.city
             self.state = address.state
             self.postcode = address.postcode
             self.country = address.country
@@ -173,6 +203,9 @@ struct SessionFormModel {
         self.status = session.status ?? String.sessionStatusPlanned
         self.location = session.location ?? ""
         self.notes = session.notes ?? ""
+        self.supportLogDraft.deliveredFrom = self.startTime
+        self.supportLogDraft.deliveredTo = self.endTime
+        self.supportLogDraft.location = self.location
         
         self.selectedClientID = session.clientId
         self.selectedClientServiceID = session.clientServiceId
@@ -196,16 +229,30 @@ struct SessionFormModel {
     
     /// Initialize from an EKEvent
     init(from event: EKEvent) {
+        let parsedLocation = EventKitLocationParser.parse(event: event)
         self.title = event.title ?? "New Session"
         self.isAllDay = event.isAllDay
         self.startTime = event.startDate
         self.endTime = event.endDate
         
-        // Normalize location: replace newlines with ', '
-        let normalizedLocation = (event.location ?? "").replacingOccurrences(of: "\n", with: ", ")
-        self.location = normalizedLocation
+        self.location = parsedLocation.preferredLocation ?? ""
         self.notes = event.notes ?? ""
+        self.supportLogDraft.deliveredFrom = event.startDate
+        self.supportLogDraft.deliveredTo = event.endDate
+        self.supportLogDraft.location = parsedLocation.preferredLocation ?? ""
         self.sourceEventIdentifier = event.eventIdentifier
+        self.unitNumber = parsedLocation.unitNumber
+        self.streetNumber = parsedLocation.streetNumber
+        self.streetName = parsedLocation.streetName
+        self.suburb = parsedLocation.suburb
+        self.city = parsedLocation.city
+        self.state = parsedLocation.state
+        self.postcode = parsedLocation.postcode
+        self.country = parsedLocation.country
+        self.poBox = parsedLocation.poBox
+        self.sessionLatitude = parsedLocation.latitude
+        self.sessionLongitude = parsedLocation.longitude
+        self.addressSearchText = parsedLocation.fullAddressText
         
         // Handle Google Calendar color
         if let colorId = GoogleCalendarColors.getGoogleEventColorId(event) {
@@ -410,15 +457,27 @@ struct SessionFormModel {
     }
     
     mutating func updateFromEKEvent(_ event: EKEvent) {
+        let parsedLocation = EventKitLocationParser.parse(event: event)
         title = event.title ?? title
         isAllDay = event.isAllDay
         startTime = event.startDate
         endTime = event.endDate
         
-        let normalizedLocation = (event.location ?? "").replacingOccurrences(of: "\n", with: ", ")
-        location = normalizedLocation
+        location = parsedLocation.preferredLocation ?? ""
         notes = event.notes ?? notes
         sourceEventIdentifier = event.eventIdentifier
+        unitNumber = parsedLocation.unitNumber
+        streetNumber = parsedLocation.streetNumber
+        streetName = parsedLocation.streetName
+        suburb = parsedLocation.suburb
+        city = parsedLocation.city
+        state = parsedLocation.state
+        postcode = parsedLocation.postcode
+        country = parsedLocation.country
+        poBox = parsedLocation.poBox
+        sessionLatitude = parsedLocation.latitude
+        sessionLongitude = parsedLocation.longitude
+        addressSearchText = parsedLocation.fullAddressText
         
         if let colorId = GoogleCalendarColors.getGoogleEventColorId(event) {
             googleCalendarColorId = colorId

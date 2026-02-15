@@ -12,8 +12,6 @@ public struct SettingsContentColumn: View {
 
     public var body: some View {
         SettingsView(selectedSection: selectedSectionBinding)
-            .frame(minWidth: 250)
-            .background(.clear)
     }
 
     private var selectedSectionBinding: Binding<SettingsView.SettingsSection?> {
@@ -30,8 +28,8 @@ public struct SettingsContentColumn: View {
 
 public struct SettingsDetailColumn: View {
     @ObservedObject private var viewModel: SettingsWorkspaceViewModel
-    @Environment(\.modelContext) private var modelContext
     @State private var previousSelection: SettingsView.SettingsSection? = nil
+    @Environment(\.modelContext) private var modelContext
 
     public init(viewModel: SettingsWorkspaceViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
@@ -41,14 +39,12 @@ public struct SettingsDetailColumn: View {
         ZStack {
             if viewModel.isTransitioning {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .fluidTransition()
+                    .fill(Color.clear)
                     .id("settings_transition")
             } else if let section = viewModel.displayedSection {
                 settingsDetailView(for: section)
                     .id("settings-\(section.id)")
                     .environment(\.modelContext, modelContext)
-                    .fluidDetailTransition()
             } else {
                 EmptyStateView(
                     icon: "gearshape.2.fill",
@@ -58,7 +54,7 @@ public struct SettingsDetailColumn: View {
                 .id("settings_empty_state")
             }
         }
-        .background(.clear)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: applyInitialSelection)
         .onChange(of: viewModel.selectedSection) { newValue in
             handleSectionChange(from: previousSelection, to: newValue)
@@ -70,13 +66,17 @@ public struct SettingsDetailColumn: View {
     private func settingsDetailView(for section: SettingsView.SettingsSection) -> some View {
         switch section {
         case .profile: ProfileView()
-        case .company: CompanyView()
+        case .company: CompanyView(viewModel: CompanyViewModel(unitOfWork: viewModel.unitOfWork))
         case .invoice: InvoiceSettingsView()
         case .ndisBilling: NDISBillingSettingsView()
-        case .calendar: CalendarSettingsView()
-        case .importExport: ImportExportView()
-        case .travelChargeTest: TravelChargeAutomationTestView()
-        case .travelChargeReview: TravelChargeReviewView()
+        case .calendar: CalendarSettingsView(viewModel: CalendarSettingsViewModel(unitOfWork: viewModel.unitOfWork))
+        case .importExport: ImportExportView(viewModel: ImportExportViewModel(
+            unitOfWork: viewModel.unitOfWork,
+            dataImporterActor: viewModel.dataImporterActor,
+            dataExporterActor: viewModel.dataExporterActor
+        ))
+        case .travelChargeTest: TravelChargeAutomationTestView(viewModel: TravelChargeAutomationViewModel(unitOfWork: viewModel.unitOfWork))
+        case .travelChargeReview: TravelChargeReviewView(viewModel: TravelChargeReviewViewModel(unitOfWork: viewModel.unitOfWork))
         case .systemHealth: SystemHealthView()
         }
     }

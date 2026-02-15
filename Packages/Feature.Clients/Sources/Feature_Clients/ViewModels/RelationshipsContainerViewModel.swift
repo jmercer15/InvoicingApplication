@@ -5,7 +5,7 @@ import Data
 import Core
 import SharedUI
 
-enum DetailState: Hashable {
+public enum DetailState: Hashable {
     case none
     case client(UUID)
     case payee(UUID)
@@ -19,16 +19,15 @@ enum DetailState: Hashable {
 @MainActor
 public final class RelationshipsContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    public let clientsRepository: ClientsRepository
-    public let payeesRepository: PayeeRepository
-    public let planManagersRepository: PlanManagerRepository
+    public let unitOfWork: UnitOfWorkService
     private let navigationManager: AppNavigationManager
     private var requestRelationshipDelete: (UUID) -> Void
     private let pageSize = 50
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Published State
-    @Published var detailState: DetailState = .none
+    @Published public var detailState: DetailState = .none
+    @Published var isLoading: Bool = false
     
     var isCreatingNewEntity: Bool {
         switch detailState {
@@ -62,16 +61,13 @@ public final class RelationshipsContainerViewModel: ObservableObject {
     private var allFilteredPlanManagers: [PlanManager] = []
 
     // MARK: - Initializer
+    // MARK: - Initializer
     public init(
-        clientsRepository: ClientsRepository,
-        payeesRepository: PayeeRepository,
-        planManagersRepository: PlanManagerRepository,
+        unitOfWork: UnitOfWorkService,
         navigationManager: AppNavigationManager,
         requestRelationshipDelete: @escaping (UUID) -> Void = { _ in }
     ) {
-        self.clientsRepository = clientsRepository
-        self.payeesRepository = payeesRepository
-        self.planManagersRepository = planManagersRepository
+        self.unitOfWork = unitOfWork
         self.navigationManager = navigationManager
         self.requestRelationshipDelete = requestRelationshipDelete
         
@@ -145,6 +141,31 @@ public final class RelationshipsContainerViewModel: ObservableObject {
         }
         updateHasMoreToLoad()
     }
+    
+    // MARK: - Deletion Actions
+    func deleteClient(id: UUID) async throws {
+        try await unitOfWork.clients.delete(id: id)
+        await MainActor.run {
+            allFilteredClients.removeAll(where: { $0.id == id })
+            applyCurrentFilteredResults()
+        }
+    }
+    
+    func deletePayee(id: UUID) async throws {
+        try await unitOfWork.payees.delete(id: id)
+        await MainActor.run {
+            allFilteredPayees.removeAll(where: { $0.id == id })
+            applyCurrentFilteredResults()
+        }
+    }
+    
+    func deletePlanManager(id: UUID) async throws {
+        try await unitOfWork.planManagers.delete(id: id)
+        await MainActor.run {
+            allFilteredPlanManagers.removeAll(where: { $0.id == id })
+            applyCurrentFilteredResults()
+        }
+    }
 
     // MARK: - Private Logic
     
@@ -181,7 +202,7 @@ public final class RelationshipsContainerViewModel: ObservableObject {
             .sink { [weak self] _ in
                 self?.detailState = .none
                 Task { @MainActor in
-                    await self?.fetchAllDataAndFilter()
+                    self?.applyCurrentFilteredResults()
                 }
             }
             .store(in: &cancellables)
@@ -200,62 +221,90 @@ public final class RelationshipsContainerViewModel: ObservableObject {
     }
 
     private func fetchAllDataAndFilter() async {
+        await MainActor.run { self.isLoading = true }
+        defer { Task { @MainActor in self.isLoading = false } }
+        
         // Capture filter/search values
         let searchText = relationshipSearchText
         let clientFilterRawValue = clientFilter.rawValue
         let payeeFilterRawValue = payeeFilter.rawValue
+        let clientSort = clientSortOrder
+        let payeeSort = payeeSortOrder
+        let planManagerSort = planManagerSortOrder
 
         do {
+            // Capture repositories on MainActor to avoid isolation errors in child tasks
+            let clientsRepo = unitOfWork.clients
+            let payeesRepo = unitOfWork.payees
+            let planManagersRepo = unitOfWork.planManagers
+
             // Fetch all data using repositories
-            async let allClientsTask = clientsRepository.fetchAll()
-            async let allPayeesTask = payeesRepository.fetchAll()
-            async let allPlanManagersTask = planManagersRepository.fetchAll()
+            async let allClientsTask = clientsRepo.fetchAll()
+            async let allPayeesTask = payeesRepo.fetchAll()
+            async let allPlanManagersTask = planManagersRepo.fetchAll()
             
             let allClients = try await allClientsTask
             let allPayees = try await allPayeesTask
             let allPlanManagers = try await allPlanManagersTask
 
-            // Apply sorting
-            let sortedClients = clientSortOrder.sortClients(allClients)
-            let sortedPayees = payeeSortOrder.sortPayees(allPayees)
-            let sortedPlanManagers = planManagerSortOrder.sortPlanManagers(allPlanManagers)
+            let processed = await Task.detached {
+                // Apply sorting
+                let sortedClients = clientSort.sortClients(allClients)
+                let sortedPayees = payeeSort.sortPayees(allPayees)
+                let sortedPlanManagers = planManagerSort.sortPlanManagers(allPlanManagers)
 
-            // In-memory filtering for clients
-            allFilteredClients = sortedClients.filter { client in
-                let matchesSearch = searchText.isEmpty ||
-                    client.fullName.localizedStandardContains(searchText) ||
-                    (client.email ?? "").localizedStandardContains(searchText) ||
-                    client.ndisNumber.localizedStandardContains(searchText)
-                
-                let matchesFilter = clientFilterRawValue == "All" || client.status == clientFilterRawValue
-                
-                return matchesSearch && matchesFilter
-            }
+                // In-memory filtering for clients
+                let filteredClients = sortedClients.filter { client in
+                    let matchesSearch = searchText.isEmpty ||
+                        client.fullName.localizedStandardContains(searchText) ||
+                        (client.email ?? "").localizedStandardContains(searchText) ||
+                        client.ndisNumber.localizedStandardContains(searchText)
+                    
+                    let matchesFilter = clientFilterRawValue == "All" || client.status == clientFilterRawValue
+                    
+                    return matchesSearch && matchesFilter
+                }
 
-            // In-memory filtering for payees
-            allFilteredPayees = sortedPayees.filter { payee in
-                (searchText.isEmpty ||
-                    payee.fullName.localizedStandardContains(searchText) ||
-                    (payee.email ?? "").localizedStandardContains(searchText)
-                ) &&
-                (payeeFilterRawValue == "All" || payee.status == payeeFilterRawValue)
-            }
+                // In-memory filtering for payees
+                let filteredPayees = sortedPayees.filter { payee in
+                    (searchText.isEmpty ||
+                        payee.fullName.localizedStandardContains(searchText) ||
+                        (payee.email ?? "").localizedStandardContains(searchText)
+                    ) &&
+                    (payeeFilterRawValue == "All" || payee.status == payeeFilterRawValue)
+                }
 
-            // In-memory filtering for plan managers
-            allFilteredPlanManagers = sortedPlanManagers.filter { planManager in
-                (searchText.isEmpty ||
-                    planManager.name.localizedStandardContains(searchText) ||
-                    (planManager.email ?? "").localizedStandardContains(searchText) ||
-                    planManager.abn.localizedStandardContains(searchText)
-                )
+                // In-memory filtering for plan managers
+                let filteredPlanManagers = sortedPlanManagers.filter { planManager in
+                    (searchText.isEmpty ||
+                        planManager.name.localizedStandardContains(searchText) ||
+                        (planManager.email ?? "").localizedStandardContains(searchText) ||
+                        planManager.abn.localizedStandardContains(searchText)
+                    )
+                }
+
+                return (filteredClients, filteredPayees, filteredPlanManagers)
+            }.value
+
+            await MainActor.run {
+                allFilteredClients = processed.0
+                allFilteredPayees = processed.1
+                allFilteredPlanManagers = processed.2
+                applyCurrentFilteredResults()
             }
         } catch {
             print("❌ [RelationshipsContainerViewModel] Failed to fetch data: \(error)")
-            allFilteredClients = []
-            allFilteredPayees = []
-            allFilteredPlanManagers = []
+            await MainActor.run {
+                allFilteredClients = []
+                allFilteredPayees = []
+                allFilteredPlanManagers = []
+                applyCurrentFilteredResults()
+            }
         }
-        
+    }
+
+    @MainActor
+    private func applyCurrentFilteredResults() {
         clients = Array(allFilteredClients.prefix(pageSize))
         payees = Array(allFilteredPayees.prefix(pageSize))
         planManagers = Array(allFilteredPlanManagers.prefix(pageSize))

@@ -54,7 +54,25 @@ public struct NDISItem: Identifiable, Codable, Equatable, Sendable {
     public let effectiveStartDate: Date?
     public let effectiveEndDate: Date?
     public let nonFaceToFaceProvision: Bool?
+    public let providerTravel: Bool?
+    public let allowsNonFaceToFace: Bool?
+    public let ndiaRequestedReports: Bool?
+    public let irregularSILSupports: Bool?
+    public let shortNoticeCancellations: Bool?
+    public let legacyTransitionDate: Date?
+    public let quoteRequired: Bool?
+    public let status: String?
     public let regionalPrices: [RegionalPriceSnapshot]
+    
+    public let features: String?
+    public let registrationGroup: String?
+    
+    // Extended fields
+    public let categoryNamePACE: String?
+    public let categoryNumberPACE: String?
+    public let categoryNumber: String?
+    public let registrationGroupNumber: String?
+    public let type: String?
     
     public init(
         id: UUID,
@@ -68,7 +86,22 @@ public struct NDISItem: Identifiable, Codable, Equatable, Sendable {
         effectiveStartDate: Date? = nil,
         effectiveEndDate: Date? = nil,
         nonFaceToFaceProvision: Bool? = nil,
-        regionalPrices: [RegionalPriceSnapshot] = []
+        providerTravel: Bool? = nil,
+        allowsNonFaceToFace: Bool? = nil,
+        ndiaRequestedReports: Bool? = nil,
+        irregularSILSupports: Bool? = nil,
+        shortNoticeCancellations: Bool? = nil,
+        legacyTransitionDate: Date? = nil,
+        quoteRequired: Bool? = nil,
+        status: String? = nil,
+        regionalPrices: [RegionalPriceSnapshot] = [],
+        features: String? = nil,
+        registrationGroup: String? = nil,
+        categoryNamePACE: String? = nil,
+        categoryNumberPACE: String? = nil,
+        categoryNumber: String? = nil,
+        registrationGroupNumber: String? = nil,
+        type: String? = nil
     ) {
         self.id = id
         self.itemNumber = itemNumber
@@ -81,7 +114,22 @@ public struct NDISItem: Identifiable, Codable, Equatable, Sendable {
         self.effectiveStartDate = effectiveStartDate
         self.effectiveEndDate = effectiveEndDate
         self.nonFaceToFaceProvision = nonFaceToFaceProvision
+        self.providerTravel = providerTravel
+        self.allowsNonFaceToFace = allowsNonFaceToFace
+        self.ndiaRequestedReports = ndiaRequestedReports
+        self.irregularSILSupports = irregularSILSupports
+        self.shortNoticeCancellations = shortNoticeCancellations
+        self.legacyTransitionDate = legacyTransitionDate
+        self.quoteRequired = quoteRequired
+        self.status = status
         self.regionalPrices = regionalPrices
+        self.features = features
+        self.registrationGroup = registrationGroup
+        self.categoryNamePACE = categoryNamePACE
+        self.categoryNumberPACE = categoryNumberPACE
+        self.categoryNumber = categoryNumber
+        self.registrationGroupNumber = registrationGroupNumber
+        self.type = type
     }
     
     // MARK: - Computed Properties

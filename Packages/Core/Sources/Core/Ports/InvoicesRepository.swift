@@ -65,3 +65,8 @@ public protocol InvoicesRepository: Sendable {
     /// Generate next invoice number
     func generateInvoiceNumber() async throws -> String
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias InvoicesRepositoryProtocol = InvoicesRepository

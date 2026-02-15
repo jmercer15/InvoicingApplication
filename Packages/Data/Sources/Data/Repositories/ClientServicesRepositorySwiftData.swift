@@ -6,8 +6,13 @@ import Core
 public final class ClientServicesRepositorySwiftData: ClientServicesRepository, @unchecked Sendable {
     private let modelContext: ModelContext
     
+    private let mapper: ClientServiceMapper
+    private let ndisItemMapper: NDISItemMapper
+    
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        self.mapper = ClientServiceMapper()
+        self.ndisItemMapper = NDISItemMapper()
     }
     
     public func fetch(for clientId: UUID) async throws -> [ClientService] {
@@ -21,7 +26,7 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
         let entities = try await MainActor.run {
             try modelContext.fetch(descriptor)
         }
-        return entities.map { ClientService(from: $0) }
+        return entities.map { mapper.mapToDomain($0) }
     }
     
     public func fetch(by id: UUID) async throws -> ClientService? {
@@ -32,7 +37,7 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
             let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
             return try modelContext.fetch(descriptor).first
         }
-        return entity.map { ClientService(from: $0) }
+        return entity.map { mapper.mapToDomain($0) }
     }
     
     public func create(_ clientService: ClientService) async throws -> ClientService {
@@ -49,31 +54,29 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
                 throw RepositoryError.entityNotFound
             }
             
-            let entity = ClientServiceEntity(
+            var entity = ClientServiceEntity(
                 id: clientService.id,
                 serviceName: clientService.serviceName,
                 unit: clientService.unit,
                 rate: clientService.rate
             )
+            mapper.updateEntity(&entity, from: clientService)
+            
+            // Assign relationships
             entity.client = clientEntity
-            entity.status = clientService.status
-            entity.isActive = clientService.isActive
-            entity.startDate = clientService.startDate
-            entity.endDate = clientService.endDate
-            entity.ndisCode = clientService.ndisCode
             entity.ndisItem = ndisItem
             
             if entity.modelContext == nil {
-            modelContext.insert(entity)
+                modelContext.insert(entity)
             }
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return ClientService(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     
@@ -91,7 +94,8 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
                 throw RepositoryError.entityNotFound
             }
             
-            entity.update(from: clientService)
+            var mutableEntity = entity
+            mapper.updateEntity(&mutableEntity, from: clientService)
             
             // Fetch client entity if needed, all within MainActor context
             if entity.client?.id != clientService.clientId {
@@ -110,12 +114,12 @@ public final class ClientServicesRepositorySwiftData: ClientServicesRepository, 
             entity.ndisItem = ndisItem
             
             do {
-            try modelContext.save()
+                try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return ClientService(from: entity)
+            return mapper.mapToDomain(entity)
         }
     }
     

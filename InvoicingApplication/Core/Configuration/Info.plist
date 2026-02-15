@@ -28,9 +28,9 @@
 	<array>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Invoice Component</string>
+			<string>BillingHub Session ID</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.invoice-component</string>
+			<string>com.invoicingapp.session-id</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -40,19 +40,19 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>invcomp</string>
+					<string>bhsession</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
-					<string>application/x-invoice-component</string>
+					<string>application/x-invoicingapp-session-id</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Section Component</string>
+			<string>BillingHub Invoice ID</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.section-component</string>
+			<string>com.invoicingapp.invoice-id</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -62,107 +62,19 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>sectcomp</string>
+					<string>bhinvoice</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
-					<string>application/x-section-component</string>
+					<string>application/x-invoicingapp-invoice-id</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Fruit ID</string>
+			<string>BillingHub Group ID</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.fruit-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>fruitid</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-fruit-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>Fruit Property ID</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.example.fruit-property-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>fruitprop</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-fruit-property-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>Session ID</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.example.session-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>sessionid</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-session-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>Invoice ID</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.example.invoice-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>invoiceid</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-invoice-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>Billing Hub Group</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.invoicingapplication.billinghub.group</string>
+			<string>com.invoicingapp.group-id</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -176,29 +88,41 @@
 				</array>
 				<key>public.mime-type</key>
 				<array>
-					<string>application/x-billing-hub-group</string>
+					<string>application/x-invoicingapp-group-id</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Group ID</string>
+			<string>Invoice Template Component</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.group-id</string>
+			<string>com.example.invoice-component</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
-				<string>public.content</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>groupid</string>
+					<string>invoicecomponent</string>
 				</array>
-				<key>public.mime-type</key>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Invoice Template Section</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.section-component</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
 				<array>
-					<string>application/x-group-id</string>
+					<string>sectioncomponent</string>
 				</array>
 			</dict>
 		</dict>

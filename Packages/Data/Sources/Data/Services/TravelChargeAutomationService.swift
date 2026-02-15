@@ -9,28 +9,11 @@ struct ClientDayKey: Hashable {
     let day: Date
 }
 
-// MARK: - Enhanced Error Reporting Structures
-
-/// Detailed violation information for compliance checking
-public struct ComplianceViolation: Sendable {
-    public let rule: String
-    public let currentValue: String
-    public let limit: String
-    public let description: String
-    public let severity: ViolationSeverity
-    
-    public enum ViolationSeverity: Sendable {
-        case warning
-        case error
-        case critical
-    }
-}
-
 /// Result of compliance checking with detailed violations
 struct ComplianceResult {
     let isCompliant: Bool
-    let violations: [ComplianceViolation]
-    let warnings: [ComplianceViolation]
+    let violations: [Core.ComplianceViolation]
+    let warnings: [Core.ComplianceViolation]
     
     var hasErrors: Bool {
         violations.contains { $0.severity == .error || $0.severity == .critical }
@@ -41,16 +24,8 @@ struct ComplianceResult {
     }
 }
 
-/// Enhanced review item with detailed violation information
-public struct DetailedReviewItem: Identifiable {
-    public let id = UUID()
-    public let session: SessionEntity
-    public let reason: String
-    public let violations: [ComplianceViolation]
-    public let suggestedActions: [String]
-    public let overrideOptions: [String]
-    public let timestamp: Date
-}
+// Compliance models have been moved to Core package to be shared with features.
+// Use Core.ComplianceViolation and Core.DetailedReviewItem.
 
 /// Service for automated creation of travel charge sessions based on session data, business rules, and user preferences.
 public final class TravelChargeAutomationService: @unchecked Sendable {
@@ -64,8 +39,38 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     private(set) var testReviewSummaries: [String] = []
     private(set) var testDetailedReviewItems: [DetailedReviewItem] = []
     
+    private var unitOfWork: UnitOfWorkService?
+    
     public init(context: ModelContext, businessRules: BusinessRules, userPreferences: UserPreferences, mmmZoneTable: MMMZoneTable, testingMode: Bool = false) {
         self.context = context
+        self.businessRules = businessRules
+        self.userPreferences = userPreferences
+        self.mmmZoneTable = mmmZoneTable
+        self.testingMode = testingMode
+        self.unitOfWork = nil
+    }
+    
+    public init(unitOfWork: UnitOfWorkService, context: ModelContext, businessRules: BusinessRules, userPreferences: UserPreferences, mmmZoneTable: MMMZoneTable, testingMode: Bool = false) {
+        self.unitOfWork = unitOfWork
+        self.context = context
+        self.businessRules = businessRules
+        self.userPreferences = userPreferences
+        self.mmmZoneTable = mmmZoneTable
+        self.testingMode = testingMode
+    }
+    
+    /// Preferred initializer using UnitOfWorkService only.
+    /// Extracts ModelContext internally for legacy code paths.
+    /// Must be called on MainActor since SwiftDataUnitOfWork is MainActor-isolated.
+    @MainActor
+    public init(unitOfWork: UnitOfWorkService, businessRules: BusinessRules, userPreferences: UserPreferences, mmmZoneTable: MMMZoneTable, testingMode: Bool = false) {
+        self.unitOfWork = unitOfWork
+        // Extract context from UoW for legacy code paths
+        if let swiftDataUoW = unitOfWork as? SwiftDataUnitOfWork {
+            self.context = swiftDataUoW.legacyModelContext
+        } else {
+            fatalError("TravelChargeAutomationService requires SwiftDataUnitOfWork")
+        }
         self.businessRules = businessRules
         self.userPreferences = userPreferences
         self.mmmZoneTable = mmmZoneTable
@@ -90,10 +95,10 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     
     /// Fetch SessionEntity instances by IDs (internal helper)
     private func fetchSessionEntities(for sessionIds: [UUID]) throws -> [SessionEntity] {
+        let resolver = EntityResolutionService(context: context)
         var entities: [SessionEntity] = []
         for sessionId in sessionIds {
-            let descriptor = FetchDescriptor<SessionEntity>(predicate: #Predicate { $0.id == sessionId })
-            guard let entity = try? context.fetch(descriptor).first else {
+            guard let entity = try resolver.resolveSession(id: sessionId) else {
                 continue // Skip missing sessions rather than failing
             }
             entities.append(entity)
@@ -119,8 +124,9 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         print("DEBUG: Expanded to \(sessionInstances.count) session instances")
         
         // Fetch the business address (singleton)
-        let businessDescriptor = FetchDescriptor<BusinessEntity>()
-        let business: BusinessEntity? = (try? context.fetch(businessDescriptor))?.first
+        // Fetch the business address (singleton)
+        let resolver = EntityResolutionService(context: context)
+        let business: BusinessEntity? = try? resolver.resolveBusiness()
         let businessAddress: String? = business?.address?.fullFormattedAddress ?? business?.address?.fullAddressText
         
         
@@ -223,6 +229,18 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                             
                                             // Check and adjust travel time if needed
                                             let (adjustedTravelTime, travelTimeWarnings) = self.checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
+                                            let pricingBreakdown = self.calculatePricingBreakdown(
+                                                session: session,
+                                                service: service,
+                                                chargeType: chargeType,
+                                                mmmZone: mmmZone,
+                                                travelTime: adjustedTravelTime,
+                                                distance: adjustedDistance,
+                                                parking: parking,
+                                                tolls: tolls,
+                                                participantCount: participantCount,
+                                                splitCosts: splitCosts
+                                            )
                                             
                                             let notes = self.generateTravelChargeNotes(
                                                 session: session,
@@ -239,7 +257,8 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                                 tolls: tolls,
                                                 participantCount: participantCount,
                                                 chargeType: chargeType,
-                                                splitCosts: splitCosts
+                                                splitCosts: splitCosts,
+                                                pricingBreakdown: pricingBreakdown
                                             )
                                             let travelCharge = self.createTravelSession(
                                                 client: session.client!,
@@ -255,6 +274,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                                 tolls: tolls,
                                                 participantCount: participantCount,
                                                 notes: notes,
+                                                calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
                                                 linkedSession: session,
                                                 chargeType: chargeType,
                                                 splitCosts: splitCosts,
@@ -397,6 +417,18 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                     
                                     // Check and adjust travel time if needed
                                     let (adjustedTravelTime, travelTimeWarnings) = self.checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
+                                    let pricingBreakdown = self.calculatePricingBreakdown(
+                                        session: session,
+                                        service: service,
+                                        chargeType: chargeType,
+                                        mmmZone: mmmZone,
+                                        travelTime: adjustedTravelTime,
+                                        distance: adjustedDistance,
+                                        parking: parking,
+                                        tolls: tolls,
+                                        participantCount: participantCount,
+                                        splitCosts: splitCosts
+                                    )
                                     
                                     let notes = self.generateTravelChargeNotes(
                                         session: session,
@@ -413,7 +445,8 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                         tolls: tolls,
                                         participantCount: participantCount,
                                         chargeType: chargeType,
-                                        splitCosts: splitCosts
+                                        splitCosts: splitCosts,
+                                        pricingBreakdown: pricingBreakdown
                                     )
                                     // Create and save travel charge entity
                                     let travelCharge = self.createTravelSession(
@@ -430,6 +463,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                         tolls: tolls,
                                         participantCount: participantCount,
                                         notes: notes,
+                                        calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
                                         linkedSession: session,
                                         chargeType: chargeType,
                                         splitCosts: splitCosts,
@@ -486,6 +520,10 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             
             if let duration = travelCharge.travelDuration {
                 details.append("Duration: \(String(format: "%.1f", duration)) min")
+            }
+
+            if let amount = travelCharge.calculatedAmount {
+                details.append("Amount/Participant: \(amount.formatted(.currency(code: "AUD")))")
             }
             
             if let mmmZone = travelCharge.mmmZoneName {
@@ -836,6 +874,18 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                             let vehicleType = self.determineVehicleType(session: session, chargeType: chargeType)
                             let parking: Double? = nil // Manual entry only
                             let tolls: Double? = nil // Manual entry only
+                            let pricingBreakdown = self.calculatePricingBreakdown(
+                                session: session,
+                                service: service,
+                                chargeType: chargeType,
+                                mmmZone: mmmZone,
+                                travelTime: adjustedTravelTime,
+                                distance: adjustedDistance,
+                                parking: parking,
+                                tolls: tolls,
+                                participantCount: participantCount,
+                                splitCosts: splitCosts
+                            )
                             // 12. Notes (including distance adjustment info)
                             let notes = self.generateTravelChargeNotes(
                                 session: session,
@@ -852,7 +902,8 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                 tolls: tolls,
                                 participantCount: participantCount,
                                 chargeType: chargeType,
-                                splitCosts: splitCosts
+                                splitCosts: splitCosts,
+                                pricingBreakdown: pricingBreakdown
                             )
                             // 13. Create and save travel charge entity (using adjusted distance)
                             let travelCharge = self.createTravelSession(
@@ -869,6 +920,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                 tolls: tolls,
                                 participantCount: participantCount,
                                 notes: notes,
+                                calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
                                 linkedSession: session,
                                 chargeType: chargeType,
                                 splitCosts: splitCosts,
@@ -1001,42 +1053,46 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     /// Looks up the MMM zone for a session using coordinates.
     /// If coordinates are not available, geocodes the address first.
     private func lookupMMMZone(for session: SessionEntity) -> MMMZone? {
-        // First check if session has valid coordinates
+        // Prefer explicit session coordinates first.
         if session.sessionLatitude != 0.0 && session.sessionLongitude != 0.0 {
-            let coord = CLLocationCoordinate2D(latitude: session.sessionLatitude, longitude: session.sessionLongitude)
-            if let mmmCode = MMMZoneLookup.shared.mmm(for: coord) {
-                // Map MMM code to appropriate max time based on zone classification
-                let maxTime = getMaxTimeForMMMZone(String(mmmCode))
-                return MMMZone(name: "MMM Zone \(mmmCode)", maxTime: maxTime)
+            let coordinate = CLLocationCoordinate2D(
+                latitude: session.sessionLatitude,
+                longitude: session.sessionLongitude
+            )
+            if let zone = mmmZoneTable.lookup(byCoordinate: coordinate) {
+                return zone
             }
         }
-        
-        // If no coordinates available, use default MMM zone
-        
-        return businessRules.defaultMMMZone
-    }
-    
-    /// Maps MMM zone codes to appropriate max travel times
-    private func getMaxTimeForMMMZone(_ mmmCode: String) -> Double {
-        // MMM zones are classified as:
-        // MM1: Major cities (30 minutes)
-        // MM2: Regional cities (45 minutes)
-        // MM3: Large rural towns (60 minutes)
-        // MM4: Medium rural towns (90 minutes)
-        // MM5: Small rural towns (120 minutes)
-        // MM6: Remote communities (180 minutes)
-        // MM7: Very remote communities (240 minutes)
-        
-        switch mmmCode {
-        case "MM1": return 30.0
-        case "MM2": return 45.0
-        case "MM3": return 60.0
-        case "MM4": return 90.0
-        case "MM5": return 120.0
-        case "MM6": return 180.0
-        case "MM7": return 240.0
-        default: return 30.0 // Default to MM1 if unknown
+
+        // Fallback to any related entity coordinates before postcode/default fallbacks.
+        let fallbackCoordinates: [CLLocationCoordinate2D] = [
+            CLLocationCoordinate2D(
+                latitude: session.address?.latitude ?? 0.0,
+                longitude: session.address?.longitude ?? 0.0
+            ),
+            CLLocationCoordinate2D(
+                latitude: session.client?.address?.latitude ?? 0.0,
+                longitude: session.client?.address?.longitude ?? 0.0
+            )
+        ]
+
+        for coordinate in fallbackCoordinates where coordinate.latitude != 0.0 && coordinate.longitude != 0.0 {
+            if let zone = mmmZoneTable.lookup(byCoordinate: coordinate) {
+                return zone
+            }
         }
+
+        // Last non-network fallback: postcode-derived lookup (cache-backed).
+        if let postcode = session.address?.postcode, !postcode.isEmpty,
+           let zone = mmmZoneTable.lookup(byPostcode: postcode) {
+            return zone
+        }
+        if let postcode = session.client?.address?.postcode, !postcode.isEmpty,
+           let zone = mmmZoneTable.lookup(byPostcode: postcode) {
+            return zone
+        }
+
+        return businessRules.defaultMMMZone
     }
     
     /// Returns the adjusted distance and any warnings about adjustments
@@ -1111,7 +1167,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         if findTravelService(client: session.client, session: session, chargeType: "non-labour") != nil {
             types.append("non-labour")
         }
-        // Add activity-based if eligible (stub: check NDIS code pattern or service property)
+        // Add activity-based if the linked service/item indicates participant transport support.
         if isActivityBasedEligible(session: session) {
             types.append("activity-based")
         }
@@ -1120,12 +1176,37 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     
     /// Determines if a session/service is eligible for activity-based travel charges.
     private func isActivityBasedEligible(session: SessionEntity) -> Bool {
-        // Check if the linked NDISItem's name is 'Activity Based Transport' (case-insensitive)
-        if let name = session.clientService?.ndisItem?.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-           name == "activity based transport" {
+        let transportKeywords = [
+            "activity based transport",
+            "community access transport",
+            "transport",
+            "community participation transport"
+        ]
+
+        let item = session.clientService?.ndisItem
+        let itemName = item?.name.lowercased() ?? ""
+        let itemDescription = item?.itemDescription?.lowercased() ?? ""
+        let itemFeatures = item?.features?.lowercased() ?? ""
+        let serviceName = session.clientService?.serviceName.lowercased() ?? ""
+        let ndisCode = session.clientService?.ndisCode?.lowercased() ?? item?.itemNumber.lowercased() ?? ""
+
+        if containsAnyKeyword(in: itemName, keywords: transportKeywords) { return true }
+        if containsAnyKeyword(in: itemDescription, keywords: transportKeywords) { return true }
+        if containsAnyKeyword(in: itemFeatures, keywords: transportKeywords) { return true }
+        if containsAnyKeyword(in: serviceName, keywords: transportKeywords) { return true }
+
+        // Common transport coding pattern in line-item codes (e.g. 04_590_0104_6_1).
+        if ndisCode.range(of: #"^\d{2}_\d{3,4}_\d{4}.*$"#, options: .regularExpression) != nil,
+           containsAnyKeyword(in: "\(itemName) \(itemDescription) \(serviceName)", keywords: ["transport", "travel"]) {
             return true
         }
+
         return false
+    }
+
+    private func containsAnyKeyword(in source: String, keywords: [String]) -> Bool {
+        guard !source.isEmpty else { return false }
+        return keywords.contains { source.contains($0) }
     }
     
     
@@ -1258,6 +1339,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         tolls: Double?,
         participantCount: Int?,
         notes: String?,
+        calculatedAmount: Double?,
         linkedSession: SessionEntity?,
         chargeType: String,
         splitCosts: Bool,
@@ -1277,6 +1359,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             chargeType: chargeType,
             travelDirection: travelDirection ?? "unknown",
             notes: notes,
+            calculatedAmount: calculatedAmount,
             mmmZoneName: mmmZone?.name,
             vehicleType: vehicleType,
             parkingCost: parking ?? 0,
@@ -1290,23 +1373,26 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     private func detectSharedTravelParticipants(session: SessionEntity, daySessions: [SessionInstance], direction: TravelDirection, completion: @escaping @Sendable ([SessionEntity]) -> Void) {
         let timeThreshold: TimeInterval = 15 * 60 // 15 minutes
         let distanceThreshold: Double = 100 // meters
-        var locationCache: [SessionEntity: CLLocationCoordinate2D] = [:]
+        var locationCache: [UUID: CLLocationCoordinate2D] = [:]
         let cacheQueue = DispatchQueue(label: "locationCache", attributes: .concurrent)
         let group = DispatchGroup()
-        let _ = false
         
         // Helper to geocode and cache
         func geocodeSession(_ s: SessionEntity, completion: @escaping @Sendable (CLLocationCoordinate2D?) -> Void) {
+            var cached: CLLocationCoordinate2D?
             cacheQueue.sync {
-                if let cached = locationCache[s] {
-                    completion(cached)
-                    return
-                }
+                cached = locationCache[s.id]
             }
+            
+            if let cached = cached {
+                completion(cached)
+                return
+            }
+            
             geocodeAddress(s.location) { coord in
                 if let coord = coord {
                     cacheQueue.async(flags: .barrier) {
-                        locationCache[s] = coord
+                        locationCache[s.id] = coord
                     }
                 }
                 completion(coord)
@@ -1318,28 +1404,39 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             group.enter()
             geocodeSession(s.session) { _ in group.leave() }
         }
+        
         group.notify(queue: .main) {
             // Geocode target session
             geocodeSession(session) { targetCoord in
                 guard let tCoord = targetCoord else { completion([session]); return }
+                
                 let targetTime: Date? = (direction == .before) ? session.startTime : session.endTime
                 guard let tTime = targetTime else { completion([session]); return }
+                
                 let matches = daySessions.filter { otherInstance in
                     let other = otherInstance.session
-                    guard other != session, !other.isTravel else { return false }
+                    // Exclude self and travel sessions
+                    guard other.id != session.id, !other.isTravel else { return false }
+                    
                     let otherTime: Date = (direction == .before) ? otherInstance.instanceStart : otherInstance.instanceEnd
                     let timeDiff = abs(otherTime.timeIntervalSince(tTime))
+                    
                     guard timeDiff <= timeThreshold else { return false }
+                    
                     var oCoord: CLLocationCoordinate2D?
                     cacheQueue.sync {
-                        oCoord = locationCache[other]
+                        oCoord = locationCache[other.id]
                     }
+                    
                     guard let oCoord = oCoord else { return false }
+                    
                     let loc1 = CLLocation(latitude: tCoord.latitude, longitude: tCoord.longitude)
                     let loc2 = CLLocation(latitude: oCoord.latitude, longitude: oCoord.longitude)
                     let dist = loc1.distance(from: loc2)
+                    
                     return dist <= distanceThreshold
                 }
+                
                 completion([session] + matches.map { $0.session })
             }
         }
@@ -1367,9 +1464,72 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         
         return max(count, 1)
     }
+
+    private func calculatePricingBreakdown(
+        session: SessionEntity,
+        service: ClientServiceEntity?,
+        chargeType: String,
+        mmmZone: MMMZone,
+        travelTime: Double,
+        distance: Double?,
+        parking: Double?,
+        tolls: Double?,
+        participantCount: Int,
+        splitCosts: Bool
+    ) -> NDISTravelChargeBreakdown {
+        let effectiveParticipants = splitCosts ? max(participantCount, 1) : 1
+        let primaryService = session.clientService ?? service
+        let providerType = NDISTravelChargeCalculator.inferredProviderType(
+            itemName: primaryService?.serviceName,
+            itemDescription: primaryService?.ndisItem?.itemDescription,
+            ndisCode: primaryService?.ndisCode
+        )
+        let ancillary = (parking ?? 0) + (tolls ?? 0)
+        let hourlyRate = max(primaryService?.rate ?? 0, 0)
+
+        return NDISTravelChargeCalculator.calculate(
+            providerType: providerType,
+            hourlyRate: hourlyRate,
+            mmmZoneDescriptor: mmmZone.name,
+            minutesTravelled: travelTime,
+            kilometresTravelled: distance ?? 0,
+            ancillaryCosts: ancillary,
+            participantCount: effectiveParticipants
+        )
+    }
+
+    private func calculatedAmount(for chargeType: String, breakdown: NDISTravelChargeBreakdown) -> Double {
+        switch chargeType.lowercased() {
+        case "labour":
+            return breakdown.labourPerParticipant
+        case "non-labour":
+            return breakdown.nonLabourPerParticipant
+        case "activity-based":
+            return breakdown.totalPerParticipant
+        default:
+            return breakdown.totalPerParticipant
+        }
+    }
     
     /// Generates a detailed notes string for the travel charge.
-    private func generateTravelChargeNotes(session: SessionEntity, direction: TravelDirection, distance: Double?, originalDistance: Double?, distanceWarnings: [ComplianceViolation], travelTime: Double, originalTravelTime: Double?, travelTimeWarnings: [ComplianceViolation], mmmZone: MMMZone, vehicleType: String?, parking: Double?, tolls: Double?, participantCount: Int, chargeType: String, splitCosts: Bool) -> String {
+    private func generateTravelChargeNotes(
+        session: SessionEntity,
+        direction: TravelDirection,
+        distance: Double?,
+        originalDistance: Double?,
+        distanceWarnings: [ComplianceViolation],
+        travelTime: Double,
+        originalTravelTime: Double?,
+        travelTimeWarnings: [ComplianceViolation],
+        mmmZone: MMMZone,
+        vehicleType: String?,
+        parking: Double?,
+        tolls: Double?,
+        participantCount: Int,
+        chargeType: String,
+        splitCosts: Bool,
+        pricingBreakdown: NDISTravelChargeBreakdown
+    ) -> String {
         var notes = "Travel ("
         notes += chargeType
         notes += ") "
@@ -1427,6 +1587,24 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         if splitCosts {
             notes += " (costs split)"
         }
+        notes += "\nProvider Type: \(pricingBreakdown.providerType.rawValue)"
+        notes += "\nBillable Time: \(String(format: "%.1f", pricingBreakdown.billableMinutes)) min"
+        if pricingBreakdown.maxBillableMinutes.isInfinite {
+            notes += " (uncapped MMM 6/7)"
+        } else {
+            notes += " (cap \(String(format: "%.1f", pricingBreakdown.maxBillableMinutes)) min)"
+        }
+
+        if chargeType.lowercased() == "labour" || chargeType.lowercased() == "activity-based" {
+            notes += "\nLabour per participant: \(pricingBreakdown.labourPerParticipant.formatted(.currency(code: "AUD")))"
+        }
+
+        if chargeType.lowercased() == "non-labour" || chargeType.lowercased() == "activity-based" {
+            notes += "\nVehicle + ancillary per participant: \(pricingBreakdown.nonLabourPerParticipant.formatted(.currency(code: "AUD")))"
+        }
+
+        let chargeAmountPerParticipant = calculatedAmount(for: chargeType, breakdown: pricingBreakdown)
+        notes += "\nTotal per participant: \(chargeAmountPerParticipant.formatted(.currency(code: "AUD")))"
         return notes
     }
     
@@ -1436,14 +1614,33 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
     /// Adds a session to the user review queue with detailed violation information.
-    private func queueForUserReview(session: SessionEntity, reason: String, violations: [ComplianceViolation] = [], suggestedActions: [String] = [], overrideOptions: [String] = []) {
+    private func queueForUserReview(session: SessionEntity, reason: String, violations: [Core.ComplianceViolation] = [], suggestedActions: [String] = [], overrideOptions: [String] = []) {
         if testingMode {
             let summary = "Session: \(session.title), Reason: \(reason)"
             testReviewSummaries.append(summary)
             
+            // Map SessionEntity to Session (domain model)
+            let domainSession = Session(
+                id: session.id,
+                title: session.title,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                isAllDay: session.isAllDay,
+                location: session.location,
+                notes: session.notes,
+                status: session.status?.rawValue,
+                isTravel: session.isTravel,
+                clientId: session.client?.id,
+                clientServiceId: session.clientService?.id,
+                groupID: session.groupID,
+                recurrenceRuleData: session.recurrenceRuleData
+            )
+            
             // Create detailed review item for testing
-            let detailedItem = DetailedReviewItem(
-                session: session,
+            let detailedItem = Core.DetailedReviewItem(
+                id: UUID(),
+                session: domainSession,
+                clientName: session.client?.fullName,
                 reason: reason,
                 violations: violations,
                 suggestedActions: suggestedActions,
@@ -1459,7 +1656,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             return
         }
         
-        let reviewItem = TravelChargeReviewItem(id: UUID())
+        let reviewItem = TravelChargeReviewItemEntity(id: UUID())
         reviewItem.session = session
         reviewItem.reason = reason
         reviewItem.timestamp = Date()
@@ -1488,10 +1685,10 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
     /// Fetches all review items for UI/admin display.
-    func fetchReviewItems() -> [TravelChargeReviewItem] {
-        let descriptor = FetchDescriptor<TravelChargeReviewItem>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+    func fetchReviewItems() -> [TravelChargeReviewItemEntity] {
+        let resolver = EntityResolutionService(context: context)
         do {
-            return try context.fetch(descriptor)
+            return try resolver.resolveReviewItems()
         } catch {
             print("[TravelChargeAutomation] Failed to fetch review items: \(error)")
             return []
@@ -1499,21 +1696,36 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
     /// Fetches pending review items that need user attention.
-    func fetchPendingReviewItems() -> [TravelChargeReviewItem] {
-        let descriptor = FetchDescriptor<TravelChargeReviewItem>(
-            predicate: #Predicate<TravelChargeReviewItem> { $0.status == "pending" },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
+    func fetchPendingReviewItems() -> [TravelChargeReviewItemEntity] {
+        let resolver = EntityResolutionService(context: context)
         do {
-            return try context.fetch(descriptor)
+            return try resolver.resolveReviewItems(pendingOnly: true)
         } catch {
             print("[TravelChargeAutomation] Failed to fetch pending review items: \(error)")
             return []
         }
     }
     
+    /// Resolves a review item by creating a travel charge with override (safe for concurrency).
+    public func resolveReviewWithOverride(reviewItemId: UUID, overrideType: String, overrideReason: String? = nil) async throws {
+        let resolver = EntityResolutionService(context: context)
+        guard let reviewItem = try? resolver.resolveReviewItem(id: reviewItemId) else {
+            throw TravelChargeError.invalidSession // Using generic error for item not found
+        }
+        try await resolveReviewWithOverride(reviewItem, overrideType: overrideType, overrideReason: overrideReason)
+    }
+
+    /// Resolves a review item by skipping the travel charge (safe for concurrency).
+    public func resolveReviewBySkipping(reviewItemId: UUID, reason: String? = nil) async throws {
+        let resolver = EntityResolutionService(context: context)
+        guard let reviewItem = try? resolver.resolveReviewItem(id: reviewItemId) else {
+             throw TravelChargeError.invalidSession
+        }
+        try await resolveReviewBySkipping(reviewItem, reason: reason)
+    }
+
     /// Resolves a review item by creating a travel charge with override.
-    public func resolveReviewWithOverride(_ reviewItem: TravelChargeReviewItem, overrideType: String, overrideReason: String? = nil) async throws {
+    public func resolveReviewWithOverride(_ reviewItem: TravelChargeReviewItemEntity, overrideType: String, overrideReason: String? = nil) async throws {
         guard let session = reviewItem.session else {
             throw TravelChargeError.invalidSession
         }
@@ -1531,7 +1743,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
     /// Resolves a review item by skipping the travel charge.
-    public func resolveReviewBySkipping(_ reviewItem: TravelChargeReviewItem, reason: String? = nil) async throws {
+    public func resolveReviewBySkipping(_ reviewItem: TravelChargeReviewItemEntity, reason: String? = nil) async throws {
         // Mark the review item as skipped
         reviewItem.skip(reason: reason)
         
@@ -1543,26 +1755,189 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     
     /// Creates a travel charge for a session with override information.
     private func createTravelChargeForSession(_ session: SessionEntity, overrideType: String? = nil, overrideReason: String? = nil) async throws {
-        // This is a simplified version - in a full implementation, you would:
-        // 1. Re-run the travel charge calculation logic
-        // 2. Apply the override to bypass compliance checks
-        // 3. Create the travel charge with override metadata
+        print("[TravelChargeAutomation] Creating travel charge for session: \(session.title) with override")
         
-        print("[TravelChargeAutomation] Creating travel charge for session: \(session.title)")
-        if let overrideType = overrideType {
-            print("[TravelChargeAutomation] Override type: \(overrideType)")
-        }
-        if let overrideReason = overrideReason {
-            print("[TravelChargeAutomation] Override reason: \(overrideReason)")
+        guard let client = session.client, let startTime = session.startTime else {
+            throw TravelChargeError.invalidSession
         }
         
-        // For now, we'll just log that this would create a travel charge
-        // In a full implementation, you would call the existing travel charge creation logic
-        // with override flags set
+        // 1. Re-construct context: Fetch sibling sessions for the same day to determine travel logic
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: startTime)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        // Fetch sessions for the client on this day
+        let resolver = EntityResolutionService(context: context)
+        let daySessionsRaw = resolver.resolveSessions(forClient: client.id, onDate: startTime)
+            .filter { $0.isTravel == false }
+        let daySessionInstances = expandSessionsToInstances(daySessionsRaw)
+        let sortedSessions = sortSessionsChronologically(daySessionInstances)
+        
+        // Find the index of the current session
+        guard let index = sortedSessions.firstIndex(where: { $0.session.id == session.id }) else {
+            throw TravelChargeError.invalidSession
+        }
+        
+        // 2. Determine necessary travel directions
+        let directions = determineTravelDirections(i: index, daySessions: sortedSessions)
+        
+        for direction in directions {
+            // 3. Resolve Locations
+            let (fromLocation, toLocation, fromTime, toTime): (String?, String?, Date?, Date?) = {
+                switch direction {
+                case .before:
+                    let prev = previousNonTravelSession(i: index, daySessions: sortedSessions)
+                    // If no previous session, use business address
+                    let businessAddr = self.getBusinessAddress()
+                    return (prev?.session.location ?? businessAddr, session.location, prev?.instanceEnd, session.startTime)
+                case .after:
+                    let next = nextNonTravelSession(i: index, daySessions: sortedSessions)
+                    let businessAddr = self.getBusinessAddress()
+                    return (session.location, next?.session.location ?? businessAddr, session.endTime, next?.instanceStart)
+                }
+            }()
+            
+            guard let fromLoc = fromLocation, let toLoc = toLocation else {
+                print("[TravelChargeAutomation] Missing location data for session \(session.title)")
+                continue
+            }
+            
+            // 4. Calculate Metrics (Async)
+            guard let fromCoord = await geocodeAddressAsync(fromLoc),
+                  let toCoord = await geocodeAddressAsync(toLoc),
+                  let distance = await calculateDrivingDistanceAsync(from: fromCoord, to: toCoord) else {
+                print("[TravelChargeAutomation] Failed to calculate metrics for session \(session.title)")
+                continue
+            }
+            
+            let travelTime = estimateTravelTime(distance: distance) ?? businessRules.defaultTravelTime
+            let mmmZone = lookupMMMZone(for: session) ?? businessRules.defaultMMMZone
+            
+            // 5. Determine Charge Types
+            let chargeTypes = determineChargeTypes(session: session)
+            
+            for chargeType in chargeTypes {
+                // Check if already exists (to avoid duplicates, though override might imply forcing)
+                if travelChargeExists(client: client, session: session, direction: direction, chargeType: chargeType, daySessions: sortedSessions) {
+                    print("[TravelChargeAutomation] Travel charge already exists, skipping duplicate.")
+                    continue
+                }
+                
+                // 6. Create Charge with Overrides
+                // We bypass isCompliantWithRules because this is an override flows
+                
+                let service = findTravelService(client: client, session: session, chargeType: chargeType)
+                
+                // Shared travel logic
+                let sharedParticipants = await detectSharedTravelParticipantsAsync(session: session, daySessions: sortedSessions, direction: direction)
+                let participantCount = determineParticipantCount(session: session, sharedParticipants: sharedParticipants)
+                let splitCosts = participantCount > 1
+                let vehicleType = determineVehicleType(session: session, chargeType: chargeType)
+                
+                // Adjustments (still apply standard adjustments unless specifically overridden?)
+                // Usually overrides imply accepting the calculated values or user-specified values. 
+                // Here we accept the standard calculated values but ignore the "Violation" blocking.
+                // We will still clamp to limits if it's just a distance/time compliance warning, 
+                // UNLESS the overrideType specifically says "Limit Override" which we don't fully support parsing here yet.
+                // For safety, we apply standard adjustments to keep data clean, assuming the 'Reason' covers why it's allowed.
+                
+                let (adjustedDistance, distanceWarnings) = checkAndAdjustDistance(distance, businessRules: businessRules)
+                let (adjustedTravelTime, travelTimeWarnings) = checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
+                let pricingBreakdown = calculatePricingBreakdown(
+                    session: session,
+                    service: service,
+                    chargeType: chargeType,
+                    mmmZone: mmmZone,
+                    travelTime: adjustedTravelTime,
+                    distance: adjustedDistance,
+                    parking: nil,
+                    tolls: nil,
+                    participantCount: participantCount,
+                    splitCosts: splitCosts
+                )
+                
+                let notes = generateTravelChargeNotes(
+                    session: session,
+                    direction: direction,
+                    distance: adjustedDistance,
+                    originalDistance: distance,
+                    distanceWarnings: distanceWarnings,
+                    travelTime: adjustedTravelTime,
+                    originalTravelTime: travelTime,
+                    travelTimeWarnings: travelTimeWarnings,
+                    mmmZone: mmmZone,
+                    vehicleType: vehicleType,
+                    parking: nil,
+                    tolls: nil,
+                    participantCount: participantCount,
+                    chargeType: chargeType,
+                    splitCosts: splitCosts,
+                    pricingBreakdown: pricingBreakdown
+                ) + "\n[Override: \(overrideType ?? "Manual") - \(overrideReason ?? "No reason provided")]"
+                
+                let travelCharge = createTravelSession(
+                    client: client,
+                    service: service,
+                    startTime: (direction == .before) ? fromTime : session.endTime,
+                    endTime: (direction == .before) ? session.startTime : toTime,
+                    location: (direction == .before) ? fromLoc : toLoc,
+                    mmmZone: mmmZone,
+                    distance: adjustedDistance,
+                    duration: adjustedTravelTime,
+                    vehicleType: vehicleType,
+                    parking: nil,
+                    tolls: nil,
+                    participantCount: participantCount,
+                    notes: notes,
+                    calculatedAmount: calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
+                    linkedSession: session,
+                    chargeType: chargeType,
+                    splitCosts: splitCosts,
+                    travelDirection: direction == .before ? "before" : "after"
+                )
+                  
+                // Store override metadata on the entity if supported (schema dependent). 
+                // For now, it's in the notes.
+                
+                saveTravelCharge(travelCharge)
+            }
+        }
+    }
+    
+    // MARK: - Async Helper Wrappers
+    
+    private func getBusinessAddress() -> String? {
+         let resolver = EntityResolutionService(context: context)
+         let business = try? resolver.resolveBusiness()
+         return business?.address?.fullFormattedAddress ?? business?.address?.fullAddressText
+    }
+
+    private func geocodeAddressAsync(_ address: String?) async -> CLLocationCoordinate2D? {
+        await withCheckedContinuation { continuation in
+            geocodeAddress(address) { coord in
+                continuation.resume(returning: coord)
+            }
+        }
+    }
+    
+    private func calculateDrivingDistanceAsync(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> Double? {
+        await withCheckedContinuation { continuation in
+            calculateDrivingDistance(from: from, to: to) { distance in
+                continuation.resume(returning: distance)
+            }
+        }
+    }
+    
+    private func detectSharedTravelParticipantsAsync(session: SessionEntity, daySessions: [SessionInstance], direction: TravelDirection) async -> [SessionEntity] {
+        await withCheckedContinuation { continuation in
+            detectSharedTravelParticipants(session: session, daySessions: daySessions, direction: direction) { participants in
+                continuation.resume(returning: participants)
+            }
+        }
     }
     
     /// Logs review resolution for audit purposes.
-    private func logReviewResolution(_ reviewItem: TravelChargeReviewItem, action: String, details: String) {
+    private func logReviewResolution(_ reviewItem: TravelChargeReviewItemEntity, action: String, details: String) {
         let auditLog = TravelChargeAuditLog(id: UUID())
         auditLog.charge = nil
         auditLog.timestamp = Date()
@@ -1582,7 +1957,8 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             let type = charge.chargeType?.rawValue ?? "Unknown Type"
             let dist = String(format: "%.1f", charge.travelDistance ?? 0.0)
             let dir = charge.travelDirection?.rawValue ?? "?"
-            let summary = "Client: \(clientName), Session: \(sessionTitle), Type: \(type), Distance: \(dist) km, Direction: \(dir)"
+            let amount = charge.calculatedAmount.map { $0.formatted(.currency(code: "AUD")) } ?? "N/A"
+            let summary = "Client: \(clientName), Session: \(sessionTitle), Type: \(type), Distance: \(dist) km, Direction: \(dir), Amount/Participant: \(amount)"
             print("- \(summary)")
             // Create and save audit log
             let auditLog = TravelChargeAuditLog(id: UUID())
@@ -1597,7 +1973,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
     /// Logs review items for audit/compliance purposes
-    private func logReviewItem(_ reviewItem: TravelChargeReviewItem, action: String = "flagged") {
+    private func logReviewItem(_ reviewItem: TravelChargeReviewItemEntity, action: String = "flagged") {
         let auditLog = TravelChargeAuditLog(id: UUID())
         auditLog.charge = nil // No charge created
         auditLog.timestamp = Date()
@@ -1644,16 +2020,16 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     
     /// Fetches all audit logs for reporting or admin review.
     func fetchAuditLogs() -> [TravelChargeAuditLog] {
-        let descriptor = FetchDescriptor<TravelChargeAuditLog>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        let resolver = EntityResolutionService(context: context)
         do {
-            return try context.fetch(descriptor)
+            return try resolver.resolveAuditLogs()
         } catch {
             print("[TravelChargeAutomation] Failed to fetch audit logs: \(error)")
             return []
         }
     }
     
-    public func getTestResults() -> (charges: [String], reviews: [String], detailedReviews: [DetailedReviewItem]) {
+    public func getTestResults() -> (charges: [String], reviews: [String], detailedReviews: [Core.DetailedReviewItem]) {
         return (testTravelChargeSummaries, testReviewSummaries, testDetailedReviewItems)
     }
     
@@ -1694,6 +2070,42 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         }
     }
     
+    private func validateAddressAsync(_ address: AddressEntity) async -> Bool {
+        guard address.isValidForGeocoding else {
+            await MainActor.run {
+                address.validationStatus = .failed
+                address.validationError = "Address is empty or invalid"
+                address.lastValidationAttempt = Date()
+            }
+            return false
+        }
+        
+        await MainActor.run {
+            address.validationStatus = .pending
+            address.lastValidationAttempt = Date()
+        }
+        
+        let coordinate = await geocodeAddressAsync(address.fullFormattedAddress)
+        
+        return await MainActor.run {
+            if let coord = coordinate {
+                address.latitude = coord.latitude
+                address.longitude = coord.longitude
+                address.validationStatus = .valid
+                address.validationError = nil
+                self.logValidationEvent(address: address, success: true)
+                return true
+            } else {
+                address.latitude = 0.0
+                address.longitude = 0.0
+                address.validationStatus = .failed
+                address.validationError = "Failed to geocode address"
+                self.logValidationEvent(address: address, success: false, error: "Failed to geocode address")
+                return false
+            }
+        }
+    }
+
     /// Validates all addresses in the system that need validation
     func validateAllAddresses(completion: @escaping @Sendable (Int, Int) -> Void) {
         let addressDescriptor = FetchDescriptor<AddressEntity>()
@@ -1710,23 +2122,27 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             return
         }
         
-        let group = DispatchGroup()
-        let resultsQueue = DispatchQueue(label: "validationResults", attributes: .concurrent)
-        var results: [Bool] = Array(repeating: false, count: totalCount)
-        
-        for (index, address) in addressesToValidate.enumerated() {
-            group.enter()
-            validateAddress(address) { success in
-                resultsQueue.async(flags: .barrier) {
-                    results[index] = success
+        Task {
+
+            let results = await withTaskGroup(of: Bool.self) { group in
+                for address in addressesToValidate {
+                    group.addTask {
+                        return await self.validateAddressAsync(address)
+                    }
                 }
-                group.leave()
+                
+                var successCount = 0
+                for await result in group {
+                    if result {
+                        successCount += 1
+                    }
+                }
+                return successCount
             }
-        }
-        
-        group.notify(queue: .main) {
-            let validatedCount = results.filter { $0 }.count
-            completion(validatedCount, totalCount)
+            
+            await MainActor.run {
+                completion(results, totalCount)
+            }
         }
     }
     
@@ -1742,6 +2158,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         validateAddress(address, completion: completion)
     }
     
+    /// Validates session addresses that need validation
     /// Validates session addresses that need validation
     func validateSessionAddresses(completion: @escaping @Sendable (Int, Int) -> Void) {
         let sessionDescriptor = FetchDescriptor<SessionEntity>()
@@ -1759,23 +2176,26 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             return
         }
         
-        let group = DispatchGroup()
-        let resultsQueue = DispatchQueue(label: "validationResults2", attributes: .concurrent)
-        var results: [Bool] = Array(repeating: false, count: totalCount)
-        
-        for (index, address) in addressesToValidate.enumerated() {
-            group.enter()
-            validateAddress(address) { success in
-                resultsQueue.async(flags: .barrier) {
-                    results[index] = success
+        Task {
+            let results = await withTaskGroup(of: Bool.self) { group in
+                for address in addressesToValidate {
+                    group.addTask {
+                        return await self.validateAddressAsync(address)
+                    }
                 }
-                group.leave()
+                
+                var successCount = 0
+                for await result in group {
+                    if result {
+                        successCount += 1
+                    }
+                }
+                return successCount
             }
-        }
-        
-        group.notify(queue: .main) {
-            let validatedCount = results.filter { $0 }.count
-            completion(validatedCount, totalCount)
+            
+            await MainActor.run {
+                completion(results, totalCount)
+            }
         }
     }
     
@@ -1861,27 +2281,7 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         return simulationResult
     }
     
-    // Add all other helper stubs as per the pseudocode, e.g.:
-    // - getPreviousNonTravelSession
-    // - getNextNonTravelSession
-    // - geocodeAddress
-    // - calculateDrivingDistance
-    // - estimateTravelTime
-    // - lookupMMMZone
-    // - determineChargeTypes
-    // - findNonLabourService
-    // - detectSharedTravelParticipants
-    // - travelChargeExists
-    // - generateTravelChargeNotes
-    // - isCompliantWithRules
-    // - createTravelSession
-    // - saveTravelSession
-    // - linkTravelSessionToParticipants
-    // - getRecurrenceInstances
-    // - queueForUserReview
-    // - logAllCreatedTravelCharges
-    // - offerBulkUpdateOfTravelCharges
-    // - businessRulesChanged
+
     
     /// Maps a session's NDIS Item to the corresponding travel NDIS Item based on NDIS rules.
     ///
@@ -1952,27 +2352,11 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         }
     }
     
-    /// Finds an NDIS Item by its item number.
     private func findNDISItemByItemNumber(_ itemNumber: String) -> NDISItemEntity? {
-        let descriptor = FetchDescriptor<NDISItemEntity>(
-            predicate: #Predicate<NDISItemEntity> { item in
-                item.itemNumber == itemNumber
-            }
-        )
+        let resolver = EntityResolutionService(context: context)
+        return try? resolver.resolveNDISItem(byItemNumber: itemNumber)
         
-        do {
-            let items = try context.fetch(descriptor)
-            if let item = items.first {
-                print("DEBUG: Found NDIS item with item number \(itemNumber): \(item.name)")
-                return item
-            } else {
-                print("DEBUG: No NDIS item found with item number \(itemNumber)")
-                return nil
-            }
-        } catch {
-            print("DEBUG: Error finding NDIS item with item number \(itemNumber): \(error)")
-            return nil
-        }
+
     }
     
     /// Finds an NDIS Item by its name (case-insensitive).
@@ -2000,65 +2384,25 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     
     /// Determines if a provider is a therapist (for rate cap calculations).
     private func isTherapistProvider(_ session: SessionEntity) -> Bool {
-        guard let clientService = session.clientService,
-              let ndisItem = clientService.ndisItem else { return false }
-        
-        // Check if the NDIS item indicates therapy services
-        let itemName = ndisItem.name.lowercased()
-        let itemDescription = ndisItem.itemDescription?.lowercased() ?? ""
-        
-        let therapyKeywords = [
-            "therapy", "therapist", "physiotherapist", "psychologist", "dietitian",
-            "occupational", "speech", "assessment", "training"
-        ]
-        
-        return therapyKeywords.contains { keyword in
-            itemName.contains(keyword) || itemDescription.contains(keyword)
-        }
+        let service = session.clientService
+        let providerType = NDISTravelChargeCalculator.inferredProviderType(
+            itemName: service?.serviceName,
+            itemDescription: service?.ndisItem?.itemDescription,
+            ndisCode: service?.ndisCode
+        )
+        return providerType == .therapist
     }
     
-    /// Calculates the appropriate travel rate based on provider type and MMM zone.
+    /// Calculates the travel labour rate after provider-specific caps.
     private func calculateTravelRate(for session: SessionEntity, baseRate: Double, mmmZone: MMMZone?) -> Double {
-        var adjustedRate = baseRate
-        
-        // Apply therapist rate cap (50% for therapy providers)
-        if isTherapistProvider(session) {
-            adjustedRate = baseRate * 0.5
-            print("DEBUG: Applied 50% rate cap for therapist provider")
-        }
-        
-        // Apply MMM zone price loadings
-        if let mmmZone = mmmZone {
-            switch mmmZone.name {
-            case "MMM 6":
-                adjustedRate = adjustedRate * 1.4 // 40% loading for remote areas
-                print("DEBUG: Applied 40% loading for MMM 6 zone")
-            case "MMM 7":
-                adjustedRate = adjustedRate * 1.5 // 50% loading for very remote areas
-                print("DEBUG: Applied 50% loading for MMM 7 zone")
-            default:
-                // No loading for MMM 1-5 zones
-                break
-            }
-        }
-        
-        return adjustedRate
+        _ = mmmZone
+        let providerType: TravelChargeProviderType = isTherapistProvider(session) ? .therapist : .dsw
+        return max(baseRate, 0) * providerType.travelFactor
     }
     
     /// Determines the maximum claimable travel time based on MMM zone.
     private func getMaxTravelTime(for mmmZone: MMMZone?) -> Double {
-        guard let mmmZone = mmmZone else { return 30.0 } // Default to 30 minutes
-        
-        switch mmmZone.name {
-        case "MMM 1", "MMM 2", "MMM 3":
-            return 30.0 // 30 minutes for major cities and regional centres
-        case "MMM 4", "MMM 5":
-            return 60.0 // 60 minutes for regional areas
-        case "MMM 6", "MMM 7":
-            return Double.infinity // No time cap for remote areas (by agreement)
-        default:
-            return 30.0 // Default to 30 minutes
-        }
+        NDISTravelChargeCalculator.maxBillableMinutes(forMMMDescriptor: mmmZone?.name)
     }
     
     /// Finds a travel service for the client based on the session's NDIS Item and charge type.
@@ -2118,7 +2462,7 @@ public struct BusinessRules {
     public var maxTravelDistance: Double? = 200.0
     public var allowedChargeTypes: Set<String>? = nil
     public var defaultTravelTime: Double = 30.0 // minutes
-    public var defaultMMMZone: MMMZone = MMMZone(name: "Default", maxTime: 30)
+    public var defaultMMMZone: MMMZone = MMMZone(name: "MMM 1", maxTime: 30)
     public var defaultParkingCost: Double? = 3.0 // Default parking cost
     public var defaultTollCost: Double? = nil // Default toll cost
 
@@ -2146,38 +2490,90 @@ public struct MMMZone: Sendable {
 
 public struct MMMZoneTable {
     public init() {}
-    
-    /// Looks up the MMM zone for a given postcode using the existing MMMZoneLookup tool.
-    public func lookup(byPostcode postcode: String) -> MMMZone? {
-        // Use the existing MMMZoneLookup tool for coordinate-based lookup
-        // For postcode-based lookup, we would need to geocode the postcode first
-        // This is a simplified implementation - in production you might want to cache results
 
-        // For now, return a default zone based on postcode patterns
-        // In a real implementation, you would:
-        // 1. Geocode the postcode to get coordinates
-        // 2. Use MMMZoneLookup.shared.mmm(for: coordinates)
-        // 3. Map the result to appropriate max time
-
-        let postcodeInt = Int(postcode) ?? 0
-
-        // Simple postcode-based classification (Australian postcodes)
-        if postcodeInt >= 2000 && postcodeInt <= 2999 {
-            return MMMZone(name: "MM1 - Major Cities", maxTime: 30.0)
-        } else if postcodeInt >= 3000 && postcodeInt <= 3999 {
-            return MMMZone(name: "MM2 - Regional Cities", maxTime: 45.0)
-        } else if postcodeInt >= 4000 && postcodeInt <= 4999 {
-            return MMMZone(name: "MM3 - Large Rural Towns", maxTime: 60.0)
-        } else if postcodeInt >= 5000 && postcodeInt <= 5999 {
-            return MMMZone(name: "MM4 - Medium Rural Towns", maxTime: 90.0)
-        } else if postcodeInt >= 6000 && postcodeInt <= 6999 {
-            return MMMZone(name: "MM5 - Small Rural Towns", maxTime: 120.0)
-        } else if postcodeInt >= 7000 && postcodeInt <= 7999 {
-            return MMMZone(name: "MM6 - Remote Communities", maxTime: 180.0)
-        } else if postcodeInt >= 8000 && postcodeInt <= 8999 {
-            return MMMZone(name: "MM7 - Very Remote Communities", maxTime: 240.0)
-        } else {
-            return MMMZone(name: "Default", maxTime: 30.0)
+    /// Coordinate-first MMM lookup using polygon data from `MMMZoneLookup`.
+    public func lookup(byCoordinate coordinate: CLLocationCoordinate2D) -> MMMZone? {
+        guard let mmmCode = MMMZoneLookup.shared.mmm(for: coordinate) else {
+            return nil
         }
+        return Self.zone(from: mmmCode)
+    }
+
+    /// Synchronous postcode lookup (cache-backed only, no network request).
+    /// Use `lookup(byPostcode:countryCode:)` for full postcode resolution.
+    public func lookup(byPostcode postcode: String) -> MMMZone? {
+        let normalized = Self.normalizePostcode(postcode)
+        guard let coordinate = MMMPostcodeLookupCache.coordinate(for: normalized) else {
+            return nil
+        }
+        return lookup(byCoordinate: coordinate)
+    }
+
+    /// Full postcode lookup via geocoding + polygon lookup.
+    /// This resolves postcode -> coordinate, then delegates to `MMMZoneLookup`.
+    @MainActor
+    public func lookup(byPostcode postcode: String, countryCode: String = "AU") async -> MMMZone? {
+        let normalized = Self.normalizePostcode(postcode)
+        guard !normalized.isEmpty else { return nil }
+
+        if let cached = MMMPostcodeLookupCache.coordinate(for: normalized) {
+            return lookup(byCoordinate: cached)
+        }
+
+        let query = "\(normalized), \(countryCode)"
+        guard let request = MKGeocodingRequest(addressString: query) else {
+            return nil
+        }
+
+        do {
+            let mapItems = try await request.mapItems
+            guard let coordinate = mapItems.first?.location.coordinate else {
+                return nil
+            }
+            MMMPostcodeLookupCache.store(coordinate: coordinate, for: normalized)
+            return lookup(byCoordinate: coordinate)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func zone(from mmmCode: Int) -> MMMZone {
+        let maxTime: Double
+        switch mmmCode {
+        case 1...3:
+            maxTime = 30.0
+        case 4...5:
+            maxTime = 60.0
+        case 6...7:
+            maxTime = .infinity
+        default:
+            maxTime = 30.0
+        }
+        return MMMZone(name: "MMM \(mmmCode)", maxTime: maxTime)
+    }
+
+    private static func normalizePostcode(_ raw: String) -> String {
+        raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter(\.isNumber)
+    }
+}
+
+private enum MMMPostcodeLookupCache {
+    private nonisolated(unsafe) static var byPostcode: [String: CLLocationCoordinate2D] = [:]
+    private static let lock = NSLock()
+
+    static func coordinate(for postcode: String) -> CLLocationCoordinate2D? {
+        guard !postcode.isEmpty else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return byPostcode[postcode]
+    }
+
+    static func store(coordinate: CLLocationCoordinate2D, for postcode: String) {
+        guard !postcode.isEmpty else { return }
+        lock.lock()
+        byPostcode[postcode] = coordinate
+        lock.unlock()
     }
 }

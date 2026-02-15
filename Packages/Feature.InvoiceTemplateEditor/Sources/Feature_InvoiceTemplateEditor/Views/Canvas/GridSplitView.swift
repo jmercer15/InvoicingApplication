@@ -106,7 +106,7 @@ struct GridSplitView: View {
                                 .frame(height: rowHeights[rowIndex])
                                 .overlay(alignment: .trailing) {
                                     if columnIndex < split.gridColumns - 1 {
-                                        ResizableDivider(direction: .horizontal) { delta in
+                                        ResizableDivider(direction: .horizontal, onResize: { delta in
                                             var updatedSplit = split
                                             
                                             // Switch to fixed mode on resize
@@ -122,13 +122,15 @@ struct GridSplitView: View {
                                             )
                                             updatedSplit.widthRatios[columnIndex] = newCurrentRatio
                                             updatedSplit.widthRatios[columnIndex + 1] = newNextRatio
-                                            context.onUpdateSplit(updatedSplit)
-                                        }
+                                            context.onUpdateSplit(updatedSplit, nil)
+                                        }, onResizeStart: {
+                                            context.onResizeStart?(sectionIndex)
+                                        }, isVisible: context.showDividers)
                                     }
                                 }
                                 .overlay(alignment: .bottom) {
                                     if rowIndex < split.gridRows - 1 {
-                                        ResizableDivider(direction: .vertical) { delta in
+                                        ResizableDivider(direction: .vertical, onResize: { delta in
                                             var updatedSplit = split
                                             
                                             // Switch to fixed mode on resize
@@ -144,8 +146,10 @@ struct GridSplitView: View {
                                             )
                                             updatedSplit.heightRatios[rowIndex] = newCurrentRatio
                                             updatedSplit.heightRatios[rowIndex + 1] = newNextRatio
-                                            context.onUpdateSplit(updatedSplit)
-                                        }
+                                            context.onUpdateSplit(updatedSplit, nil)
+                                        }, onResizeStart: {
+                                            context.onResizeStart?(sectionIndex)
+                                        }, isVisible: context.showDividers)
                                     }
                                 }
                         }
@@ -162,17 +166,17 @@ struct GridSplitView: View {
             onSplitChild: { childIndex, direction, count, rows, columns in
                 var updatedSplit = split
                 updatedSplit.splitChild(at: childIndex, direction: direction, splitCount: count, gridRows: rows ?? 2, gridColumns: columns ?? 2)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Split Section")
             },
             onUnsplitChild: { childIndex in
                 var updatedSplit = split
                 updatedSplit.unsplitChild(at: childIndex)
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Unsplit Section")
             },
             onResize: { childIndex, delta in
                 context.onResize(childIndex, delta)
             },
-            onUpdateSplit: { updatedChildSplit in
+            onUpdateSplit: { updatedChildSplit, actionName in
                 var updatedSplit = split
                 
                 let hasNoRealChildren = updatedChildSplit.children.allSatisfy { $0 == nil }
@@ -189,7 +193,7 @@ struct GridSplitView: View {
                 } else {
                     updatedSplit.children[index] = updatedChildSplit
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, actionName)
             },
             onAddComponent: { childIdx, component in
                 var updatedSplit = split
@@ -199,7 +203,7 @@ struct GridSplitView: View {
                 } else {
                     updatedSplit.addComponent(component, toChild: index)
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Add Component")
             },
             onSetLabel: { childIdx, label in
                 var updatedSplit = split
@@ -208,7 +212,7 @@ struct GridSplitView: View {
                 } else {
                     updatedSplit.removeLabel(forChild: index)
                 }
-                context.onUpdateSplit(updatedSplit)
+                context.onUpdateSplit(updatedSplit, "Change Label")
             },
             onReorderChildren: context.onReorderChildren,
             onComponentSelect: context.onComponentSelect,
@@ -223,8 +227,13 @@ struct GridSplitView: View {
                 } else {
                     updatedSplit.setColumnSizingMode(mode, forColumn: column)
                 }
-                context.onUpdateSplit(updatedSplit)
-            }
+                context.onUpdateSplit(updatedSplit, "Change Grid Sizing")
+            },
+            currentWidthSizingMode: nil,
+            currentHeightSizingMode: nil,
+            currentRowSizingMode: split.rowSizingModes.indices.contains(split.rowColumn(for: index).row) ? split.rowSizingModes[split.rowColumn(for: index).row] : nil,
+            currentColumnSizingMode: split.columnSizingModes.indices.contains(split.rowColumn(for: index).column) ? split.columnSizingModes[split.rowColumn(for: index).column] : nil,
+            showDividers: context.showDividers
         )
     }
 }

@@ -3,75 +3,46 @@ import SwiftUI
 // MARK: - Property Option Enums
 // Options for property pickers in the inspector
 
-enum LineStyleOption: String, CaseIterable, Identifiable {
-    case solid = "Solid"
-    case dashed = "Dashed"
-    case dotted = "Dotted"
+enum LineDecoratorOption: String, CaseIterable, Identifiable {
+    case none = "None"
+    case arrow = "Arrow"
+    case circle = "Circle"
+    case square = "Square"
     
     var id: String { self.rawValue }
     
-    var styleValue: LineStyle {
+    var styleValue: LineDecorator {
         switch self {
-        case .solid: return .solid
-        case .dashed: return .dashed
-        case .dotted: return .dotted
+        case .none: return .none
+        case .arrow: return .arrow
+        case .circle: return .circle
+        case .square: return .square
         }
     }
     
-    init(styleValue: LineStyle) {
+    init(styleValue: LineDecorator) {
         switch styleValue {
-        case .solid: self = .solid
-        case .dashed: self = .dashed
-        case .dotted: self = .dotted
+        case .none: self = .none
+        case .arrow: self = .arrow
+        case .circle: self = .circle
+        case .square: self = .square
         }
     }
 }
 
-enum ImageContentModeOption: String, CaseIterable, Identifiable {
-    case fit = "Fit"
-    case fill = "Fill"
-    
-    var id: String { self.rawValue }
-    
-    var styleValue: ImageContentMode {
-        switch self {
-        case .fit: return .fit
-        case .fill: return .fill
-        }
-    }
-    
-    init(styleValue: ImageContentMode) {
-        switch styleValue {
-        case .fit: self = .fit
-        case .fill: self = .fill
-        }
-    }
-}
+// MARK: - Preview
 
-enum TriangleDirectionOption: String, CaseIterable, Identifiable {
-    case up = "Up"
-    case down = "Down"
-    case left = "Left"
-    case right = "Right"
-    
-    var id: String { self.rawValue }
-    
-    var styleValue: TriangleDirection {
-        switch self {
-        case .up: return .up
-        case .down: return .down
-        case .left: return .left
-        case .right: return .right
+#Preview("LineDecoratorOption - All Types") {
+    VStack(spacing: 16) {
+        ForEach(LineDecoratorOption.allCases) { option in
+            HStack {
+                Text(option.rawValue)
+                    .frame(width: 60, alignment: .leading)
+                Line(startDecorator: .none, endDecorator: option.styleValue, thickness: 2)
+                    .stroke(Color.primary, lineWidth: 2)
+                    .frame(width: 80, height: 20)
+            }
         }
     }
-    
-    init(styleValue: TriangleDirection) {
-        switch styleValue {
-        case .up: self = .up
-        case .down: self = .down
-        case .left: self = .left
-        case .right: self = .right
-        }
-    }
+    .padding()
 }
-

@@ -8,7 +8,7 @@ import CoreGraphics
 extension TemplateManager {
     // MARK: - Save Template
     
-    func saveTemplate(
+    public func saveTemplate(
         document: InvoiceDocument,
         name: String,
         description: String = "",
@@ -96,7 +96,7 @@ extension TemplateManager {
     
     // MARK: - Load Template
     
-    func loadTemplate(from url: URL) async -> TemplateData? {
+    public func loadTemplate(from url: URL) async -> TemplateData? {
         await MainActor.run {
             isLoading = true
             lastError = nil
@@ -155,7 +155,7 @@ extension TemplateManager {
         }
     }
     
-    func loadTemplate(metadata: TemplateMetadata) async -> TemplateData? {
+    public func loadTemplate(metadata: TemplateMetadata) async -> TemplateData? {
         let sanitizedName = sanitizeFileName(metadata.name)
         let fileURL = templatesDirectory.appendingPathComponent("\(sanitizedName).pdf")
         return await loadTemplate(from: fileURL)
@@ -163,7 +163,7 @@ extension TemplateManager {
     
     // MARK: - Browse Templates
     
-    func browseTemplates() async -> [TemplateMetadata] {
+    public func browseTemplates() async -> [TemplateMetadata] {
         do {
             let fileURLs = try FileManager.default.contentsOfDirectory(
                 at: templatesDirectory,
@@ -207,7 +207,7 @@ extension TemplateManager {
     
     // MARK: - Delete Template
     
-    func deleteTemplate(metadata: TemplateMetadata) async -> Bool {
+    public func deleteTemplate(metadata: TemplateMetadata) async -> Bool {
         do {
             let sanitizedName = sanitizeFileName(metadata.name)
             let fileURL = templatesDirectory.appendingPathComponent("\(sanitizedName).pdf")

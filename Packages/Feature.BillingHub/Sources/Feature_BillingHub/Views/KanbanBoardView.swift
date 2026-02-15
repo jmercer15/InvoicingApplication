@@ -1,27 +1,29 @@
-//
-//  KanbanBoardView.swift
-//  InvoicingApplication
-//
-//  Created by AI Assistant on 21/7/2025.
-//
-
 import SwiftUI
-import SwiftData
 import SharedUI
 import Core
 
+private extension View {
+    func kanbanSubcolumnSurface() -> some View {
+        let shape = RoundedRectangle(
+            cornerRadius: BillingHubTheme.Surfaces.subcolumnCornerRadius,
+            style: .continuous
+        )
+
+        return self
+            .glassEffect(.regular, in: shape)
+            .clipShape(shape)
+    }
+}
 
 struct KanbanBoardView: View {
     @ObservedObject var viewModel: BillingHubViewModel
     @Binding var selectedCard: KanbanCardData?
     @Binding var isEditingPanelVisible: Bool
-    // Collapsible sections
     @State private var preparingCollapsed: Bool = false
     @State private var processingCollapsed: Bool = false
     @State private var paymentCollapsed: Bool = false
 
     var body: some View {
-        // Precompute lightweight counts to keep body simple
         let completedSessionsCount = viewModel.sessionsByStatus[.completed]?.count ?? 0
         let groupedSessionsCount = viewModel.sessionsByStatus[.grouped]?.count ?? 0
         let addTravelSessionsCount = viewModel.sessionsByStatus[.addTravel]?.count ?? 0
@@ -30,85 +32,80 @@ struct KanbanBoardView: View {
         let pendingInvoicesCount = viewModel.invoicesByStatus[.pending]?.count ?? 0
         let receivedInvoicesCount = viewModel.invoicesByStatus[.received]?.count ?? 0
 
-        return GeometryReader { _ in
-            VStack(spacing: 0) {
-                GeometryReader { columnsGeometry in
-                    let totalWidth = columnsGeometry.size.width
-                    let collapsedWidth: CGFloat = 60
+        return GeometryReader { geometry in
+            let viewportWidth = geometry.size.width
+            let collapsedWidth: CGFloat = 60
+            let primaryColumnGap = BillingHubTheme.Surfaces.primaryColumnGap
+            let sectionGapTotal = primaryColumnGap * 2
 
-                    // Weights reflect updated proportions after removing Assign Services column
-                    // Left: 2 columns, Middle: 3 columns, Right: 2 columns
-                    let leftWeight: CGFloat = 2
-                    let middleWeight: CGFloat = 3
-                    let rightWeight: CGFloat = 2
+            let minimumLeftWidth: CGFloat = 320
+            let minimumMiddleWidth: CGFloat = 480
+            let minimumRightWidth: CGFloat = 320
+            let minimumBoardWidth =
+                (preparingCollapsed ? collapsedWidth : minimumLeftWidth) +
+                (processingCollapsed ? collapsedWidth : minimumMiddleWidth) +
+                (paymentCollapsed ? collapsedWidth : minimumRightWidth) +
+                sectionGapTotal
 
-                    let collapsedCount = [preparingCollapsed, processingCollapsed, paymentCollapsed].filter { $0 }.count
-                    let reservedForCollapsed = CGFloat(collapsedCount) * collapsedWidth
-                    let available = max(0, totalWidth - reservedForCollapsed)
+            let totalWidth = max(viewportWidth, minimumBoardWidth)
 
-                    let activeWeight = (preparingCollapsed ? 0 : leftWeight) + (processingCollapsed ? 0 : middleWeight) + (paymentCollapsed ? 0 : rightWeight)
+            let leftWeight: CGFloat = 2
+            let middleWeight: CGFloat = 3
+            let rightWeight: CGFloat = 2
 
-                    let leftWidth: CGFloat = preparingCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (leftWeight / activeWeight) : collapsedWidth)
-                    let middleWidth: CGFloat = processingCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (middleWeight / activeWeight) : collapsedWidth)
-                    let rightWidth: CGFloat = paymentCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (rightWeight / activeWeight) : collapsedWidth)
+            let collapsedCount = [preparingCollapsed, processingCollapsed, paymentCollapsed].filter { $0 }.count
+            let reservedForCollapsed = CGFloat(collapsedCount) * collapsedWidth
+            let available = max(0, totalWidth - reservedForCollapsed - sectionGapTotal)
 
-                    Grid(alignment: .top, horizontalSpacing: 0, verticalSpacing: 0) {
-                        GridRow {
-                            PreparingSessionsColumn(
-                                viewModel: viewModel,
-                                selectedCard: $selectedCard,
-                                isEditingPanelVisible: $isEditingPanelVisible,
-                                completedSessionsCount: completedSessionsCount,
-                                groupedSessionsCount: groupedSessionsCount,
-                                width: leftWidth,
-                                isCollapsed: $preparingCollapsed
-                            )
+            let activeWeight = (preparingCollapsed ? 0 : leftWeight) + (processingCollapsed ? 0 : middleWeight) + (paymentCollapsed ? 0 : rightWeight)
 
-                            ProcessingColumn(
-                                viewModel: viewModel,
-                                selectedCard: $selectedCard,
-                                isEditingPanelVisible: $isEditingPanelVisible,
-                                addTravelSessionsCount: addTravelSessionsCount,
-                                reviewDraftsInvoicesCount: reviewDraftsInvoicesCount,
-                                readyToSendInvoicesCount: readyToSendInvoicesCount,
-                                width: middleWidth,
-                                isCollapsed: $processingCollapsed
-                            )
+            let leftWidth: CGFloat = preparingCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (leftWeight / activeWeight) : collapsedWidth)
+            let middleWidth: CGFloat = processingCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (middleWeight / activeWeight) : collapsedWidth)
+            let rightWidth: CGFloat = paymentCollapsed ? collapsedWidth : (activeWeight > 0 ? available * (rightWeight / activeWeight) : collapsedWidth)
 
-                            PaymentColumn(
-                                viewModel: viewModel,
-                                selectedCard: $selectedCard,
-                                isEditingPanelVisible: $isEditingPanelVisible,
-                                pendingInvoicesCount: pendingInvoicesCount,
-                                receivedInvoicesCount: receivedInvoicesCount,
-                                width: rightWidth,
-                                isCollapsed: $paymentCollapsed
-                            )
-                        }
+            ScrollView(.horizontal, showsIndicators: totalWidth > viewportWidth) {
+                Grid(alignment: .top, horizontalSpacing: primaryColumnGap, verticalSpacing: 0) {
+                    GridRow {
+                        PreparingSessionsColumn(
+                            viewModel: viewModel,
+                            selectedCard: $selectedCard,
+                            isEditingPanelVisible: $isEditingPanelVisible,
+                            completedSessionsCount: completedSessionsCount,
+                            groupedSessionsCount: groupedSessionsCount,
+                            width: leftWidth,
+                            isCollapsed: $preparingCollapsed
+                        )
+
+                        ProcessingColumn(
+                            viewModel: viewModel,
+                            selectedCard: $selectedCard,
+                            isEditingPanelVisible: $isEditingPanelVisible,
+                            addTravelSessionsCount: addTravelSessionsCount,
+                            reviewDraftsInvoicesCount: reviewDraftsInvoicesCount,
+                            readyToSendInvoicesCount: readyToSendInvoicesCount,
+                            width: middleWidth,
+                            isCollapsed: $processingCollapsed
+                        )
+
+                        PaymentColumn(
+                            viewModel: viewModel,
+                            selectedCard: $selectedCard,
+                            isEditingPanelVisible: $isEditingPanelVisible,
+                            pendingInvoicesCount: pendingInvoicesCount,
+                            receivedInvoicesCount: receivedInvoicesCount,
+                            width: rightWidth,
+                            isCollapsed: $paymentCollapsed
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.ultraThinMaterial)
+                .frame(width: totalWidth, alignment: .leading)
             }
-            .background(.clear)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.clear)
-        .overlay(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
-                .stroke(StyleGuide.Colors.border.opacity(0.6), lineWidth: 1.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium))
-        .padding(.top)
-        .padding(.horizontal)
     }
 }
 
-// Preview helpers moved to KanbanBoardView+Preview.swift to isolate Data import
-
-
-
-// Narrow vertical bar shown when a primary column is collapsed
 private struct CollapsedColumnBar: View {
     var title: String
     var icon: String
@@ -116,21 +113,29 @@ private struct CollapsedColumnBar: View {
     var count: String? = nil
     @Binding var isCollapsed: Bool
     @State private var isHovered: Bool = false
-    // Simple collapsed placeholder bar layout
 
     var body: some View {
-        
-            VStack(spacing: 8) {
+        let shape = RoundedRectangle(
+            cornerRadius: BillingHubTheme.Surfaces.subcolumnCornerRadius,
+            style: .continuous
+        )
+        let reversedCharacters = Array(title.reversed()).map(String.init)
+
+        return VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(color)
 
-                Text(title)
+                VStack(spacing: -4) {
+                    ForEach(Array(reversedCharacters.enumerated()), id: \.offset) { _, character in
+                        Text(character)
+                            .rotationEffect(.degrees(-90))
+                    }
+                }
                     .font(.title3.weight(.semibold))
                     .foregroundColor(StyleGuide.Colors.text.opacity(0.85))
-                    .lineLimit(1)
-                    //.fixedSize() // prevent compression that shrinks font size
-                    .rotationEffect(.degrees(-90))
+                    .fixedSize(horizontal: true, vertical: true)
+                    .layoutPriority(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let count {
@@ -146,15 +151,15 @@ private struct CollapsedColumnBar: View {
             .padding(.vertical, 8)
             .padding(.horizontal, 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium))
-            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium))
+            .contentShape(Rectangle())
             .onTapGesture {
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                     isCollapsed = false
                 }
             }
-        .background(color.opacity(isHovered ? 0.32 : 0.24))
-        .pointerStyle(.pointingHand)
+        .glassEffect(.regular.tint(color.opacity(0.45)).interactive(isHovered), in: shape)
+        .clipShape(shape)
+        .pointerStyle(.link)
 #if os(macOS)
         .help("Expand \(title)")
 #endif
@@ -163,10 +168,6 @@ private struct CollapsedColumnBar: View {
         }
     }
 }
-
-// (VerticalText removed; using rotated Text(title) instead)
-
-// MARK: - Extracted Columns for Simpler Type-Checking
 
 struct PreparingSessionsColumn: View {
     @ObservedObject var viewModel: BillingHubViewModel
@@ -177,52 +178,36 @@ struct PreparingSessionsColumn: View {
     let width: CGFloat
     @Binding var isCollapsed: Bool
 
-    init(
-        viewModel: BillingHubViewModel,
-        selectedCard: Binding<KanbanCardData?>,
-        isEditingPanelVisible: Binding<Bool>,
-        completedSessionsCount: Int,
-        groupedSessionsCount: Int,
-        width: CGFloat,
-        isCollapsed: Binding<Bool>
-    ) {
-        self.viewModel = viewModel
-        self._selectedCard = selectedCard
-        self._isEditingPanelVisible = isEditingPanelVisible
-        self.completedSessionsCount = completedSessionsCount
-        self.groupedSessionsCount = groupedSessionsCount
-        self.width = width
-        self._isCollapsed = isCollapsed
-    }
-
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if isCollapsed {
                 CollapsedColumnBar(
-                    title: "Preparing",
+                    title: "Prepare",
                     icon: "calendar.badge.plus",
-                    color: Color(hex: "5856D6"),
+                    color: BillingHubTheme.Columns.preparing,
                     count: "\(completedSessionsCount + groupedSessionsCount)",
                     isCollapsed: $isCollapsed
                 )
             } else {
                 VStack(spacing: 0) {
                     KanbanSectionHeader(
-                        title: "Preparing Sessions",
+                        title: "Prepare",
                         icon: "calendar.badge.plus",
-                        color: Color(hex: "5856D6"),
+                        color: BillingHubTheme.Columns.preparing,
                         count: "\(completedSessionsCount + groupedSessionsCount)",
                         isCollapsed: $isCollapsed
                     )
-                    Grid(alignment: .top, horizontalSpacing: 0, verticalSpacing: 0) {
+                    Grid(alignment: .top, horizontalSpacing: BillingHubTheme.Surfaces.subcolumnGap, verticalSpacing: 0) {
                 GridRow {
                     // Completed
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
                             title: "Completed",
                             icon: "calendar.badge.checkmark",
-                            color: Color(hex: "5856D6"),
-                            count: "\(completedSessionsCount)"
+                            color: BillingHubTheme.Columns.preparing,
+                            count: "\(completedSessionsCount)",
+                            sortOption: viewModel.sortOption(for: .completed),
+                            onSortChange: { viewModel.setSortOption($0, for: .completed) }
                         )
 
                         CustomKanbanColumn(
@@ -233,33 +218,32 @@ struct PreparingSessionsColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 return viewModel.reorderInCompleted(sourceID: sourceID, beforeTargetID: beforeTargetID)
                             },
-                            betweenAccentColor: Color(hex: "5856D6")
+                            dropPolicy: .sessionsOnly,
+                            emptyStateIcon: "checkmark.circle",
+                            emptyStateMessage: "All sessions processed",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
-                    .overlay(
-                        Rectangle()
-                            .frame(width: 1)
-                            .foregroundColor(StyleGuide.Colors.border),
-                        alignment: .trailing
-                    )
+                    .kanbanSubcolumnSurface()
 
-                    // Grouped
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
                             title: "Grouped",
                             icon: "rectangle.on.rectangle.badge.gearshape",
-                            color: Color(hex: "5856D6"),
+                            color: BillingHubTheme.Columns.preparing,
                             count: "\(groupedSessionsCount)"
+                            // Grouped column is strictly manual sort based on groupedPosition
                         )
 
                         GroupedKanbanColumn(
                             groups: viewModel.groupedSessions,
                             selectedCard: $selectedCard,
                             isEditingPanelVisible: $isEditingPanelVisible,
-                            columnType: .grouped,
                             onReorderBetween: { sourceID, beforeTargetID, scopeGroupID in
                                 return viewModel.reorderInGrouped(sourceID: sourceID, beforeTargetID: beforeTargetID, scopeGroupID: scopeGroupID)
+                            },
+                            onReorderGroup: { groupID, beforeTargetID in
+                                return viewModel.reorderGroupInGroupedColumn(sourceGroupID: groupID, beforeTargetID: beforeTargetID)
                             },
                             onDropOnCard: { sourceID, targetID in
                                 guard sourceID != targetID,
@@ -274,24 +258,18 @@ struct PreparingSessionsColumn: View {
                             canAddSessionToGroup: { sessionID, groupID in
                                 return viewModel.canAddSessionToGroup(sessionID: sessionID, groupID: groupID)
                             },
-                            betweenAccentColor: Color(hex: "5856D6")
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
+                    .kanbanSubcolumnSurface()
                 }
                     }
+                    .padding(.horizontal, BillingHubTheme.Surfaces.subcolumnShadowClearance)
                 }
             }
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .overlay(
-            Rectangle()
-                .frame(width: 1)
-                .foregroundColor(StyleGuide.Colors.border),
-            alignment: .trailing
-        )
     }
 }
 
@@ -306,35 +284,35 @@ private struct ProcessingColumn: View {
     @Binding var isCollapsed: Bool
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if isCollapsed {
                 CollapsedColumnBar(
-                    title: "Processing",
+                    title: "Process",
                     icon: "document.badge.gearshape.fill",
-                    color: Color(hex: "007AFF"),
+                    color: BillingHubTheme.Columns.processing,
                     count: "\(addTravelSessionsCount + reviewDraftsInvoicesCount + readyToSendInvoicesCount)",
                     isCollapsed: $isCollapsed
                 )
             } else {
                 VStack(spacing: 0) {
                     KanbanSectionHeader(
-                        title: "Processing",
+                        title: "Process",
                         icon: "document.badge.gearshape.fill",
-                        color: Color(hex: "007AFF"),
+                        color: BillingHubTheme.Columns.processing,
                         count: "\(addTravelSessionsCount + reviewDraftsInvoicesCount + readyToSendInvoicesCount)",
                         isCollapsed: $isCollapsed
                     )
 
-                    Grid(alignment: .top, horizontalSpacing: 0, verticalSpacing: 0) {
+                    Grid(alignment: .top, horizontalSpacing: BillingHubTheme.Surfaces.subcolumnGap, verticalSpacing: 0) {
                 GridRow {
-                    // Add Travel
-
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
                             title: "Add Travel",
                             icon: "car",
-                            color: Color(hex: "007AFF"),
-                            count: "\(addTravelSessionsCount)"
+                            color: BillingHubTheme.Columns.processing,
+                            count: "\(addTravelSessionsCount)",
+                            sortOption: viewModel.sortOption(for: .addTravel),
+                            onSortChange: { viewModel.setSortOption($0, for: .addTravel) }
                         )
 
                         CustomKanbanColumn(
@@ -345,26 +323,25 @@ private struct ProcessingColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 return viewModel.reorderInAddTravel(sourceID: sourceID, beforeTargetID: beforeTargetID, scopeGroupID: nil)
                             },
-                            betweenAccentColor: Color(hex: "007AFF")
+                            dropPolicy: .sessionsOnly,
+                            emptyStateIcon: "car.circle",
+                            emptyStateMessage: "No travel needed",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .overlay(
-                        Rectangle()
-                            .frame(width: 1)
-                            .foregroundColor(StyleGuide.Colors.border),
-                        alignment: .trailing
-                    )
+                    .kanbanSubcolumnSurface()
 
-                    // Review Drafts
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
                             title: "Review Drafts",
                             icon: "doc.text.magnifyingglass",
-                            color: Color(hex: "007AFF"),
-                            count: "\(reviewDraftsInvoicesCount)"
+                            color: BillingHubTheme.Columns.processing,
+                            count: "\(reviewDraftsInvoicesCount)",
+                            total: viewModel.formattedTotal(for: .reviewDrafts),
+                            sortOption: viewModel.sortOption(for: .reviewDrafts),
+                            onSortChange: { viewModel.setSortOption($0, for: .reviewDrafts) }
                         )
 
                         CustomKanbanColumn(
@@ -375,24 +352,23 @@ private struct ProcessingColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 viewModel.reorderInvoices(in: .reviewDrafts, sourceID: sourceID, beforeTargetID: beforeTargetID)
                             },
-                            betweenAccentColor: Color(hex: "007AFF")
+                            dropPolicy: .invoicesOnly,
+                            emptyStateIcon: "doc.text",
+                            emptyStateMessage: "No drafts to review",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
-                    .overlay(
-                        Rectangle()
-                            .frame(width: 1)
-                            .foregroundColor(StyleGuide.Colors.border),
-                        alignment: .trailing
-                    )
+                    .kanbanSubcolumnSurface()
 
-                    // Ready to Send
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
                             title: "Ready to Send",
                             icon: "square.and.arrow.up.badge.clock",
-                            color: Color(hex: "007AFF"),
-                            count: "\(readyToSendInvoicesCount)"
+                            color: BillingHubTheme.Columns.processing,
+                            count: "\(readyToSendInvoicesCount)",
+                            total: viewModel.formattedTotal(for: .readyToSend),
+                            sortOption: viewModel.sortOption(for: .readyToSend),
+                            onSortChange: { viewModel.setSortOption($0, for: .readyToSend) }
                         )
 
                         CustomKanbanColumn(
@@ -403,24 +379,21 @@ private struct ProcessingColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 viewModel.reorderInvoices(in: .readyToSend, sourceID: sourceID, beforeTargetID: beforeTargetID)
                             },
-                            betweenAccentColor: Color(hex: "007AFF")
+                            dropPolicy: .invoicesOnly,
+                            emptyStateIcon: "paperplane",
+                            emptyStateMessage: "All invoices sent!",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
+                    .kanbanSubcolumnSurface()
                 }
                     }
+                    .padding(.horizontal, BillingHubTheme.Surfaces.subcolumnShadowClearance)
                 }
             }
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .overlay(
-            Rectangle()
-                .frame(width: 1)
-                .foregroundColor(StyleGuide.Colors.border),
-            alignment: .trailing
-        )
     }
 }
 
@@ -434,12 +407,12 @@ private struct PaymentColumn: View {
     @Binding var isCollapsed: Bool
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if isCollapsed {
                 CollapsedColumnBar(
                     title: "Payment",
                     icon: "dollarsign.circle.fill",
-                    color: Color(hex: "00FF88"),
+                    color: BillingHubTheme.Columns.payment,
                     count: "\(pendingInvoicesCount + receivedInvoicesCount)",
                     isCollapsed: $isCollapsed
                 )
@@ -448,20 +421,22 @@ private struct PaymentColumn: View {
                     KanbanSectionHeader(
                         title: "Payment",
                         icon: "dollarsign.circle.fill",
-                        color: Color(hex: "00FF88"),
+                        color: BillingHubTheme.Columns.payment,
                         count: "\(pendingInvoicesCount + receivedInvoicesCount)",
                         isCollapsed: $isCollapsed
                     )
 
-                    Grid(alignment: .top, horizontalSpacing: 0, verticalSpacing: 0) {
-                    GridRow {
-                    // Pending
+                    Grid(alignment: .top, horizontalSpacing: BillingHubTheme.Surfaces.subcolumnGap, verticalSpacing: 0) {
+                GridRow {
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
-                            title: "Pending",
-                            icon: "clock",
-                            color: Color(hex: "00FF88"),
-                            count: "\(pendingInvoicesCount)"
+                            title: "Sent",
+                            icon: "paperplane",
+                            color: BillingHubTheme.Columns.payment,
+                            count: "\(pendingInvoicesCount)",
+                            total: viewModel.formattedTotal(for: .pending),
+                            sortOption: viewModel.sortOption(for: .pending),
+                            onSortChange: { viewModel.setSortOption($0, for: .pending) }
                         )
 
                         CustomKanbanColumn(
@@ -472,25 +447,24 @@ private struct PaymentColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 viewModel.reorderInvoices(in: .pending, sourceID: sourceID, beforeTargetID: beforeTargetID)
                             },
-                            betweenAccentColor: Color(hex: "00FF88")
+                            dropPolicy: .invoicesOnly,
+                            emptyStateIcon: "clock",
+                            emptyStateMessage: "No pending payments",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
 
                     }
-                    .overlay(
-                        Rectangle()
-                            .frame(width: 1)
-                            .foregroundColor(StyleGuide.Colors.border),
-                        alignment: .trailing
-                    )
+                    .kanbanSubcolumnSurface()
 
-                    // Received
                     VStack(spacing: 0) {
                         KanbanColumnHeader(
-                            title: "Received",
-                            icon: "checkmark.circle",
-                            color: Color(hex: "00FF88"),
-                            count: "\(receivedInvoicesCount)"
+                            title: "Completed",
+                            icon: "checkmark.seal",
+                            color: BillingHubTheme.Columns.payment,
+                            count: "\(receivedInvoicesCount)",
+                            total: viewModel.formattedTotal(for: .received),
+                            sortOption: viewModel.sortOption(for: .received),
+                            onSortChange: { viewModel.setSortOption($0, for: .received) }
                         )
                         CustomKanbanColumn(
                             cards: viewModel.invoicesByStatus[.received] ?? [],
@@ -500,17 +474,20 @@ private struct PaymentColumn: View {
                             onReorderBetween: { sourceID, beforeTargetID, _ in
                                 viewModel.reorderInvoices(in: .received, sourceID: sourceID, beforeTargetID: beforeTargetID)
                             },
-                            betweenAccentColor: Color(hex: "00FF88")
+                            dropPolicy: .invoicesOnly,
+                            emptyStateIcon: "dollarsign.circle",
+                            emptyStateMessage: "Start invoicing!",
+                            searchText: viewModel.searchText
                         )
-                        .background(Color.black.opacity(0.04))
                     }
+                    .kanbanSubcolumnSurface()
                 }
                     }
+                    .padding(.horizontal, BillingHubTheme.Surfaces.subcolumnShadowClearance)
                 }
             }
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(.ultraThinMaterial)
     }
 }

@@ -30,25 +30,70 @@ extension InvoiceDocument {
     
     func copyComponent(_ id: UUID) {
         guard let originalComponent = component(id) else { return }
+        saveStateForUndo(actionName: "Duplicate Component")
+        
         var copiedComponent = originalComponent
         copiedComponent.id = UUID()
         copiedComponent.position = CGPoint(
             x: originalComponent.position.x + 20,
             y: originalComponent.position.y + 20
         )
+        
+        // Check if original is in legacy components array
+        if components.contains(where: { $0.id == id }) {
+            components.append(copiedComponent)
+            selectComponent(copiedComponent.id)
+            return
+        }
+        
+        // Try to add to the same section split location
+        for sectionIndex in sectionSplits.keys {
+            if var split = sectionSplits[sectionIndex] {
+                if let location = split.findComponentLocation(id: id),
+                   let childIndex = location.childIndex {
+                    split.addComponent(copiedComponent, toChild: childIndex)
+                    sectionSplits[sectionIndex] = split
+                    selectComponent(copiedComponent.id)
+                    objectWillChange.send()
+                    return
+                }
+            }
+        }
+        
+        // Fallback: add to legacy array if location not found
         components.append(copiedComponent)
         selectComponent(copiedComponent.id)
     }
     
     func removeComponent(with id: UUID) {
-        saveStateForUndo()
-        components.removeAll { $0.id == id }
-        if selectedComponentID == id {
-            selectComponent(nil)
+        saveStateForUndo(actionName: "Delete Component")
+        
+        // Try to remove from legacy components array
+        if components.contains(where: { $0.id == id }) {
+            components.removeAll { $0.id == id }
+            if selectedComponentID == id {
+                selectComponent(nil)
+            }
+            return
+        }
+        
+        // Try to remove from section splits
+        for sectionIndex in sectionSplits.keys {
+            if var split = sectionSplits[sectionIndex] {
+                if split.removeComponent(id: id) {
+                    sectionSplits[sectionIndex] = split
+                    if selectedComponentID == id {
+                        selectComponent(nil)
+                    }
+                    objectWillChange.send()
+                    return
+                }
+            }
         }
     }
     
     func removeSection(with id: UUID) {
+        saveStateForUndo(actionName: "Delete Section")
         if let index = components.firstIndex(where: { $0.id == id }) {
             components.remove(at: index)
             if selectedComponentID == id {
@@ -62,7 +107,7 @@ extension InvoiceDocument {
     }
     
     func resetComponentToDefaults(for id: UUID) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Reset Component")
         updateComponent(id: id) { component in
             component.style = ComponentStyle()
             let defaultSize = component.type.defaultSize
@@ -72,7 +117,7 @@ extension InvoiceDocument {
     }
     
     func bringToFront(_ id: UUID) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Bring to Front")
         if let index = components.firstIndex(where: { $0.id == id }) {
             let component = components.remove(at: index)
             components.append(component)
@@ -80,7 +125,7 @@ extension InvoiceDocument {
     }
     
     func sendToBack(_ id: UUID) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Send to Back")
         if let index = components.firstIndex(where: { $0.id == id }) {
             let component = components.remove(at: index)
             components.insert(component, at: 0)
@@ -88,7 +133,7 @@ extension InvoiceDocument {
     }
     
     func reorderComponent(_ id: UUID, to targetIndex: Int) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Reorder Component")
         guard let currentIndex = components.firstIndex(where: { $0.id == id }),
               targetIndex >= 0 && targetIndex < components.count,
               currentIndex != targetIndex else {
@@ -99,7 +144,7 @@ extension InvoiceDocument {
     }
     
     func toggleVisibility(for id: UUID) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Toggle Visibility")
         var isVisibleAfterToggle = true
         updateComponent(id: id) { component in
             component.isVisible.toggle()
@@ -111,7 +156,7 @@ extension InvoiceDocument {
     }
     
     func toggleLock(for id: UUID) {
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Toggle Lock")
         updateComponent(id: id) { component in
             component.isLocked.toggle()
         }
@@ -119,13 +164,13 @@ extension InvoiceDocument {
     
     func moveLayerUp(_ id: UUID) {
         guard canMoveLayer(id: id, direction: 1) else { return }
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Move Layer Up")
         _ = moveLayer(id: id, direction: 1, in: &components)
     }
     
     func moveLayerDown(_ id: UUID) {
         guard canMoveLayer(id: id, direction: -1) else { return }
-        saveStateForUndo()
+        saveStateForUndo(actionName: "Move Layer Down")
         _ = moveLayer(id: id, direction: -1, in: &components)
     }
     

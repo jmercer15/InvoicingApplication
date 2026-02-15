@@ -105,7 +105,8 @@ import SwiftData
     @Relationship(deleteRule: .nullify, inverse: \ClientEntity.address) var client: ClientEntity?
     @Relationship(deleteRule: .nullify, inverse: \PayeeEntity.address) var payee: PayeeEntity?
     @Relationship(deleteRule: .nullify, inverse: \PlanManagerEntity.address) var planManager: PlanManagerEntity?
-    @Relationship(deleteRule: .cascade, inverse: \SessionEntity.address) var session: SessionEntity?
+    @Relationship(deleteRule: .nullify, inverse: \SessionEntity.address) var session: SessionEntity?
+    @Relationship(deleteRule: .nullify) var invoice: InvoiceEntity?
     
     public init() {
         self.id = UUID()

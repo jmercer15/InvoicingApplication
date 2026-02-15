@@ -65,32 +65,32 @@ public extension Color {
     
     /// Returns an enhanced status background gradient for a status
     static func statusGradient(for status: String) -> LinearGradient {
-        switch status.lowercased() {
-        case "active", "paid", "completed":
+        switch status {
+        case "Active", AppConstants.invoiceStatusReceived, AppConstants.sessionStatusCompleted:
             return LinearGradient(
                 gradient: Gradient(colors: [Color("Green20", bundle: .sharedUI), Color("Green20", bundle: .sharedUI).opacity(0.25)]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        case "inactive", "outstanding", "issued":
+        case "Inactive", AppConstants.invoiceStatusPending:
             return LinearGradient(
                 gradient: Gradient(colors: [Color("Orange20", bundle: .sharedUI), Color("Orange20", bundle: .sharedUI).opacity(0.25)]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        case "archived":
+        case "Archived":
             return LinearGradient(
                 gradient: Gradient(colors: [Color("Gray20", bundle: .sharedUI), Color("Gray10", bundle: .sharedUI)]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        case "draft", "planned":
+        case AppConstants.invoiceStatusReviewDraft, AppConstants.invoiceStatusReadyToSend:
             return LinearGradient(
                 gradient: Gradient(colors: [Color("Blue70", bundle: .sharedUI), Color("Blue70", bundle: .sharedUI).opacity(0.25)]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        case "cancelled", "error", "overdue", "no show":
+        case "Error", AppConstants.invoiceStatusCancelled, AppConstants.invoiceStatusOverdue, AppConstants.sessionStatusNoShow, AppConstants.sessionStatusCancelled:
             return LinearGradient(
                 gradient: Gradient(colors: [Color("Red70", bundle: .sharedUI), Color("Red70", bundle: .sharedUI).opacity(0.25)]),
                 startPoint: .leading,
@@ -325,8 +325,9 @@ extension View {
                                 )
                         )
                         .foregroundColor(Color("White", bundle: .sharedUI))
+                        .contentShape(Capsule())
                     }
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                     .buttonStyle(.plain)
                     .shadow(color: Color("Primary", bundle: .sharedUI).opacity(0.3), radius: 4, x: 0, y: 2)
                     .padding(.top, 8)

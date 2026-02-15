@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import MapKit
 import CoreLocation
+import Core
 
 // swiftlint:disable concurrency
 
@@ -12,6 +13,7 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     private let geocodingService: GeocodingService
     private let mapKitTravelService: MapKitTravelService
     private let mmmZoneLookup: MMMZoneLookup
+    private var unitOfWork: UnitOfWorkService?
     
     // Configuration constants
     private let geocodingTimeout: TimeInterval = 30.0
@@ -21,14 +23,45 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     private let nightStartHour = 22 // 10 PM
     private let nightEndHour = 6 // 6 AM
     
+    /// Initialize with ModelContext (legacy pattern)
     @MainActor
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
         self.geocodingService = GeocodingService.shared
         self.mapKitTravelService = MapKitTravelService.shared
         self.mmmZoneLookup = MMMZoneLookup.shared
+        self.unitOfWork = nil
+    }
+    
+    /// Initialize with UnitOfWorkService (preferred pattern)
+    @MainActor
+    public init(unitOfWork: UnitOfWorkService) {
+        self.unitOfWork = unitOfWork
+        
+        // Extract ModelContext from UnitOfWork (Legacy support)
+        if let swiftData = unitOfWork as? SwiftDataUnitOfWork {
+            self.modelContext = swiftData.legacyModelContext
+        } else {
+            // This is a critical failure because the orchestrator relies on ModelContext.
+            fatalError("NDISBillingAutomationOrchestrator requires SwiftDataUnitOfWork")
+        }
+        
+        self.geocodingService = GeocodingService.shared
+        self.mapKitTravelService = MapKitTravelService.shared
+        self.mmmZoneLookup = MMMZoneLookup.shared
+    }
+    
+    /// Initialize with UnitOfWorkService and explicit ModelContext
+    @MainActor
+    public init(unitOfWork: UnitOfWorkService, modelContext: ModelContext) {
+        self.unitOfWork = unitOfWork
+        self.modelContext = modelContext
+        self.geocodingService = GeocodingService.shared
+        self.mapKitTravelService = MapKitTravelService.shared
+        self.mmmZoneLookup = MMMZoneLookup.shared
     }
 
+    @MainActor
     private static func performGeocoding(session: SessionEntity, geocodingService: GeocodingService, modelContext: ModelContext) async -> Bool {
         // Extract only the necessary data to avoid concurrency issues
         let sessionId = session.id
@@ -45,6 +78,7 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
         )
     }
     
+    @MainActor
     private static func performGeocodingForSession(
         sessionId: UUID,
         address: AddressEntity?,
@@ -52,14 +86,45 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
         geocodingService: GeocodingService,
         modelContext: ModelContext
     ) async -> Bool {
-        // This method works with individual parameters to avoid concurrency issues
-        // For now, return true as a placeholder - the actual geocoding logic would go here
-        return true
+        // Use GeocodingService to geocode the session if coordinates are missing
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: sessionId) else {
+            return false
+        }
+        
+        // Call the async geocoding service method
+        return await geocodingService.ensureCoordinatesForSession(sessionEntity, modelContext: modelContext)
     }
     
     @MainActor
     static func create(modelContext: ModelContext) -> NDISBillingAutomationOrchestrator {
         return NDISBillingAutomationOrchestrator(modelContext: modelContext)
+    }
+    
+    /// Executes the complete automation flow for a session (Domain Model)
+    /// This is the preferred entry point for Feature layers.
+    /// - Parameters:
+    ///   - session: The session (Domain Model) to automate billing context for
+    ///   - context: The billing context to populate
+    ///   - progressHandler: Optional progress handler for UI updates
+    /// - Returns: Automation result with status and any errors
+    @MainActor
+    public func executeAutomationFlow(
+        for session: Session,
+        context: inout NDISBillingContext,
+        progressHandler: ((AutomationProgress) -> Void)? = nil
+    ) async -> AutomationResult {
+        // Resolve entity internally
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: session.id) else {
+            var result = AutomationResult()
+            result.markFailed()
+            result.addError("Could not resolve SessionEntity for session ID: \(session.id)")
+            return result
+        }
+        
+        // Delegate to entity-based method
+        return await executeAutomationFlow(for: sessionEntity, context: &context, progressHandler: progressHandler)
     }
     
     /// Executes the complete automation flow for a session asynchronously
@@ -335,7 +400,7 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
             sessionId: sessionId,
             clientId: clientId,
             startAddress: location,
-            endAddress: location, // Use location for both start and end for now
+            endAddress: location, // Use same location as a conservative fallback when only one location is provided.
             modelContext: self.modelContext
         )
         
@@ -598,8 +663,8 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     }
     
     private func hasBusinessCoordinates() -> Bool {
-        let businessDescriptor = FetchDescriptor<BusinessEntity>()
-        guard let business = try? modelContext.fetch(businessDescriptor).first,
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let business = try? entityResolver.resolveBusiness(),
               let businessAddress = business.address else {
             return false
         }
@@ -667,6 +732,19 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     // MARK: - Support Methods for UI Components
     
     /// Determines if complex behavior support is available based on NDIS item capabilities
+    public func isComplexBehaviorSupported(for session: Session) -> Bool {
+        // Use domain model properties if available, or fetch
+        guard session.clientServiceId != nil else { return false }
+        
+        // Resolve via entity context so UI toggles can evaluate synchronously.
+        
+        // Actually, let's just resolve it internally using the context we have.
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: session.id) else { return false }
+        return isComplexBehaviorSupported(for: sessionEntity)
+    }
+
+    /// Determines if complex behavior support is available based on NDIS item capabilities
     public func isComplexBehaviorSupported(for session: SessionEntity) -> Bool {
         guard let ndisItem = session.clientService?.ndisItem else { return false }
         
@@ -676,6 +754,13 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     }
     
     /// Determines if high intensity support is available based on NDIS item capabilities
+    public func isHighIntensitySupported(for session: Session) -> Bool {
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: session.id) else { return false }
+        return isHighIntensitySupported(for: sessionEntity)
+    }
+
+    /// Determines if high intensity support is available based on NDIS item capabilities
     public func isHighIntensitySupported(for session: SessionEntity) -> Bool {
         guard let ndisItem = session.clientService?.ndisItem else { return false }
         
@@ -684,6 +769,15 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
         return intensityKeywords.contains(where: { itemName.contains($0) })
     }
     
+    /// Determines if special circumstances are available based on NDIS item capabilities
+    public func areSpecialCircumstancesSupported(for session: Session) -> (shadowShift: Bool, silUnplannedExit: Bool, ndiaReport: Bool) {
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: session.id) else {
+            return (shadowShift: false, silUnplannedExit: false, ndiaReport: false)
+        }
+        return areSpecialCircumstancesSupported(for: sessionEntity)
+    }
+
     /// Determines if special circumstances are available based on NDIS item capabilities
     public func areSpecialCircumstancesSupported(for session: SessionEntity) -> (shadowShift: Bool, silUnplannedExit: Bool, ndiaReport: Bool) {
         guard let ndisItem = session.clientService?.ndisItem else {
@@ -698,6 +792,18 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
         return (shadowShift: shadowShiftSupported, silUnplannedExit: silUnplannedExitSupported, ndiaReport: ndiaReportSupported)
     }
     
+    /// Maps a session's NDIS Item to the corresponding travel NDIS Item based on NDIS rules
+    public func mapToTravelNDISItem(session: Session, chargeType: String) -> NDISItem? {
+        let entityResolver = EntityResolutionService(context: modelContext)
+        guard let sessionEntity = try? entityResolver.resolveSession(id: session.id) else { return nil }
+        
+        let entity = mapToTravelNDISItem(session: sessionEntity, chargeType: chargeType)
+        guard let entity = entity else { return nil }
+        
+        // Map back to domain model
+        return NDISItemMapper().mapToDomain(entity)
+    }
+
     /// Maps a session's NDIS Item to the corresponding travel NDIS Item based on NDIS rules
     public func mapToTravelNDISItem(session: SessionEntity, chargeType: String) -> NDISItemEntity? {
         guard let mainService = session.clientService,
@@ -737,15 +843,9 @@ public class NDISBillingAutomationOrchestrator: @unchecked Sendable {
     
     /// Finds an NDIS Item by its item number
     private func findNDISItemByItemNumber(_ itemNumber: String) -> NDISItemEntity? {
-        let descriptor = FetchDescriptor<NDISItemEntity>(
-            predicate: #Predicate<NDISItemEntity> { item in
-                item.itemNumber == itemNumber
-            }
-        )
-        
+        let entityResolver = EntityResolutionService(context: modelContext)
         do {
-            let items = try modelContext.fetch(descriptor)
-            return items.first
+            return try entityResolver.resolveNDISItem(byItemNumber: itemNumber)
         } catch {
             print("DEBUG: Error finding NDIS item with item number \(itemNumber): \(error)")
             return nil
@@ -780,62 +880,9 @@ public enum ProgressStep {
 }
 
 // MARK: - Automation Result
+// Note: AutomationResult has been moved to Core package.
+// The type is now imported via `import Core`.
 
-public struct AutomationResult: Sendable {
-    public enum Status: Sendable {
-        case notStarted
-        case validating
-        case geocoding
-        case calculatingTravel
-        case determiningGeographic
-        case determiningTime
-        case determiningTravel
-        case determiningServiceType
-        case completed
-        case failed
-    }
-    
-    private(set) var status: Status = .notStarted
-    public private(set) var errors: [String] = []
-    public private(set) var warnings: [String] = []
-    private(set) var isCompleted = false
-    private(set) var startTime = Date()
-    private(set) var endTime: Date?
-    
-    public var hasErrors: Bool { !errors.isEmpty }
-    public var hasWarnings: Bool { !warnings.isEmpty }
-    var duration: TimeInterval { 
-        guard let endTime = endTime else { return Date().timeIntervalSince(startTime) }
-        return endTime.timeIntervalSince(startTime)
-    }
-    
-    mutating func updateStatus(_ newStatus: Status) {
-        status = newStatus
-    }
-    
-    mutating func addError(_ error: String) {
-        errors.append(error)
-        print("❌ [NDIS Automation] Error: \(error)")
-    }
-    
-    mutating func addWarning(_ warning: String) {
-        warnings.append(warning)
-        print("⚠️ [NDIS Automation] Warning: \(warning)")
-    }
-    
-    mutating func markCompleted() {
-        isCompleted = true
-        status = .completed
-        endTime = Date()
-        print("✅ [NDIS Automation] Completed in \(String(format: "%.2f", duration)) seconds")
-    }
-    
-    mutating func markFailed() {
-        status = .failed
-        endTime = Date()
-        print("❌ [NDIS Automation] Failed after \(String(format: "%.2f", duration)) seconds")
-    }
-}
 
     // TimeoutError for orchestrator timeouts
     struct TimeoutError: Error {

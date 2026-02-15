@@ -33,6 +33,8 @@ import SwiftUI
     @Relationship(deleteRule: .cascade) public var creditHistory: [CreditHistoryEntryEntity] = []
     @Relationship(deleteRule: .cascade) public var travelCharges: [TravelChargeEntity] = []
     @Relationship(deleteRule: .nullify) public var sessions: [SessionEntity] = []
+    @Relationship(deleteRule: .cascade) public var serviceAgreements: [ServiceAgreementEntity] = []
+    @Relationship(deleteRule: .cascade) public var supportLogs: [SupportLogEntity] = []
     @Relationship(deleteRule: .nullify) public var payee: PayeeEntity?
     
     // Email recipient preferences
@@ -46,5 +48,4 @@ import SwiftUI
         self.status = status
     }
 }
-
 

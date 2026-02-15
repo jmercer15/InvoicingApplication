@@ -126,7 +126,11 @@ public class RecurrenceRuleManager: @unchecked Sendable {
             let setPositions = parseIntArray(from: jsonObject["setPositions"])?.map { NSNumber(value: $0) }
             
             // Parse recurrence end
-            let recurrenceEnd = parseRecurrenceEnd(from: jsonObject["recurrenceEnd"])
+            let recurrenceEnd = parseRecurrenceEnd(
+                from: jsonObject["recurrenceEnd"],
+                legacyEndDate: jsonObject["endDate"],
+                legacyEndCount: jsonObject["endCount"]
+            )
             
             let rule = EKRecurrenceRule(
                 recurrenceWith: frequency,
@@ -151,19 +155,30 @@ public class RecurrenceRuleManager: @unchecked Sendable {
     
     /// Parses days of the week from JSON array
     private func parseDaysOfTheWeek(from jsonValue: Any?) -> [EKRecurrenceDayOfWeek]? {
-        guard let daysArray = jsonValue as? [[String: Any]] else { return nil }
-        
-        let days = daysArray.compactMap { dayDict -> EKRecurrenceDayOfWeek? in
-            guard let weekdayRaw = dayDict["dayOfTheWeek"] as? Int,
-                  let weekday = EKWeekday(rawValue: weekdayRaw) else {
-                return nil
+        // Preferred format (RecurrenceRuleManager JSON): [{dayOfTheWeek, weekNumber}]
+        if let daysArray = jsonValue as? [[String: Any]] {
+            let days = daysArray.compactMap { dayDict -> EKRecurrenceDayOfWeek? in
+                guard let weekdayRaw = dayDict["dayOfTheWeek"] as? Int,
+                      let weekday = EKWeekday(rawValue: weekdayRaw) else {
+                    return nil
+                }
+                
+                let weekNumber = dayDict["weekNumber"] as? Int ?? 0
+                return EKRecurrenceDayOfWeek(weekday, weekNumber: weekNumber)
             }
-            
-            let weekNumber = dayDict["weekNumber"] as? Int ?? 0
-            return EKRecurrenceDayOfWeek(weekday, weekNumber: weekNumber)
+            return days.isEmpty ? nil : days
         }
-        
-        return days.isEmpty ? nil : days
+
+        // Legacy format (EKRecurrenceRule+Extensions Codable): [Int]
+        if let weekdayInts = jsonValue as? [Int] {
+            let days = weekdayInts.compactMap { weekdayRaw -> EKRecurrenceDayOfWeek? in
+                guard let weekday = EKWeekday(rawValue: weekdayRaw) else { return nil }
+                return EKRecurrenceDayOfWeek(weekday, weekNumber: 0)
+            }
+            return days.isEmpty ? nil : days
+        }
+
+        return nil
     }
     
     /// Parses integer array from JSON
@@ -173,20 +188,38 @@ public class RecurrenceRuleManager: @unchecked Sendable {
     }
     
     /// Parses recurrence end from JSON
-    private func parseRecurrenceEnd(from jsonValue: Any?) -> EKRecurrenceEnd? {
-        guard let endDict = jsonValue as? [String: Any] else { return nil }
-        
-        if let endDateString = endDict["endDate"] as? String {
+    private func parseRecurrenceEnd(
+        from jsonValue: Any?,
+        legacyEndDate: Any? = nil,
+        legacyEndCount: Any? = nil
+    ) -> EKRecurrenceEnd? {
+        if let endDict = jsonValue as? [String: Any] {
+            if let endDateString = endDict["endDate"] as? String {
+                let formatter = ISO8601DateFormatter()
+                if let endDate = formatter.date(from: endDateString) {
+                    return EKRecurrenceEnd(end: endDate)
+                }
+            }
+            
+            if let occurrenceCount = endDict["occurrenceCount"] as? Int {
+                return EKRecurrenceEnd(occurrenceCount: occurrenceCount)
+            }
+        }
+
+        // Legacy Codable fields from EKRecurrenceRule+Extensions
+        if let endDateString = legacyEndDate as? String {
             let formatter = ISO8601DateFormatter()
             if let endDate = formatter.date(from: endDateString) {
                 return EKRecurrenceEnd(end: endDate)
             }
+        } else if let endDate = legacyEndDate as? Date {
+            return EKRecurrenceEnd(end: endDate)
         }
-        
-        if let occurrenceCount = endDict["occurrenceCount"] as? Int {
+
+        if let occurrenceCount = legacyEndCount as? Int {
             return EKRecurrenceEnd(occurrenceCount: occurrenceCount)
         }
-        
+
         return nil
     }
     

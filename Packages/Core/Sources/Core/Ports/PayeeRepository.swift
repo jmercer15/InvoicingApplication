@@ -24,3 +24,7 @@ public protocol PayeeRepository: Sendable {
     func count() async throws -> Int
 }
 
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias PayeeRepositoryProtocol = PayeeRepository

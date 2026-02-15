@@ -13,10 +13,9 @@ struct NDISCatalogueNavigationView: View {
     @State private var minimumCardWidth: CGFloat = 260
     @State private var availableWidth: CGFloat = 0
     @State private var optimalColumns: Int = 1
-    @Namespace private var cardNamespace
 
 
-    private var itemLookup: [UUID: NDISItemEntity] {
+    private var itemLookup: [UUID: NDISItem] {
         Dictionary(uniqueKeysWithValues: viewModel.filteredItems.map { ($0.id, $0) })
     }
 
@@ -60,12 +59,14 @@ struct NDISCatalogueNavigationView: View {
             additionalContent: "Browse items"
         )
 
+        let contentWidth = newAvailableWidth - (PanelShellTokens.contentListHorizontalInset * 2)
+
         // Calculate optimal columns for the new width
         let newOptimalColumns = calculateOptimalColumns(
-            availableWidth: newAvailableWidth,
+            availableWidth: contentWidth,
             itemCount: currentNodes.count,
             maxItemWidth: minCardWidth,
-            spacing: 16
+            spacing: PanelShellTokens.contentListGridSpacing
         )
 
         // Only update if there's a meaningful change
@@ -93,33 +94,28 @@ struct NDISCatalogueNavigationView: View {
                     message: "Try adjusting your search or filter criteria."
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .standardContentPanelListInsets()
             } else {
                 GeometryReader { geometry in
                     ScrollView {
-                        Grid(horizontalSpacing: 16, verticalSpacing: 16) {
-                            ForEach(0..<Int(ceil(Double(currentNodes.count) / Double(optimalColumns))), id: \.self) { rowIndex in
-                                GridRow {
-                                    ForEach(0..<optimalColumns, id: \.self) { columnIndex in
-                                        let itemIndex = rowIndex * optimalColumns + columnIndex
-                                        if itemIndex < currentNodes.count {
-                                            card(for: currentNodes[itemIndex])
-                                                .matchedGeometryEffect(id: "card-\(currentNodes[itemIndex].id)", in: cardNamespace)
-                                                .transition(.asymmetric(
-                                                    insertion: .scale.combined(with: .opacity),
-                                                    removal: .scale.combined(with: .opacity)
-                                                ))
-                                        } else {
-                                            Color.clear
-                                                .frame(width: minimumCardWidth, height: 100)
-                                        }
-                                    }
-                                }
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: PanelShellTokens.contentListGridSpacing), count: optimalColumns),
+                            spacing: PanelShellTokens.contentListGridSpacing
+                        ) {
+                            ForEach(currentNodes) { node in
+                                card(for: node)
+                                    .transition(.asymmetric(
+                                        insertion: .scale.combined(with: .opacity),
+                                        removal: .scale.combined(with: .opacity)
+                                    ))
                             }
                         }
                         .animation(.easeInOut(duration: 0.5), value: optimalColumns)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 20)
+                        .standardContentPanelListInsets()
                     }
                     .onAppear {
                         updateGridLayout(for: geometry.size.width)
@@ -128,12 +124,12 @@ struct NDISCatalogueNavigationView: View {
                         updateGridLayout(for: newWidth)
                     }
                 }
-                .background(Color.clear)
             }
         }
         .searchable(text: $viewModel.searchText)
         .searchToolbarBehavior(.automatic)
         .background(.clear)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: rebuildNavigationTree)
         .onChange(of: viewModel.filteredItems) { _, _ in
             rebuildNavigationTree()
@@ -189,12 +185,13 @@ struct NDISCatalogueNavigationView: View {
     private var breadcrumbView: some View {
         HStack(alignment: .top, spacing: 8) {
             if !selectionPath.isEmpty {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                shape
                     .fill(Color.accentColor.opacity(0.25))
                     .frame(width: 42, height: breadcrumbHeight)
+                    .glassEffect(.regular.interactive(true), in: shape)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.accentColor.opacity(0.45), lineWidth: 1)
+                        shape.stroke(Color.accentColor.opacity(0.45), lineWidth: 1)
                     )
                     .overlay(
                         Image(systemName: "chevron.backward")
@@ -204,7 +201,7 @@ struct NDISCatalogueNavigationView: View {
                     .shadow(color: Color.accentColor.opacity(0.2), radius: 3, x: 0, y: 1)
                     .onTapGesture { goBack() }
                     .animation(.easeInOut(duration: 0.2), value: selectionPath)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -221,8 +218,7 @@ struct NDISCatalogueNavigationView: View {
                 }
             )
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 18)
+        .standardContentPanelBreadcrumbInsets()
     }
 
     private var breadcrumbSegments: some View {
@@ -233,6 +229,7 @@ struct NDISCatalogueNavigationView: View {
             Button {
                 crumbTapped(at: index)
             } label: {
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 HStack(spacing: 12) {
                     Text(node?.title ?? "All Items")
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
@@ -249,16 +246,16 @@ struct NDISCatalogueNavigationView: View {
                 .padding(.horizontal, 14)
                 .padding(.leading, CGFloat(index) * 14) // Add indentation for each level
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(breadcrumbBackground(for: node))
+                    shape.fill(breadcrumbBackground(for: node))
                 )
+                .glassEffect(.regular.interactive(true), in: shape)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
+                    shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
                 )
+                .contentShape(shape)
             }
             .buttonStyle(.plain)
-            .appInteractiveCursor()
+            .pointerStyle(.link)
             .animation(.easeInOut(duration: 0.2), value: selectionPath)
         }
     }
@@ -342,7 +339,7 @@ struct NDISCatalogueNavigationView: View {
         return node.entityId == nil ? 0 : 1
     }
 
-    private func makeNavigationTree(from items: [NDISItemEntity]) -> [TreeItem] {
+    private func makeNavigationTree(from items: [NDISItem]) -> [TreeItem] {
         var result: [TreeItem] = []
 
         let groupedByCategory = Dictionary(grouping: items) { item in
@@ -419,6 +416,7 @@ private struct NDISCatalogueNavigationNodeCard: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 10) {
@@ -471,24 +469,23 @@ private struct NDISCatalogueNavigationNodeCard: View {
                 minHeight: 110,
                 alignment: .topLeading
             )
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(tint.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(tint.opacity(0.3), lineWidth: 1)
-                    )
+            .contentShape(shape)
+            .glassEffect(
+                .regular
+                    .tint(tint.opacity(0.18))
+                    .interactive(true),
+                in: shape
             )
-            .shadow(color: tint.opacity(0.2), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens \(node.title)")
     }
 }
 
 private struct NDISCatalogueCard: View {
-    let item: NDISItemEntity
+    let item: NDISItem
     let preferredRegion: String?
     let isSelected: Bool
     let onSelect: () -> Void
@@ -505,7 +502,7 @@ private struct NDISCatalogueCard: View {
     private var pricingState: PricingState {
         if let region = normalizedPreferredRegion,
            let regionalPrice = price(forNormalizedRegion: region) {
-            let regionLabel = (regionalPrice.regionIdentifier?.isEmpty == false) ? regionalPrice.regionIdentifier! : preferredRegion ?? region
+            let regionLabel = (!regionalPrice.regionIdentifier.isEmpty) ? regionalPrice.regionIdentifier : preferredRegion ?? region
             return .regional(regionalPrice.amount, regionLabel)
         }
 
@@ -513,12 +510,12 @@ private struct NDISCatalogueCard: View {
             return .national(nationalPrice)
         }
 
-        let meaningfulPrices = item.regionalPrices.filter { ($0.regionIdentifier?.isEmpty == false) && $0.amount > 0 }
+        let meaningfulPrices = item.regionalPrices.filter { (!$0.regionIdentifier.isEmpty) && $0.amount > 0 }
         let fallbackPrices = item.regionalPrices.filter { $0.amount > 0 }
 
         if let price = (meaningfulPrices.isEmpty ? fallbackPrices : meaningfulPrices)
             .min(by: { $0.amount < $1.amount }) {
-            let region = (price.regionIdentifier?.isEmpty == false) ? price.regionIdentifier! : "Regional"
+            let region = (!price.regionIdentifier.isEmpty) ? price.regionIdentifier : "Regional"
             return .regional(price.amount, region)
         }
 
@@ -536,7 +533,7 @@ private struct NDISCatalogueCard: View {
         return normalized.isEmpty ? nil : normalized
     }
 
-    private func price(forNormalizedRegion region: String) -> RegionalPriceEntity? {
+    private func price(forNormalizedRegion region: String) -> RegionalPriceSnapshot? {
         item.regionalPrices.first { price in
             guard let identifier = normalizedRegionIdentifier(price.regionIdentifier) else { return false }
             return identifier == region && price.amount > 0
@@ -593,6 +590,7 @@ private struct NDISCatalogueCard: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
@@ -630,15 +628,33 @@ private struct NDISCatalogueCard: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(subtitleColor.opacity(0.7))
                 }
-
+            }
+            .padding(20)
+            .frame(
+                minWidth: IntrinsicContentMeasurer.measureCardContentWidth(
+                    title: "Sample NDIS Support Item Title",
+                    subtitle: "Sample item number",
+                    additionalContent: "Quote Required",
+                    padding: 20
+                ),
+                maxWidth: .infinity,
+                minHeight: 160,
+                alignment: .topLeading
+            )
+            .contentShape(shape)
+            .glassEffect(
+                .regular
+                    .interactive(true),
+                in: shape
+            )
+            .overlay {
+                if isSelected {
+                    shape.stroke(Color.accentColor, lineWidth: 2)
+                }
             }
         }
-        .buttonStyle(
-            NDISCatalogueCardButtonStyle(
-                isSelected: isSelected,
-                colorScheme: colorScheme
-            )
-        )
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -657,74 +673,20 @@ private struct NDISCatalogueCard: View {
     }
 }
 
-private struct NDISCatalogueCardButtonStyle: ButtonStyle {
-    let isSelected: Bool
-    let colorScheme: ColorScheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(20)
-            .frame(
-                minWidth: IntrinsicContentMeasurer.measureCardContentWidth(
-                    title: "Sample NDIS Support Item Title",
-                    subtitle: "Sample item number",
-                    additionalContent: "Quote Required",
-                    padding: 20
-                ),
-                maxWidth: .infinity,
-                minHeight: 160,
-                alignment: .topLeading
-            )
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(backgroundColor(isPressed: configuration.isPressed))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(borderColor(isPressed: configuration.isPressed), lineWidth: isSelected ? 2 : 1)
-            )
-            .shadow(color: shadowColor(isPressed: configuration.isPressed), radius: isSelected ? 10 : 6, x: 0, y: isSelected ? 6 : 3)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: configuration.isPressed)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isSelected)
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        if isSelected {
-            return Color.accentColor.opacity(isPressed ? 0.30 : 0.22)
-        }
-
-        switch colorScheme {
-        case .dark:
-            return Color.white.opacity(isPressed ? 0.08 : 0.12)
-        default:
-            return Color.white.opacity(isPressed ? 0.95 : 1.0)
-        }
-    }
-
-    private func borderColor(isPressed: Bool) -> Color {
-        if isSelected {
-            return Color.accentColor
-        }
-
-        switch colorScheme {
-        case .dark:
-            return Color.white.opacity(isPressed ? 0.45 : 0.25)
-        default:
-            return Color.black.opacity(isPressed ? 0.2 : 0.12)
-        }
-    }
-
-    private func shadowColor(isPressed: Bool) -> Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.32)
-        }
-
-        switch colorScheme {
-        case .dark:
-            return Color.black.opacity(isPressed ? 0.7 : 0.5)
-        default:
-            return Color.black.opacity(isPressed ? 0.18 : 0.08)
-        }
+struct TreeItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let children: [TreeItem]?
+    let entityId: String? // For leaf nodes that map to an entity
+    let entityType: String? // "ndisItem", etc.
+    
+    init(id: String, title: String, subtitle: String? = nil, children: [TreeItem]? = nil, entityId: String? = nil, entityType: String? = nil) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.children = children
+        self.entityId = entityId
+        self.entityType = entityType
     }
 }

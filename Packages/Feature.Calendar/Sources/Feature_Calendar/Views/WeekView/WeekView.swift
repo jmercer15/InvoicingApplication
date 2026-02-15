@@ -8,7 +8,6 @@ import EventKit // Import EventKit
 
 struct WeekView: View {
     @ObservedObject var viewModel: CalendarViewModel
-    @Binding var showInspector: Bool
 
     // ════════════════════════════════════════════════════════
     // MARK: Body
@@ -18,10 +17,6 @@ struct WeekView: View {
         HStack(spacing: 0) {
             // Main week grid with optimized styling
             weekGrid()
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(.ultraThinMaterial)
-                )
                 .shadow(
                     color: Color.black.opacity(0.15),
                     radius: 25,
@@ -120,7 +115,6 @@ struct WeekView: View {
                 .padding(0)
             }
             .clipShape(RoundedRectangle(cornerRadius: 20))
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
         }
     }
 }

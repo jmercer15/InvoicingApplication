@@ -21,21 +21,20 @@ import SwiftData
     public var discount: Double = 0.0
     public var date: Date = Date() // Non-optional with default
     public var dueDate: Date? // Optional - can be set later
-    public var invoiceID: Int32? = 0
     public var issueDate: Date = Date() // Non-optional with default
     public var notes: String?
     public var paidDate: Date?
     public var paymentTerms: String?
-    public var status: InvoiceStatus?
+    public var status: InvoiceStatus = InvoiceStatus.reviewDraft
     public var sentDate: Date?
     public var currencyCode: String = "AUD"
-    public var billingOrder: Int32 = 0
+    public var templateId: UUID?
     
     // Business Information (snapshot from BusinessEntity)
     public var businessName: String? = nil
     public var businessABN: String?
     public var businessEmail: String?
-    public var businessAddress: String?
+    @Relationship(deleteRule: .cascade) public var businessAddress: AddressEntity?
     public var businessPhone: String?
     
     // Client Information (snapshot from ClientEntity)
@@ -43,19 +42,19 @@ import SwiftData
     public var clientNDISNumber: String?
     public var clientEmail: String?
     public var clientPhone: String?
-    public var clientAddress: String?
+    @Relationship(deleteRule: .cascade) public var clientAddress: AddressEntity?
     
     // Billing Information (snapshot from billing authority)
     public var billingAuthority: BillingAuthority? // "Client", "Parent/Guardian"
     public var billToName: String?
     public var billToEmail: String?
-    public var billToAddress: String?
+    @Relationship(deleteRule: .cascade) public var billToAddress: AddressEntity?
     
     // Payee Information (snapshot from PayeeEntity when billing to Parent/Guardian)
     public var payeeName: String?
     public var payeeEmail: String?
     public var payeePhone: String?
-    public var payeeAddress: String?
+    @Relationship(deleteRule: .cascade) public var payeeAddress: AddressEntity?
     
     // Payment Details (snapshot from BusinessEntity)
     public var bankName: String?
@@ -126,7 +125,7 @@ import SwiftData
     /// Check if invoice is overdue
     var isOverdue: Bool {
         guard let dueDate = dueDate else { return false }
-        return dueDate < Date() && status != .paid
+        return dueDate < Date() && !status.isSettled
     }
     
     /// Days until due (negative if overdue)
@@ -144,7 +143,16 @@ import SwiftData
             businessName = business.name
             businessABN = business.abn
             businessEmail = business.email
-            businessAddress = business.address?.fullFormattedAddress
+            if let sourceAddress = business.address {
+                let snapshotAddress = AddressEntity()
+                snapshotAddress.streetName = sourceAddress.streetName
+                snapshotAddress.city = sourceAddress.city
+                snapshotAddress.state = sourceAddress.state
+                snapshotAddress.postcode = sourceAddress.postcode
+                snapshotAddress.country = sourceAddress.country
+                snapshotAddress.invoice = self
+                businessAddress = snapshotAddress
+            }
             businessPhone = business.phone
         }
         
@@ -154,7 +162,16 @@ import SwiftData
             clientNDISNumber = client.ndisNumber
             clientEmail = client.email
             clientPhone = client.phone
-            clientAddress = client.address?.fullFormattedAddress
+            if let sourceAddress = client.address {
+                let snapshotAddress = AddressEntity()
+                snapshotAddress.streetName = sourceAddress.streetName
+                snapshotAddress.city = sourceAddress.city
+                snapshotAddress.state = sourceAddress.state
+                snapshotAddress.postcode = sourceAddress.postcode
+                snapshotAddress.country = sourceAddress.country
+                snapshotAddress.invoice = self
+                clientAddress = snapshotAddress
+            }
         }
         
         // Snapshot billing information based on billing authority
@@ -166,18 +183,46 @@ import SwiftData
                 if let payee = client.payee {
                     billToName = payee.fullName
                     billToEmail = payee.email
-                    billToAddress = payee.address?.fullFormattedAddress
+                    if let sourceAddress = payee.address {
+                        let snapshotAddress = AddressEntity()
+                        snapshotAddress.streetName = sourceAddress.streetName
+                        snapshotAddress.city = sourceAddress.city
+                        snapshotAddress.state = sourceAddress.state
+                        snapshotAddress.postcode = sourceAddress.postcode
+                        snapshotAddress.country = sourceAddress.country
+                        snapshotAddress.invoice = self
+                        billToAddress = snapshotAddress
+                    }
                     
                     // Also snapshot payee details
                     payeeName = payee.fullName
                     payeeEmail = payee.email
                     payeePhone = payee.phone
-                    payeeAddress = payee.address?.fullFormattedAddress
+                    
+                    if let sourceAddress = payee.address {
+                         let snapshotAddress = AddressEntity()
+                         snapshotAddress.streetName = sourceAddress.streetName
+                         snapshotAddress.city = sourceAddress.city
+                         snapshotAddress.state = sourceAddress.state
+                         snapshotAddress.postcode = sourceAddress.postcode
+                         snapshotAddress.country = sourceAddress.country
+                         snapshotAddress.invoice = self
+                         payeeAddress = snapshotAddress
+                    }
                 }
             case .client:
                 billToName = client.fullName
                 billToEmail = client.email
-                billToAddress = client.address?.fullFormattedAddress
+                if let sourceAddress = client.address {
+                    let snapshotAddress = AddressEntity()
+                    snapshotAddress.streetName = sourceAddress.streetName
+                    snapshotAddress.city = sourceAddress.city
+                    snapshotAddress.state = sourceAddress.state
+                    snapshotAddress.postcode = sourceAddress.postcode
+                    snapshotAddress.country = sourceAddress.country
+                    snapshotAddress.invoice = self
+                    billToAddress = snapshotAddress
+                }
             default:
                 break
             }
@@ -189,13 +234,34 @@ import SwiftData
             if payeeName == nil { payeeName = directPayee.fullName }
             if payeeEmail == nil { payeeEmail = directPayee.email }
             if payeePhone == nil { payeePhone = directPayee.phone }
-            if payeeAddress == nil { payeeAddress = directPayee.address?.fullFormattedAddress }
+            if payeeAddress == nil { 
+                if let sourceAddress = directPayee.address {
+                    let snapshotAddress = AddressEntity()
+                    snapshotAddress.streetName = sourceAddress.streetName
+                    snapshotAddress.city = sourceAddress.city
+                    snapshotAddress.state = sourceAddress.state
+                    snapshotAddress.postcode = sourceAddress.postcode
+                    snapshotAddress.country = sourceAddress.country
+                    snapshotAddress.invoice = self
+                    payeeAddress = snapshotAddress
+                }
+            }
             
             // If billing authority suggests parent/guardian but billTo fields aren't set, populate them
             if (billingAuthority == .parentGuardian || billingAuthority == nil) && billToName == nil {
                 billToName = directPayee.fullName
                 billToEmail = directPayee.email
-                billToAddress = directPayee.address?.fullFormattedAddress
+                
+                if let sourceAddress = directPayee.address {
+                    let snapshotAddress = AddressEntity()
+                    snapshotAddress.streetName = sourceAddress.streetName
+                    snapshotAddress.city = sourceAddress.city
+                    snapshotAddress.state = sourceAddress.state
+                    snapshotAddress.postcode = sourceAddress.postcode
+                    snapshotAddress.country = sourceAddress.country
+                    snapshotAddress.invoice = self
+                    billToAddress = snapshotAddress
+                }
             }
         }
         
@@ -208,4 +274,3 @@ import SwiftData
         }
     }
 }
-

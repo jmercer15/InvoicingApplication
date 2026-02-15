@@ -3,29 +3,32 @@ import SwiftUI
 // MARK: - Star Shape Component
 
 struct StarShapeComponent: View {
-let component: InvoiceComponent
-@EnvironmentObject private var document: InvoiceDocument
+    let component: InvoiceComponent
+    @EnvironmentObject private var document: InvoiceDocument
 
-var body: some View {
-Star(points: component.style.starPoints, smoothness: component.style.starSmoothness)
-.fill(component.style.backgroundColorSwiftUI)
-.opacity(component.style.backgroundOpacity)
-.overlay {
-if component.style.borderWidth > 0 {
-Star(points: component.style.starPoints, smoothness: component.style.starSmoothness)
-.stroke(component.style.borderColorSwiftUI, lineWidth: component.style.borderWidth)
-}
-}
-.aspectRatio(component.style.aspectRatio > 0 ? component.style.aspectRatio : 1.0, contentMode: .fit)
-.shadow(
-color: component.style.shadowEnabled ? component.style.shadowColorSwiftUI.opacity(component.style.shadowOpacity) : .clear,
-radius: component.style.shadowRadius,
-x: component.style.shadowOffsetX,
-y: component.style.shadowOffsetY
-)
-.frame(maxWidth: .infinity, maxHeight: .infinity)
-.padding(component.style.padding)
-.padding(component.style.margin)
-}
+    @Environment(\.isMeasuringIdealSize) private var isMeasuringIdealSize
+    
+    var body: some View {
+        Star(points: component.style.starPoints, smoothness: component.style.starSmoothness)
+            .standardShapeStyle(component: component, document: document)
+    }
 }
 
+// MARK: - Preview
+
+#Preview("StarShapeComponent - Visual") {
+    HStack(spacing: 20) {
+        Star(points: 5, smoothness: 0.5)
+            .fill(Color.yellow)
+            .frame(width: 60, height: 60)
+        
+        Star(points: 6, smoothness: 0.4)
+            .fill(Color.yellow)
+            .frame(width: 60, height: 60)
+        
+        Star(points: 8, smoothness: 0.6)
+            .fill(Color.yellow)
+            .frame(width: 60, height: 60)
+    }
+    .padding()
+}

@@ -8,13 +8,18 @@ import Core
 @MainActor
 public class NDISContainerViewModel: ObservableObject {
     // MARK: - Dependencies
-    private var modelContext: ModelContext
+    private let unitOfWork: UnitOfWorkService
     
     // MARK: - Published State for UI
-    @Published var selectedItem: NDISItemEntity? = nil
-    @Published var displayedItem: NDISItemEntity? = nil
+    @Published public var selectedItem: NDISItem? = nil
+    @Published var displayedItem: NDISItem? = nil
     @Published var isTransitioningToBlack: Bool = false
     @Published var searchText: String = ""
+    
+    // Historical Analysis State
+    @Published public var changesSummary: NDISChangesSummary?
+    @Published public var itemChanges: [NDISItemChange] = []
+    @Published public var isAnalyzingChanges: Bool = false
     
     // Filtering State
     @Published var quoteFilter: QuoteFilter = .all
@@ -36,11 +41,11 @@ public class NDISContainerViewModel: ObservableObject {
     @Published var sortOrder: SortOrder = .nameAsc
     
     // Performance-Optimized Data Properties
-    @Published private(set) var paginatedItems: [NDISItemEntity] = []
-    @Published private(set) var filteredItems: [NDISItemEntity] = []
+    @Published private(set) var paginatedItems: [NDISItem] = []
+    @Published private(set) var filteredItems: [NDISItem] = []
 
     // Internal Data Storage
-    private var allSupportItems: [NDISItemEntity] = []
+    private var allSupportItems: [NDISItem] = []
     private var totalLoadedItems = 0
 
     // Caching
@@ -49,11 +54,11 @@ public class NDISContainerViewModel: ObservableObject {
     @Published private(set) var cachedRegistrationGroups: [String] = []
     @Published private(set) var cachedUnits: [String] = []
 
-    @Published var selectedItemsCache: [UUID: NDISItemEntity] = [:]
+    @Published var selectedItemsCache: [UUID: NDISItem] = [:]
     @Published private(set) var preferredRegionIdentifier: String? = nil
 
     // Filter caching for performance
-    private var cachedFilteredItems: [NDISItemEntity] = []
+    private var cachedFilteredItems: [NDISItem] = []
     private var lastFilterParameters: (
         category: String?,
         group: String?,
@@ -64,6 +69,7 @@ public class NDISContainerViewModel: ObservableObject {
     ) = (nil, nil, .all, [], [], "")
     
     private var cancellables = Set<AnyCancellable>()
+    private var processingTask: Task<Void, Never>?
     
     // MARK: - Enums
     enum QuoteFilter: String, CaseIterable, Identifiable {
@@ -118,14 +124,16 @@ public class NDISContainerViewModel: ObservableObject {
     }
     
     // MARK: - Initializer
-    public init(context: ModelContext) {
-        self.modelContext = context
+    // Updated to use UnitOfWork service
+    public init(unitOfWork: UnitOfWorkService) {
+        self.unitOfWork = unitOfWork
+        
         setupDataProcessingPipeline()
         setupBindings()
         setupActiveFiltersPipeline()
         setupDynamicRegistrationGroupPipeline()
         
-        // Observe changes to the ModelContext
+        // Observe changes to the ModelContext via standard notification
         NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)
             .throttle(for: .seconds(1), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in
@@ -135,14 +143,12 @@ public class NDISContainerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        refreshBusinessRegionPreference()
+        Task { await fetchAndProcessAllItems() }
     }
-
+    
+    // Removed legacy context update support
     public func updateContextIfNeeded(_ newContext: ModelContext) {
-        guard modelContext !== newContext else { return }
-        modelContext = newContext
-        refreshBusinessRegionPreference()
-        fetchAndProcessAllItems()
+        // No-op for UoW compatibility
     }
     
     // MARK: - Private Methods
@@ -179,43 +185,37 @@ public class NDISContainerViewModel: ObservableObject {
             .eraseToAnyPublisher()
 
         filtersPublisher
-            .map { [weak self] (group1: (String, QuoteFilter, String?, String?), group2: (SortOrder, [String], [String]), versionFilter: ItemVersionFilter) -> AnyPublisher<[NDISItemEntity], Never> in
-                // Destructure the tuples to get the individual filter values.
+            .sink { [weak self] (group1: (String, QuoteFilter, String?, String?), group2: (SortOrder, [String], [String]), versionFilter: ItemVersionFilter) in
+                guard let self = self else { return }
                 let (searchText, quoteFilter, categoryId, groupId) = group1
                 let (sortOrder, features, units) = group2
-
-                guard let self = self else {
-                    return Empty<[NDISItemEntity], Never>().eraseToAnyPublisher()
-                }
-
-                // Capture the current items on the main thread to avoid race conditions
                 let currentItems = self.allSupportItems
 
-                // Apply version filtering on main thread first (thread-safe)
-                let versionFilteredItems = self.applyVersionFilter(currentItems, versionFilter: versionFilter)
+                self.processingTask?.cancel()
+                self.processingTask = Task { [currentItems, searchText, quoteFilter, categoryId, groupId, sortOrder, features, units, versionFilter] in
+                    let processed = await Task.detached {
+                        Self.getFilteredAndSortedItemsStatic(
+                            from: currentItems,
+                            searchText: searchText,
+                            quoteFilter: quoteFilter,
+                            selectedCategoryId: categoryId,
+                            selectedRegistrationGroup: groupId,
+                            sortOrder: sortOrder,
+                            currentSelectedFeatures: features,
+                            currentSelectedUnits: units,
+                            itemVersionFilter: versionFilter
+                        )
+                    }.value
+                    if Task.isCancelled { return }
+                    let topFeatures = Self.getTopFeaturesStatic(from: processed, count: 10)
+                    let topUnits = Self.getTopUnitsStatic(from: processed, count: 10)
 
-                // Pass the pre-filtered items and other filter state to the background thread.
-                let processed = self.getFilteredAndSortedItemsWithoutVersionFilter(
-                    from: versionFilteredItems,
-                    searchText: searchText,
-                    quoteFilter: quoteFilter,
-                    selectedCategoryId: categoryId,
-                    selectedRegistrationGroup: groupId,
-                    sortOrder: sortOrder,
-                    currentSelectedFeatures: features,
-                    currentSelectedUnits: units
-                )
-
-                return Just(processed).eraseToAnyPublisher()
-            }
-            .switchToLatest()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] (processedItems) in
-                guard let self = self else { return }
-                self.filteredItems = processedItems
-                self.totalLoadedItems = min(50, self.filteredItems.count)
-                self.paginatedItems = self.getPaginatedItems(from: self.filteredItems)
-                self.updateDynamicMenus(basedOn: processedItems)
+                    self.filteredItems = processed
+                    self.totalLoadedItems = min(50, self.filteredItems.count)
+                    self.paginatedItems = self.getPaginatedItems(from: self.filteredItems)
+                    self.featuresForToolbarMenu = topFeatures
+                    self.unitsForToolbarMenu = topUnits
+                }
             }
             .store(in: &cancellables)
     }
@@ -290,34 +290,64 @@ public class NDISContainerViewModel: ObservableObject {
     
     // MARK: - Data Processing Entry Point
     
-    // Updated to accept NDISItemEntity directly
+    // Updated to accept NDISItem directly
     @MainActor
-    func setSourceItems(ndisItems: [NDISItemEntity]) {
+    func setSourceItems(ndisItems: [NDISItem]) {
         self.allSupportItems = ndisItems
-        
-        // After receiving, update caches and apply current filters.
-        updateCachedData(from: self.allSupportItems)
-        
-        let processedItems = self.getFilteredAndSortedItems(from: self.allSupportItems)
-        self.filteredItems = processedItems
+        self.filteredItems = ndisItems
         self.totalLoadedItems = min(50, self.filteredItems.count)
         self.paginatedItems = self.getPaginatedItems(from: self.filteredItems)
+        let currentFilters = (
+            searchText: searchText,
+            quoteFilter: quoteFilter,
+            categoryId: selectedCategoryId,
+            groupId: selectedRegistrationGroup,
+            sortOrder: sortOrder,
+            features: currentSelectedFeatures,
+            units: currentSelectedUnits,
+            versionFilter: itemVersionFilter
+        )
+        Task.detached { [weak self] in
+            await self?.rebuildCachesAndFilters(from: ndisItems, filters: currentFilters)
+        }
     }
     
-    // New function to fetch all items from SwiftData
+    // New function to fetch all items from Repository
     @MainActor
-    func fetchAndProcessAllItems() {
+    func fetchAndProcessAllItems() async {
         refreshBusinessRegionPreference()
 
-        let descriptor = FetchDescriptor<NDISItemEntity>(sortBy: [
-            SortDescriptor(\.itemNumber, order: .forward),
-            SortDescriptor(\.effectiveStartDate, order: .reverse)
-        ])
         do {
-            let fetchedItems = try modelContext.fetch(descriptor)
-            setSourceItems(ndisItems: fetchedItems)
+            let items = try await unitOfWork.ndisItems.fetchAll()
+            setSourceItems(ndisItems: items)
         } catch {
-            print("Failed to fetch NDIS items: \(error)")
+            print("Failed to fetch NDIS items via repository: \(error)")
+        }
+    }
+    
+    @MainActor
+    public func fetchChangesSummary() async {
+        isAnalyzingChanges = true
+        defer { isAnalyzingChanges = false }
+        
+        do {
+            let summary = try await NDISVersioningService.getChangesSummary(using: unitOfWork)
+            self.changesSummary = summary
+        } catch {
+            print("Error fetching changes summary: \(error)")
+        }
+    }
+    
+    @MainActor
+    public func loadItemHistory(for itemNumber: String) async {
+        isAnalyzingChanges = true
+        defer { isAnalyzingChanges = false }
+        
+        do {
+            let changes = try await NDISVersioningService.analyzeItemChanges(itemNumber: itemNumber, using: unitOfWork)
+            self.itemChanges = changes
+        } catch {
+            print("Error loading item history for \(itemNumber): \(error)")
         }
     }
 
@@ -325,15 +355,55 @@ public class NDISContainerViewModel: ObservableObject {
 
     @MainActor
     private func refreshBusinessRegionPreference() {
-        var descriptor = FetchDescriptor<BusinessEntity>()
-        descriptor.fetchLimit = 1
-        do {
-            preferredRegionIdentifier = try modelContext.fetch(descriptor).first.flatMap { business in
-                Self.regionIdentifier(for: business.address)
+        Task {
+            do {
+                if let business = try await unitOfWork.business.fetchFirst() {
+                    self.preferredRegionIdentifier = Self.regionIdentifier(for: business.address)
+                } else {
+                    self.preferredRegionIdentifier = nil
+                }
+            } catch {
+                print("Failed to fetch business for region preference: \(error)")
+                self.preferredRegionIdentifier = nil
             }
-        } catch {
-            print("Failed to fetch business for region preference: \(error)")
-            preferredRegionIdentifier = nil
+        }
+    }
+
+    private nonisolated func rebuildCachesAndFilters(
+        from items: [NDISItem],
+        filters: (
+            searchText: String,
+            quoteFilter: QuoteFilter,
+            categoryId: String?,
+            groupId: String?,
+            sortOrder: SortOrder,
+            features: [String],
+            units: [String],
+            versionFilter: ItemVersionFilter
+        )
+    ) async {
+        let caches = Self.buildCaches(from: items)
+        let processed = Self.getFilteredAndSortedItemsStatic(
+            from: items,
+            searchText: filters.searchText,
+            quoteFilter: filters.quoteFilter,
+            selectedCategoryId: filters.categoryId,
+            selectedRegistrationGroup: filters.groupId,
+            sortOrder: filters.sortOrder,
+            currentSelectedFeatures: filters.features,
+            currentSelectedUnits: filters.units,
+            itemVersionFilter: filters.versionFilter
+        )
+        await MainActor.run {
+            cachedCategories = caches.categories
+            cachedFeatures = caches.features
+            cachedRegistrationGroups = caches.registrationGroups
+            cachedUnits = caches.units
+            featuresForToolbarMenu = caches.topFeatures
+            unitsForToolbarMenu = caches.topUnits
+            filteredItems = processed
+            totalLoadedItems = min(50, filteredItems.count)
+            paginatedItems = getPaginatedItems(from: filteredItems)
         }
     }
 
@@ -373,7 +443,7 @@ public class NDISContainerViewModel: ObservableObject {
 
     private static let regionAbbreviations: [String] = ["ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"]
 
-    private static func regionIdentifier(for address: AddressEntity?) -> String? {
+    private static func regionIdentifier(for address: Address?) -> String? {
         guard let address = address else { return nil }
         let normalizedState = normalizeStateKey(address.state)
         guard !normalizedState.isEmpty else { return nil }
@@ -389,15 +459,14 @@ public class NDISContainerViewModel: ObservableObject {
         return nil
     }
 
-    private nonisolated(unsafe) static func normalizeStateKey(_ value: String) -> String {
+    private nonisolated static func normalizeStateKey(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         let scalars = trimmed.unicodeScalars.filter { CharacterSet.letters.contains($0) }
         return String(String.UnicodeScalarView(scalars)).uppercased()
     }
 
-    // Thread-safe version filtering that runs on main thread
-    private func applyVersionFilter(_ items: [NDISItemEntity], versionFilter: ItemVersionFilter) -> [NDISItemEntity] {
+    nonisolated private static func applyVersionFilterStatic(_ items: [NDISItem], versionFilter: ItemVersionFilter) -> [NDISItem] {
         let now = Date()
 
         switch versionFilter {
@@ -408,7 +477,7 @@ public class NDISContainerViewModel: ObservableObject {
                 let isEffectiveNow = (start <= now && now <= end)
                 return item.isCurrent || isEffectiveNow
             }
-            return deduplicateCurrentItems(currentItems)
+            return deduplicateCurrentItemsStatic(currentItems)
 
         case .historicalOnly:
             return items.filter { item in
@@ -422,7 +491,7 @@ public class NDISContainerViewModel: ObservableObject {
         }
     }
 
-    private func getPaginatedItems(from items: [NDISItemEntity]) -> [NDISItemEntity] {
+    private func getPaginatedItems(from items: [NDISItem]) -> [NDISItem] {
         return Array(items.prefix(self.totalLoadedItems))
     }
 
@@ -440,7 +509,7 @@ public class NDISContainerViewModel: ObservableObject {
     // This function is now "pure", taking all its dependencies as parameters.
     // This makes it predictable and suitable for use in the reactive pipeline.
     private func getFilteredAndSortedItems(
-        from items: [NDISItemEntity],
+        from items: [NDISItem],
         searchText: String,
         quoteFilter: QuoteFilter,
         selectedCategoryId: String?,
@@ -449,12 +518,34 @@ public class NDISContainerViewModel: ObservableObject {
         currentSelectedFeatures: [String],
         currentSelectedUnits: [String],
         itemVersionFilter: ItemVersionFilter = .currentOnly
-    ) -> [NDISItemEntity] {
-        // Apply version filtering first (on main thread)
-        let versionFilteredItems = applyVersionFilter(items, versionFilter: itemVersionFilter)
+    ) -> [NDISItem] {
+        Self.getFilteredAndSortedItemsStatic(
+            from: items,
+            searchText: searchText,
+            quoteFilter: quoteFilter,
+            selectedCategoryId: selectedCategoryId,
+            selectedRegistrationGroup: selectedRegistrationGroup,
+            sortOrder: sortOrder,
+            currentSelectedFeatures: currentSelectedFeatures,
+            currentSelectedUnits: currentSelectedUnits,
+            itemVersionFilter: itemVersionFilter
+        )
+    }
 
-        // Then apply other filters on background thread
-        return getFilteredAndSortedItemsWithoutVersionFilter(
+    // Version of filtering that runs on background thread (no version filtering)
+    nonisolated private static func getFilteredAndSortedItemsStatic(
+        from items: [NDISItem],
+        searchText: String,
+        quoteFilter: QuoteFilter,
+        selectedCategoryId: String?,
+        selectedRegistrationGroup: String?,
+        sortOrder: SortOrder,
+        currentSelectedFeatures: [String],
+        currentSelectedUnits: [String],
+        itemVersionFilter: ItemVersionFilter = .currentOnly
+    ) -> [NDISItem] {
+        let versionFilteredItems = applyVersionFilterStatic(items, versionFilter: itemVersionFilter)
+        return getFilteredAndSortedItemsWithoutVersionFilterStatic(
             from: versionFilteredItems,
             searchText: searchText,
             quoteFilter: quoteFilter,
@@ -466,9 +557,8 @@ public class NDISContainerViewModel: ObservableObject {
         )
     }
 
-    // Version of filtering that runs on background thread (no version filtering)
-    private func getFilteredAndSortedItemsWithoutVersionFilter(
-        from items: [NDISItemEntity],
+    nonisolated private static func getFilteredAndSortedItemsWithoutVersionFilterStatic(
+        from items: [NDISItem],
         searchText: String,
         quoteFilter: QuoteFilter,
         selectedCategoryId: String?,
@@ -476,7 +566,7 @@ public class NDISContainerViewModel: ObservableObject {
         sortOrder: SortOrder,
         currentSelectedFeatures: [String],
         currentSelectedUnits: [String]
-    ) -> [NDISItemEntity] {
+    ) -> [NDISItem] {
         let lowercasedSearchText = searchText.lowercased()
 
         var result = items
@@ -502,7 +592,7 @@ public class NDISContainerViewModel: ObservableObject {
             result = result.filter { item in
                 item.name.localizedCaseInsensitiveContains(lowercasedSearchText) ||
                 item.itemNumber.localizedCaseInsensitiveContains(lowercasedSearchText) ||
-                (item.itemDescription ?? "").localizedCaseInsensitiveContains(lowercasedSearchText)
+                (item.description ?? "").localizedCaseInsensitiveContains(lowercasedSearchText)
             }
         }
 
@@ -528,22 +618,22 @@ public class NDISContainerViewModel: ObservableObject {
     }
 
     // Overload for initial load and clearing filters, which use the view model's current state.
-    private func getFilteredAndSortedItems(from items: [NDISItemEntity]) -> [NDISItemEntity] {
-        let versionFilteredItems = applyVersionFilter(items, versionFilter: self.itemVersionFilter)
-        return getFilteredAndSortedItemsWithoutVersionFilter(
-            from: versionFilteredItems,
+    private func getFilteredAndSortedItems(from items: [NDISItem]) -> [NDISItem] {
+        return Self.getFilteredAndSortedItemsStatic(
+            from: items,
             searchText: self.searchText,
             quoteFilter: self.quoteFilter,
             selectedCategoryId: self.selectedCategoryId,
             selectedRegistrationGroup: self.selectedRegistrationGroup,
             sortOrder: self.sortOrder,
             currentSelectedFeatures: self.currentSelectedFeatures,
-            currentSelectedUnits: self.currentSelectedUnits
+            currentSelectedUnits: self.currentSelectedUnits,
+            itemVersionFilter: self.itemVersionFilter
         )
     }
     
     // This is now a dedicated sorting helper to avoid duplicating the logic.
-    private func getSortedItems(from items: [NDISItemEntity], with sortOrder: SortOrder) -> [NDISItemEntity] {
+    nonisolated private static func getSortedItems(from items: [NDISItem], with sortOrder: SortOrder) -> [NDISItem] {
         guard items.count > 1 else { return items }
 
         switch sortOrder {
@@ -582,7 +672,7 @@ public class NDISContainerViewModel: ObservableObject {
         }
     }
 
-    private func compareNames(_ lhs: NDISItemEntity, _ rhs: NDISItemEntity, ascending: Bool) -> Bool {
+    nonisolated private static func compareNames(_ lhs: NDISItem, _ rhs: NDISItem, ascending: Bool) -> Bool {
         let comparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
         if comparison == .orderedSame {
             return tieBreak(lhs: lhs, rhs: rhs, ascending: ascending)
@@ -590,7 +680,7 @@ public class NDISContainerViewModel: ObservableObject {
         return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
     }
 
-    private func compareItemNumbers(_ lhs: NDISItemEntity, _ rhs: NDISItemEntity, ascending: Bool) -> Bool {
+    nonisolated private static func compareItemNumbers(_ lhs: NDISItem, _ rhs: NDISItem, ascending: Bool) -> Bool {
         let comparison = lhs.itemNumber.localizedStandardCompare(rhs.itemNumber)
         if comparison == .orderedSame {
             return compareNames(lhs, rhs, ascending: ascending)
@@ -598,7 +688,7 @@ public class NDISContainerViewModel: ObservableObject {
         return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
     }
 
-    private func compareRegistrationGroups(_ lhs: NDISItemEntity, _ rhs: NDISItemEntity, ascending: Bool) -> Bool {
+    nonisolated private static func compareRegistrationGroups(_ lhs: NDISItem, _ rhs: NDISItem, ascending: Bool) -> Bool {
         let lhsGroup = normalizedOptional(lhs.registrationGroup)
         let rhsGroup = normalizedOptional(rhs.registrationGroup)
 
@@ -618,7 +708,7 @@ public class NDISContainerViewModel: ObservableObject {
         }
     }
 
-    private func comparePrices(_ lhs: NDISItemEntity, _ rhs: NDISItemEntity, ascending: Bool) -> Bool {
+    nonisolated private static func comparePrices(_ lhs: NDISItem, _ rhs: NDISItem, ascending: Bool) -> Bool {
         let lhsPrice = primaryPrice(for: lhs)
         let rhsPrice = primaryPrice(for: rhs)
 
@@ -637,7 +727,7 @@ public class NDISContainerViewModel: ObservableObject {
         }
     }
 
-    private func tieBreak(lhs: NDISItemEntity, rhs: NDISItemEntity, ascending: Bool) -> Bool {
+    nonisolated private static func tieBreak(lhs: NDISItem, rhs: NDISItem, ascending: Bool) -> Bool {
         let numberComparison = lhs.itemNumber.localizedStandardCompare(rhs.itemNumber)
         if numberComparison != .orderedSame {
             return ascending ? numberComparison == .orderedAscending : numberComparison == .orderedDescending
@@ -648,14 +738,14 @@ public class NDISContainerViewModel: ObservableObject {
             : lhs.id.uuidString > rhs.id.uuidString
     }
 
-    private func normalizedOptional(_ value: String?) -> String? {
+    nonisolated private static func normalizedOptional(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
         }
         return value
     }
 
-    private func primaryPrice(for item: NDISItemEntity) -> Double? {
+    nonisolated private static func primaryPrice(for item: NDISItem) -> Double? {
         if let nationalPrice = item.regionalPrices.first(where: { ($0.regionIdentifier ?? "").caseInsensitiveCompare("NATIONAL") == .orderedSame })?.amount {
             return nationalPrice
         }
@@ -664,9 +754,7 @@ public class NDISContainerViewModel: ObservableObject {
     
     // MARK: - Caching and Data Update Logic
     
-    @MainActor
-    private func updateCachedData(from items: [NDISItemEntity]) {
-        // This is an expensive operation, so we only want to do it when the source data changes
+    nonisolated private static func buildCaches(from items: [NDISItem]) -> (categories: [String], features: [String], registrationGroups: [String], units: [String], topFeatures: [String], topUnits: [String]) {
         let categories = Array(Set(items.compactMap { $0.category })).sorted()
         let features = Array(Set(
             items
@@ -675,25 +763,19 @@ public class NDISContainerViewModel: ObservableObject {
         )).sorted()
         let regGroups = Array(Set(items.map { $0.registrationGroup ?? "" })).sorted()
         let units = Array(Set(items.map { $0.unit ?? "" })).sorted()
-        
-        self.cachedCategories = categories
-        self.cachedFeatures = features
-        self.cachedRegistrationGroups = regGroups
-        self.cachedUnits = units
-        
-        self.featuresForToolbarMenu = self.getTopFeatures(from: items, count: 10)
-        self.unitsForToolbarMenu = self.getTopUnits(from: items, count: 10)
+        let topFeatures = Self.getTopFeaturesStatic(from: items, count: 10)
+        let topUnits = Self.getTopUnitsStatic(from: items, count: 10)
+        return (categories, features, regGroups, units, topFeatures, topUnits)
     }
     
-    private func updateDynamicMenus(basedOn items: [NDISItemEntity]) {
-        let topFeatures = self.getTopFeatures(from: items, count: 10)
-        let topUnits = self.getTopUnits(from: items, count: 10)
-        self.featuresForToolbarMenu = topFeatures
-        self.unitsForToolbarMenu = topUnits
+    private func updateDynamicMenus(basedOn items: [NDISItem]) {
+        let topFeatures = Self.getTopFeaturesStatic(from: items, count: 10)
+        let topUnits = Self.getTopUnitsStatic(from: items, count: 10)
+        featuresForToolbarMenu = topFeatures
+        unitsForToolbarMenu = topUnits
     }
     
-    nonisolated
-    func getTopFeatures(from items: [NDISItemEntity], count: Int) -> [String] {
+    nonisolated private static func getTopFeaturesStatic(from items: [NDISItem], count: Int) -> [String] {
         let allFeatures = items.flatMap { ($0.features ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
         let featureCounts = allFeatures.reduce(into: [:]) { counts, feature in // Use non-optional features
             counts[feature, default: 0] += 1
@@ -706,8 +788,7 @@ public class NDISContainerViewModel: ObservableObject {
         return Array(sortedFeatures.prefix(count))
     }
     
-    nonisolated
-    func getTopUnits(from items: [NDISItemEntity], count: Int) -> [String] {
+    nonisolated private static func getTopUnitsStatic(from items: [NDISItem], count: Int) -> [String] {
         let allUnits = items.map { $0.unit ?? "" }.filter { !$0.isEmpty }
         let unitCounts = allUnits.reduce(into: [:]) { counts, unit in
             counts[unit, default: 0] += 1
@@ -722,8 +803,8 @@ public class NDISContainerViewModel: ObservableObject {
     
     /// Removes duplicate items when multiple current versions exist for the same item number + name.
     /// Keeps only the version with the most recent effective start date.
-    private func deduplicateCurrentItems(_ items: [NDISItemEntity]) -> [NDISItemEntity] {
-        var itemsDict: [String: NDISItemEntity] = [:]
+    nonisolated private static func deduplicateCurrentItemsStatic(_ items: [NDISItem]) -> [NDISItem] {
+        var itemsDict: [String: NDISItem] = [:]
         
         for item in items {
             let compositeKey = "\(item.itemNumber)|\(item.name)"
@@ -778,7 +859,7 @@ public class NDISContainerViewModel: ObservableObject {
             self.itemVersionFilter = .currentOnly
 
             // Manually and instantly update the UI state
-            let sortedItems = self.getSortedItems(from: self.allSupportItems, with: self.sortOrder)
+            let sortedItems = Self.getSortedItems(from: self.allSupportItems, with: self.sortOrder)
             self.filteredItems = sortedItems
             self.totalLoadedItems = min(50, sortedItems.count)
             self.paginatedItems = self.getPaginatedItems(from: sortedItems)
@@ -788,7 +869,7 @@ public class NDISContainerViewModel: ObservableObject {
             self.lastFilterParameters = (nil, nil, .all, [], [], "")
             self.cachedFilteredItems = []
             
-            self.fetchAndProcessAllItems() // Trigger a re-fetch and process to ensure fresh data
+            Task { await self.fetchAndProcessAllItems() } // Trigger a re-fetch and process to ensure fresh data
         }
     }
     
@@ -851,7 +932,7 @@ public class NDISContainerViewModel: ObservableObject {
     }
     
     // MARK: - Private Helpers
-    private func handleItemSelectionChange(_ newItem: NDISItemEntity?) {
+    private func handleItemSelectionChange(_ newItem: NDISItem?) {
         let oldItem = displayedItem
         
         if let oldItem = oldItem, let newItem = newItem, oldItem.id != newItem.id {
@@ -920,20 +1001,20 @@ public class NDISContainerViewModel: ObservableObject {
         }
     }
     
-    func findItem(by id: UUID) -> NDISItemEntity? {
+    func findItem(by id: UUID) -> NDISItem? {
         if let cached = selectedItemsCache[id] {
             return cached
         }
         
-        // If not in cache, try to fetch from context
-        let descriptor = FetchDescriptor<NDISItemEntity>(predicate: #Predicate { $0.id == id })
-        do {
-            return try modelContext.fetch(descriptor).first
-        } catch {
-            print("Error fetching NDIS item by ID: \(error)")
-            return nil
+        if let memoryItem = allSupportItems.first(where: { $0.id == id }) {
+            return memoryItem
         }
+        
+        // If not in memory, we assume it's not available in the current context or unloaded.
+        // Since we load all items, this should be rare.
+        return nil
     }
+
     
     // MARK: - Supporting Types
     

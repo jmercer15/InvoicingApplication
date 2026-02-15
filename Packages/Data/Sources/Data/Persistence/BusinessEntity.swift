@@ -23,6 +23,9 @@ import SwiftData
     public var bankBSB: String?
     public var bankName: String?
     public var accountingMethod: String = "Accrual"
+    public var ndiaOrganisationID: String?
+    public var isRegisteredProvider: Bool = false
+    public var defaultGstCode: String = "P2"
     @Relationship(deleteRule: .nullify) public var address: AddressEntity?
     @Relationship(deleteRule: .nullify, inverse: \InvoiceEntity.business) public var invoices: [InvoiceEntity]?
     public init(id: UUID, abn: String) {
@@ -30,5 +33,4 @@ import SwiftData
         self.abn = abn
     }
 }
-
 

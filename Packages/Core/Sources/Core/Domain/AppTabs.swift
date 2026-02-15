@@ -7,8 +7,6 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
     case relationships
     case calendar
     case ndisCatalogue
-    case ndisBilling
-    case testingArea
     case settings
     // Old comments removed; this file now only provides tab metadata
 
@@ -28,10 +26,6 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
             return "Calendar"
         case .ndisCatalogue:
             return "NDIS Catalogue"
-        case .ndisBilling:
-            return "NDIS Billing"
-        case .testingArea:
-            return "Testing Area"
         case .settings:
             return "Settings"
         }
@@ -42,7 +36,7 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
         case .invoices:
             return "doc.text"
         case .billingHub:
-            return "kanban"
+            return "square.grid.3x2"
         case .invoiceTemplateEditor:
             return "doc.badge.plus"
         case .relationships:
@@ -51,10 +45,6 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
             return "calendar"
         case .ndisCatalogue:
             return "list.bullet.rectangle"
-        case .ndisBilling:
-            return "creditcard"
-        case .testingArea:
-            return "testtube.2"
         case .settings:
             return "gearshape"
         }

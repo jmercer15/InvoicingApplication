@@ -30,8 +30,9 @@ public class CalendarDataManager: ObservableObject {
     /// Handles both recurring and non-recurring sessions
     func fetchSessions(from startDate: Date, to endDate: Date) async -> [Session] {
         do {
-            // Fetch all sessions in the date range (repository handles the query)
-            let allSessions = try await sessionsRepository.fetch(from: startDate, to: endDate)
+            // Recurring masters often start before the visible range, so we must evaluate
+            // recurrence candidates from the full local set (not only range-filtered fetches).
+            let allSessions = try await sessionsRepository.fetchAll()
             
             // Separate recurring and non-recurring
             let nonRecurringSessions = allSessions.filter { $0.recurrenceRuleData == nil }
@@ -43,8 +44,8 @@ public class CalendarDataManager: ObservableObject {
                 return startTime >= startDate && startTime < endDate
             }
             
-            // For recurring sessions, filter in memory since we need all to expand them
-            // Repository fetches all recurring sessions that might have instances in range
+            // For recurring sessions, include any series whose master starts before
+            // the view end so recurrence expansion can emit instances in-range.
             let filteredRecurring = recurringSessions.filter {
                 ($0.startTime ?? Date.distantFuture) < endDate
             }

@@ -35,7 +35,11 @@ final class DomainToEntityUpdateTests: XCTestCase {
             InvoiceItemEntity.self,
             ClientServiceEntity.self,
             NDISItemEntity.self,
-            RegionalPriceEntity.self
+            RegionalPriceEntity.self,
+            ServiceAgreementEntity.self,
+            SupportLogEntity.self,
+            BulkClaimBatchEntity.self,
+            BulkClaimLineEntity.self
         ])
         
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -191,7 +195,6 @@ final class DomainToEntityUpdateTests: XCTestCase {
         payeeEntity.phone = "0412345678"
         payeeEntity.status = "inactive"
         payeeEntity.relationToClient = "guardian"
-        payeeEntity.payeeID = 12345
         
         modelContext.insert(payeeEntity)
         try modelContext.save()

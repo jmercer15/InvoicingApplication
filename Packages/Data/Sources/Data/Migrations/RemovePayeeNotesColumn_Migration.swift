@@ -118,7 +118,6 @@ public struct RemovePayeeNotesColumn_Migration {
             let _ = payee.id
             let _ = payee.fullName
             let _ = payee.email
-            let _ = payee.payeeID
             let _ = payee.phone
             let _ = payee.relationToClient
             let _ = payee.status
@@ -145,6 +144,7 @@ public struct RemovePayeeNotesColumn_Migration {
 }
 
 /// Migration test utilities for PayeeEntity.notes column removal
+#if DEBUG
 public struct PayeeNotesColumnMigrationTestUtils {
     
     /// Test the migration with sample data
@@ -157,7 +157,6 @@ public struct PayeeNotesColumnMigrationTestUtils {
         // Create test PayeeEntity data
         let testPayee = PayeeEntity(id: UUID(), fullName: "Test Payee")
         testPayee.email = "payee@example.com"
-        testPayee.payeeID = 12345
         testPayee.phone = "0412345679"
         testPayee.relationToClient = "parent"
         testPayee.status = "active"
@@ -187,6 +186,7 @@ public struct PayeeNotesColumnMigrationTestUtils {
         print("✅ PayeeEntity.notes column removal migration test completed successfully")
     }
 }
+#endif
 
 /// Migration configuration for PayeeEntity.notes column removal
 public struct PayeeNotesColumnMigrationConfig {

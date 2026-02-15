@@ -19,6 +19,10 @@ let package = Package(
             resources: [
                 .process("Assets")
             ]
+        ),
+        .testTarget(
+            name: "Feature_InvoiceTemplateEditorTests",
+            dependencies: ["Feature_InvoiceTemplateEditor"]
         )
     ]
 )

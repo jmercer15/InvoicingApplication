@@ -35,11 +35,11 @@ struct StatusIndicator: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(count)
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .font(.system(size: 13, weight: .heavy))
                     .foregroundColor(BillingHubTheme.Palette.textPrimary)
 
                 Text(label)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(BillingHubTheme.Palette.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.9)

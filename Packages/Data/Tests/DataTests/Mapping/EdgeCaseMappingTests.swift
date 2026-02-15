@@ -35,7 +35,11 @@ final class EdgeCaseMappingTests: XCTestCase {
             InvoiceItemEntity.self,
             ClientServiceEntity.self,
             NDISItemEntity.self,
-            RegionalPriceEntity.self
+            RegionalPriceEntity.self,
+            ServiceAgreementEntity.self,
+            SupportLogEntity.self,
+            BulkClaimBatchEntity.self,
+            BulkClaimLineEntity.self
         ])
         
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

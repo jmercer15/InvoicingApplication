@@ -3,6 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 import Foundation
 import Core
+import SharedUI
 
 // MARK: - Template Categories
 
@@ -15,11 +16,11 @@ enum TemplateCategory: String, CaseIterable {
     
     var icon: String {
         switch self {
-        case .all: return "square.grid.2x2"
-        case .business: return "building.2"
-        case .creative: return "paintbrush"
-        case .minimal: return "circle.grid.2x2"
-        case .professional: return "briefcase"
+        case .all: return "fluent-ic_fluent_grid_20_regular"
+        case .business: return "fluent-ic_fluent_building_20_regular"
+        case .creative: return "fluent-ic_fluent_paint_brush_20_regular"
+        case .minimal: return "fluent-ic_fluent_more_circle_20_regular"
+        case .professional: return "fluent-ic_fluent_toolbox_20_regular"
         }
     }
 }
@@ -41,94 +42,7 @@ extension TemplateCategory {
     }
 }
 
-extension InvoiceComponentType {
-    var supportsTypography: Bool {
-        switch self {
-        case .rectangleShape, .ellipseShape, .lineShape, .triangleShape, .starShape, .imagePlaceholder, .companyLogo:
-            return false
-        default:
-            return true
-        }
-    }
-    
-    var supportsPlaceholderText: Bool {
-        switch self {
-        case .textBox, .notes, .invoiceTitle, .companyName, .companyABN, .companyEmail, .paymentTerms:
-            return true
-        default:
-            return false
-        }
-    }
-    
-    var supportsBackgroundFill: Bool {
-        switch self {
-        case .lineShape:
-            return false
-        default:
-            return true
-        }
-    }
-    
-    var supportsBorderControls: Bool {
-        switch self {
-        case .lineShape:
-            return false
-        default:
-            return true
-        }
-    }
-    
-    var supportsCornerRadius: Bool {
-        switch self {
-        case .lineShape, .triangleShape, .starShape:
-            return false
-        default:
-            return true
-        }
-    }
-    
-    var supportsFillOrBorder: Bool {
-        supportsBackgroundFill || supportsBorderControls
-    }
-    
-    var supportsShadow: Bool {
-        // All components support shadow
-        return true
-    }
-    
-    var supportsLayoutControls: Bool {
-        switch self {
-        case .rectangleShape, .ellipseShape, .lineShape, .triangleShape, .starShape:
-            return false
-        default:
-            return true
-        }
-    }
-    
-    var isImageComponent: Bool {
-        self == .imagePlaceholder || self == .companyLogo
-    }
-    
-    var isShape: Bool {
-        switch self {
-        case .rectangleShape, .ellipseShape, .lineShape, .triangleShape, .starShape:
-            return true
-        default:
-            return false
-        }
-    }
-    
-    /// Returns true if this component type uses table/grid properties (uses DocumentGridComponent)
-    var usesTableProperties: Bool {
-        switch self {
-        case .documentGrid, .servicesTable, .billTo, .participant, 
-             .invoiceNumberAndDates, .paymentDetails, .totals:
-            return true
-        default:
-            return false
-        }
-    }
-}
+
 
 // MARK: - Template Item Model
 
@@ -173,7 +87,7 @@ struct TemplateItem: Identifiable, Hashable {
         self.name = metadata.name
         self.description = metadata.description
         self.category = TemplateCategory(metadataTags: metadata.tags)
-        self.previewImage = "doc.richtext"
+        self.previewImage = "fluent-ic_fluent_document_text_20_regular"
         self.isPremium = metadata.tags.contains { $0.lowercased() == "premium" }
         self.lastModified = metadata.modifiedAt
         self.tags = metadata.tags
@@ -207,6 +121,7 @@ public struct ModernTemplateEditorView: View {
     }
     
     @EnvironmentObject private var templateDataService: TemplateDataService
+    @Environment(\.undoManager) private var undoManager
     
     public var body: some View {
         ModernTemplateManagementView(
@@ -216,11 +131,10 @@ public struct ModernTemplateEditorView: View {
             showingNewTemplateSheet: $showingNewTemplateSheet
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            Color(NSColor.windowBackgroundColor)
-                .ignoresSafeArea()
-        }
-        .background { AppMeshBackdrop() }
+        .loadingOverlay(
+            isLoading: workspace.editorViewModel.isLoading || workspace.isLoadingTemplates || workspace.isOpeningTemplate,
+            message: workspace.isLoadingTemplates ? "Loading templates..." : workspace.isOpeningTemplate ? "Opening template..." : "Processing..."
+        )
         .environmentObject(workspace)
         .environmentObject(workspace.editorViewModel)
         .environmentObject(workspace.editorViewModel.document)
@@ -231,6 +145,14 @@ public struct ModernTemplateEditorView: View {
                 .environmentObject(workspace.editorViewModel)
                 .environmentObject(workspace.editorViewModel.document)
                 .environmentObject(templateDataService)
+        }
+        .task {
+            // Inject undo manager
+            workspace.editorViewModel.document.undoManager = undoManager
+            await templateDataService.loadRandomInvoice()
+        }
+        .onChange(of: undoManager) { _, newManager in
+            workspace.editorViewModel.document.undoManager = newManager
         }
     }
 
@@ -262,8 +184,11 @@ struct CategoryChip: View {
             }
         }) {
             HStack(spacing: 6) {
-                Image(systemName: category.icon)
-                    .font(.caption)
+                Image(category.icon, bundle: .module)
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 12, height: 12)
 
                 Text(category.rawValue)
                     .font(.caption)
@@ -276,6 +201,7 @@ struct CategoryChip: View {
                     .fill(isSelected ? Color.selectedChipBackground : Color.unselectedChipBackground)
             )
             .foregroundColor(isSelected ? Color.accentText : Color.secondaryText)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .pointerStyle(.link)
         .buttonStyle(.plain)
@@ -298,19 +224,43 @@ struct ModernTemplateCard: View {
     private var managementMenuContent: some View {
         if let onEdit {
             Button(action: onEdit) {
-                Label("Edit Details", systemImage: "pencil")
+                Label {
+                    Text("Edit Details")
+                } icon: {
+                    Image("fluent-ic_fluent_edit_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                }
             }
             .pointerStyle(.link)
         }
         if let onDuplicate {
             Button(action: onDuplicate) {
-                Label("Duplicate", systemImage: "square.on.square")
+                Label {
+                    Text("Duplicate")
+                } icon: {
+                    Image("fluent-ic_fluent_document_copy_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                }
             }
             .pointerStyle(.link)
         }
         if let onDelete {
             Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
+                Label {
+                    Text("Delete")
+                } icon: {
+                    Image("fluent-ic_fluent_delete_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                }
             }
             .pointerStyle(.link)
         }
@@ -326,6 +276,7 @@ struct ModernTemplateCard: View {
                 onSelect()
             }
         }) {
+            let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
             VStack(alignment: .leading, spacing: 12) {
                 // Preview
                 RoundedRectangle(cornerRadius: 8)
@@ -340,10 +291,12 @@ struct ModernTemplateCard: View {
                                     .scaledToFit()
                                     .padding(12)
                             } else {
-                               Image(systemName: template.previewImage)
-                                   .font(.system(size: 32))
-                            .fontWeight(.semibold)
-                .foregroundColor(Color.secondary)
+                                Image(template.previewImage, bundle: .module)
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 32, height: 32)
+                                    .foregroundColor(Color.secondary)
                             }
                         }
                     )
@@ -358,7 +311,11 @@ struct ModernTemplateCard: View {
                         Spacer()
                         
                         if template.isPremium {
-                            Image(systemName: "crown.fill")
+                            Image("fluent-ic_fluent_premium_20_regular", bundle: .module)
+                                .resizable()
+                                .renderingMode(.template)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 12, height: 12)
                                 .font(.caption)
                                 .foregroundColor(.yellow)
                         }
@@ -406,13 +363,11 @@ struct ModernTemplateCard: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                shape
                     .fill(isSelected ? Color.activeSurface : Color.elevatedSurface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.primaryOutline, lineWidth: isSelected ? 2 : 1)
-                    )
+                    .overlay(shape.stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.primaryOutline, lineWidth: isSelected ? 2 : 1))
             )
+            .contentShape(shape)
             .shadow(color: isSelected ? Color.accentColor.opacity(0.35) : Color.primaryShadow.opacity(0.18), radius: isSelected ? 12 : 8, x: 0, y: isSelected ? 10 : 6)
         }
         .buttonStyle(.plain)
@@ -425,7 +380,11 @@ struct ModernTemplateCard: View {
                 Menu {
                     managementMenuContent
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image("fluent-ic_fluent_more_circle_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 20, height: 20)
                         .imageScale(.medium)
                         .padding(6)
                 }
@@ -434,7 +393,15 @@ struct ModernTemplateCard: View {
         }
         .overlay(alignment: .bottomTrailing) {
             Button(action: onOpen) {
-                Label("Open", systemImage: "arrow.forward.circle")
+                Label {
+                    Text("Open")
+                } icon: {
+                    Image("fluent-ic_fluent_arrow_right_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                }
             }
             .pointerStyle(.link)
                     .labelStyle(.titleAndIcon)
@@ -486,7 +453,7 @@ struct ModernTemplateCreatorSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.primarySurface)
+            .background(PanelShellTokens.panelBackground)
             .navigationTitle("New Template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -504,7 +471,7 @@ struct ModernTemplateCreatorSheet: View {
             }
         }
         .frame(minWidth: 420, minHeight: 360)
-        .background(Color.primaryBackground.ignoresSafeArea())
+        .background(PanelShellTokens.panelBackground.ignoresSafeArea())
         .onAppear {
             if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 draft.name = "Untitled Template"
@@ -517,7 +484,9 @@ struct ModernTemplateCreatorSheet: View {
 
 // MARK: - Component Size Preference Key
 
-private struct ComponentSizePreferenceKey: PreferenceKey {
+
+
+private struct IdealComponentSizePreferenceKey: PreferenceKey {
     static let defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         let next = nextValue()
@@ -530,14 +499,71 @@ private struct ComponentSizePreferenceKey: PreferenceKey {
 struct ModernComponentView: View {
     let component: InvoiceComponent
     @EnvironmentObject private var document: InvoiceDocument
+    @State private var isHovered = false
     
     var body: some View {
+        let currentComponent = document.components.first { $0.id == component.id } ?? component
+        let usesTableProperties = currentComponent.type.usesTableProperties
+        let hasFlexibleColumns = usesTableProperties && componentHasFlexibleColumns(currentComponent)
+        
         componentView
+            .overlay(selectionIndicator)
             .background(measurementLayer)
-            .frame(width: component.size.width)
+            .background(
+                Group {
+                    if !usesTableProperties {
+                        idealMeasurementLayer
+                    }
+                }
+            )
+            .frame(width: usesTableProperties ? nil : max(0, currentComponent.size.width - shadowExtension.width))
+            .fixedSize(horizontal: usesTableProperties && !hasFlexibleColumns, vertical: !usesTableProperties)
             .onPreferenceChange(ComponentSizePreferenceKey.self) { measuredSize in
                 updateComponentSizeIfNeeded(measuredSize)
             }
+            .onPreferenceChange(IdealComponentSizePreferenceKey.self) { measuredSize in
+                updateComponentIdealSizeIfNeeded(measuredSize)
+            }
+            .onHover { isHovered = $0 }
+    }
+    
+    private var selectionIndicator: some View {
+        StateOverlay(
+            elementType: .component,
+            isHovered: isHovered,
+            isSelected: document.selectedComponentID == component.id,
+            isDropTarget: false
+        )
+    }
+    
+    /// Check if this component has any flexible columns (for table components)
+    private func componentHasFlexibleColumns(_ componentToCheck: InvoiceComponent? = nil) -> Bool {
+        let comp = componentToCheck ?? component
+        guard comp.type.usesTableProperties else { return false }
+        
+        // Check column configurations
+        let configs: [ComponentStyle.ColumnConfiguration]
+        if comp.style.tableDirection == .horizontal {
+            configs = Array(comp.style.columnConfigurations.values)
+        } else {
+            configs = Array(comp.style.rowConfigurations.values).map { row in
+                ComponentStyle.ColumnConfiguration(
+                    width: row.height,
+                    isFlexible: row.isFlexible,
+                    alignment: row.alignment,
+                    verticalAlignment: row.verticalAlignment,
+                    headerAlignment: row.headerAlignment,
+                    headerVerticalAlignment: row.headerVerticalAlignment,
+                    lineLimit: row.lineLimit
+                )
+            }
+        }
+        
+        // If no configurations yet, assume flexible (default behavior)
+        guard !configs.isEmpty else { return true }
+        
+        // Check if any column is flexible
+        return configs.contains { $0.isFlexible }
     }
     
     @ViewBuilder
@@ -577,14 +603,42 @@ struct ModernComponentView: View {
         .allowsHitTesting(false)
     }
     
+    private var idealMeasurementLayer: some View {
+        componentView
+            .environment(\.isMeasuringIdealSize, true)
+            .fixedSize(horizontal: true, vertical: true)
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: IdealComponentSizePreferenceKey.self,
+                        value: geometry.size
+                    )
+                }
+            )
+            .hidden()
+            .allowsHitTesting(false)
+    }
+    
     private func updateComponentSizeIfNeeded(_ measuredSize: CGSize) {
         guard measuredSize != .zero && measuredSize.width > 0 && measuredSize.height > 0 else { return }
         
         // Account for additional pixels introduced by shadows
-        let adjustedSize = CGSize(
+        var adjustedSize = CGSize(
             width: measuredSize.width + shadowExtension.width,
             height: measuredSize.height + shadowExtension.height
         )
+        
+        // If component has flexible columns, its width is determined by the container,
+        // so we shouldn't update the component's stored size based on this expanded width.
+        // Doing so would lock the component into a large size, preventing "Fit" split mode from working.
+        if component.type.usesTableProperties {
+            if componentHasFlexibleColumns() {
+                adjustedSize.width = component.size.width
+            }
+            if componentHasFlexibleRows() {
+                adjustedSize.height = component.size.height
+            }
+        }
         
         let currentSize = component.size
         let widthDiff = abs(adjustedSize.width - currentSize.width)
@@ -595,6 +649,27 @@ struct ModernComponentView: View {
         
         document.updateComponent(id: component.id) { component in
             component.size = adjustedSize
+        }
+    }
+    
+    private func updateComponentIdealSizeIfNeeded(_ measuredSize: CGSize) {
+        guard measuredSize != .zero && measuredSize.width > 0 && measuredSize.height > 0 else { return }
+        
+        // Account for additional pixels introduced by shadows
+        let adjustedSize = CGSize(
+            width: measuredSize.width + shadowExtension.width,
+            height: measuredSize.height + shadowExtension.height
+        )
+        
+        let currentIdealSize = component.idealSize ?? .zero
+        let widthDiff = abs(adjustedSize.width - currentIdealSize.width)
+        let heightDiff = abs(adjustedSize.height - currentIdealSize.height)
+        
+        // Only update if size changed significantly
+        guard widthDiff > 0.5 || heightDiff > 0.5 else { return }
+        
+        document.updateComponent(id: component.id) { component in
+            component.idealSize = adjustedSize
         }
     }
     
@@ -610,6 +685,28 @@ struct ModernComponentView: View {
             width: radius * 2 + abs(offsetX),
             height: radius * 2 + abs(offsetY)
         )
+    }
+    
+    /// Check if this component has any flexible rows (for table components)
+    private func componentHasFlexibleRows() -> Bool {
+        guard component.type.usesTableProperties else { return false }
+        
+        let configs: [ComponentStyle.RowConfiguration]
+        if component.style.tableDirection == .horizontal {
+            configs = Array(component.style.rowConfigurations.values)
+        } else {
+            configs = Array(component.style.columnConfigurations.values).map { col in
+                var config = ComponentStyle.RowConfiguration()
+                config.height = col.width
+                config.isFlexible = col.isFlexible
+                return config
+            }
+        }
+        
+        // If no configurations, assume content-driven (not flexible in the sense of expanding)
+        guard !configs.isEmpty else { return false }
+        
+        return configs.contains { $0.isFlexible }
     }
 }
 

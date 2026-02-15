@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreGraphics
 import Combine
+import AppKit
 
 @MainActor
 public class InvoiceTemplateEditorViewModel: ObservableObject {
@@ -30,6 +31,7 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastSavedState: DocumentState?
     private(set) var currentMetadata: TemplateMetadata?
+    private let validationSubject = PassthroughSubject<Void, Never>()
 
     struct ValidationError: Identifiable {
         let id = UUID()
@@ -73,6 +75,13 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
                 self?.autoSaveIfNeeded()
             }
             .store(in: &cancellables)
+        
+        validationSubject
+            .debounce(for: .milliseconds(120), scheduler: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.performValidation()
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Document Operations
@@ -100,7 +109,7 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
         hasUnsavedChanges = false
         lastSavedState = captureCurrentState()
         clearValidationErrors()
-        validateDocument()
+        validateDocument(force: true)
         currentMetadata = templateData.metadata
     }
 
@@ -170,27 +179,30 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
     }
 
     private func canDiscardChanges() -> Bool {
-        // In a real app, this would show an alert to the user
-        // For now, we'll allow discarding changes
-        return true
+        guard hasUnsavedChanges else { return true }
+        
+        let alert = NSAlert()
+        alert.messageText = "Discard unsaved changes?"
+        alert.informativeText = "You have unsaved changes to the current template."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn
     }
 
     // MARK: - Component Operations
 
-    func addComponent(_ component: InvoiceComponent) {
-        document.add(component)
+    func addComponent(_ component: InvoiceComponent, actionName: String = "Add Component") {
+        document.add(component, actionName: actionName)
         validateComponent(component)
         hasUnsavedChanges = true
     }
 
     func duplicateComponent(_ component: InvoiceComponent) {
-        var newComponent = component
-        newComponent.id = UUID()
-        newComponent.position = CGPoint(
-            x: component.position.x + 10,
-            y: component.position.y + 10
-        )
-        addComponent(newComponent)
+        document.copyComponent(component.id)
+        hasUnsavedChanges = true
     }
 
     func deleteComponent(_ component: InvoiceComponent) {
@@ -211,7 +223,7 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
             x: component.position.x + 10,
             y: component.position.y + 10
         )
-        addComponent(newComponent)
+        addComponent(newComponent, actionName: "Paste Component")
     }
 
     func bringToFront(_ component: InvoiceComponent) {
@@ -226,16 +238,11 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
 
     // MARK: - Validation
 
-    func validateDocument() {
-        validationErrors.removeAll()
-
-        for component in document.getAllComponents() {
-            validateComponent(component)
-        }
-
-        // Check for overlapping components (performance consideration)
-        if document.getAllComponents().count < 100 { // Only check if not too many components
-            checkForOverlaps()
+    func validateDocument(force: Bool = false) {
+        if force {
+            performValidation()
+        } else {
+            validationSubject.send(())
         }
     }
 
@@ -284,20 +291,51 @@ public class InvoiceTemplateEditorViewModel: ObservableObject {
         }
     }
 
-    private func checkForOverlaps() {
+    private func performValidation() {
+        validationErrors.removeAll()
         let components = document.getAllComponents()
-        for i in 0..<components.count {
-            for j in i+1..<components.count {
-                let comp1 = components[i]
-                let comp2 = components[j]
-
-                if comp1.frame.intersects(comp2.frame) {
-                    addValidationError(
-                        componentId: nil,
-                        message: "Components are overlapping",
-                        severity: .warning
-                    )
-                    break
+        
+        for component in components {
+            validateComponent(component)
+        }
+        
+        if components.count < 100 {
+            checkForOverlaps(in: components)
+        }
+    }
+    
+    private func checkForOverlaps(in components: [InvoiceComponent]) {
+        guard components.count > 1 else { return }
+        
+        struct BucketKey: Hashable { let x: Int; let y: Int }
+        let bucketSize: CGFloat = 120
+        var buckets: [BucketKey: [InvoiceComponent]] = [:]
+        
+        for component in components {
+            let rect = component.frame
+            let minX = Int(floor(rect.minX / bucketSize))
+            let maxX = Int(floor(rect.maxX / bucketSize))
+            let minY = Int(floor(rect.minY / bucketSize))
+            let maxY = Int(floor(rect.maxY / bucketSize))
+            
+            for x in minX...maxX {
+                for y in minY...maxY {
+                    buckets[BucketKey(x: x, y: y), default: []].append(component)
+                }
+            }
+        }
+        
+        for bucket in buckets.values where bucket.count > 1 {
+            for i in 0..<bucket.count {
+                for j in i + 1..<bucket.count {
+                    if bucket[i].frame.intersects(bucket[j].frame) {
+                        addValidationError(
+                            componentId: nil,
+                            message: "Components are overlapping",
+                            severity: .warning
+                        )
+                        return
+                    }
                 }
             }
         }

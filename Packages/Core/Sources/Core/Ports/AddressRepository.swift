@@ -14,3 +14,8 @@ public protocol AddressRepository: Sendable {
     /// Delete an address
     func delete(id: UUID) async throws
 }
+
+// MARK: - Type Alias for Naming Consistency
+
+/// Type alias for consistent naming convention across repository protocols.
+public typealias AddressRepositoryProtocol = AddressRepository

@@ -35,33 +35,19 @@ public struct HierarchySectionCard<Content: View>: View {
     @Binding private var isExpanded: Bool
     private let appearance: Appearance
     private let childSpacing: CGFloat
-    private let namespace: Namespace.ID?
-    private let glassIDPrefix: String?
-    private let glassUnionID: String?
     private let isCollapsible: Bool
-    private let expandedCornerRadius: CGFloat
-    private let collapsedCornerRadius: CGFloat
     private let onExpand: (() -> Void)?
     private let onCollapse: (() -> Void)?
     private let headerStyle: HierarchyHeaderStyle?
     private let headerGlassStyle: Glass
     private let content: () -> Content
 
-    @State private var isHeaderHovered = false
-    private let hoverScale: CGFloat = 1.02
-    private let hoverAnimation: Animation = .easeOut(duration: 0.12)
-
     public init(
         title: String,
         isExpanded: Binding<Bool>,
         appearance: Appearance = .glass,
-        childSpacing: CGFloat = 10,
-        namespace: Namespace.ID? = nil,
-        glassIDPrefix: String? = nil,
-        glassUnionID: String? = nil,
+        childSpacing: CGFloat = 0,
         isCollapsible: Bool = true,
-        expandedCornerRadius: CGFloat = 10,
-        collapsedCornerRadius: CGFloat = 10,
         onExpand: (() -> Void)? = nil,
         onCollapse: (() -> Void)? = nil,
         headerStyle: HierarchyHeaderStyle? = nil,
@@ -72,12 +58,7 @@ public struct HierarchySectionCard<Content: View>: View {
         self._isExpanded = isExpanded
         self.appearance = appearance
         self.childSpacing = childSpacing
-        self.namespace = namespace
-        self.glassIDPrefix = glassIDPrefix
-        self.glassUnionID = glassUnionID
         self.isCollapsible = isCollapsible
-        self.expandedCornerRadius = expandedCornerRadius
-        self.collapsedCornerRadius = collapsedCornerRadius
         self.onExpand = onExpand
         self.onCollapse = onCollapse
         self.headerStyle = headerStyle
@@ -86,32 +67,21 @@ public struct HierarchySectionCard<Content: View>: View {
     }
 
     public var body: some View {
-        container {
-            VStack(alignment: .leading, spacing: childSpacing) {
-                header
+        let bodyContent = //VStack(alignment: .leading, spacing: childSpacing) {
+        Group {
+            header
 
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: childSpacing) {
-                        content()
-                    }
-                    .padding(.leading, 16)
-                }
+            if isExpanded {
+                content()
+                    //.padding(.leading, 16)
             }
         }
-    }
 
-    private func container<Inner: View>(@ViewBuilder inner: () -> Inner) -> some View {
-        Group {
-            switch appearance {
-            case .glass:
-                GlassEffectContainer(spacing: childSpacing) {
-                    inner()
-                }
-            case .plain:
-                VStack(alignment: .leading, spacing: childSpacing) {
-                    inner()
-                }
-            }
+        switch appearance {
+        case .glass:
+            GlassEffectContainer(spacing: childSpacing) { bodyContent }
+        case .plain:
+            bodyContent
         }
     }
 
@@ -128,21 +98,20 @@ public struct HierarchySectionCard<Content: View>: View {
         return styledHeader(baseLabel)
     }
 
+    @ViewBuilder
     private func styledHeader(_ label: some View) -> some View {
-        let padding = headerStyle?.padding ?? EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
-        let styled = label
+        let padding = headerStyle?.padding ?? defaultHeaderPadding
+        let cornerRadius = defaultCornerRadius
+
+        let headerBase = label
             .padding(padding)
-            .contentShape(RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .background(
-                RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.6)
             )
-            .glassEffect(headerGlassStyle, in: .rect(cornerRadius: currentCornerRadius))
+            .glassEffect(headerGlassStyle, in: .rect(cornerRadius: cornerRadius))
             .glassEffectTransition(.materialize)
-
-            .applyGlassID(namespace: namespace, id: headerGlassID)
-            .applyGlassUnion(namespace: namespace, id: glassUnionID)
-
             .contentShape(Rectangle())
             .onTapGesture {
                 guard isCollapsible else { return }
@@ -150,29 +119,23 @@ public struct HierarchySectionCard<Content: View>: View {
             }
             .pointerStyle(.link)
 
-        let finalView: AnyView
         if let style = headerStyle {
-            finalView = AnyView(
-                styled
-                    .font(style.font)
-                    .foregroundColor(style.color)
-                    .opacity(style.opacity)
-                    .tracking(style.letterSpacing)
-                    .baselineOffset(style.baselineOffset)
-            )
+            headerBase
+                .font(style.font)
+                .foregroundColor(style.color)
+                .opacity(style.opacity)
+                .tracking(style.letterSpacing)
+                .baselineOffset(style.baselineOffset)
         } else {
-            finalView = AnyView(
-                styled
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.primary)
-            )
+            headerBase
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.primary)
         }
-
-        return finalView
     }
 
-    private var currentCornerRadius: CGFloat {
-        isExpanded ? expandedCornerRadius : collapsedCornerRadius
+    private var defaultCornerRadius: CGFloat { 10 }
+    private var defaultHeaderPadding: EdgeInsets {
+        EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
     }
 
     private func toggle() {
@@ -184,35 +147,6 @@ public struct HierarchySectionCard<Content: View>: View {
             } else {
                 onCollapse?()
             }
-        }
-    }
-
-    private var headerGlassID: String {
-        let safeTitle = title
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "-")
-        return "\(glassIDPrefix ?? safeTitle)-header"
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func applyGlassID(namespace: Namespace.ID?, id: String) -> some View {
-        if let namespace {
-            self
-                .glassEffectID(id, in: namespace)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
-    func applyGlassUnion(namespace: Namespace.ID?, id: String?) -> some View {
-        if let namespace, let id {
-            self
-                .glassEffectUnion(id: id, namespace: namespace)
-        } else {
-            self
         }
     }
 }

@@ -15,8 +15,6 @@ struct MonthDayCellView: View {
     let dayIndex: Int
     let isLastWeek: Bool
 
-    @State private var isHovering = false
-
     // --- Computed Properties --- 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
     private var isCurrentMonth: Bool { Calendar.current.isDate(date, equalTo: viewModel.selectedDate, toGranularity: .month) }
@@ -38,14 +36,14 @@ struct MonthDayCellView: View {
     private var dayNumberTextColor: Color {
         if isToday { return .accentColor }
         if !isCurrentMonth { return Color("TextSecondary", bundle: .sharedUI).opacity(0.4) }
-        return isWeekend ? Color("TextSecondary", bundle: .sharedUI).opacity(0.6) : Color("Text", bundle: .sharedUI)
+        return Color("Text", bundle: .sharedUI)
     }
     private var cellTint: Color? {
-        if isHovering { return Color.white.opacity(0.18) }
+        if isToday { return Color.accentColor.opacity(0.04) }
         if isCurrentMonth {
-            return isWeekend ? Color.white.opacity(0.12) : nil
+            return isWeekend ? Color.black.opacity(0.08) : nil
         }
-        return Color.white.opacity(0.2)
+        return Color.secondary.opacity(0.05)
     }
 
     var body: some View {
@@ -58,17 +56,8 @@ struct MonthDayCellView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if let tint = cellTint {
-                    let cornerShape = RoundedCorner(
-                        radius: 20,
-                        corners: isLastWeek ?
-                            (dayIndex == 0 ? .bottomLeft : dayIndex == 6 ? .bottomRight : []) : []
-                    )
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .glassEffect(
-                            .regular.tint(tint),
-                            in: .rect(cornerRadius: 20)
-                        )
-                        .clipShape(cornerShape)
+                    Rectangle()
+                        .fill(tint)
                 }
             }
             .overlay(
@@ -115,18 +104,13 @@ struct MonthDayCellView: View {
                     ),
                 alignment: .bottom
             )
-            .onHover { hovering in isHovering = hovering }
             // Tap gesture handled by parent MonthView
             .contextMenu {
                 // Directly iterate over the items for the context menu
                 ForEach(viewModel.getTimedItems(for: date)) { item in
                     if let session = item.underlyingSession {
                         Button {
-                            // Reset selection first to ensure onChange triggers even for same session
-                            viewModel.selectedSessionInfo = nil
-                            DispatchQueue.main.async {
-                                viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
-                            }
+                            viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
                         } label: {
                             Label(session.title, systemImage: "pencil")
                         }
@@ -163,11 +147,7 @@ struct MonthDayCellView: View {
                         case .session(let session):
                             MonthSessionItemView(session: session, viewModel: viewModel)
                                 .onTapGesture { 
-                                    // Reset selection first to ensure onChange triggers even for same session
-                                    viewModel.selectedSessionInfo = nil
-                                    DispatchQueue.main.async {
-                                        viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
-                                    }
+                                    viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
                                 }
                         case .event(let event):
                             MonthEventItemView(event: event)
@@ -177,11 +157,7 @@ struct MonthDayCellView: View {
                         case .recurringSessionInstance(let template, let instanceStartDate, let instanceEndDate, _):
                             MonthSessionItemView(session: template, viewModel: viewModel)
                                 .onTapGesture { 
-                                    // Reset selection first to ensure onChange triggers even for same session
-                                    viewModel.selectedSessionInfo = nil
-                                    DispatchQueue.main.async {
-                                        viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
-                                    }
+                                    viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
                                 }
                         case .eventSegment(let originalEvent, _, _, _):
                             MonthEventItemView(event: originalEvent)
@@ -216,43 +192,43 @@ struct MonthSessionItemView: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            Rectangle()
-                 .fill(clientColor)
-                 .frame(width: 3, height: 18)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.title).font(.caption)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .lineLimit(1)
-                
-                if let clientId = session.clientId {
-                    ClientNameView(
-                        clientId: clientId,
-                        viewModel: viewModel
-                    )
-                    .font(.system(size: 9))
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                    .lineLimit(1)
-                }
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: 4)
-                .glassEffect(
-                    .regular.tint(clientColor.opacity(0.35)),
-                    in: .rect(cornerRadius: 4)
+                .fill(clientColor.opacity(0.42))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(clientColor.opacity(0.78), lineWidth: 0.6)
                 )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(clientColor.opacity(0.6), lineWidth: 1)
-        )
-        .appInteractiveCursor()
+
+            HStack(spacing: 4) {
+                Rectangle()
+                     .fill(clientColor)
+                     .frame(width: 3, height: 18)
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.title).font(.caption)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .lineLimit(1)
+                    
+                    if let clientId = session.clientId {
+                        ClientNameView(
+                            clientId: clientId,
+                            viewModel: viewModel
+                        )
+                        .font(.system(size: 9))
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .lineLimit(1)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 5)
+        }
+        .shadow(color: Color.black.opacity(0.14), radius: 1.5, x: 0, y: 1)
+        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .pointerStyle(.link)
     }
 }
 
@@ -275,32 +251,32 @@ struct MonthEventItemView: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-             Rectangle()
-                 .fill(calendarColor)
-                 .frame(width: 3, height: 18)
-
-            Text(event.title ?? "Event")
-                .font(.system(size: 10))
-                .italic()
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                .lineLimit(1)
-            
-            Spacer()
-        }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: 4)
-                .glassEffect(
-                    .regular.tint(calendarColor.opacity(0.35)),
-                    in: .rect(cornerRadius: 4)
+                .fill(calendarColor.opacity(0.42))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(calendarColor.opacity(0.78), lineWidth: 0.6)
                 )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(calendarColor.opacity(0.6), lineWidth: 1)
-        )
-        .appInteractiveCursor()
+
+            HStack(spacing: 4) {
+                 Rectangle()
+                     .fill(calendarColor)
+                     .frame(width: 3, height: 18)
+
+                Text(event.title ?? "Event")
+                    .font(.system(size: 10))
+                    .italic()
+                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .lineLimit(1)
+                
+                Spacer()
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 5)
+        }
+        .shadow(color: Color.black.opacity(0.14), radius: 1.5, x: 0, y: 1)
+        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .pointerStyle(.link)
     }
 }

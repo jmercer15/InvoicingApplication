@@ -15,6 +15,10 @@ struct LeafContentView: View {
     let childIndex: Int
     let nodePath: [Int]
     let parentAlignment: SectionSplit.LeafAlignment
+    let currentWidthSizingMode: SectionSplit.SizingMode?
+    let currentHeightSizingMode: SectionSplit.SizingMode?
+    let currentRowSizingMode: SectionSplit.SizingMode?
+    let currentColumnSizingMode: SectionSplit.SizingMode?
     let onAddComponent: (InvoiceComponent) -> Void
     let onSplit: (SectionSplit.SplitDirection, Int, Int?, Int?) -> Void
     let onUnsplit: (() -> Void)?
@@ -37,6 +41,10 @@ struct LeafContentView: View {
             sectionIndex: sectionIndex,
             childIndex: childIndex,
             leafPath: selectionPath,
+            currentWidthSizingMode: currentWidthSizingMode,
+            currentHeightSizingMode: currentHeightSizingMode,
+            currentRowSizingMode: currentRowSizingMode,
+            currentColumnSizingMode: currentColumnSizingMode,
             onAddComponent: onAddComponent,
             onSplit: onSplit,
             onUnsplit: onUnsplit,

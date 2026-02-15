@@ -46,6 +46,24 @@ struct DocumentGridCellHeightPreferenceKey: PreferenceKey {
     }
 }
 
+/// PreferenceKey to report the ideal width of the grid (sum of column widths)
+struct GridIdealWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// PreferenceKey to map (row, col) to frame in Grid coordinate space
+struct DocumentGridCellFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
 // MARK: - Measurement Phase Environment
 
 enum DocumentGridMeasurementPhase {
@@ -71,12 +89,12 @@ struct AlignmentGridPicker: View {
     let label: String
     @Binding var horizontalAlignment: TextAlignment
     @Binding var verticalAlignment: VerticalAlignment
+    var onChange: ((TextAlignment, VerticalAlignment) -> Void)? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
-                .font(.subheadline)
-                .fontWeight(.semibold)
+                .font(InspectorTypography.label)
                 .foregroundColor(Color(NSColor.secondaryLabelColor))
             
             Grid(horizontalSpacing: 1, verticalSpacing: 1) {
@@ -110,15 +128,19 @@ struct AlignmentGridPicker: View {
         let isSelected = horizontalAlignment == horizontal && verticalAlignment == vertical
         
         // Get the appropriate arrow icon based on alignment
-        let iconName = alignmentIconName(horizontal: horizontal, vertical: vertical)
+        let iconName = iconName(horizontal: horizontal, vertical: vertical)
         
         return AlignmentButton(
             iconName: iconName,
             isSelected: isSelected,
             action: {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    horizontalAlignment = horizontal
-                    verticalAlignment = vertical
+                if let onChange = onChange {
+                    onChange(horizontal, vertical)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        horizontalAlignment = horizontal
+                        verticalAlignment = vertical
+                    }
                 }
             }
         )
@@ -130,35 +152,21 @@ struct AlignmentGridPicker: View {
         let action: () -> Void
         
         @State private var isHovered = false
+        @State private var isPressed = false
         
         var body: some View {
-            Button(action: action) {
-                Image(systemName: iconName)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isSelected ? .white : Color(NSColor.labelColor))
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(AlignmentButtonStyle(isSelected: isSelected, isHovered: isHovered))
-            .frame(width: 20, height: 20)
-            .contentShape(Rectangle())
-            .pointerStyle(.link)
-            .onHover { hovering in
-                isHovered = hovering
-            }
-        }
-    }
-    
-    private struct AlignmentButtonStyle: ButtonStyle {
-        let isSelected: Bool
-        let isHovered: Bool
-        
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
+            Image(iconName, bundle: .module)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(isSelected ? .white : Color(NSColor.labelColor))
+                .frame(width: 12, height: 12)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
                         .fill(
                             isSelected ? Color.blue :
-                            configuration.isPressed ? Color(.systemGray).opacity(0.5) :
+                            isPressed ? Color(.systemGray).opacity(0.5) :
                             isHovered ? Color(.systemGray).opacity(0.35) :
                             Color(.systemGray).opacity(0.2)
                         )
@@ -169,37 +177,49 @@ struct AlignmentGridPicker: View {
                 )
                 .scaleEffect(
                     isSelected ? 1.05 :
-                    configuration.isPressed ? 0.95 :
+                    isPressed ? 0.95 :
                     isHovered ? 1.02 : 1.0
                 )
-                .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+                .animation(.easeInOut(duration: 0.1), value: isPressed)
                 .animation(.easeInOut(duration: 0.1), value: isHovered)
                 .animation(.easeInOut(duration: 0.15), value: isSelected)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    action()
+                }
+                .onHover { hovering in
+                    isHovered = hovering
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in isPressed = true }
+                        .onEnded { _ in isPressed = false }
+                )
         }
     }
     
-    private func alignmentIconName(horizontal: TextAlignment, vertical: VerticalAlignment) -> String {
+    private func iconName(horizontal: TextAlignment, vertical: VerticalAlignment) -> String {
         switch (horizontal, vertical) {
         case (.leading, .top):
-            return "arrow.up.left"
+            return "fluent-ic_fluent_arrow_up_left_20_regular"
         case (.center, .top):
-            return "arrow.up"
+            return "fluent-ic_fluent_arrow_up_20_regular"
         case (.trailing, .top):
-            return "arrow.up.right"
+            return "fluent-ic_fluent_arrow_up_right_20_regular"
         case (.leading, .center):
-            return "arrow.left"
+            return "fluent-ic_fluent_arrow_left_20_regular"
         case (.center, .center):
-            return "arrow.up.and.down.and.arrow.left.and.right"
+            return "fluent-ic_fluent_arrow_move_20_regular"
         case (.trailing, .center):
-            return "arrow.right"
+            return "fluent-ic_fluent_arrow_right_20_regular"
         case (.leading, .bottom):
-            return "arrow.down.left"
+            return "fluent-ic_fluent_arrow_down_left_20_regular"
         case (.center, .bottom):
-            return "arrow.down"
+            return "fluent-ic_fluent_arrow_down_20_regular"
         case (.trailing, .bottom):
-            return "arrow.down.right"
+            return "fluent-ic_fluent_arrow_down_20_regular" // effective fallback for arrow_down_right
         default:
-            return "arrow.up.and.down.and.arrow.left.and.right"
+            return "fluent-ic_fluent_arrow_move_20_regular"
         }
     }
 }
@@ -311,31 +331,56 @@ public struct ColumnWidthConfig {
 // MARK: - DocumentGridView
 
 /// Generic document grid view with perfect gridlines and custom column widths
-struct TableBorderOptions {
-    var showHeaderBorders: Bool = true
-    var showRowBorders: Bool = true
-    var showCellBorders: Bool = true
-}
-
-struct TableBorderSegmentAppearance {
+struct TableBorderAppearance {
     var color: Color
     var width: CGFloat
-}
-
-struct TableHorizontalBorderAppearance {
-    var header: TableBorderSegmentAppearance
-    var row: TableBorderSegmentAppearance
+    var headerColor: Color?
+    var showHeaderBorders: Bool
+    var showRowBorders: Bool
+    var showCellBorders: Bool
+    
+    init(
+        color: Color = .gray,
+        width: CGFloat = 1.0,
+        headerColor: Color? = nil,
+        showHeaderBorders: Bool = true,
+        showRowBorders: Bool = true,
+        showCellBorders: Bool = true
+    ) {
+        self.color = color
+        self.width = width
+        self.headerColor = headerColor
+        self.showHeaderBorders = showHeaderBorders
+        self.showRowBorders = showRowBorders
+        self.showCellBorders = showCellBorders
+    }
+    
+    var effectiveHeaderColor: Color {
+        headerColor ?? color
+    }
 }
 
 public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     private let data: [[Item]]
     private let cellContent: (DocumentTableItem) -> CellContent
-    private let borderColor: Color
-    private let borderWidth: CGFloat
+    private let borderAppearance: TableBorderAppearance
     private let columnConfigs: [ColumnWidthConfig]
-    private let borderOptions: TableBorderOptions?
-    private let horizontalBorderAppearance: TableHorizontalBorderAppearance
-    private let defaultAutoColumnWidth: CGFloat = 80
+    private let defaultAutoColumnWidth: CGFloat = 20
+    private let onCellTap: ((Int, Int) -> Void)?
+    private let selectedCell: (row: Int, column: Int)?
+    private let selectedRange: (rows: ClosedRange<Int>, columns: ClosedRange<Int>)?
+    private let selectedRow: Int?
+    private let selectedColumn: Int?
+    private let onRowTap: ((Int) -> Void)?
+    private let onColumnTap: ((Int) -> Void)?
+    private let showHeaders: Bool
+    private let onSelectionChange: ((TableElementSelection) -> Void)?
+    
+    // Drag selection state
+    @State private var dragStartCell: (row: Int, column: Int)?
+    @State private var liveSelectionRange: (rows: ClosedRange<Int>, columns: ClosedRange<Int>)?
+    @State private var cellFrames: [String: CGRect] = [:] // "row:col" -> global frame
+    @State private var hoveredCell: (row: Int, column: Int)?
     
     /// Tracks the measured width for each column (for auto-sizing)
     /// Key: columnIndex, Value: measured width
@@ -344,48 +389,98 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     
     init(
         data: [[Item]],
-        borderColor: Color = .gray,
-        borderWidth: CGFloat = 1.0,
         columnConfigs: [ColumnWidthConfig] = [],
-        borderOptions: TableBorderOptions? = nil,
-        horizontalBorderAppearance: TableHorizontalBorderAppearance? = nil,
+        borderAppearance: TableBorderAppearance = TableBorderAppearance(),
+        onCellTap: ((Int, Int) -> Void)? = nil,
+        selectedCell: (row: Int, column: Int)? = nil,
+        selectedRange: (rows: ClosedRange<Int>, columns: ClosedRange<Int>)? = nil,
+        selectedRow: Int? = nil,
+        selectedColumn: Int? = nil,
+        onRowTap: ((Int) -> Void)? = nil,
+        onColumnTap: ((Int) -> Void)? = nil,
+        showHeaders: Bool = false,
+        onSelectionChange: ((TableElementSelection) -> Void)? = nil,
         @ViewBuilder cellContent: @escaping (DocumentTableItem) -> CellContent
     ) {
         self.data = data
-        self.borderColor = borderColor
-        self.borderWidth = borderWidth
         self.cellContent = cellContent
+        self.onCellTap = onCellTap
+        self.selectedCell = selectedCell
+        self.selectedRange = selectedRange
+        self.selectedRow = selectedRow
+        self.selectedColumn = selectedColumn
+        self.onRowTap = onRowTap
+        self.onColumnTap = onColumnTap
+        self.showHeaders = showHeaders
+        self.onSelectionChange = onSelectionChange
         // If no column configs provided, use flexible for all columns
         if columnConfigs.isEmpty {
             self.columnConfigs = Array(repeating: .flexible(), count: data.first?.count ?? 4)
         } else {
             self.columnConfigs = columnConfigs
         }
-        self.borderOptions = borderOptions
-        self.horizontalBorderAppearance = horizontalBorderAppearance ?? TableHorizontalBorderAppearance(
-            header: TableBorderSegmentAppearance(color: borderColor, width: borderWidth),
-            row: TableBorderSegmentAppearance(color: borderColor, width: borderWidth)
-        )
+        
+        self.borderAppearance = borderAppearance
     }
     
     public var body: some View {
-        GeometryReader { geometry in
-            let availableWidth = max(geometry.size.width - borderWidth, 0)
-            let columnWidths = resolvedColumnWidths(totalWidth: availableWidth)
-            ZStack {
-                measurementLayer
-                    .environment(\.documentGridMeasurementPhase, .widthMeasurement)
-                mainGridLayer(columnWidths: columnWidths)
-                    .environment(\.documentGridMeasurementPhase, .content)
+        Group {
+            if hasFlexibleColumns {
+                GeometryReader { geometry in
+                    let availableWidth = max(geometry.size.width - borderAppearance.width, 0)
+                    let columnWidths = resolvedColumnWidths(totalWidth: availableWidth)
+                    gridContent(columnWidths: columnWidths)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .padding(borderAppearance.width / 2)
+                }
+            } else {
+                let idealWidth = calculateIdealWidth()
+                let columnWidths = resolvedColumnWidths(totalWidth: idealWidth)
+                gridContent(columnWidths: columnWidths)
+                    .frame(width: idealWidth + borderAppearance.width)
+                    .padding(borderAppearance.width / 2)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .padding(borderWidth / 2)
         }
         .frame(height: calculatedGridHeight > 0 ? calculatedGridHeight : nil)
-        .fixedSize(horizontal: false, vertical: true) // Use intrinsic height, constrain width
+        .fixedSize(horizontal: !hasFlexibleColumns, vertical: true)
         .onPreferenceChange(DocumentGridCellHeightPreferenceKey.self) { measurements in
             updateCalculatedGridHeight(with: measurements)
         }
+        .background(
+            Color.clear.preference(
+                key: GridIdealWidthPreferenceKey.self,
+                value: calculateIdealWidth() + borderAppearance.width
+            )
+        )
+        .coordinateSpace(name: "documentGrid")
+        .onPreferenceChange(DocumentGridCellFramePreferenceKey.self) { frames in
+            self.cellFrames = frames
+        }
+    }
+    
+    private func gridContent(columnWidths: [CGFloat]) -> some View {
+        ZStack {
+            measurementLayer
+                .environment(\.documentGridMeasurementPhase, .widthMeasurement)
+            mainGridLayer(columnWidths: columnWidths)
+                .environment(\.documentGridMeasurementPhase, .content)
+        }
+    }
+    
+    private var hasFlexibleColumns: Bool {
+        columnConfigs.contains { $0.isFlexible }
+    }
+    
+    private func calculateIdealWidth() -> CGFloat {
+        var width: CGFloat = 0
+        for (index, config) in columnConfigs.enumerated() {
+            if config.isAutoSized {
+                width += contentColumnWidths[index] ?? defaultAutoColumnWidth
+            } else if let fixed = config.fixedWidth {
+                width += fixed
+            }
+        }
+        return width
     }
     
     // MARK: - Sub-Views for Complex Expression Breakdown
@@ -439,7 +534,9 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
             let config = columnConfigs[index]
             if config.isAutoSized {
                 autoSizedIndices.append(index)
-                let measuredWidth = contentColumnWidths[index] ?? defaultAutoColumnWidth
+                let rawMeasuredWidth = contentColumnWidths[index] ?? 0
+                // If measured width is 0 (empty), use default fallback
+                let measuredWidth = rawMeasuredWidth > 0 ? rawMeasuredWidth : defaultAutoColumnWidth
                 widths[index] = max(measuredWidth, config.fixedWidth ?? 0)
                 remainingWidth -= widths[index]
             } else if let fixedWidth = config.fixedWidth {
@@ -535,28 +632,38 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     
     private func mainGridLayer(columnWidths: [CGFloat]) -> some View {
         return Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+            
+            // Column Headers Removed
+
+            
             ForEach(Array(data.indices), id: \.self) { rowIndex in
                 let rowData = data[rowIndex]
                 
                 // Add horizontal border before this row (including first row)
                 // Border appears where cells above have content
                 GridRow {
+                    // Row Header Border Spacer Removed
+
+
                     // Check each column position for borders
                     ForEach(0..<columnWidths.count, id: \.self) { colIndex in
                         let cellAboveEmpty = isCellAboveEmpty(rowIndex: rowIndex, cellIndex: colIndex)
                         let shouldShowBorder = !cellAboveEmpty && shouldDrawHorizontalBorder(beforeRow: rowIndex)
 
                         Rectangle()
-                            .fill(shouldShowBorder ? horizontalAppearance(forRow: rowIndex).color : Color.clear)
+                            .fill(shouldShowBorder ? horizontalBorderColor(forRow: rowIndex) : Color.clear)
                             .frame(
                                 width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0,
-                                height: horizontalAppearance(forRow: rowIndex).width
+                                height: borderAppearance.width
                             )
                     }
                 }
 
                 // Main content row
                 GridRow {
+                    // Row Header Removed
+
+
                     ForEach(Array(rowData.enumerated()), id: \.element.id) { cellIndex, item in
                         if let tableItem = item as? DocumentTableItem {
                             let span = max(tableItem.columnSpan, 1)
@@ -564,6 +671,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                             
                             // Filter rowData to only DocumentTableItem items for safe casting
                             let safeRowData = rowData.compactMap { $0 as? DocumentTableItem }
+                            
                             
                             ZStack {
                                 // Cell content
@@ -574,6 +682,28 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                                 // Vertical borders for this cell
                                 verticalBorderForCell(tableItem, rowIndex: rowIndex, cellIndex: cellIndex, rowData: safeRowData)
                                     .frame(width: cellWidth)
+                                
+                                // Selection Overlay - uses live drag range or committed selection
+                                selectionOverlay(for: rowIndex, column: cellIndex, width: cellWidth)
+                            }
+                            .contentShape(Rectangle())
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: DocumentGridCellFramePreferenceKey.self, 
+                                        value: ["\(rowIndex):\(cellIndex)": geo.frame(in: .named("documentGrid"))]
+                                    )
+                                }
+                            )
+                            .onTapGesture {
+                                onCellTap?(rowIndex, cellIndex)
+                            }
+                            .onHover { isHovering in
+                                if isHovering {
+                                    hoveredCell = (row: rowIndex, column: cellIndex)
+                                } else if hoveredCell?.row == rowIndex && hoveredCell?.column == cellIndex {
+                                    hoveredCell = nil
+                                }
                             }
                         }
                     }
@@ -582,16 +712,18 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
 
             // Bottom border for the entire grid
             GridRow {
+                // Row Header Spacer Removed
+
                 // Check each column position for bottom borders
                 ForEach(0..<columnWidths.count, id: \.self) { colIndex in
                     let finalCellEmpty = isBottomCellEmpty(columnIndex: colIndex)
                     let shouldShowBorder = !finalCellEmpty && shouldDrawBottomBorder()
 
                     Rectangle()
-                        .fill(shouldShowBorder ? horizontalBorderAppearance.row.color : Color.clear)
+                        .fill(shouldShowBorder ? borderAppearance.color : Color.clear)
                         .frame(
                             width: colIndex < columnWidths.count ? columnWidths[colIndex] : 0,
-                            height: horizontalBorderAppearance.row.width
+                            height: borderAppearance.width
                         )
                 }
             }
@@ -605,7 +737,114 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
                 )
             }
         )
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    handleDrag(value)
+                }
+                .onEnded { _ in
+                    handleDragEnd()
+                }
+        )
     }
+
+    /// Returns selection overlay view for a cell based on live drag or committed range
+    @ViewBuilder
+    private func selectionOverlay(for row: Int, column: Int, width: CGFloat) -> some View {
+        let effectiveRange = liveSelectionRange ?? selectedRange
+        let isSingleCell = selectedCell != nil && selectedCell?.row == row && selectedCell?.column == column
+        let isInRange = effectiveRange.map { $0.rows.contains(row) && $0.columns.contains(column) } ?? false
+        let isHovered = hoveredCell?.row == row && hoveredCell?.column == column
+        let isSelected = isSingleCell || isInRange
+        
+        ZStack {
+            // Hover highlight (fill only)
+            if isHovered && !isSelected {
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.08))
+                    .frame(width: width)
+            }
+            
+            // Selection frame (border only)
+            if isSelected {
+                selectionBorder(for: row, column: column, range: effectiveRange, isSingle: isSingleCell, width: width)
+                    .frame(width: width)
+                    .animation(.easeInOut(duration: 0.12), value: effectiveRange?.rows)
+                    .animation(.easeInOut(duration: 0.12), value: effectiveRange?.columns)
+            }
+        }
+    }
+    
+    /// Creates border overlay showing edges only on range boundary
+    @ViewBuilder
+    private func selectionBorder(for row: Int, column: Int, range: (rows: ClosedRange<Int>, columns: ClosedRange<Int>)?, isSingle: Bool, width: CGFloat) -> some View {
+        let borderWidth: CGFloat = 2
+        let borderColor = Color.accentColor
+        
+        if isSingle {
+            // Single cell - all edges
+            Rectangle()
+                .stroke(borderColor, lineWidth: borderWidth)
+        } else if let range = range {
+            // Range - only edges on boundary
+            ZStack {
+                if row == range.rows.lowerBound {
+                    Rectangle().fill(borderColor).frame(height: borderWidth).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+                if row == range.rows.upperBound {
+                    Rectangle().fill(borderColor).frame(height: borderWidth).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
+                if column == range.columns.lowerBound {
+                    Rectangle().fill(borderColor).frame(width: borderWidth).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }
+                if column == range.columns.upperBound {
+                    Rectangle().fill(borderColor).frame(width: borderWidth).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private func handleDrag(_ value: DragGesture.Value) {
+        let location = value.location
+        
+        // Find cell under location
+        guard let hit = cellFrames.first(where: { $0.value.contains(location) }) else { return }
+        let parts = hit.key.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2 else { return }
+        let row = parts[0]
+        let col = parts[1]
+        
+        if dragStartCell == nil {
+            dragStartCell = (row, col)
+        }
+        
+        guard let start = dragStartCell else { return }
+        
+        // Calculate range
+        let minRow = min(start.row, row)
+        let maxRow = max(start.row, row)
+        let minCol = min(start.column, col)
+        let maxCol = max(start.column, col)
+        
+        // Update live preview
+        liveSelectionRange = (rows: minRow...maxRow, columns: minCol...maxCol)
+    }
+    
+    private func handleDragEnd() {
+        // Commit the selection
+        if let range = liveSelectionRange {
+            if range.rows.count == 1 && range.columns.count == 1 {
+                onSelectionChange?(.cell(row: range.rows.lowerBound, column: range.columns.lowerBound))
+            } else {
+                onSelectionChange?(.cellRange(rows: range.rows, columns: range.columns))
+            }
+        }
+        
+        // Clear live state
+        dragStartCell = nil
+        liveSelectionRange = nil
+    }
+
     
     private func updateCalculatedGridHeight(with measurements: [DocumentGridCellHeightMeasurement]) {
         guard !measurements.isEmpty else {
@@ -623,7 +862,7 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
         }
         
         let borderHeight = totalHorizontalBorderHeight(rowCount: data.count)
-        let paddingContribution = borderWidth
+        let paddingContribution = borderAppearance.width
         let totalHeight = max(totalRowHeight + borderHeight + paddingContribution, 0)
         
         if abs(totalHeight - calculatedGridHeight) > 0.5 {
@@ -633,18 +872,18 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     
     private func totalHorizontalBorderHeight(rowCount: Int) -> CGFloat {
         guard rowCount > 0 else {
-            return shouldDrawBottomBorder() ? horizontalBorderAppearance.row.width : 0
+            return shouldDrawBottomBorder() ? borderAppearance.width : 0
         }
         
         var total: CGFloat = 0
         for rowIndex in 0..<rowCount {
             if shouldDrawHorizontalBorder(beforeRow: rowIndex) {
-                total += horizontalAppearance(forRow: rowIndex).width
+                total += borderAppearance.width
             }
         }
         
         if shouldDrawBottomBorder() {
-            total += horizontalBorderAppearance.row.width
+            total += borderAppearance.width
         }
         
         return total
@@ -652,31 +891,26 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
     
     private func verticalBorderForCell(_ item: DocumentTableItem, rowIndex: Int, cellIndex: Int, rowData: [DocumentTableItem]) -> some View {
         let isCurrentCellEmpty = item.isTransparent
-        let showCellBorders = borderOptions?.showCellBorders ?? true
-        let edges = getBorderEdgesForCell(
-                        rowIndex: rowIndex,
-                        cellIndex: cellIndex,
-                        totalRows: data.count,
-                        totalCells: rowData.count
-                    )
+        let showCellBorders = borderAppearance.showCellBorders
         let isFirstCell = cellIndex == 0
         let isLastCell = cellIndex == rowData.count - 1
 
         return ZStack {
-            // Leading border
-            if edges.contains(.leading) && (showCellBorders || isFirstCell) {
-                let leadingColor = isCurrentCellEmpty ? Color.clear : borderColor
+            // Leading border - only for first cell or when cell borders are enabled
+            if isFirstCell || showCellBorders {
+                let leadingColor = isCurrentCellEmpty ? Color.clear : borderAppearance.color
                 Rectangle()
                     .fill(leadingColor)
-                    .frame(width: borderWidth)
+                    .frame(width: borderAppearance.width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
 
-            // Trailing border
-            if edges.contains(.trailing) && (showCellBorders || isLastCell) {
+            // Trailing border - only for last cell
+            if isLastCell {
+                let trailingColor = isCurrentCellEmpty ? Color.clear : borderAppearance.color
                 Rectangle()
-                    .fill(borderColor)
-                    .frame(width: borderWidth)
+                    .fill(trailingColor)
+                    .frame(width: borderAppearance.width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
         }
@@ -706,16 +940,16 @@ public struct DocumentGridView<Item: TableItem, CellContent: View>: View {
 
     private func shouldDrawHorizontalBorder(beforeRow rowIndex: Int) -> Bool {
         if rowIndex == 0 {
-            return borderOptions?.showHeaderBorders ?? true
+            return borderAppearance.showHeaderBorders
         }
-        return borderOptions?.showRowBorders ?? true
+        return borderAppearance.showRowBorders
     }
 
     private func shouldDrawBottomBorder() -> Bool {
-        borderOptions?.showRowBorders ?? true
+        borderAppearance.showRowBorders
     }
 
-    private func horizontalAppearance(forRow rowIndex: Int) -> TableBorderSegmentAppearance {
-        rowIndex == 0 ? horizontalBorderAppearance.header : horizontalBorderAppearance.row
+    private func horizontalBorderColor(forRow rowIndex: Int) -> Color {
+        rowIndex == 0 ? borderAppearance.effectiveHeaderColor : borderAppearance.color
     }
 }

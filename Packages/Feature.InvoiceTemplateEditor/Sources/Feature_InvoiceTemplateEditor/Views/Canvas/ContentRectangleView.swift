@@ -17,6 +17,10 @@ struct ContentRectangleView: View {
     let sectionIndex: Int
     let childIndex: Int
     let leafPath: [Int]
+    let currentWidthSizingMode: SectionSplit.SizingMode?
+    let currentHeightSizingMode: SectionSplit.SizingMode?
+    let currentRowSizingMode: SectionSplit.SizingMode?
+    let currentColumnSizingMode: SectionSplit.SizingMode?
     let onAddComponent: (InvoiceComponent) -> Void
     let onSplit: (SectionSplit.SplitDirection, Int, Int?, Int?) -> Void
     let onUnsplit: (() -> Void)?
@@ -31,276 +35,34 @@ struct ContentRectangleView: View {
 
     @EnvironmentObject private var document: InvoiceDocument
 
-    @State private var isHovered = false
-    @State private var showingSplitDialog = false
-    @State private var selectedSplitDirection: SectionSplit.SplitDirection = .horizontal
-    @State private var splitCount: Int = 2
-    @State private var isProcessingSplit = false
-    @State private var showSuccessIndicator = false
-    @State private var isTargeted = false
+    @State private var hoverState = HoverState()
+    @State private var splitState = SplitState()
+    @State private var statusState = StatusState()
 
     var body: some View {
-        let dynamicAlignment = Alignment(
-            horizontal: contentAlignment.horizontal.swiftUIAlignment,
-            vertical: contentAlignment.vertical.swiftUIAlignment
-        )
-
-        let normalizedSelectionPath = leafPath.isEmpty ? [0] : leafPath
-        let isSelectedLeaf: Bool = {
-            guard let selection = document.selectedSplitSelection else { return false }
-            return selection.sectionIndex == sectionIndex && selection.path == normalizedSelectionPath
-        }()
-        
-        let isEmpty = components.isEmpty
-        let baseBackgroundColor = isSelectedLeaf
-            ? Color(NSColor.controlAccentColor).opacity(0.18)
-            : dropHighlightColor
-
         ZStack(alignment: dynamicAlignment) {
-            // Background rectangle with drop destination, constrained to container size
-            Rectangle()
-                .fill(baseBackgroundColor)
-                .frame(width: containerSize.width, height: containerSize.height)
-                .contentShape(Rectangle())
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color(NSColor.controlAccentColor), lineWidth: isSelectedLeaf ? 1.5 : 0)
-                        .opacity(isSelectedLeaf ? 1 : 0)
-                )
-                .overlay(
-                    // Empty state dashed border
-                    Group {
-                        if isEmpty && !isSelectedLeaf && !isTargeted {
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                                .foregroundColor(Color(NSColor.separatorColor))
-                                .padding(2)
-                        }
-                    }
-                )
-                .animation(.easeInOut(duration: 0.2), value: isHovered)
-                .overlay(alignment: .center) {
-                    if allowDrop {
-                        if isTargeted {
-                            Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(Color.accentColor)
-                            .transition(.scale.combined(with: .opacity))
-                            .animation(.easeInOut(duration: 0.2), value: isTargeted)
-                        } else if isEmpty && !isHovered {
-                            Text("Drop Content")
-                                .font(.caption)
-                                .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                        }
-                    }
-                }
-                .modifier(
-                    DropTargetModifier(
-                        allowDrop: allowDrop,
-                        onHoverStateChange: { hovering in
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isHovered = hovering
-                            }
-                        },
-                        onTargetedChange: { targeted in
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                isTargeted = targeted
-                            }
-                        },
-                        handler: { providers, location in
-                            handleDrop(providers: providers, at: location)
-                        }
-                    )
-                )
-                .onTapGesture {
-                    onLeafSelect?(SectionSplitSelection(sectionIndex: sectionIndex, path: normalizedSelectionPath))
-                }
-                .contextMenu {
-                    // Sizing Submenu - separate Width and Height controls
-                    if onSetWidthSizingMode != nil || onSetHeightSizingMode != nil || onSetGridSizingMode != nil {
-                        if let onSetWidthSizingMode = onSetWidthSizingMode {
-                            // For linear splits - show Width and Height separately
-                            Menu("Width Sizing") {
-                                ForEach(SectionSplit.SizingMode.allCases, id: \.self) { mode in
-                                    Button(action: { onSetWidthSizingMode(mode) }) {
-                                        Label(mode.displayName, systemImage: mode.icon)
-                                    }
-                                }
-                            }
-                        }
-                        if let onSetHeightSizingMode = onSetHeightSizingMode {
-                            Menu("Height Sizing") {
-                                ForEach(SectionSplit.SizingMode.allCases, id: \.self) { mode in
-                                    Button(action: { onSetHeightSizingMode(mode) }) {
-                                        Label(mode.displayName, systemImage: mode.icon)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if let onSetGridSizingMode = onSetGridSizingMode {
-                            Menu("Row Sizing") {
-                                ForEach(SectionSplit.SizingMode.allCases, id: \.self) { mode in
-                                    Button(action: { onSetGridSizingMode(true, mode) }) {
-                                        Label(mode.displayName, systemImage: mode.icon)
-                                    }
-                                }
-                            }
-                            Menu("Column Sizing") {
-                                ForEach(SectionSplit.SizingMode.allCases, id: \.self) { mode in
-                                    Button(action: { onSetGridSizingMode(false, mode) }) {
-                                        Label(mode.displayName, systemImage: mode.icon)
-                                    }
-                                }
-                            }
-                        }
-                        Divider()
-                    }
-                    
-                    // Alignment submenu
-                    if onSetAlignment != nil {
-                        Menu("Content Alignment") {
-                            // Horizontal alignment
-                            Menu("Horizontal") {
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.horizontal = .leading
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Leading", systemImage: contentAlignment.horizontal == .leading ? "checkmark" : "")
-                                }
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.horizontal = .center
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Center", systemImage: contentAlignment.horizontal == .center ? "checkmark" : "")
-                                }
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.horizontal = .trailing
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Trailing", systemImage: contentAlignment.horizontal == .trailing ? "checkmark" : "")
-                                }
-                            }
-
-                            // Vertical alignment
-                            Menu("Vertical") {
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.vertical = .top
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Top", systemImage: contentAlignment.vertical == .top ? "checkmark" : "")
-                                }
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.vertical = .center
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Center", systemImage: contentAlignment.vertical == .center ? "checkmark" : "")
-                                }
-                                Button(action: {
-                                    var newAlignment = contentAlignment
-                                    newAlignment.vertical = .bottom
-                                    onSetAlignment?(newAlignment)
-                                }) {
-                                    Label("Bottom", systemImage: contentAlignment.vertical == .bottom ? "checkmark" : "")
-                                }
-                            }
-                        }
-
-                        Divider()
-                    }
-
-                    // Split options
-                    Menu("Split") {
-                        ForEach(SectionSplit.commonSplits, id: \.id) { splitOption in
-                            Button(action: {
-                                selectedSplitDirection = splitOption.direction
-                                splitCount = splitOption.splitCount
-                                showingSplitDialog = true
-                            }) {
-                                Label(splitOption.direction.displayName, systemImage: splitOption.direction.icon)
-                            }
-                        }
-                    }
-                    
-                    if let onUnsplit = onUnsplit {
-                        Divider()
-                        Button(role: .destructive, action: onUnsplit) {
-                            Label("Remove Section", systemImage: "trash")
-                        }
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: isHovered)
-
-            // Render the single component allowed per leaf using the outer ZStack's alignment
-            if let component = components.first {
-                componentView(for: component)
-            }
-
-
-            // Processing overlay
-            if isProcessingSplit {
-                Rectangle()
-                    .fill(Color(NSColor.shadowColor).opacity(0.3))
-                    .frame(width: containerSize.width, height: containerSize.height)
-                    .overlay(
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                                .progressViewStyle(CircularProgressViewStyle(tint: Color(NSColor.labelColor)))
-                            Text("Creating Split...")
-                                .font(.caption)
-                                .foregroundColor(Color(NSColor.labelColor))
-                        }
-                    )
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.2), value: isProcessingSplit)
-            }
-
-            // Success indicator
-            if showSuccessIndicator {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(Color(NSColor.systemGreen))
-                            .font(.title2)
-                            .background(
-                                Circle()
-                                    .fill(Color(NSColor.windowBackgroundColor))
-                                    .frame(width: 32, height: 32)
-                            )
-                            .shadow(radius: 4)
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .transition(.scale.combined(with: .opacity))
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showSuccessIndicator)
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            showSuccessIndicator = false
-                        }
-                    }
-                }
-            }
+            backgroundLayer
+            componentLayer
+            ContentRectangleOverlays(
+                containerSize: containerSize,
+                isProcessingSplit: splitState.isProcessing,
+                showSuccessIndicator: statusState.showSuccess,
+                showDropSuccess: statusState.showDropSuccess
+            )
         }
         .frame(width: containerSize.width, height: containerSize.height)
         .clipped()
-        .sheet(isPresented: $showingSplitDialog) {
+        .accessibilityLabel("Content section")
+        .accessibilityHint("Tap to select, drag to drop content, or use context menu for options")
+        .zIndex(CanvasZ.content)
+        .sheet(isPresented: $splitState.isDialogPresented) {
             SplitConfigurationDialog(
-                direction: $selectedSplitDirection,
-                splitCount: $splitCount,
+                direction: $splitState.direction,
+                splitCount: $splitState.splitCount,
                 onConfirm: { direction, count, rows, columns in
                     // Show processing state
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isProcessingSplit = true
+                    withAnimation(CanvasAnimation.standard) {
+                        splitState.isProcessing = true
                     }
 
                     // Simulate processing delay for visual feedback
@@ -308,55 +70,208 @@ struct ContentRectangleView: View {
                         onSplit(direction, count, rows, columns)
 
                         // Hide processing and show success
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isProcessingSplit = false
+                        withAnimation(CanvasAnimation.standard) {
+                            splitState.isProcessing = false
                         }
 
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                showSuccessIndicator = true
+                            withAnimation(CanvasAnimation.selectionSpring) {
+                                statusState.showSuccess = true
                             }
                         }
                     }
-                    showingSplitDialog = false
+                    splitState.isDialogPresented = false
                 },
                 onCancel: {
-                    showingSplitDialog = false
+                    splitState.isDialogPresented = false
                 }
             )
+        }
+        .alert("Remove Section?", isPresented: $splitState.isRemoveConfirmPresented) {
+            Button("Remove", role: .destructive) {
+                onUnsplit?()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will remove this section from the layout.")
+        }
+        .onChange(of: statusState.showSuccess) { newValue in
+            guard newValue else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation(CanvasAnimation.deliberate) {
+                    statusState.showSuccess = false
+                }
+            }
+        }
+        .onChange(of: statusState.showDropSuccess) { newValue in
+            guard newValue else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                withAnimation(CanvasAnimation.quick) {
+                    statusState.showDropSuccess = false
+                }
+            }
+        }
+    }
+
+    private var dynamicAlignment: Alignment {
+        Alignment(
+            horizontal: contentAlignment.horizontal.swiftUIAlignment,
+            vertical: contentAlignment.vertical.swiftUIAlignment
+        )
+    }
+
+    private var normalizedSelectionPath: [Int] {
+        leafPath.isEmpty ? [0] : leafPath
+    }
+
+    private var currentSelection: SectionSplitSelection {
+        SectionSplitSelection(sectionIndex: sectionIndex, path: normalizedSelectionPath)
+    }
+
+    private var isSelectedLeaf: Bool {
+        guard let selection = document.selectedSplitSelection else { return false }
+        return selection.sectionIndex == sectionIndex && selection.path == normalizedSelectionPath
+    }
+
+    private var isHoverHighlighted: Bool {
+        guard let selection = document.hoveredSplitSelection else { return false }
+        return selection.sectionIndex == sectionIndex && selection.path == normalizedSelectionPath
+    }
+
+    private var isEmptyLeaf: Bool {
+        components.isEmpty
+    }
+
+    private var backgroundLayer: some View {
+        Rectangle()
+            .fill(Color.clear)  // StateOverlay handles fills
+            .frame(width: containerSize.width, height: containerSize.height)
+            .contentShape(Rectangle())
+            .overlay {
+                // Unified state overlay for hover/selection/drop/pulse
+                StateOverlay(
+                    elementType: .leaf,
+                    isHovered: hoverState.isHovered || isHoverHighlighted,
+                    isSelected: isSelectedLeaf,
+                    isDropTarget: hoverState.isTargeted && allowDrop
+                )
+            }
+            .overlay {
+                Group {
+                    if isEmptyLeaf && !isSelectedLeaf && !isHoverHighlighted {
+                        EmptyLeafDropFeedback(
+                            isHovered: hoverState.isHovered,
+                            isTargeted: hoverState.isTargeted,
+                            isDropEnabled: allowDrop,
+                            color: dropFeedbackColor
+                        )
+                        .transition(.opacity.combined(with: .scale))
+                    }
+                }
+            }
+            .animation(CanvasAnimation.standard, value: hoverState.isHovered)
+            .offset(y: hoverState.isHovered ? -1 : 0)
+            .animation(CanvasAnimation.quick, value: hoverState.isHovered)
+            .onHover(perform: { _ in })
+            .modifier(
+                DropTargetModifier(
+                    allowDrop: allowDrop,
+                    onHoverStateChange: { hovering in
+                        withAnimation(CanvasAnimation.standard) {
+                            hoverState.isHovered = hovering
+                        }
+                    },
+                    onTargetedChange: { targeted in
+                        withAnimation(CanvasAnimation.quick) {
+                            hoverState.isTargeted = targeted
+                        }
+                    },
+                    handler: { providers, location in
+                        handleDrop(providers: providers, at: location)
+                    }
+                )
+            )
+            .onTapGesture {
+                onLeafSelect?(currentSelection)
+            }
+            .contextMenu {
+                // Context menu visual polish with structured groups and subtle fade
+                ContentRectangleContextMenu(
+                    contentAlignment: contentAlignment,
+                    currentWidthSizingMode: currentWidthSizingMode,
+                    currentHeightSizingMode: currentHeightSizingMode,
+                    currentRowSizingMode: currentRowSizingMode,
+                    currentColumnSizingMode: currentColumnSizingMode,
+                    onSetAlignment: onSetAlignment,
+                    onSetWidthSizingMode: onSetWidthSizingMode,
+                    onSetHeightSizingMode: onSetHeightSizingMode,
+                    onSetGridSizingMode: onSetGridSizingMode,
+                    onRequestSplit: { direction, count in
+                        splitState.direction = direction
+                        splitState.splitCount = count
+                        splitState.isDialogPresented = true
+                    },
+                    onRequestRemove: onUnsplit == nil ? nil : {
+                        splitState.isRemoveConfirmPresented = true
+                    }
+                )
+            }
+            .animation(CanvasAnimation.standard, value: hoverState.isHovered)
+    }
+
+    @ViewBuilder
+    private var componentLayer: some View {
+        if let component = components.first {
+            componentView(for: component)
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.9)
+                            .combined(with: .opacity)
+                            .animation(CanvasAnimation.selectionSpring),
+                        removal: .opacity
+                            .combined(with: .scale(scale: 0.9))
+                            .animation(CanvasAnimation.standard)
+                    )
+                )
         }
     }
 
     @ViewBuilder
     private func componentView(for component: InvoiceComponent) -> some View {
-        ModernComponentView(component: component)
-            .frame(
-                width: min(component.size.width, containerSize.width),
-                height: min(component.size.height, containerSize.height)
-            )
-            .overlay(selectionIndicator(for: component))
+        // Use the fresh component from the document to ensure we have the latest style/config
+        let currentComponent = document.component(component.id) ?? component
+        let usesTableProperties = currentComponent.type.usesTableProperties
+        
+        ModernComponentView(component: currentComponent)
             .contentShape(Rectangle())
-            .onTapGesture { onComponentSelect(component) }
-            .draggable(component)
+            .onTapGesture { onComponentSelect(currentComponent) }
+            .draggable(currentComponent) {
+                ModernComponentView(component: currentComponent)
+                    .frame(
+                        width: usesTableProperties ? nil : min(currentComponent.size.width, containerSize.width),
+                        height: min(currentComponent.size.height, containerSize.height)
+                    )
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(NSColor.windowBackgroundColor))
+                            .shadow(radius: 3)
+                    )
+            }
+            .frame(
+                width: usesTableProperties ? nil : min(currentComponent.size.width, containerSize.width),
+                height: min(currentComponent.size.height, containerSize.height)
+            )
             .transition(.asymmetric(
                 insertion: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.8)),
-                removal: .scale(scale: 0.8).combined(with: .opacity).animation(.easeInOut(duration: 0.2))
+                removal: .scale(scale: 0.8).combined(with: .opacity).animation(CanvasAnimation.standard)
             ))
+            .pointerStyle(.link)
     }
+    
 
-    private func selectionIndicator(for component: InvoiceComponent) -> some View {
-        Group {
-            if document.selectedComponentID == component.id {
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.accentColor, lineWidth: 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.accentColor.opacity(0.1))
-                    )
-                    .animation(.easeInOut(duration: 0.2), value: document.selectedComponentID)
-            }
-        }
-    }
+
+
 
     private func handleDrop(providers: [NSItemProvider], at location: CGPoint) -> Bool {
         guard allowDrop else { return false }
@@ -370,48 +285,147 @@ struct ContentRectangleView: View {
 
             DispatchQueue.main.async {
                 guard let component = try? JSONDecoder().decode(InvoiceComponent.self, from: data) else { return }
+                let componentExistsElsewhere = removeComponentInstances(id: component.id)
+                guard !componentStillExists(id: component.id) else { return }
 
-                var componentExistsElsewhere = false
-                for (sectionIndex, var split) in document.sectionSplits {
-                    var removed = true
-                    var iterations = 0
-                    while removed && iterations < 10 {
-                        removed = split.removeComponent(id: component.id)
-                        if removed {
-                            document.sectionSplits[sectionIndex] = split
-                            componentExistsElsewhere = true
-                            split = document.sectionSplits[sectionIndex] ?? split
-                        }
-                        iterations += 1
+                let componentToAdd: InvoiceComponent = {
+                    guard componentExistsElsewhere else {
+                        var newComponent = component
+                        newComponent.id = UUID()
+                        return newComponent
                     }
-                }
+                    return component
+                }()
 
-                let componentStillExists = document.sectionSplits.contains { (_, split) in
-                    split.getAllComponents().contains(where: { $0.id == component.id })
-                }
-                guard !componentStillExists else { return }
+                onAddComponent(componentToAdd)
 
-                if componentExistsElsewhere {
-                    onAddComponent(component)
-                } else {
-                    var newComponent = component
-                    newComponent.id = UUID()
-                    onAddComponent(newComponent)
+                withAnimation(CanvasAnimation.selectionSpring) {
+                    statusState.showDropSuccess = true
                 }
             }
         }
         return true
     }
     
-    private var dropHighlightColor: Color {
-        guard allowDrop else { return Color.clear }
-        if isTargeted {
-            return Color.accentColor.opacity(0.25)
+    private func removeComponentInstances(id: UUID) -> Bool {
+        var removedAny = false
+        for (sectionIndex, var split) in document.sectionSplits {
+            var didRemove = false
+            while split.removeComponent(id: id) {
+                didRemove = true
+                removedAny = true
+            }
+            if didRemove {
+                document.sectionSplits[sectionIndex] = split
+            }
         }
-        if isHovered {
-            return Color.accentColor.opacity(0.12)
+        return removedAny
+    }
+    
+    private func componentStillExists(id: UUID) -> Bool {
+        document.sectionSplits.contains { (_, split) in
+            split.getAllComponents().contains(where: { $0.id == id })
         }
+    }
+    
+
+private var dropFeedbackColor: Color {
+    Color.orange
+}
+}
+
+private struct ContentRectangleOverlays: View {
+    let containerSize: CGSize
+    let isProcessingSplit: Bool
+    let showSuccessIndicator: Bool
+    let showDropSuccess: Bool
+    
+    var body: some View {
+        ZStack {
+            if isProcessingSplit {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(8)
+                    .background(
+                        Circle()
+                            .fill(Color(NSColor.windowBackgroundColor))
+                    )
+                    .shadow(radius: 3)
+                    .transition(.opacity)
+            }
+            
+            if showSuccessIndicator {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(Color(NSColor.systemGreen))
+                    .font(.title2)
+                    .background(
+                        Circle()
+                            .fill(Color(NSColor.windowBackgroundColor))
+                            .frame(width: 32, height: 32)
+                    )
+                    .shadow(radius: 4)
+                    .transition(.scale.combined(with: .opacity))
+            }
+            
+            if showDropSuccess {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(CanvasColor.successFlash)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: containerSize.width, height: containerSize.height)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct EmptyLeafDropFeedback: View {
+    let isHovered: Bool
+    let isTargeted: Bool
+    let isDropEnabled: Bool
+    let color: Color
+    
+    private var strokeStyle: StrokeStyle {
+        // On hover or target, we hide the dashed border (stroke is clear)
+        // StateOverlay handles the fills and borders for these states
+        if (isHovered || isTargeted) && isDropEnabled {
+            return StrokeStyle(lineWidth: 0, dash: [])
+        }
+        return StrokeStyle(lineWidth: 1, dash: [6, 4])
+    }
+    
+    private var strokeColor: Color {
+        if (isHovered || isTargeted) && isDropEnabled {
+            return Color.clear
+        }
+        return Color(NSColor.separatorColor).opacity(0.55)
+    }
+    
+    private var fillColor: Color {
+        // StateOverlay handles the hover fill, so we don't need double fill here
         return Color.clear
+    }
+    
+    var body: some View {
+        Rectangle()
+            .stroke(strokeColor, style: strokeStyle)
+            .background(
+                Rectangle()
+                    .fill(fillColor)
+            )
+            .overlay(alignment: .center) {
+                if isDropEnabled && isTargeted {
+                    Image("fluent-ic_fluent_add_20_regular", bundle: .module)
+                        .resizable()
+                        .renderingMode(.template)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 24, height: 24)
+                        .foregroundColor(color.opacity(1.0))
+                        .scaleEffect(1.0)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(CanvasAnimation.quick, value: isHovered)
     }
 }
 
@@ -443,4 +457,22 @@ private struct DropTargetModifier: ViewModifier {
                 }
         }
     }
+}
+
+private struct HoverState {
+    var isHovered = false
+    var isTargeted = false
+}
+
+private struct SplitState {
+    var isDialogPresented = false
+    var direction: SectionSplit.SplitDirection = .horizontal
+    var splitCount: Int = 2
+    var isProcessing = false
+    var isRemoveConfirmPresented = false
+}
+
+private struct StatusState {
+    var showSuccess = false
+    var showDropSuccess = false
 }

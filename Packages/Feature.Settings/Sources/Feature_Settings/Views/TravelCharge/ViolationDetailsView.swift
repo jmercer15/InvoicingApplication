@@ -5,6 +5,8 @@ import SharedUI
 
 struct ViolationDetailsView: View {
     let detailedReview: DetailedReviewItem
+    let onOverride: ((DetailedReviewItem, String, String?) -> Void)? = nil
+    let onSkip: ((DetailedReviewItem, String?) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectedOverride: String = ""
     @State private var overrideReason: String = ""
@@ -26,8 +28,8 @@ struct ViolationDetailsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Session: \(detailedReview.session.title)")
                         .font(.headline)
-                    if let client = detailedReview.session.client {
-                        Text("Client: \(client.fullName)")
+                    if let clientName = detailedReview.clientName {
+                        Text("Client: \(clientName)")
                             .font(.body)
                     }
                     Text("Date: \(detailedReview.timestamp, formatter: DateFormatter())")
@@ -109,6 +111,7 @@ struct ViolationDetailsView: View {
                                         .foregroundColor(Color("Text", bundle: .sharedUI))
                                     Spacer()
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
@@ -147,7 +150,7 @@ struct ViolationDetailsView: View {
                     dismiss()
                 }
                 .buttonStyle(.glass)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
                 
                 Spacer()
                 
@@ -156,14 +159,14 @@ struct ViolationDetailsView: View {
                         handleOverrideAction()
                     }
                     .buttonStyle(.glassProminent)
-                    .appInteractiveCursor()
+                    .pointerStyle(.link)
                 }
                 
                 Button("Skip Charge") {
                     handleSkipAction()
                 }
                 .buttonStyle(.glass)
-                .appInteractiveCursor()
+                .pointerStyle(.link)
             }
         }
         .padding()
@@ -172,7 +175,6 @@ struct ViolationDetailsView: View {
     }
     
     private func handleOverrideAction() {
-        // Create travel charge with override
         let overrideDetails = """
         Override Details:
         - Selected Override: \(selectedOverride)
@@ -183,18 +185,17 @@ struct ViolationDetailsView: View {
         
         print("[ViolationDetails] Creating travel charge with override:")
         print("[ViolationDetails] \(overrideDetails)")
-        
-        // In a real implementation, you would:
-        // 1. Create the travel charge with override flags
-        // 2. Log the override for audit purposes
-        // 3. Update the review item status
-        // 4. Notify the automation service
+
+        onOverride?(
+            detailedReview,
+            selectedOverride,
+            overrideReason.isEmpty ? nil : overrideReason
+        )
         
         dismiss()
     }
     
     private func handleSkipAction() {
-        // Skip the travel charge
         let skipDetails = """
         Skipped Travel Charge:
         - Session: \(detailedReview.session.title)
@@ -204,12 +205,8 @@ struct ViolationDetailsView: View {
         
         print("[ViolationDetails] Skipping travel charge:")
         print("[ViolationDetails] \(skipDetails)")
-        
-        // In a real implementation, you would:
-        // 1. Mark the review item as resolved
-        // 2. Log the skip action for audit purposes
-        // 3. Update the automation service status
-        // 4. Remove from review queue
+
+        onSkip?(detailedReview, "User chose to skip due to violations")
         
         dismiss()
     }

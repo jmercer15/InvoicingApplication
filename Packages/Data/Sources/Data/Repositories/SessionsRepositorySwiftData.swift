@@ -5,9 +5,11 @@ import Core
 /// SwiftData implementation of SessionsRepository
 public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked Sendable {
     private let modelContext: ModelContext
+    private let mapper: SessionMapper
     
-    public init(modelContext: ModelContext) {
+    public init(modelContext: ModelContext, mapper: SessionMapper = SessionMapper()) {
         self.modelContext = modelContext
+        self.mapper = mapper
     }
     
     public func fetchAll() async throws -> [Session] {
@@ -16,7 +18,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -43,7 +45,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
                 guard let startTime = entity.startTime else { return false }
                 return startTime >= startDate && startTime <= endDate
             }
-            return filteredEntities.map { Session.from(entity: $0) }
+            return filteredEntities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -57,13 +59,14 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
     public func fetch(byStatus status: String) async throws -> [Session] {
+        guard let normalizedStatus = SessionStatus(normalized: status) else { return [] }
         let predicate = #Predicate<SessionEntity> { session in
-            session.status?.rawValue == status
+            session.status == normalizedStatus
         }
         let descriptor = FetchDescriptor<SessionEntity>(
             predicate: predicate,
@@ -71,7 +74,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -90,7 +93,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -101,14 +104,15 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
         return try await MainActor.run {
             guard let entity = try modelContext.fetch(descriptor).first else { return nil }
-            return Session.from(entity: entity)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
     public func create(_ session: Session) async throws -> Session {
         return try await MainActor.run {
-            let entity = SessionEntity(id: session.id)
-            entity.update(from: session)
+            var entity = SessionEntity(id: session.id)
+            self.mapper.updateEntity(&entity, from: session)
+            try self.applyRelationships(from: session, to: entity)
             if entity.modelContext == nil {
                 modelContext.insert(entity)
             }
@@ -118,7 +122,8 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Session.from(entity: entity)
+            self.notifySessionChanged(session.id)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -126,17 +131,19 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         return try await MainActor.run {
             let predicate = #Predicate<SessionEntity> { s in s.id == session.id }
             let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
-            guard let entity = try modelContext.fetch(descriptor).first else {
+            guard var entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.update(from: session)
+            self.mapper.updateEntity(&entity, from: session)
+            try self.applyRelationships(from: session, to: entity)
             do {
             try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
-            return Session.from(entity: entity)
+            self.notifySessionChanged(session.id)
+            return self.mapper.mapToDomain(entity)
         }
     }
     
@@ -158,19 +165,24 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
     }
     
     public func updateStatus(id: UUID, status: String) async throws {
+        guard let normalizedStatus = SessionStatus(normalized: status) else {
+            throw RepositoryError.validationFailed(message: "Unsupported session status: \(status)")
+        }
+
         try await MainActor.run {
             let predicate = #Predicate<SessionEntity> { s in s.id == id }
             let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
             guard let entity = try modelContext.fetch(descriptor).first else {
                 throw RepositoryError.entityNotFound
             }
-            entity.status = SessionStatus(rawValue: status) ?? .scheduled
+            entity.status = normalizedStatus
             do {
             try modelContext.save()
             } catch {
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            self.notifySessionChanged(id)
         }
     }
     
@@ -211,6 +223,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
                 modelContext.rollback()
                 throw RepositoryError.saveFailed
             }
+            self.notifySessionsRefreshNeeded()
         }
     }
     
@@ -264,7 +277,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         )
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -277,7 +290,7 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         
         return try await MainActor.run {
             let entities = try modelContext.fetch(descriptor)
-            return entities.map { Session.from(entity: $0) }
+            return entities.map { self.mapper.mapToDomain($0) }
         }
     }
     
@@ -289,8 +302,9 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
     }
     
     public func count(by status: String) async throws -> Int {
+        guard let normalizedStatus = SessionStatus(normalized: status) else { return 0 }
         let predicate = #Predicate<SessionEntity> { session in
-            session.status?.rawValue == status
+            session.status == normalizedStatus
         }
         let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
         return try await MainActor.run {
@@ -298,25 +312,88 @@ public final class SessionsRepositorySwiftData: SessionsRepository, @unchecked S
         }
     }
     
+    public func fetch(byEventIdentifier eventIdentifier: String) async throws -> Session? {
+        let predicate = #Predicate<SessionEntity> { session in
+            session.eventIdentifier == eventIdentifier
+        }
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+        return try await MainActor.run {
+            guard let entity = try modelContext.fetch(descriptor).first else { return nil }
+            return self.mapper.mapToDomain(entity)
+        }
+    }
+    
+    public func fetch(byDerivedFromEKEventID derivedId: String) async throws -> [Session] {
+        let predicate = #Predicate<SessionEntity> { session in
+            session.derivedFromEKEventID == derivedId
+        }
+        let descriptor = FetchDescriptor<SessionEntity>(predicate: predicate)
+        return try await MainActor.run {
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { self.mapper.mapToDomain($0) }
+        }
+    }
+    
     // MARK: - Private Helpers
+
+    private func applyRelationships(from session: Session, to entity: SessionEntity) throws {
+        entity.client = try resolveClientEntity(by: session.clientId)
+        entity.clientService = try resolveClientServiceEntity(by: session.clientServiceId)
+        entity.address = try resolveAddressEntity(by: session.addressId)
+
+        if let clientId = session.clientId,
+           let serviceClientId = entity.clientService?.client?.id,
+           serviceClientId != clientId {
+            throw RepositoryError.validationFailed(
+                message: "Selected service does not belong to the selected client."
+            )
+        }
+    }
+
+    private func resolveClientEntity(by id: UUID?) throws -> ClientEntity? {
+        guard let id else { return nil }
+        let predicate = #Predicate<ClientEntity> { client in
+            client.id == id
+        }
+        let descriptor = FetchDescriptor<ClientEntity>(predicate: predicate)
+        guard let entity = try modelContext.fetch(descriptor).first else {
+            throw RepositoryError.validationFailed(message: "Selected client could not be found.")
+        }
+        return entity
+    }
+
+    private func resolveClientServiceEntity(by id: UUID?) throws -> ClientServiceEntity? {
+        guard let id else { return nil }
+        let predicate = #Predicate<ClientServiceEntity> { service in
+            service.id == id
+        }
+        let descriptor = FetchDescriptor<ClientServiceEntity>(predicate: predicate)
+        guard let entity = try modelContext.fetch(descriptor).first else {
+            throw RepositoryError.validationFailed(message: "Selected client service could not be found.")
+        }
+        return entity
+    }
+
+    private func resolveAddressEntity(by id: UUID?) throws -> AddressEntity? {
+        guard let id else { return nil }
+        let predicate = #Predicate<AddressEntity> { address in
+            address.id == id
+        }
+        let descriptor = FetchDescriptor<AddressEntity>(predicate: predicate)
+        // Addresses are optional for sessions; tolerate stale/missing references by clearing the relation.
+        return try modelContext.fetch(descriptor).first
+    }
+
     // Note: fetchEntity helper removed - all entity operations now happen directly within MainActor.run blocks
     // to avoid Sendable conformance issues with SessionEntity
-}
 
-/// Repository errors
-public enum RepositoryError: Error, LocalizedError {
-    case entityNotFound
-    case invalidData
-    case saveFailed
-    
-    public var errorDescription: String? {
-        switch self {
-        case .entityNotFound:
-            return "Entity not found"
-        case .invalidData:
-            return "Invalid data provided"
-        case .saveFailed:
-            return "Failed to save data"
-        }
+    @MainActor
+    private func notifySessionChanged(_ id: UUID) {
+        SessionChangePublisher.shared.notifyChange(sessionId: id)
+    }
+
+    @MainActor
+    private func notifySessionsRefreshNeeded() {
+        SessionChangePublisher.shared.notifyRefreshNeeded()
     }
 }

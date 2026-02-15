@@ -11,16 +11,15 @@ import SwiftData
 
 
 @Model public class InvoiceItemEntity {
-    #Index<InvoiceItemEntity>([\.itemDescription], [\.ndisItemNumber], [\.ndisSupportCategory], [\.ndisRegistrationGroup], [\.serviceDate], [\.rate], [\.amount], [\.quantity])
+    #Index<InvoiceItemEntity>([\.itemDescription], [\.ndisItemNumber], [\.ndisSupportCategory], [\.ndisRegistrationGroup], [\.serviceDate], [\.rate], [\.quantity])
     public var id: UUID
     public var itemDescription: String = "" // Non-optional with default
-    public var amount: Double = 0.0 // Non-optional with default
-    public var date: Date = Date() // Non-optional with default
     public var position: Int32 = 0
     public var quantity: Double = 1.0 // Non-optional with default
     public var rate: Double = 0.0 // Non-optional with default
     public var serviceDate: Date = Date()
     public var unit: String?
+    public var gstCode: String?
     public var taxRate: Double = 0.0 // Non-optional with default
     
     // NDIS-specific properties for billing algorithm
@@ -141,5 +140,3 @@ import SwiftData
         return modifiers.isEmpty ? "None" : modifiers.joined(separator: ", ")
     }
 }
-
-

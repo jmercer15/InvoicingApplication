@@ -1,5 +1,7 @@
 import SwiftUI
 import SharedUI
+import Data
+import Core
 
 
 // ─────────────────────────────────────────────────────────────
@@ -246,6 +248,7 @@ struct MiniMonthView: View {
             )
             .contentShape(Rectangle())
             .overlay(Rectangle().stroke(Color.secondary.opacity(0.2), lineWidth: 0.5))
+
             .onTapGesture {
                 withAnimation {
                     viewModel.selectedDate = date
@@ -268,10 +271,12 @@ struct MiniMonthView: View {
             Button { viewModel.changeMiniCalendarMonth(by: -1) } label: { Label("Previous Month", systemImage: "chevron.left") }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
+
             Spacer()
             Button { viewModel.changeMiniCalendarMonth(by: 1) } label: { Label("Next Month", systemImage: "chevron.right") }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
+
         }
         .padding(.horizontal, 8)
     }
