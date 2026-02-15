@@ -688,10 +688,15 @@ struct AllDataFactories {
             line.reconciledAt = ISO8601DateFormatter().date(from: reconciledAtString)
         }
 
-        if let batchId = dict["batchId"] as? String,
-           let batch = entityMapping[batchId] as? BulkClaimBatchEntity {
-            line.batch = batch
+        guard let batchId = dict["batchId"] as? String,
+              let batch = entityMapping[batchId] as? BulkClaimBatchEntity else {
+            throw NSError(
+                domain: "AllDataImport",
+                code: 422,
+                userInfo: [NSLocalizedDescriptionKey: "BulkClaimLineEntity is missing required batch relationship."]
+            )
         }
+        line.batch = batch
 
         if let invoiceId = dict["invoiceId"] as? String,
            let invoice = entityMapping[invoiceId] as? InvoiceEntity {

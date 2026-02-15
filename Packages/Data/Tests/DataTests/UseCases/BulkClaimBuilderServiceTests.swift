@@ -135,8 +135,72 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         XCTAssertTrue(withTravel.contains(where: { $0.claimTypeCode == BPRClaimTypeCode.tran.rawValue }))
     }
 
-    private func insertBusiness(defaultGST: String, ndiaOrgID: String) throws -> BusinessEntity {
-        let business = BusinessEntity(id: UUID(), abn: "12345678901")
+    func testBuildLinesPlanManagedUsesBusinessABNForSupportProvider() async throws {
+        let client = try insertClient(
+            name: "Plan Managed Client",
+            planManagementType: "Plan Managed",
+            billingAuthority: .planManager
+        )
+        let session = try insertSession(client: client)
+        let invoice = try insertInvoice(client: client, session: session, billingAuthority: .planManager)
+
+        _ = try insertBusiness(defaultGST: "P2", ndiaOrgID: "12345", abn: "12 345 678 901")
+        _ = try insertSupportLog(client: client, session: session)
+        _ = try insertInvoiceItem(
+            invoice: invoice,
+            session: session,
+            claimType: .direct,
+            quantity: 1.0,
+            unit: nil,
+            gstCode: "P2",
+            supportNumber: "01_001_0107_1_1"
+        )
+
+        let batch = BulkClaimBatch(
+            id: UUID(),
+            fromDate: Date().addingTimeInterval(-86_400),
+            toDate: Date().addingTimeInterval(86_400)
+        )
+
+        let lines = try await builder.buildLines(for: batch)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.first?.abnOfSupportProvider, "12345678901")
+    }
+
+    func testBuildLinesNonPlanManagedLeavesSupportProviderABNBlank() async throws {
+        let client = try insertClient(
+            name: "Self Managed Client",
+            planManagementType: "Self Managed",
+            billingAuthority: .client
+        )
+        let session = try insertSession(client: client)
+        let invoice = try insertInvoice(client: client, session: session, billingAuthority: .client)
+
+        _ = try insertBusiness(defaultGST: "P2", ndiaOrgID: "12345", abn: "12345678901")
+        _ = try insertSupportLog(client: client, session: session)
+        _ = try insertInvoiceItem(
+            invoice: invoice,
+            session: session,
+            claimType: .direct,
+            quantity: 1.0,
+            unit: nil,
+            gstCode: "P2",
+            supportNumber: "01_001_0107_1_1"
+        )
+
+        let batch = BulkClaimBatch(
+            id: UUID(),
+            fromDate: Date().addingTimeInterval(-86_400),
+            toDate: Date().addingTimeInterval(86_400)
+        )
+
+        let lines = try await builder.buildLines(for: batch)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertNil(lines.first?.abnOfSupportProvider)
+    }
+
+    private func insertBusiness(defaultGST: String, ndiaOrgID: String, abn: String = "12345678901") throws -> BusinessEntity {
+        let business = BusinessEntity(id: UUID(), abn: abn)
         business.name = "Claim Builder Business"
         business.defaultGstCode = defaultGST
         business.ndiaOrganisationID = ndiaOrgID
@@ -146,13 +210,20 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         return business
     }
 
-    private func insertClient(name: String) throws -> ClientEntity {
+    private func insertClient(
+        name: String,
+        planManagementType: String? = nil,
+        billingAuthority: BillingAuthority = .client
+    ) throws -> ClientEntity {
         let client = ClientEntity(
             id: UUID(),
             ndisNumber: "4300000000",
             fullName: name,
             status: .active
         )
+        client.planManagementType = planManagementType
+        client.billingAuthority = billingAuthority
+        client.sendInvoicesToPlanManager = billingAuthority == .planManager
         modelContext.insert(client)
         try modelContext.save()
         return client
@@ -170,11 +241,16 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         return session
     }
 
-    private func insertInvoice(client: ClientEntity, session: SessionEntity) throws -> InvoiceEntity {
+    private func insertInvoice(
+        client: ClientEntity,
+        session: SessionEntity,
+        billingAuthority: BillingAuthority = .client
+    ) throws -> InvoiceEntity {
         let invoice = InvoiceEntity(id: UUID(), invoiceNumber: "INV-CLAIM-001")
         invoice.client = client
         invoice.clientName = client.fullName
         invoice.clientNDISNumber = client.ndisNumber
+        invoice.billingAuthority = billingAuthority
         invoice.status = .readyToSend
         invoice.issueDate = Date()
         invoice.date = Date()

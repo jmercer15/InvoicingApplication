@@ -56,6 +56,8 @@ public struct ClaimBatchHistoryRow: Identifiable, Equatable, Hashable, Sendable 
 
 @MainActor
 public final class ImportExportViewModel: ObservableObject {
+    public static let claimsExportFeatureFlagKey = "feature.claimsExportEnabled"
+
     // MARK: - Dependencies
     private let unitOfWork: UnitOfWorkService
     private let dataImporterActor: DataImporterActor
@@ -91,7 +93,7 @@ public final class ImportExportViewModel: ObservableObject {
     @Published public var showingAllDataImportResult = false
 
     // Phase 2: NDIS Claims Export
-    @Published public var claimsExportEnabled = true
+    @Published public var claimsExportEnabled: Bool = false
     @Published public var claimFromDate: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
     @Published public var claimToDate: Date = Date()
     @Published public var includeTravelClaims = true
@@ -161,6 +163,7 @@ public final class ImportExportViewModel: ObservableObject {
         self.bulkClaimValidationService = BulkClaimValidationService()
         self.bprCSVWriter = BPRCSVWriter()
         self.bulkClaimExportHashVerifier = BulkClaimExportHashVerifier(csvWriter: bprCSVWriter)
+        self.claimsExportEnabled = UserDefaults.standard.bool(forKey: Self.claimsExportFeatureFlagKey)
         
         // Initial data loading
         Task {

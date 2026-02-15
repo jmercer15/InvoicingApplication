@@ -157,6 +157,25 @@ final class BulkClaimRepositoryTests: XCTestCase {
         XCTAssertEqual(lines.first?.reconciledAt, reconciledAt)
     }
 
+    func testReplaceLinesRejectsMismatchedBatchId() async throws {
+        let batch = try await repository.createBatch(makeBatch())
+        let mismatchedLine = makeLine(batchId: UUID(), isValid: true)
+
+        do {
+            try await repository.replaceLines(batchId: batch.id, lines: [mismatchedLine])
+            XCTFail("Expected validation error for mismatched batch ID.")
+        } catch let error as RepositoryError {
+            switch error {
+            case .validationFailed(let message):
+                XCTAssertTrue(message.contains("does not match target batch"))
+            default:
+                XCTFail("Unexpected repository error: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func makeBatch() -> BulkClaimBatch {
         BulkClaimBatch(
             id: UUID(),

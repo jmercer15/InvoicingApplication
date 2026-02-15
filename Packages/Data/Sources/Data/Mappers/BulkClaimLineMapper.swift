@@ -8,9 +8,18 @@ public struct BulkClaimLineMapper: ModelMapper {
     public init() {}
 
     public func mapToDomain(_ entity: BulkClaimLineEntity) -> BulkClaimLine {
-        BulkClaimLine(
+        let mappedBatchId: UUID = {
+            guard let batchId = entity.batch?.id else {
+                assertionFailure("BulkClaimLineEntity \(entity.id) is missing required batch relationship.")
+                // Preserve deterministic fallback in release builds.
+                return entity.id
+            }
+            return batchId
+        }()
+
+        return BulkClaimLine(
             id: entity.id,
-            batchId: entity.batch?.id ?? UUID(),
+            batchId: mappedBatchId,
             registrationNumber: entity.registrationNumber,
             ndisNumber: entity.ndisNumber,
             supportsDeliveredFrom: entity.supportsDeliveredFrom,

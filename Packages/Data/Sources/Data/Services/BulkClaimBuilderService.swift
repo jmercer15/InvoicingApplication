@@ -30,7 +30,7 @@ public final class BulkClaimBuilderService {
         let business = try await businessRepository.fetchFirst()
         let defaultGST = normalizeGSTCode(business?.defaultGstCode) ?? GSTCode.p2.rawValue
         let registrationNumber = (business?.ndiaOrganisationID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let providerABN = business?.abn?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let providerABN = business?.abn
 
         let invoices = try await invoicesRepository.fetchAll()
 
@@ -72,15 +72,20 @@ public final class BulkClaimBuilderService {
 
                 let primaryLog = supportLogs.sorted { $0.deliveredFrom < $1.deliveredFrom }.first
 
-                let ndisNumber: String = try await {
-                    if let snapshot = invoice.clientNDISNumber, !snapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let client: Client? = try await {
+                    guard let clientId = invoice.clientId else { return nil }
+                    if let cached = clientCache[clientId] { return cached }
+                    let fetched = try await clientsRepository.fetch(by: clientId)
+                    if let fetched { clientCache[clientId] = fetched }
+                    return fetched
+                }()
+
+                let ndisNumber: String = {
+                    if let snapshot = invoice.clientNDISNumber,
+                       !snapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         return snapshot
                     }
-                    guard let clientId = invoice.clientId else { return "" }
-                    if let cached = clientCache[clientId] { return cached.ndisNumber }
-                    guard let client = try await clientsRepository.fetch(by: clientId) else { return "" }
-                    clientCache[clientId] = client
-                    return client.ndisNumber
+                    return client?.ndisNumber ?? ""
                 }()
 
                 let deliveredFrom = primaryLog?.deliveredFrom ?? session?.startTime ?? item.serviceDate
@@ -100,6 +105,9 @@ public final class BulkClaimBuilderService {
 
                 let (quantity, hours) = mapQuantityOrHours(from: item)
                 let gstCode = normalizeGSTCode(item.gstCode) ?? defaultGST
+                let abnOfSupportProvider: String? = isPlanManagedBooking(invoice: invoice, client: client)
+                    ? normalizeABNForClaim(providerABN)
+                    : nil
 
                 let line = BulkClaimLine(
                     id: UUID(),
@@ -119,7 +127,7 @@ public final class BulkClaimBuilderService {
                     inKindFundingProgram: nil,
                     claimTypeCode: claimTypeCode,
                     cancellationReason: claimTypeCode == BPRClaimTypeCode.canc.rawValue ? primaryLog?.cancellationReasonCode : nil,
-                    abnOfSupportProvider: providerABN,
+                    abnOfSupportProvider: abnOfSupportProvider,
                     invoiceId: invoice.id,
                     invoiceItemId: item.id,
                     isValid: true,
@@ -183,6 +191,35 @@ public final class BulkClaimBuilderService {
     private func normalizeGSTCode(_ code: String?) -> String? {
         guard let code else { return nil }
         let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func normalizeABNForClaim(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let digitsOnly = value.filter(\.isNumber)
+        return digitsOnly.isEmpty ? nil : digitsOnly
+    }
+
+    private func isPlanManagedBooking(invoice: Invoice, client: Client?) -> Bool {
+        if normalizedToken(invoice.billingAuthority) == "plan_manager" {
+            return true
+        }
+
+        if let planManagementType = normalizedToken(client?.planManagementType),
+           planManagementType.contains("plan") {
+            return true
+        }
+
+        return client?.sendInvoicesToPlanManager == true
+    }
+
+    private func normalizedToken(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
         return normalized.isEmpty ? nil : normalized
     }
 

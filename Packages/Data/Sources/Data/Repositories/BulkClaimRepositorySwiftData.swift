@@ -64,6 +64,12 @@ public final class BulkClaimRepositorySwiftData: BulkClaimRepository, @unchecked
             }
 
             for line in lines {
+                guard line.batchId == batchId else {
+                    throw RepositoryError.validationFailed(
+                        message: "Bulk claim line batchId \(line.batchId) does not match target batch \(batchId)."
+                    )
+                }
+
                 let entity = lineMapper.mapToEntity(line)
                 entity.batch = batchEntity
 
