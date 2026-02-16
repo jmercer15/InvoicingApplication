@@ -1,6 +1,7 @@
 import XCTest
 @testable import Feature_InvoiceTemplateEditor
 
+@MainActor
 final class TableEngineTests: XCTestCase {
     
     func testSparseMatrixInitialization() {

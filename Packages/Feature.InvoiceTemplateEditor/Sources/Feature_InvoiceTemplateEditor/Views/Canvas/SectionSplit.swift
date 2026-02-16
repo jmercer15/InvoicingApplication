@@ -357,6 +357,113 @@ public struct SectionSplit: Codable, Sendable {
             split.addComponent(component, toChild: targetChildIndex)
         }
     }
+
+    private struct ChildSlotSnapshot {
+        let child: SectionSplit?
+        let components: [InvoiceComponent]?
+        let label: String?
+        let alignment: LeafAlignment?
+        let widthMode: SizingMode
+        let heightMode: SizingMode
+        let padding: PaddingInsets
+    }
+
+    private static func snapshotForChild(
+        at index: Int,
+        children: [SectionSplit?],
+        components: [Int: [InvoiceComponent]],
+        labels: [Int: String],
+        alignments: [Int: LeafAlignment],
+        widthModes: [SizingMode],
+        heightModes: [SizingMode],
+        paddings: [PaddingInsets]
+    ) -> ChildSlotSnapshot {
+        ChildSlotSnapshot(
+            child: index < children.count ? children[index] : nil,
+            components: components[index],
+            label: labels[index],
+            alignment: alignments[index],
+            widthMode: index < widthModes.count ? widthModes[index] : .fixed,
+            heightMode: index < heightModes.count ? heightModes[index] : .fixed,
+            padding: index < paddings.count ? paddings[index] : .zero
+        )
+    }
+
+    private static func applySnapshot(
+        _ snapshot: ChildSlotSnapshot,
+        at index: Int,
+        children: inout [SectionSplit?],
+        components: inout [Int: [InvoiceComponent]],
+        labels: inout [Int: String],
+        alignments: inout [Int: LeafAlignment],
+        widthModes: inout [SizingMode],
+        heightModes: inout [SizingMode],
+        paddings: inout [PaddingInsets]
+    ) {
+        children[index] = snapshot.child
+
+        if let value = snapshot.components {
+            components[index] = value
+        } else {
+            components.removeValue(forKey: index)
+        }
+
+        if let value = snapshot.label {
+            labels[index] = value
+        } else {
+            labels.removeValue(forKey: index)
+        }
+
+        if let value = snapshot.alignment {
+            alignments[index] = value
+        } else {
+            alignments.removeValue(forKey: index)
+        }
+
+        widthModes[index] = snapshot.widthMode
+        heightModes[index] = snapshot.heightMode
+        paddings[index] = snapshot.padding
+    }
+
+    private static func appendSnapshot(
+        _ snapshot: ChildSlotSnapshot,
+        children: inout [SectionSplit?],
+        components: inout [Int: [InvoiceComponent]],
+        labels: inout [Int: String],
+        alignments: inout [Int: LeafAlignment],
+        widthModes: inout [SizingMode],
+        heightModes: inout [SizingMode],
+        paddings: inout [PaddingInsets]
+    ) {
+        let newIndex = children.count
+        children.append(snapshot.child)
+
+        if let value = snapshot.components {
+            components[newIndex] = value
+        }
+        if let value = snapshot.label {
+            labels[newIndex] = value
+        }
+        if let value = snapshot.alignment {
+            alignments[newIndex] = value
+        }
+
+        widthModes.append(snapshot.widthMode)
+        heightModes.append(snapshot.heightMode)
+        paddings.append(snapshot.padding)
+    }
+
+    private static func appendEmptyChild(
+        children: inout [SectionSplit?],
+        widthModes: inout [SizingMode],
+        heightModes: inout [SizingMode],
+        paddings: inout [PaddingInsets]
+    ) {
+        children.append(nil)
+        widthModes.append(.fixed)
+        heightModes.append(.fixed)
+        paddings.append(.zero)
+    }
     
     mutating func unsplitChild(at index: Int) {
         guard index < children.count else { return }
@@ -398,50 +505,32 @@ public struct SectionSplit: Codable, Sendable {
             
             // Redistribute content, shifting indices after insertion point
             for i in 0..<newCount {
-                if i < index {
-                    children[i] = existingChildren[i]
-                    if let components = existingComponents[i] {
-                        childComponents[i] = components
-                    }
-                    if let label = existingLabels[i] {
-                        childLabels[i] = label
-                    }
-                    if let alignment = existingAlignments[i] {
-                        childAlignments[i] = alignment
-                    }
-                    if i < existingWidthModes.count {
-                        childWidthSizingModes[i] = existingWidthModes[i]
-                    }
-                    if i < existingHeightModes.count {
-                        childHeightSizingModes[i] = existingHeightModes[i]
-                    }
-                    if i < existingPaddings.count {
-                        childPaddings[i] = existingPaddings[i]
-                    }
-                } else if i == index {
-                    // New child stays nil
-                } else {
-                    let oldIndex = i - 1
-                    children[i] = existingChildren[oldIndex]
-                    if let components = existingComponents[oldIndex] {
-                        childComponents[i] = components
-                    }
-                    if let label = existingLabels[oldIndex] {
-                        childLabels[i] = label
-                    }
-                    if let alignment = existingAlignments[oldIndex] {
-                        childAlignments[i] = alignment
-                    }
-                    if oldIndex < existingWidthModes.count {
-                        childWidthSizingModes[i] = existingWidthModes[oldIndex]
-                    }
-                    if oldIndex < existingHeightModes.count {
-                        childHeightSizingModes[i] = existingHeightModes[oldIndex]
-                    }
-                    if oldIndex < existingPaddings.count {
-                        childPaddings[i] = existingPaddings[oldIndex]
-                    }
+                if i == index {
+                    continue // New child stays empty
                 }
+
+                let oldIndex = i < index ? i : i - 1
+                let snapshot = Self.snapshotForChild(
+                    at: oldIndex,
+                    children: existingChildren,
+                    components: existingComponents,
+                    labels: existingLabels,
+                    alignments: existingAlignments,
+                    widthModes: existingWidthModes,
+                    heightModes: existingHeightModes,
+                    paddings: existingPaddings
+                )
+                Self.applySnapshot(
+                    snapshot,
+                    at: i,
+                    children: &children,
+                    components: &childComponents,
+                    labels: &childLabels,
+                    alignments: &childAlignments,
+                    widthModes: &childWidthSizingModes,
+                    heightModes: &childHeightSizingModes,
+                    paddings: &childPaddings
+                )
             }
             
             // Update ratios
@@ -463,66 +552,57 @@ public struct SectionSplit: Codable, Sendable {
             
             for i in 0..<newCount {
                 if i < index {
-                    // Before insertion point - keep as is
-                    newChildren.append(children[i])
-                    if let components = childComponents[i] {
-                        newComponents[i] = components
-                    }
-                    if let label = childLabels[i] {
-                        newLabels[i] = label
-                    }
-                    if let alignment = childAlignments[i] {
-                        newAlignments[i] = alignment
-                    }
-                    if i < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[i])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if i < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[i])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if i < childPaddings.count {
-                        newPaddings.append(childPaddings[i])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: i,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else if i == index {
                     // Insertion point - add new nil child
-                    newChildren.append(nil)
-                    newWidthModes.append(.fixed)
-                    newHeightModes.append(.fixed)
-                    newPaddings.append(.zero)
+                    Self.appendEmptyChild(
+                        children: &newChildren,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else {
                     // After insertion point - shift from old index
                     let oldIndex = i - 1
-                    newChildren.append(children[oldIndex])
-                    if let components = childComponents[oldIndex] {
-                        newComponents[i] = components
-                    }
-                    if let label = childLabels[oldIndex] {
-                        newLabels[i] = label
-                    }
-                    if let alignment = childAlignments[oldIndex] {
-                        newAlignments[i] = alignment
-                    }
-                    if oldIndex < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[oldIndex])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if oldIndex < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[oldIndex])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if oldIndex < childPaddings.count {
-                        newPaddings.append(childPaddings[oldIndex])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: oldIndex,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 }
             }
             
@@ -564,32 +644,31 @@ public struct SectionSplit: Codable, Sendable {
             var newHeightModes: [SizingMode] = []
             var newPaddings: [PaddingInsets] = []
             
-            var newIndex = 0
             for i in 0..<splitCount {
                 if i == index {
                     continue // Skip deleted child
                 }
-                
-                newChildren.append(children[i])
-                if let components = childComponents[i] {
-                    newComponents[newIndex] = components
-                }
-                if let label = childLabels[i] {
-                    newLabels[newIndex] = label
-                }
-                if let alignment = childAlignments[i] {
-                    newAlignments[newIndex] = alignment
-                }
-                if i < childWidthSizingModes.count {
-                    newWidthModes.append(childWidthSizingModes[i])
-                }
-                if i < childHeightSizingModes.count {
-                    newHeightModes.append(childHeightSizingModes[i])
-                }
-                if i < childPaddings.count {
-                    newPaddings.append(childPaddings[i])
-                }
-                newIndex += 1
+
+                let snapshot = Self.snapshotForChild(
+                    at: i,
+                    children: children,
+                    components: childComponents,
+                    labels: childLabels,
+                    alignments: childAlignments,
+                    widthModes: childWidthSizingModes,
+                    heightModes: childHeightSizingModes,
+                    paddings: childPaddings
+                )
+                Self.appendSnapshot(
+                    snapshot,
+                    children: &newChildren,
+                    components: &newComponents,
+                    labels: &newLabels,
+                    alignments: &newAlignments,
+                    widthModes: &newWidthModes,
+                    heightModes: &newHeightModes,
+                    paddings: &newPaddings
+                )
             }
             
             gridRows = newRows
@@ -617,32 +696,31 @@ public struct SectionSplit: Codable, Sendable {
             var newHeightModes: [SizingMode] = []
             var newPaddings: [PaddingInsets] = []
             
-            var newIndex = 0
             for i in 0..<splitCount {
                 if i == index {
                     continue // Skip deleted child
                 }
-                
-                newChildren.append(children[i])
-                if let components = childComponents[i] {
-                    newComponents[newIndex] = components
-                }
-                if let label = childLabels[i] {
-                    newLabels[newIndex] = label
-                }
-                if let alignment = childAlignments[i] {
-                    newAlignments[newIndex] = alignment
-                }
-                if i < childWidthSizingModes.count {
-                    newWidthModes.append(childWidthSizingModes[i])
-                }
-                if i < childHeightSizingModes.count {
-                    newHeightModes.append(childHeightSizingModes[i])
-                }
-                if i < childPaddings.count {
-                    newPaddings.append(childPaddings[i])
-                }
-                newIndex += 1
+
+                let snapshot = Self.snapshotForChild(
+                    at: i,
+                    children: children,
+                    components: childComponents,
+                    labels: childLabels,
+                    alignments: childAlignments,
+                    widthModes: childWidthSizingModes,
+                    heightModes: childHeightSizingModes,
+                    paddings: childPaddings
+                )
+                Self.appendSnapshot(
+                    snapshot,
+                    children: &newChildren,
+                    components: &newComponents,
+                    labels: &newLabels,
+                    alignments: &newAlignments,
+                    widthModes: &newWidthModes,
+                    heightModes: &newHeightModes,
+                    paddings: &newPaddings
+                )
             }
             
             children = newChildren
@@ -682,71 +760,57 @@ public struct SectionSplit: Codable, Sendable {
                 if row < rowIndex {
                     // Before insertion - copy from old grid
                     let oldIndex = cellIndex(row: row, column: col)
-                    newChildren.append(children[oldIndex])
-                    if let components = childComponents[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newComponents[newIndex] = components
-                    }
-                    if let label = childLabels[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newLabels[newIndex] = label
-                    }
-                    if let alignment = childAlignments[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newAlignments[newIndex] = alignment
-                    }
-                    if oldIndex < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[oldIndex])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if oldIndex < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[oldIndex])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if oldIndex < childPaddings.count {
-                        newPaddings.append(childPaddings[oldIndex])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: oldIndex,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else if row == rowIndex {
                     // New row - add empty cells
-                    newChildren.append(nil)
-                    newWidthModes.append(.fixed)
-                    newHeightModes.append(.fixed)
-                    newPaddings.append(.zero)
+                    Self.appendEmptyChild(
+                        children: &newChildren,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else {
                     // After insertion - copy from old grid (shifted by one row)
                     let oldIndex = cellIndex(row: row - 1, column: col)
-                    newChildren.append(children[oldIndex])
-                    if let components = childComponents[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newComponents[newIndex] = components
-                    }
-                    if let label = childLabels[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newLabels[newIndex] = label
-                    }
-                    if let alignment = childAlignments[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newAlignments[newIndex] = alignment
-                    }
-                    if oldIndex < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[oldIndex])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if oldIndex < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[oldIndex])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if oldIndex < childPaddings.count {
-                        newPaddings.append(childPaddings[oldIndex])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: oldIndex,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 }
             }
         }
@@ -786,71 +850,57 @@ public struct SectionSplit: Codable, Sendable {
                 if col < columnIndex {
                     // Before insertion - copy from old grid
                     let oldIndex = cellIndex(row: row, column: col)
-                    newChildren.append(children[oldIndex])
-                    if let components = childComponents[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newComponents[newIndex] = components
-                    }
-                    if let label = childLabels[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newLabels[newIndex] = label
-                    }
-                    if let alignment = childAlignments[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newAlignments[newIndex] = alignment
-                    }
-                    if oldIndex < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[oldIndex])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if oldIndex < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[oldIndex])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if oldIndex < childPaddings.count {
-                        newPaddings.append(childPaddings[oldIndex])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: oldIndex,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else if col == columnIndex {
                     // New column - add empty cell
-                    newChildren.append(nil)
-                    newWidthModes.append(.fixed)
-                    newHeightModes.append(.fixed)
-                    newPaddings.append(.zero)
+                    Self.appendEmptyChild(
+                        children: &newChildren,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 } else {
                     // After insertion - copy from old grid (shifted by one column)
                     let oldIndex = cellIndex(row: row, column: col - 1)
-                    newChildren.append(children[oldIndex])
-                    if let components = childComponents[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newComponents[newIndex] = components
-                    }
-                    if let label = childLabels[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newLabels[newIndex] = label
-                    }
-                    if let alignment = childAlignments[oldIndex] {
-                        let newIndex = newChildren.count - 1
-                        newAlignments[newIndex] = alignment
-                    }
-                    if oldIndex < childWidthSizingModes.count {
-                        newWidthModes.append(childWidthSizingModes[oldIndex])
-                    } else {
-                        newWidthModes.append(.fixed)
-                    }
-                    if oldIndex < childHeightSizingModes.count {
-                        newHeightModes.append(childHeightSizingModes[oldIndex])
-                    } else {
-                        newHeightModes.append(.fixed)
-                    }
-                    if oldIndex < childPaddings.count {
-                        newPaddings.append(childPaddings[oldIndex])
-                    } else {
-                        newPaddings.append(.zero)
-                    }
+                    let snapshot = Self.snapshotForChild(
+                        at: oldIndex,
+                        children: children,
+                        components: childComponents,
+                        labels: childLabels,
+                        alignments: childAlignments,
+                        widthModes: childWidthSizingModes,
+                        heightModes: childHeightSizingModes,
+                        paddings: childPaddings
+                    )
+                    Self.appendSnapshot(
+                        snapshot,
+                        children: &newChildren,
+                        components: &newComponents,
+                        labels: &newLabels,
+                        alignments: &newAlignments,
+                        widthModes: &newWidthModes,
+                        heightModes: &newHeightModes,
+                        paddings: &newPaddings
+                    )
                 }
             }
         }
@@ -902,27 +952,26 @@ public struct SectionSplit: Codable, Sendable {
             
             for col in 0..<gridColumns {
                 let oldIndex = cellIndex(row: row, column: col)
-                newChildren.append(children[oldIndex])
-                
-                let newIndex = newChildren.count - 1
-                if let components = childComponents[oldIndex] {
-                    newComponents[newIndex] = components
-                }
-                if let label = childLabels[oldIndex] {
-                    newLabels[newIndex] = label
-                }
-                if let alignment = childAlignments[oldIndex] {
-                    newAlignments[newIndex] = alignment
-                }
-                if oldIndex < childWidthSizingModes.count {
-                    newWidthModes.append(childWidthSizingModes[oldIndex])
-                }
-                if oldIndex < childHeightSizingModes.count {
-                    newHeightModes.append(childHeightSizingModes[oldIndex])
-                }
-                if oldIndex < childPaddings.count {
-                    newPaddings.append(childPaddings[oldIndex])
-                }
+                let snapshot = Self.snapshotForChild(
+                    at: oldIndex,
+                    children: children,
+                    components: childComponents,
+                    labels: childLabels,
+                    alignments: childAlignments,
+                    widthModes: childWidthSizingModes,
+                    heightModes: childHeightSizingModes,
+                    paddings: childPaddings
+                )
+                Self.appendSnapshot(
+                    snapshot,
+                    children: &newChildren,
+                    components: &newComponents,
+                    labels: &newLabels,
+                    alignments: &newAlignments,
+                    widthModes: &newWidthModes,
+                    heightModes: &newHeightModes,
+                    paddings: &newPaddings
+                )
             }
         }
         
@@ -975,27 +1024,26 @@ public struct SectionSplit: Codable, Sendable {
                 }
                 
                 let oldIndex = cellIndex(row: row, column: col)
-                newChildren.append(children[oldIndex])
-                
-                let newIndex = newChildren.count - 1
-                if let components = childComponents[oldIndex] {
-                    newComponents[newIndex] = components
-                }
-                if let label = childLabels[oldIndex] {
-                    newLabels[newIndex] = label
-                }
-                if let alignment = childAlignments[oldIndex] {
-                    newAlignments[newIndex] = alignment
-                }
-                if oldIndex < childWidthSizingModes.count {
-                    newWidthModes.append(childWidthSizingModes[oldIndex])
-                }
-                if oldIndex < childHeightSizingModes.count {
-                    newHeightModes.append(childHeightSizingModes[oldIndex])
-                }
-                if oldIndex < childPaddings.count {
-                    newPaddings.append(childPaddings[oldIndex])
-                }
+                let snapshot = Self.snapshotForChild(
+                    at: oldIndex,
+                    children: children,
+                    components: childComponents,
+                    labels: childLabels,
+                    alignments: childAlignments,
+                    widthModes: childWidthSizingModes,
+                    heightModes: childHeightSizingModes,
+                    paddings: childPaddings
+                )
+                Self.appendSnapshot(
+                    snapshot,
+                    children: &newChildren,
+                    components: &newComponents,
+                    labels: &newLabels,
+                    alignments: &newAlignments,
+                    widthModes: &newWidthModes,
+                    heightModes: &newHeightModes,
+                    paddings: &newPaddings
+                )
             }
         }
         
