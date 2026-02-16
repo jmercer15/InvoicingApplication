@@ -827,172 +827,6 @@ struct NativeSessionFormView: View {
         !viewModel.formModel.country.isEmpty || !viewModel.formModel.poBox.isEmpty
     }
     
-    private func updateAddressFromSearchResult(_ address: AddressData) {
-        viewModel.updateAddressFromSearchResult(address)
-    }
-    
-    private func clearAddressData() {
-        viewModel.clearFormAddress()
-    }
-    
-    private func currentAddressView(_ address: AddressEntity) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Current Address:")
-                    .font(.headline)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    Button("Edit") {
-                        var updated = viewModel.formModel
-                        updated.unitNumber = address.unitNumber
-                        updated.streetNumber = address.streetNumber
-                        updated.streetName = address.streetName
-                        updated.suburb = address.suburb
-                        updated.city = address.city
-                        updated.state = address.state
-                        updated.postcode = address.postcode
-                        updated.country = address.country
-                        updated.poBox = address.poBox
-                        updated.sessionLatitude = address.latitude
-                        updated.sessionLongitude = address.longitude
-                        updated.addressSearchText = address.fullAddressText
-                        viewModel.formModel = updated
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    
-                    Button("Clear") {
-                        viewModel.clearFormAddress()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .foregroundColor(.red)
-                }
-            }
-            
-            Text(address.fullFormattedAddress)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                .font(.system(size: 14))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(6)
-        }
-    }
-    
-    private var manualAddressFields: some View {
-        VStack(spacing: 8) {
-            // Header with clear button
-            HStack {
-                Text("Address Details")
-                    .font(.headline)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                Spacer()
-                
-                Button("Clear") {
-                    clearAddressData()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .foregroundColor(.red)
-            }
-            .padding(.bottom, 4)
-            
-            // Unit Number
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Unit:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                TextField("Unit number (optional)", text: viewModel.formBinding(\.unitNumber))
-                    .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
-            }
-            
-            // Street Number and Name
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Street:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                HStack(spacing: 8) {
-                    TextField("Number", text: viewModel.formBinding(\.streetNumber))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
-                        .frame(width: 80)
-                    
-                    TextField("Street name", text: viewModel.formBinding(\.streetName))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            // Suburb
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Suburb:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                TextField("Enter suburb", text: viewModel.formBinding(\.suburb))
-                    .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
-            }
-            
-            // State and Postcode
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("State:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                HStack(spacing: 12) {
-                    TextField("State", text: viewModel.formBinding(\.state))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
-                    
-                    TextField("Postcode", text: viewModel.formBinding(\.postcode))
-                        .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                        .accentColor(.blue)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            // Country
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Country:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                TextField("Enter country", text: viewModel.formBinding(\.country))
-                    .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
-            }
-            
-            // PO Box
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("PO Box:")
-                    .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                
-                TextField("PO Box number (optional)", text: viewModel.formBinding(\.poBox))
-                    .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                    .accentColor(.blue)
-            }
-        }
-    }
-    
     // MARK: - Notes Section
     
     private var notesSection: some View {
@@ -1016,84 +850,226 @@ struct NativeSessionFormView: View {
 
     private var supportLogSection: some View {
         GroupBox("Support Log") {
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Toggle("Capture support log for this session", isOn: supportLogBinding(\.isEnabled))
                     .toggleStyle(.switch)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if viewModel.formModel.supportLogDraft.isEnabled {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Participant:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Participant name", text: supportLogBinding(\.participantName))
-                            .textFieldStyle(.roundedBorder)
+                    let requiredFieldCount = 7
+                    let completedRequiredFieldCount = [
+                        viewModel.formModel.supportLogDraft.participantName,
+                        viewModel.formModel.supportLogDraft.participantNdisNumber,
+                        viewModel.formModel.supportLogDraft.supportItemNumber,
+                        viewModel.formModel.supportLogDraft.serviceDescription,
+                        viewModel.formModel.supportLogDraft.location,
+                        viewModel.formModel.supportLogDraft.deliveredBy,
+                        viewModel.formModel.supportLogDraft.attestedBy
+                    ]
+                    .map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .filter { $0 }
+                    .count
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "checklist")
+                            .foregroundStyle(Color.accentColor)
+                        Text("Required fields completed: \(completedRequiredFieldCount)/\(requiredFieldCount)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Participant & Support")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Participant:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Participant name", text: supportLogBinding(\.participantName))
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("NDIS #:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Participant NDIS number", text: supportLogBinding(\.participantNdisNumber))
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Item #:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Support item number", text: supportLogBinding(\.supportItemNumber))
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Description:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Service description", text: supportLogBinding(\.serviceDescription))
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("NDIS #:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Participant NDIS number", text: supportLogBinding(\.participantNdisNumber))
-                            .textFieldStyle(.roundedBorder)
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Delivery Evidence")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Delivered:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            DatePicker(
+                                "",
+                                selection: supportLogBinding(\.deliveredFrom),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            DatePicker(
+                                "",
+                                selection: supportLogBinding(\.deliveredTo),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Delivered by:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Staff name", text: supportLogBinding(\.deliveredBy))
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Attested by:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Attested by", text: supportLogBinding(\.attestedBy))
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Attested at:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            DatePicker(
+                                "",
+                                selection: supportLogBinding(\.attestedAt),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                        }
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Location:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField("Location", text: supportLogBinding(\.location))
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Item #:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Support item number", text: supportLogBinding(\.supportItemNumber))
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    Divider()
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Description:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Service description", text: supportLogBinding(\.serviceDescription))
-                            .textFieldStyle(.roundedBorder)
-                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Optional Compliance Details")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Delivered:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        DatePicker(
-                            "",
-                            selection: supportLogBinding(\.deliveredFrom),
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .labelsHidden()
-                        DatePicker(
-                            "",
-                            selection: supportLogBinding(\.deliveredTo),
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .labelsHidden()
-                    }
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Method:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            Picker("", selection: Binding(
+                                get: { viewModel.formModel.supportLogDraft.signatureMethod ?? SignatureMethod.attestation.rawValue },
+                                set: { newValue in
+                                    var updated = viewModel.formModel
+                                    updated.supportLogDraft.signatureMethod = newValue
+                                    viewModel.formModel = updated
+                                }
+                            )) {
+                                ForEach(SignatureMethod.allCases, id: \.rawValue) { method in
+                                    Text(method.rawValue.capitalized).tag(method.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Delivered by:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Staff name", text: supportLogBinding(\.deliveredBy))
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Signed by:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField(
+                                "Participant/nominee signature",
+                                text: Binding(
+                                    get: { viewModel.formModel.supportLogDraft.signedBy ?? "" },
+                                    set: { newValue in
+                                        var updated = viewModel.formModel
+                                        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        updated.supportLogDraft.signedBy = trimmed.isEmpty ? nil : trimmed
+                                        viewModel.formModel = updated
+                                    }
+                                )
+                            )
                             .textFieldStyle(.roundedBorder)
-                    }
+                        }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Attested by:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Attested by", text: supportLogBinding(\.attestedBy))
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Cancel code:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField(
+                                "NSDH / NSDF / NSDT / NSDO",
+                                text: Binding(
+                                    get: { viewModel.formModel.supportLogDraft.cancellationReasonCode ?? "" },
+                                    set: { newValue in
+                                        var updated = viewModel.formModel
+                                        let trimmed = String(newValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().prefix(4))
+                                        updated.supportLogDraft.cancellationReasonCode = trimmed.isEmpty ? nil : trimmed
+                                        viewModel.formModel = updated
+                                    }
+                                )
+                            )
                             .textFieldStyle(.roundedBorder)
-                    }
+                        }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Location:")
-                            .frame(width: 80, alignment: .trailing)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        TextField("Location", text: supportLogBinding(\.location))
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Notes:")
+                                .frame(width: 90, alignment: .trailing)
+                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                            TextField(
+                                "Optional notes",
+                                text: Binding(
+                                    get: { viewModel.formModel.supportLogDraft.notes ?? "" },
+                                    set: { newValue in
+                                        var updated = viewModel.formModel
+                                        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        updated.supportLogDraft.notes = trimmed.isEmpty ? nil : trimmed
+                                        viewModel.formModel = updated
+                                    }
+                                ),
+                                axis: .vertical
+                            )
+                            .lineLimit(2...5)
                             .textFieldStyle(.roundedBorder)
+                        }
                     }
                 }
             }
