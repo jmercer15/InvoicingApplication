@@ -224,61 +224,23 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                             let vehicleType = self.determineVehicleType(session: session, chargeType: chargeType)
                                             let parking: Double? = nil // Manual entry only
                                             let tolls: Double? = nil // Manual entry only
-                                            // Check and adjust distance if needed
-                                            let (adjustedDistance, distanceWarnings) = self.checkAndAdjustDistance(distance, businessRules: self.businessRules)
-                                            
-                                            // Check and adjust travel time if needed
-                                            let (adjustedTravelTime, travelTimeWarnings) = self.checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
-                                            let pricingBreakdown = self.calculatePricingBreakdown(
-                                                session: session,
-                                                service: service,
-                                                chargeType: chargeType,
-                                                mmmZone: mmmZone,
-                                                travelTime: adjustedTravelTime,
-                                                distance: adjustedDistance,
-                                                parking: parking,
-                                                tolls: tolls,
-                                                participantCount: participantCount,
-                                                splitCosts: splitCosts
-                                            )
-                                            
-                                            let notes = self.generateTravelChargeNotes(
-                                                session: session,
-                                                direction: .before,
-                                                distance: adjustedDistance,
-                                                originalDistance: distance,
-                                                distanceWarnings: distanceWarnings,
-                                                travelTime: adjustedTravelTime,
-                                                originalTravelTime: travelTime,
-                                                travelTimeWarnings: travelTimeWarnings,
-                                                mmmZone: mmmZone,
-                                                vehicleType: vehicleType,
-                                                parking: parking,
-                                                tolls: tolls,
-                                                participantCount: participantCount,
-                                                chargeType: chargeType,
-                                                splitCosts: splitCosts,
-                                                pricingBreakdown: pricingBreakdown
-                                            )
-                                            let travelCharge = self.createTravelSession(
+                                            let travelCharge = self.buildTravelChargeEntity(
                                                 client: session.client!,
+                                                session: session,
                                                 service: service,
+                                                direction: .before,
                                                 startTime: fromTime,
                                                 endTime: toTime,
                                                 location: toLoc,
                                                 mmmZone: mmmZone,
-                                                distance: adjustedDistance,
-                                                duration: adjustedTravelTime,
+                                                distance: distance,
+                                                travelTime: travelTime,
                                                 vehicleType: vehicleType,
                                                 parking: parking,
                                                 tolls: tolls,
                                                 participantCount: participantCount,
-                                                notes: notes,
-                                                calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
-                                                linkedSession: session,
                                                 chargeType: chargeType,
-                                                splitCosts: splitCosts,
-                                                travelDirection: "before"
+                                                splitCosts: splitCosts
                                             )
                                             self.saveTravelCharge(travelCharge)
                                             self.logAllCreatedTravelCharges()
@@ -411,63 +373,23 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                                     let vehicleType = self.determineVehicleType(session: session, chargeType: chargeType)
                                     let parking: Double? = nil // Manual entry only
                                     let tolls: Double? = nil // Manual entry only
-                                    // Notes
-                                    // Check and adjust distance if needed
-                                    let (adjustedDistance, distanceWarnings) = self.checkAndAdjustDistance(distance, businessRules: self.businessRules)
-                                    
-                                    // Check and adjust travel time if needed
-                                    let (adjustedTravelTime, travelTimeWarnings) = self.checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
-                                    let pricingBreakdown = self.calculatePricingBreakdown(
-                                        session: session,
-                                        service: service,
-                                        chargeType: chargeType,
-                                        mmmZone: mmmZone,
-                                        travelTime: adjustedTravelTime,
-                                        distance: adjustedDistance,
-                                        parking: parking,
-                                        tolls: tolls,
-                                        participantCount: participantCount,
-                                        splitCosts: splitCosts
-                                    )
-                                    
-                                    let notes = self.generateTravelChargeNotes(
-                                        session: session,
-                                        direction: .before,
-                                        distance: adjustedDistance,
-                                        originalDistance: distance,
-                                        distanceWarnings: distanceWarnings,
-                                        travelTime: adjustedTravelTime,
-                                        originalTravelTime: travelTime,
-                                        travelTimeWarnings: travelTimeWarnings,
-                                        mmmZone: mmmZone,
-                                        vehicleType: vehicleType,
-                                        parking: parking,
-                                        tolls: tolls,
-                                        participantCount: participantCount,
-                                        chargeType: chargeType,
-                                        splitCosts: splitCosts,
-                                        pricingBreakdown: pricingBreakdown
-                                    )
-                                    // Create and save travel charge entity
-                                    let travelCharge = self.createTravelSession(
+                                    let travelCharge = self.buildTravelChargeEntity(
                                         client: session.client!,
+                                        session: session,
                                         service: service,
+                                        direction: .before,
                                         startTime: fromTime,
                                         endTime: toTime,
                                         location: toLoc,
                                         mmmZone: mmmZone,
-                                        distance: adjustedDistance,
-                                        duration: adjustedTravelTime,
+                                        distance: distance,
+                                        travelTime: travelTime,
                                         vehicleType: vehicleType,
                                         parking: parking,
                                         tolls: tolls,
                                         participantCount: participantCount,
-                                        notes: notes,
-                                        calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
-                                        linkedSession: session,
                                         chargeType: chargeType,
-                                        splitCosts: splitCosts,
-                                        travelDirection: "before"
+                                        splitCosts: splitCosts
                                     )
                                     self.saveTravelCharge(travelCharge)
                                     self.logAllCreatedTravelCharges()
@@ -798,141 +720,6 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
             if !daySessions[j].session.isTravel { return daySessions[j] }
         }
         return nil
-    }
-    
-    // MARK: - Main Processing Logic
-    
-    /// Main logic for processing a single travel direction for a session.
-    private func processTravelDirection(session: SessionEntity, direction: TravelDirection, i: Int, daySessions: [SessionInstance]) {
-        // 1. Determine from/to locations and times
-        let (fromLocation, toLocation, fromTime, toTime): (String?, String?, Date?, Date?) = {
-            switch direction {
-            case .before:
-                let prev = previousNonTravelSession(i: i, daySessions: daySessions)
-                return (prev?.session.location ?? session.client?.address?.business?.address?.fullAddressText, session.location, prev?.instanceEnd, session.startTime)
-            case .after:
-                let next = nextNonTravelSession(i: i, daySessions: daySessions)
-                return (session.location, next?.session.location ?? session.client?.address?.business?.address?.fullAddressText, session.endTime, next?.instanceStart)
-            }
-        }()
-        guard let fromLoc = fromLocation, let toLoc = toLocation else {
-            self.queueForUserReview(session: session, reason: "Missing from/to location")
-            return
-        }
-        // 2. Geocode both addresses (async)
-        geocodeAddress(fromLoc) { fromCoord in
-            guard let fromCoord = fromCoord else {
-                self.queueForUserReview(session: session, reason: "Geocoding failed for fromLocation")
-                return
-            }
-            self.geocodeAddress(toLoc) { toCoord in
-                guard let toCoord = toCoord else {
-                    self.queueForUserReview(session: session, reason: "Geocoding failed for toLocation")
-                    return
-                }
-                // 3. Calculate driving distance (async)
-                self.calculateDrivingDistance(from: fromCoord, to: toCoord) { distance in
-                    guard let distance = distance else {
-                        self.queueForUserReview(session: session, reason: "Distance calculation failed")
-                        return
-                    }
-                    // 4. Estimate travel time
-                    let travelTime = self.estimateTravelTime(distance: distance) ?? self.businessRules.defaultTravelTime
-                    // 5. Lookup MMM zone
-                    let mmmZone = self.lookupMMMZone(for: session) ?? self.businessRules.defaultMMMZone
-                    // 6. Determine charge types
-                    let chargeTypes = self.determineChargeTypes(session: session)
-                    for chargeType in chargeTypes {
-                        // 7. Check for duplicate
-                        if self.travelChargeExists(client: session.client!, session: session, direction: direction, chargeType: chargeType, daySessions: daySessions) {
-                            continue
-                        }
-                        // 8. Check and adjust distance if needed
-                        let (adjustedDistance, distanceWarnings) = self.checkAndAdjustDistance(distance, businessRules: self.businessRules)
-                        
-                        // 8.5. Check and adjust travel time if needed
-                        let (adjustedTravelTime, travelTimeWarnings) = self.checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
-                        
-                        // 9. Compliance check (using adjusted distance and travel time)
-                        let complianceResult = self.isCompliantWithRules(travelTime: adjustedTravelTime, mmmZone: mmmZone, businessRules: self.businessRules, chargeType: chargeType, distance: adjustedDistance, daySessions: daySessions, session: session)
-                        
-                        // Only queue for review if there are actual violations (not distance/time adjustments)
-                        if !complianceResult.isCompliant {
-                            self.queueForUserReview(session: session, reason: "Non-compliant travel charge", violations: complianceResult.violations)
-                            continue
-                        }
-                        
-                        // If compliant but has distance/time adjustments, create travel charge with informational notes
-                        // Distance and time adjustments are handled automatically and don't require review
-                        // 9. Find service using improved NDIS Item mapping
-                        let service = self.findTravelService(client: session.client, session: session, chargeType: chargeType)
-                        // 10. Shared travel detection and participant count
-                        self.detectSharedTravelParticipants(session: session, daySessions: daySessions, direction: direction) { sharedParticipants in
-                            let participantCount = self.determineParticipantCount(session: session, sharedParticipants: sharedParticipants)
-                            let splitCosts = participantCount > 1
-                            // 11. Vehicle, parking, tolls
-                            let vehicleType = self.determineVehicleType(session: session, chargeType: chargeType)
-                            let parking: Double? = nil // Manual entry only
-                            let tolls: Double? = nil // Manual entry only
-                            let pricingBreakdown = self.calculatePricingBreakdown(
-                                session: session,
-                                service: service,
-                                chargeType: chargeType,
-                                mmmZone: mmmZone,
-                                travelTime: adjustedTravelTime,
-                                distance: adjustedDistance,
-                                parking: parking,
-                                tolls: tolls,
-                                participantCount: participantCount,
-                                splitCosts: splitCosts
-                            )
-                            // 12. Notes (including distance adjustment info)
-                            let notes = self.generateTravelChargeNotes(
-                                session: session,
-                                direction: direction,
-                                distance: adjustedDistance,
-                                originalDistance: distance,
-                                distanceWarnings: distanceWarnings,
-                                travelTime: adjustedTravelTime,
-                                originalTravelTime: travelTime,
-                                travelTimeWarnings: travelTimeWarnings,
-                                mmmZone: mmmZone,
-                                vehicleType: vehicleType,
-                                parking: parking,
-                                tolls: tolls,
-                                participantCount: participantCount,
-                                chargeType: chargeType,
-                                splitCosts: splitCosts,
-                                pricingBreakdown: pricingBreakdown
-                            )
-                            // 13. Create and save travel charge entity (using adjusted distance)
-                            let travelCharge = self.createTravelSession(
-                                client: session.client!,
-                                service: service,
-                                startTime: (direction == .before) ? fromTime : session.endTime,
-                                endTime: (direction == .before) ? session.startTime : toTime,
-                                location: (direction == .before) ? fromLoc : toLoc,
-                                mmmZone: mmmZone,
-                                distance: adjustedDistance,
-                                duration: adjustedTravelTime,
-                                vehicleType: vehicleType,
-                                parking: parking,
-                                tolls: tolls,
-                                participantCount: participantCount,
-                                notes: notes,
-                                calculatedAmount: self.calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
-                                linkedSession: session,
-                                chargeType: chargeType,
-                                splitCosts: splitCosts,
-                                travelDirection: direction == .before ? "before" : "after"
-                            )
-                            self.saveTravelCharge(travelCharge)
-                            self.logAllCreatedTravelCharges()
-                        }
-                    }
-                }
-            }
-        }
     }
     
     /// Geocodes an address string to CLLocationCoordinate2D using MapKit with retry logic. Returns nil if geocoding fails.
@@ -1498,6 +1285,89 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
         )
     }
 
+    private func buildTravelChargeEntity(
+        client: ClientEntity,
+        session: SessionEntity,
+        service: ClientServiceEntity?,
+        direction: TravelDirection,
+        startTime: Date?,
+        endTime: Date?,
+        location: String,
+        mmmZone: MMMZone,
+        distance: Double,
+        travelTime: Double,
+        vehicleType: String?,
+        parking: Double?,
+        tolls: Double?,
+        participantCount: Int,
+        chargeType: String,
+        splitCosts: Bool,
+        notesSuffix: String? = nil
+    ) -> TravelChargeEntity {
+        let (adjustedDistance, distanceWarnings) = checkAndAdjustDistance(distance, businessRules: businessRules)
+        let (adjustedTravelTime, travelTimeWarnings) = checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
+        let pricingBreakdown = calculatePricingBreakdown(
+            session: session,
+            service: service,
+            chargeType: chargeType,
+            mmmZone: mmmZone,
+            travelTime: adjustedTravelTime,
+            distance: adjustedDistance,
+            parking: parking,
+            tolls: tolls,
+            participantCount: participantCount,
+            splitCosts: splitCosts
+        )
+
+        var notes = generateTravelChargeNotes(
+            session: session,
+            direction: direction,
+            distance: adjustedDistance,
+            originalDistance: distance,
+            distanceWarnings: distanceWarnings,
+            travelTime: adjustedTravelTime,
+            originalTravelTime: travelTime,
+            travelTimeWarnings: travelTimeWarnings,
+            mmmZone: mmmZone,
+            vehicleType: vehicleType,
+            parking: parking,
+            tolls: tolls,
+            participantCount: participantCount,
+            chargeType: chargeType,
+            splitCosts: splitCosts,
+            pricingBreakdown: pricingBreakdown
+        )
+
+        if let notesSuffix, !notesSuffix.isEmpty {
+            notes += notesSuffix
+        }
+
+        return createTravelSession(
+            client: client,
+            service: service,
+            startTime: startTime,
+            endTime: endTime,
+            location: location,
+            mmmZone: mmmZone,
+            distance: adjustedDistance,
+            duration: adjustedTravelTime,
+            vehicleType: vehicleType,
+            parking: parking,
+            tolls: tolls,
+            participantCount: participantCount,
+            notes: notes,
+            calculatedAmount: calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
+            linkedSession: session,
+            chargeType: chargeType,
+            splitCosts: splitCosts,
+            travelDirection: direction.rawValue
+        )
+    }
+
+    private func overrideNotesSuffix(overrideType: String?, overrideReason: String?) -> String {
+        "\n[Override: \(overrideType ?? "Manual") - \(overrideReason ?? "No reason provided")]"
+    }
+
     private func calculatedAmount(for chargeType: String, breakdown: NDISTravelChargeBreakdown) -> Double {
         switch chargeType.lowercased() {
         case "labour":
@@ -1833,67 +1703,25 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
                 let participantCount = determineParticipantCount(session: session, sharedParticipants: sharedParticipants)
                 let splitCosts = participantCount > 1
                 let vehicleType = determineVehicleType(session: session, chargeType: chargeType)
-                
-                // Adjustments (still apply standard adjustments unless specifically overridden?)
-                // Usually overrides imply accepting the calculated values or user-specified values. 
-                // Here we accept the standard calculated values but ignore the "Violation" blocking.
-                // We will still clamp to limits if it's just a distance/time compliance warning, 
-                // UNLESS the overrideType specifically says "Limit Override" which we don't fully support parsing here yet.
-                // For safety, we apply standard adjustments to keep data clean, assuming the 'Reason' covers why it's allowed.
-                
-                let (adjustedDistance, distanceWarnings) = checkAndAdjustDistance(distance, businessRules: businessRules)
-                let (adjustedTravelTime, travelTimeWarnings) = checkAndAdjustTravelTime(travelTime, mmmZone: mmmZone)
-                let pricingBreakdown = calculatePricingBreakdown(
-                    session: session,
-                    service: service,
-                    chargeType: chargeType,
-                    mmmZone: mmmZone,
-                    travelTime: adjustedTravelTime,
-                    distance: adjustedDistance,
-                    parking: nil,
-                    tolls: nil,
-                    participantCount: participantCount,
-                    splitCosts: splitCosts
-                )
-                
-                let notes = generateTravelChargeNotes(
-                    session: session,
-                    direction: direction,
-                    distance: adjustedDistance,
-                    originalDistance: distance,
-                    distanceWarnings: distanceWarnings,
-                    travelTime: adjustedTravelTime,
-                    originalTravelTime: travelTime,
-                    travelTimeWarnings: travelTimeWarnings,
-                    mmmZone: mmmZone,
-                    vehicleType: vehicleType,
-                    parking: nil,
-                    tolls: nil,
-                    participantCount: participantCount,
-                    chargeType: chargeType,
-                    splitCosts: splitCosts,
-                    pricingBreakdown: pricingBreakdown
-                ) + "\n[Override: \(overrideType ?? "Manual") - \(overrideReason ?? "No reason provided")]"
-                
-                let travelCharge = createTravelSession(
+                let notesSuffix = overrideNotesSuffix(overrideType: overrideType, overrideReason: overrideReason)
+                let travelCharge = buildTravelChargeEntity(
                     client: client,
+                    session: session,
                     service: service,
+                    direction: direction,
                     startTime: (direction == .before) ? fromTime : session.endTime,
                     endTime: (direction == .before) ? session.startTime : toTime,
                     location: (direction == .before) ? fromLoc : toLoc,
                     mmmZone: mmmZone,
-                    distance: adjustedDistance,
-                    duration: adjustedTravelTime,
+                    distance: distance,
+                    travelTime: travelTime,
                     vehicleType: vehicleType,
                     parking: nil,
                     tolls: nil,
                     participantCount: participantCount,
-                    notes: notes,
-                    calculatedAmount: calculatedAmount(for: chargeType, breakdown: pricingBreakdown),
-                    linkedSession: session,
                     chargeType: chargeType,
                     splitCosts: splitCosts,
-                    travelDirection: direction == .before ? "before" : "after"
+                    notesSuffix: notesSuffix
                 )
                   
                 // Store override metadata on the entity if supported (schema dependent). 
@@ -2444,6 +2272,56 @@ public final class TravelChargeAutomationService: @unchecked Sendable {
     }
     
 }
+
+#if DEBUG
+extension TravelChargeAutomationService {
+    func _testCalculatedAmount(for chargeType: String, breakdown: NDISTravelChargeBreakdown) -> Double {
+        calculatedAmount(for: chargeType, breakdown: breakdown)
+    }
+
+    func _testGenerateTravelChargeNotes(
+        session: SessionEntity,
+        direction: TravelDirection,
+        distance: Double?,
+        originalDistance: Double?,
+        distanceWarnings: [ComplianceViolation],
+        travelTime: Double,
+        originalTravelTime: Double?,
+        travelTimeWarnings: [ComplianceViolation],
+        mmmZone: MMMZone,
+        vehicleType: String?,
+        parking: Double?,
+        tolls: Double?,
+        participantCount: Int,
+        chargeType: String,
+        splitCosts: Bool,
+        pricingBreakdown: NDISTravelChargeBreakdown
+    ) -> String {
+        generateTravelChargeNotes(
+            session: session,
+            direction: direction,
+            distance: distance,
+            originalDistance: originalDistance,
+            distanceWarnings: distanceWarnings,
+            travelTime: travelTime,
+            originalTravelTime: originalTravelTime,
+            travelTimeWarnings: travelTimeWarnings,
+            mmmZone: mmmZone,
+            vehicleType: vehicleType,
+            parking: parking,
+            tolls: tolls,
+            participantCount: participantCount,
+            chargeType: chargeType,
+            splitCosts: splitCosts,
+            pricingBreakdown: pricingBreakdown
+        )
+    }
+
+    func _testOverrideNotesSuffix(overrideType: String?, overrideReason: String?) -> String {
+        overrideNotesSuffix(overrideType: overrideType, overrideReason: overrideReason)
+    }
+}
+#endif
 
 // MARK: - Supporting Types (Public)
 
