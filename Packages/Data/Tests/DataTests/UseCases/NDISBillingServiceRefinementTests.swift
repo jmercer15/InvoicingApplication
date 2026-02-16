@@ -23,10 +23,9 @@ final class NDISBillingServiceRefinementTests: XCTestCase {
         try await super.setUp()
         
         // Setup in-memory SwiftData
-        let schema = Schema([NDISItemEntity.self, RegionalPriceEntity.self])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
-        modelContext = ModelContext(container)
+        let models: [any PersistentModel.Type] = [NDISItemEntity.self, RegionalPriceEntity.self]
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext(models: models)
+        modelContext = context
         
         repository = NDISItemRepositorySwiftData(modelContext: modelContext)
         configService = NDISBillingConfigService()
@@ -272,6 +271,7 @@ final class UnitOfWorkServiceMock: UnitOfWorkService {
     var serviceAgreements: any ServiceAgreementRepository { ServiceAgreementRepositoryMock() }
     var supportLogs: any SupportLogRepository { SupportLogRepositoryMock() }
     var bulkClaims: any BulkClaimRepository { BulkClaimRepositoryMock() }
+    var soleTraderCredentials: any SoleTraderComplianceCredentialRepository { fatalError("Not implemented") }
     func saveChanges() async throws {}
     func rollback() async {}
     func createChildContext() -> any UnitOfWorkService { self }

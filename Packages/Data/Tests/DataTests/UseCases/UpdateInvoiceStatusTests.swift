@@ -12,7 +12,7 @@ final class UpdateInvoiceStatusTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
 
-        let schema = Schema([
+        let models: [any PersistentModel.Type] = [
             AddressEntity.self,
             InvoiceEntity.self,
             ClientEntity.self,
@@ -20,10 +20,9 @@ final class UpdateInvoiceStatusTests: XCTestCase {
             PayeeEntity.self,
             SessionEntity.self,
             InvoiceItemEntity.self
-        ])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        modelContext = ModelContext(container)
+        ]
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext(models: models)
+        modelContext = context
 
         repository = InvoicesRepositorySwiftData(modelContext: modelContext)
         updateInvoiceStatus = UpdateInvoiceStatus(repository: repository)

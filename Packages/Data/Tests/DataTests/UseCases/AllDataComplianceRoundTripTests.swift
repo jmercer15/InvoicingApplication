@@ -44,10 +44,8 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
     }
 
     private func makeInMemoryContext() throws -> ModelContext {
-        let schema = complianceSchema()
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        return ModelContext(container)
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        return context
     }
 
     private func insertComplianceFixture(into context: ModelContext) throws {

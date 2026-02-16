@@ -10,10 +10,8 @@ final class BulkClaimRepositoryTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        let schema = complianceSchema()
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        modelContext = ModelContext(container)
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        modelContext = context
         repository = BulkClaimRepositorySwiftData(modelContext: modelContext)
     }
 

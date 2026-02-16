@@ -22,31 +22,10 @@ final class RelationshipDeletionTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        
-        // Create in-memory model container for testing
-        let schema = Schema([
-            ClientEntity.self,
-            PayeeEntity.self,
-            PlanManagerEntity.self,
-            AddressEntity.self,
-            SessionEntity.self,
-            TravelChargeEntity.self,
-            InvoiceEntity.self,
-            InvoiceItemEntity.self,
-            ClientServiceEntity.self,
-            NDISItemEntity.self,
-            RegionalPriceEntity.self,
-            ServiceAgreementEntity.self,
-            SupportLogEntity.self,
-            BulkClaimBatchEntity.self,
-            BulkClaimLineEntity.self
-        ])
-        
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        
         do {
-            modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-            modelContext = ModelContext(modelContainer)
+            let (container, context) = try ModelContainerFactory.makeInMemoryContext()
+            modelContainer = container
+            modelContext = context
         } catch {
             XCTFail("Failed to create model container: \(error)")
         }

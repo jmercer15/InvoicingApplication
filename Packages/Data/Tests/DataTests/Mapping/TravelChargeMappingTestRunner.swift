@@ -14,17 +14,16 @@ final class TravelChargeMappingTestRunner: XCTestCase {
         try await super.setUp()
         
         // Create in-memory model context for testing
-        let schema = Schema([
+        let models: [any PersistentModel.Type] = [
             TravelChargeEntity.self,
             SessionEntity.self,
             ClientEntity.self,
             ClientServiceEntity.self,
             TravelChargeAuditLogEntity.self,
             TravelChargeReviewItemEntity.self
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-        modelContext = ModelContext(modelContainer)
+        ]
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext(models: models)
+        modelContext = context
     }
     
     override func tearDown() async throws {
