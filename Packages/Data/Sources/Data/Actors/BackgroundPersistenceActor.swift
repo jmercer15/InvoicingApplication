@@ -18,33 +18,9 @@ public actor BackgroundPersistenceActor: GlobalActor {
     }()
     
     private init() {
-        let schema = Schema([
-            ClientEntity.self,
-            BusinessEntity.self,
-            AddressEntity.self,
-            InvoiceEntity.self,
-            InvoiceItemEntity.self,
-            ClientServiceEntity.self,
-            PayeeEntity.self,
-            PlanManagerEntity.self,
-            SessionEntity.self,
-            TravelChargeEntity.self,
-            TravelChargeAuditLogEntity.self,
-            TravelChargeReviewItemEntity.self,
-            CreditHistoryEntryEntity.self,
-            NDISItemEntity.self,
-            RegionalPriceEntity.self,
-            ServiceAgreementEntity.self,
-            SupportLogEntity.self,
-            BulkClaimBatchEntity.self,
-            BulkClaimLineEntity.self
-        ])
-
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        
         do {
             PersistentStoreSanitizer.sanitizeLegacyStatusesIfNeeded()
-            self.modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            self.modelContainer = try ModelContainerFactory.makePersistentContainer()
             print("[BackgroundPersistenceActor] ModelContainer initialized successfully.")
         } catch {
             fatalError("[BackgroundPersistenceActor] Failed to create ModelContainer: \(error)")
