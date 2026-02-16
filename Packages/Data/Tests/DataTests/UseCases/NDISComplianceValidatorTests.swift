@@ -11,30 +11,8 @@ final class NDISComplianceValidatorTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
 
-        let schema = Schema([
-            ClientEntity.self,
-            BusinessEntity.self,
-            AddressEntity.self,
-            InvoiceEntity.self,
-            InvoiceItemEntity.self,
-            ClientServiceEntity.self,
-            PayeeEntity.self,
-            PlanManagerEntity.self,
-            SessionEntity.self,
-            TravelChargeEntity.self,
-            TravelChargeAuditLogEntity.self,
-            TravelChargeReviewItemEntity.self,
-            CreditHistoryEntryEntity.self,
-            NDISItemEntity.self,
-            RegionalPriceEntity.self,
-            ServiceAgreementEntity.self,
-            SupportLogEntity.self,
-            BulkClaimBatchEntity.self,
-            BulkClaimLineEntity.self
-        ])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        modelContext = ModelContext(container)
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        modelContext = context
 
         let businessRepository = BusinessRepositorySwiftData(modelContext: modelContext)
         let invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)

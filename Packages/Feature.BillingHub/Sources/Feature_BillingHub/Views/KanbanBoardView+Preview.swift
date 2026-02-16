@@ -25,29 +25,7 @@ private struct PreparingSessionsColumnPreview: View {
 
     init() {
         // Build an in-memory SwiftData container for previews
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try! ModelContainer(
-            for: ClientEntity.self,
-                 BusinessEntity.self,
-                 AddressEntity.self,
-                 InvoiceEntity.self,
-                 InvoiceItemEntity.self,
-                 ClientServiceEntity.self,
-                 PayeeEntity.self,
-                 PlanManagerEntity.self,
-                 SessionEntity.self,
-                 TravelChargeEntity.self,
-                 TravelChargeAuditLog.self,
-                 TravelChargeReviewItemEntity.self,
-                 CreditHistoryEntryEntity.self,
-                 NDISItemEntity.self,
-                 RegionalPriceEntity.self,
-                 ServiceAgreementEntity.self,
-                 SupportLogEntity.self,
-                 BulkClaimBatchEntity.self,
-                 BulkClaimLineEntity.self,
-            configurations: config
-        )
+        let container = try! ModelContainerFactory.makeInMemoryContainer()
         _container = State(initialValue: container)
         let context = ModelContext(container)
 
@@ -141,29 +119,7 @@ private struct FullKanbanBoardPreview: View {
 
     init() {
         // In‑memory SwiftData store
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try! ModelContainer(
-            for: ClientEntity.self,
-                 BusinessEntity.self,
-                 AddressEntity.self,
-                 InvoiceEntity.self,
-                 InvoiceItemEntity.self,
-                 ClientServiceEntity.self,
-                 PayeeEntity.self,
-                 PlanManagerEntity.self,
-                 SessionEntity.self,
-                 TravelChargeEntity.self,
-                 TravelChargeAuditLog.self,
-                 TravelChargeReviewItemEntity.self,
-                 CreditHistoryEntryEntity.self,
-                 NDISItemEntity.self,
-                 RegionalPriceEntity.self,
-                 ServiceAgreementEntity.self,
-                 SupportLogEntity.self,
-                 BulkClaimBatchEntity.self,
-                 BulkClaimLineEntity.self,
-            configurations: config
-        )
+        let container = try! ModelContainerFactory.makeInMemoryContainer()
         _container = State(initialValue: container)
         let context = ModelContext(container)
 

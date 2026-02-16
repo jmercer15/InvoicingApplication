@@ -10,11 +10,8 @@ final class ServiceAgreementRepositoryTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        let container = try ModelContainer(
-            for: complianceSchema(),
-            configurations: [ModelConfiguration(schema: complianceSchema(), isStoredInMemoryOnly: true)]
-        )
-        modelContext = ModelContext(container)
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        modelContext = context
         repository = ServiceAgreementRepositorySwiftData(modelContext: modelContext)
     }
 
@@ -107,6 +104,25 @@ final class ServiceAgreementRepositoryTests: XCTestCase {
         XCTAssertEqual(febActive?.id, febAgreement.id)
     }
 
+    func testCreateRejectsEndDateEarlierThanStartDate() async throws {
+        let client = try insertClient()
+        let invalidAgreement = ServiceAgreement(
+            id: UUID(),
+            clientId: client.id,
+            effectiveFrom: makeDate(2026, 5, 10),
+            effectiveTo: makeDate(2026, 5, 1)
+        )
+
+        do {
+            _ = try await repository.create(invalidAgreement)
+            XCTFail("Expected validation error for invalid date range.")
+        } catch RepositoryError.validationFailed(let message) {
+            XCTAssertTrue(message.contains("end date"), "Unexpected validation message: \(message)")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func insertClient() throws -> ClientEntity {
         let client = ClientEntity(
             id: UUID(),
@@ -127,28 +143,4 @@ final class ServiceAgreementRepositoryTests: XCTestCase {
         components.hour = 12
         return Calendar(identifier: .gregorian).date(from: components) ?? Date()
     }
-}
-
-func complianceSchema() -> Schema {
-    Schema([
-        ClientEntity.self,
-        BusinessEntity.self,
-        AddressEntity.self,
-        InvoiceEntity.self,
-        InvoiceItemEntity.self,
-        ClientServiceEntity.self,
-        PayeeEntity.self,
-        PlanManagerEntity.self,
-        SessionEntity.self,
-        TravelChargeEntity.self,
-        TravelChargeAuditLogEntity.self,
-        TravelChargeReviewItemEntity.self,
-        CreditHistoryEntryEntity.self,
-        NDISItemEntity.self,
-        RegionalPriceEntity.self,
-        ServiceAgreementEntity.self,
-        SupportLogEntity.self,
-        BulkClaimBatchEntity.self,
-        BulkClaimLineEntity.self
-    ])
 }

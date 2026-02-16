@@ -61,29 +61,7 @@ private struct BillingHubPreviewView: View {
     }
     
     private static func makeContainer() -> ModelContainer {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try! ModelContainer(
-            for: ClientEntity.self,
-                 BusinessEntity.self,
-                 AddressEntity.self,
-                 InvoiceEntity.self,
-                 InvoiceItemEntity.self,
-                 ClientServiceEntity.self,
-                 PayeeEntity.self,
-                 PlanManagerEntity.self,
-                 SessionEntity.self,
-                 TravelChargeEntity.self,
-                 TravelChargeAuditLog.self,
-                 TravelChargeReviewItemEntity.self,
-                 CreditHistoryEntryEntity.self,
-                 NDISItemEntity.self,
-                 RegionalPriceEntity.self,
-                 ServiceAgreementEntity.self,
-                 SupportLogEntity.self,
-                 BulkClaimBatchEntity.self,
-                 BulkClaimLineEntity.self,
-            configurations: config
-        )
+        try! ModelContainerFactory.makeInMemoryContainer()
     }
     
     private static func populatePreviewData(in context: ModelContext) {

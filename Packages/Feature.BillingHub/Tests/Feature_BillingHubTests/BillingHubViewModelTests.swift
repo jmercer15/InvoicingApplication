@@ -31,31 +31,9 @@ final class BillingHubViewModelTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
 
-        let schema = Schema([
-            ClientEntity.self,
-            BusinessEntity.self,
-            AddressEntity.self,
-            InvoiceEntity.self,
-            InvoiceItemEntity.self,
-            ClientServiceEntity.self,
-            PayeeEntity.self,
-            PlanManagerEntity.self,
-            SessionEntity.self,
-            TravelChargeEntity.self,
-            TravelChargeAuditLogEntity.self,
-            TravelChargeReviewItemEntity.self,
-            CreditHistoryEntryEntity.self,
-            NDISItemEntity.self,
-            RegionalPriceEntity.self,
-            ServiceAgreementEntity.self,
-            SupportLogEntity.self,
-            BulkClaimBatchEntity.self,
-            BulkClaimLineEntity.self
-        ])
-
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        modelContainer = try ModelContainer(for: schema, configurations: [configuration])
-        modelContext = ModelContext(modelContainer)
+        let (container, context) = try ModelContainerFactory.makeInMemoryContext()
+        modelContainer = container
+        modelContext = context
 
         sessionsRepository = SessionsRepositorySwiftData(modelContext: modelContext)
         invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
