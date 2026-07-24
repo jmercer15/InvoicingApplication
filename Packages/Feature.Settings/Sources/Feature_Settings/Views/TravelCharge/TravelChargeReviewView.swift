@@ -3,42 +3,51 @@ import SwiftData
 import Data
 import Core
 import SharedUI
+import Observation
 
 struct TravelChargeReviewView: View {
-    @ObservedObject var viewModel: TravelChargeReviewViewModel
-    
+    @State private var viewModel: TravelChargeReviewViewModel
+
+    private static let dateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        return df
+    }()
+
     @State private var selectedReviewItem: Core.TravelChargeReviewItem?
     @State private var showingViolationDetails = false
     @State private var showingReviewSheet = false
-    @State private var filterStatus: ReviewStatusFilter = .all
-    
-    enum ReviewStatusFilter: String, CaseIterable {
-        case all = "All"
-        case pending = "Pending"
-        case resolved = "Resolved"
-        case overridden = "Overridden"
-        case skipped = "Skipped"
+
+    init(viewModel: @autoclosure @escaping () -> TravelChargeReviewViewModel) {
+        _viewModel = State(initialValue: viewModel())
     }
-    
-    var filteredReviewItems: [Core.TravelChargeReviewItem] {
-        switch filterStatus {
+
+    private var pendingReviewItems: [Core.TravelChargeReviewItem] {
+        viewModel.reviewItemEntities.filter { $0.status == "pending" }
+    }
+
+    private var filteredReviewItems: [Core.TravelChargeReviewItem] {
+        switch viewModel.filterStatus {
         case .all:
-            return viewModel.reviewItems
+            return viewModel.reviewItemEntities
         case .pending:
-            return viewModel.reviewItems.filter { $0.status == "pending" }
+            return pendingReviewItems
         case .resolved:
-            return viewModel.reviewItems.filter { $0.status == "resolved" }
+            return viewModel.reviewItemEntities.filter { $0.status == "resolved" }
         case .overridden:
-            return viewModel.reviewItems.filter { $0.status == "overridden" }
+            return viewModel.reviewItemEntities.filter { $0.status == "overridden" }
         case .skipped:
-            return viewModel.reviewItems.filter { $0.status == "skipped" }
+            return viewModel.reviewItemEntities.filter { $0.status == "skipped" }
         }
     }
-    
+
     var body: some View {
-        VStack(spacing: 32) {
+        @Bindable var bindableViewModel = viewModel
+
+        VStack(spacing: FormSectionTokens.pageStackSpacing) {
                 // Header
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     HStack {
                         Text("Travel Charge Review")
                             .font(.title2.bold())
@@ -48,22 +57,21 @@ struct TravelChargeReviewView: View {
                         }
                         .buttonStyle(.glassProminent)
                         .pointerStyle(.link)
-                        .disabled(viewModel.reviewItems.filter { $0.status == "pending" }.isEmpty)
+                        .disabled(pendingReviewItems.isEmpty)
                     }
                     
                     Text("Review and resolve travel charge compliance violations")
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
-                .padding(.horizontal)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .standardCardStyle()
                 
                 // Status Filter
                 HStack {
                     Text("Filter:")
                         .font(.headline)
                     
-                    Picker("Status", selection: $filterStatus) {
-                        ForEach(ReviewStatusFilter.allCases, id: \.self) { status in
+                    Picker("Status", selection: $bindableViewModel.filterStatus) {
+                        ForEach(TravelChargeReviewViewModel.ReviewStatusFilter.allCases, id: \.self) { status in
                             Text(status.rawValue).tag(status)
                         }
                     }
@@ -77,18 +85,14 @@ struct TravelChargeReviewView: View {
                         .font(.caption)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
-                .padding(.horizontal)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .standardCardStyle()
                 
                 // Review Items List
-                if viewModel.isLoading {
-                    ProgressView("Loading review items...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if filteredReviewItems.isEmpty {
-                    VStack(spacing: 16) {
+                if filteredReviewItems.isEmpty {
+                    VStack(spacing: FormSectionTokens.formGroupSpacing) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
+                            .font(StyleGuide.Typography.emptyStateIcon)
+                            .foregroundColor(ColorSystem.Status.success)
                         Text("No Review Items")
                             .font(.title2.bold())
                         Text("All travel charges are compliant or have been resolved.")
@@ -98,7 +102,7 @@ struct TravelChargeReviewView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: FormSectionTokens.sectionStackSpacing) {
                             ForEach(filteredReviewItems) { reviewItem in
                                 ReviewItemCard(reviewItem: reviewItem) {
                                     selectedReviewItem = reviewItem
@@ -110,16 +114,16 @@ struct TravelChargeReviewView: View {
                     }
                 }
         }
-        .onAppear {
-            viewModel.loadReviewItems()
-        }
         .sheet(isPresented: $showingViolationDetails) {
             if let reviewItem = selectedReviewItem {
                 TravelChargeViolationDetailsView(viewModel: viewModel, reviewItem: reviewItem)
             }
         }
         .sheet(isPresented: $showingReviewSheet) {
-            TravelChargeReviewSheetView(viewModel: viewModel)
+            TravelChargeReviewSheetView(pendingReviews: pendingReviewItems)
+        }
+        .task {
+            await viewModel.refreshReviews()
         }
     }
 }
@@ -130,9 +134,9 @@ struct ReviewItemCard: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text(reviewItem.sessionTitle ?? "Unknown Session")
                             .font(.headline)
                             .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -160,7 +164,7 @@ struct ReviewItemCard: View {
                     if reviewItem.hasViolations {
                         Label("\(reviewItem.violationCount) violations", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(ColorSystem.Status.error)
                     }
                     
                     Spacer()
@@ -172,14 +176,8 @@ struct ReviewItemCard: View {
                     }
                 }
             }
-            .padding()
-            .background(backgroundColor)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(borderColor, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .standardCardStyle()
+            .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -218,21 +216,28 @@ struct ReviewItemCard: View {
 // Note: StatusBadge is already defined in ViewStyles.swift
 
 struct TravelChargeViolationDetailsView: View {
-    @ObservedObject var viewModel: TravelChargeReviewViewModel
+    @Bindable var viewModel: TravelChargeReviewViewModel
     let reviewItem: Core.TravelChargeReviewItem
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var viewContext
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) var viewContext
     
     @State private var selectedOverride: String = ""
     @State private var overrideReason: String = ""
     @State private var isProcessing = false
+
+    private static let dateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        return df
+    }()
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                LazyVStack(spacing: 20) {
                     // Header
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                         Text("Compliance Violations")
                             .font(.title2.bold())
                         Text("Review and resolve compliance violations for this travel charge")
@@ -242,7 +247,7 @@ struct TravelChargeViolationDetailsView: View {
                     
                     // Session Information
                     GroupBox("Session Details") {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                             Text("Session: \(reviewItem.sessionTitle ?? "Unknown")")
                                 .font(.headline)
                             if let clientName = reviewItem.clientName {
@@ -250,7 +255,7 @@ struct TravelChargeViolationDetailsView: View {
                                     .font(.body)
                             }
                             if let timestamp = reviewItem.timestamp {
-                                Text("Date: \(timestamp, formatter: DateFormatter())")
+                                Text("Date: \(timestamp, formatter: Self.dateFormatter)")
                                     .font(.caption)
                                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                             }
@@ -260,11 +265,11 @@ struct TravelChargeViolationDetailsView: View {
                     // Violations List
                     if let violations = reviewItem.violationDetails, !violations.isEmpty {
                         GroupBox("Violations") {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                                 ForEach(violations, id: \.self) { violation in
                                     HStack {
                                         Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(.red)
+                                            .foregroundColor(ColorSystem.Status.error)
                                         Text(violation)
                                             .font(.body)
                                         Spacer()
@@ -277,7 +282,7 @@ struct TravelChargeViolationDetailsView: View {
                     // Override Options
                     if let overrideOptions = reviewItem.overrideOptions, !overrideOptions.isEmpty {
                         GroupBox("Override Options") {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                                 Text("Select an override option if you want to proceed despite violations:")
                                     .font(.caption)
                                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
@@ -310,11 +315,11 @@ struct TravelChargeViolationDetailsView: View {
                     // Suggested Actions
                     if let suggestedActions = reviewItem.suggestedActions, !suggestedActions.isEmpty {
                         GroupBox("Suggested Actions") {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                 ForEach(suggestedActions, id: \.self) { action in
                                     HStack {
                                         Image(systemName: "arrow.right.circle.fill")
-                                            .foregroundColor(.blue)
+                                            .foregroundColor(ColorSystem.Status.info)
                                         Text(action)
                                             .font(.body)
                                         Spacer()
@@ -327,7 +332,7 @@ struct TravelChargeViolationDetailsView: View {
                     Spacer(minLength: 0)
                     
                     // Action Buttons
-                    HStack(spacing: 16) {
+                    HStack(spacing: FormSectionTokens.formGroupSpacing) {
                         Button("Cancel") {
                             dismiss()
                         }
@@ -356,7 +361,7 @@ struct TravelChargeViolationDetailsView: View {
                 .padding()
             }
         }
-        .frame(minWidth: 500, minHeight: 600)
+        .frame(minWidth: StyleGuide.Dimensions.settingsSheetStandardMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetReviewMinHeight)
     }
     
     private func handleOverrideAction() {
@@ -364,7 +369,7 @@ struct TravelChargeViolationDetailsView: View {
         
         Task {
             await viewModel.resolveWithOverride(
-                reviewItemId: reviewItem.id,
+                reviewModelID: reviewItem.persistentModelID,
                 overrideType: selectedOverride,
                 reason: overrideReason.isEmpty ? nil : overrideReason
             )
@@ -380,7 +385,7 @@ struct TravelChargeViolationDetailsView: View {
         isProcessing = true
         
         Task {
-            await viewModel.resolveBySkipping(reviewItemId: reviewItem.id)
+            await viewModel.resolveBySkipping(reviewModelID: reviewItem.persistentModelID)
             
             await MainActor.run {
                 isProcessing = false
@@ -391,18 +396,14 @@ struct TravelChargeViolationDetailsView: View {
 }
 
 struct TravelChargeReviewSheetView: View {
-    @ObservedObject var viewModel: TravelChargeReviewViewModel
-    @Environment(\.dismiss) private var dismiss
-    
-    var pendingReviews: [Core.TravelChargeReviewItem] {
-        viewModel.reviewItems.filter { $0.status == "pending" }
-    }
-    
+    let pendingReviews: [Core.TravelChargeReviewItem]
+    @Environment(\.dismiss) var dismiss
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 // Header
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     HStack {
                         Text("Pending Reviews")
                             .font(.title2.bold())
@@ -421,10 +422,10 @@ struct TravelChargeReviewSheetView: View {
                 
                 // Pending Reviews List
                 if pendingReviews.isEmpty {
-                    VStack(spacing: 16) {
+                    VStack(spacing: FormSectionTokens.formGroupSpacing) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
+                            .font(StyleGuide.Typography.emptyStateIcon)
+                            .foregroundColor(ColorSystem.Status.success)
                         Text("No Pending Reviews")
                             .font(.title2.bold())
                         Text("All travel charge reviews have been resolved.")
@@ -434,7 +435,7 @@ struct TravelChargeReviewSheetView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: FormSectionTokens.sectionStackSpacing) {
                             ForEach(pendingReviews) { reviewItem in
                                 ReviewItemCard(reviewItem: reviewItem) {
                                     // Navigate to violation details
@@ -446,9 +447,11 @@ struct TravelChargeReviewSheetView: View {
                 }
             }
         }
-        .frame(minWidth: 600, minHeight: 500)
+        .frame(minWidth: StyleGuide.Dimensions.settingsSheetLargeMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetLargeMinHeight)
     }
 }
 
 // MARK: - Supporting Types
-// Note: BusinessRules, UserPreferences, and MMMZone are defined in TravelChargeAutomationService.swift
+// Note: `BusinessRules`, `UserPreferences`, and related automation types ship with Core travel automation
+// (`Packages/Core/Sources/Core/Services/TravelChargeAutomationService.swift`); boundary DTOs are under
+// `Packages/Core/Sources/Core/Models/Snapshots/`.

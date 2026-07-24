@@ -31,12 +31,21 @@ public struct BulkClaimExportHashVerifier: Sendable {
         return hash(for: csvData)
     }
 
+    public func hash(for snapshots: [BulkClaimLineSnapshot]) -> String {
+        let csvData = csvWriter.csvData(snapshots: snapshots)
+        return hash(for: csvData)
+    }
+
     public func verify(data: Data, expectedSHA256: String) -> Bool {
         hash(for: data).caseInsensitiveCompare(expectedSHA256) == .orderedSame
     }
 
     public func verify(lines: [BulkClaimLine], expectedSHA256: String) -> Bool {
         hash(for: lines).caseInsensitiveCompare(expectedSHA256) == .orderedSame
+    }
+
+    public func verify(snapshots: [BulkClaimLineSnapshot], expectedSHA256: String) -> Bool {
+        hash(for: snapshots).caseInsensitiveCompare(expectedSHA256) == .orderedSame
     }
 
     public func verificationResult(data: Data, expectedSHA256: String) -> BulkClaimExportHashVerificationResult {

@@ -7,17 +7,11 @@ import Core
 @MainActor
 public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
     private let eventKitService: EventKitSyncService
+    private let modelContext: ModelContext
 
-    private let unitOfWork: UnitOfWorkService
-    private static let syncTagFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    
-    public init(unitOfWork: UnitOfWorkService, eventKitService: EventKitSyncService = EventKitSyncService.shared) {
+    public init(modelContext: ModelContext, eventKitService: EventKitSyncService) {
         self.eventKitService = eventKitService
-        self.unitOfWork = unitOfWork
+        self.modelContext = modelContext
     }
     
     // MARK: - SyncService Protocol Conformance
@@ -71,21 +65,20 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
         eventKitService.syncEnabled = enabled
     }
     
-    public func sync(session: Session) async throws {
-        // Use UnitOfWork for sync operations
-        eventKitService.sync(session: session, unitOfWork: unitOfWork)
+    public func sync(session: SessionSnapshot) async throws {
+        eventKitService.sync(snapshot: session, modelContext: modelContext)
     }
     
     public func delete(syncIdentifier: String) async throws {
         eventKitService.delete(syncIdentifier: syncIdentifier)
     }
     
-    public func update(session: Session) async throws {
+    public func update(session: SessionSnapshot) async throws {
         try await sync(session: session)
     }
     
     public func fetchEvents(start: Date, end: Date) async throws -> [CalendarEvent] {
-        let ekEvents = eventKitService.fetchEvents(start: start, end: end)
+        let ekEvents = await eventKitService.fetchEvents(start: start, end: end)
         return ekEvents.map { event in
             let baseIdentifier = event.eventIdentifier ?? UUID().uuidString
             let occurrenceAnchor = (event.occurrenceDate ?? event.startDate).timeIntervalSinceReferenceDate
@@ -103,12 +96,11 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
         }
     }
     
-    public func updateSessionFromRemote(session: Session, remoteEvent: CalendarEvent) async throws -> Session {
+    public func updateSessionFromRemote(session: SessionSnapshot, remoteEvent: CalendarEvent) async throws -> SessionSnapshot {
         let normalizedTitle = remoteEvent.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let syncedTitle = normalizedTitle.isEmpty ? session.title : normalizedTitle
-        let remoteEventIdentifier = remoteEvent.id.split(separator: "|", maxSplits: 1).first.map(String.init) ?? remoteEvent.id
 
-        return Session(
+        return SessionSnapshot(
             id: session.id,
             title: syncedTitle,
             startTime: remoteEvent.startDate,
@@ -118,29 +110,21 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
             notes: remoteEvent.notes,
             status: session.status,
             isTravel: session.isTravel,
-            isDetached: session.isDetached,
-            occurrenceDate: session.occurrenceDate,
+            groupID: session.groupID,
+            groupedPosition: session.groupedPosition,
+            sessionLatitude: session.sessionLatitude,
+            sessionLongitude: session.sessionLongitude,
+            travelDistanceKM: remoteEvent.title.lowercased().contains("travel") ? session.travelDistanceKM : nil,
+            travelTimeMinutes: remoteEvent.title.lowercased().contains("travel") ? session.travelTimeMinutes : nil,
+            travelTollsAmount: session.travelTollsAmount,
+            recurrenceRuleData: session.recurrenceRuleData,
             clientId: session.clientId,
             clientServiceId: session.clientServiceId,
             addressId: session.addressId,
-            groupID: session.groupID,
-            groupedPosition: session.groupedPosition,
-            eventIdentifier: remoteEventIdentifier,
-            eventExternalIdentifier: session.eventExternalIdentifier,
-            calendarIdentifier: remoteEvent.calendarIdentifier,
-            lastModifiedDate: remoteEvent.lastModifiedDate,
-            lastSyncTag: Self.syncTagFormatter.string(from: remoteEvent.lastModifiedDate ?? Date()),
-            recurrenceRuleData: session.recurrenceRuleData,
+            ndisItemNumber: session.ndisItemNumber,
+            claimType: session.claimType,
             attendeesCount: session.attendeesCount,
-            derivedFromEKEventID: session.derivedFromEKEventID,
-            googleColorId: session.googleColorId,
-            sessionLatitude: session.sessionLatitude,
-            sessionLongitude: session.sessionLongitude,
-            assignedServiceName: session.assignedServiceName,
-            assignedRate: session.assignedRate,
-            travelDistanceKM: session.travelDistanceKM,
-            travelTimeMinutes: session.travelTimeMinutes,
-            travelTollsAmount: session.travelTollsAmount
+            travelCharges: session.travelCharges
         )
     }
     
@@ -149,7 +133,9 @@ public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
     }
     
     public func handleExternalChanges() async throws {
+        // Run direct sync refresh. Re-broadcasting external-change notifications
+        // here can create loops in feature-level observers.
+        await eventKitService.handleExternalChangesWithContext(modelContext)
         await eventKitService.fetchAvailableCalendars()
-        NotificationCenter.default.post(name: .eventKitExternalChangesDetected, object: nil)
     }
 }

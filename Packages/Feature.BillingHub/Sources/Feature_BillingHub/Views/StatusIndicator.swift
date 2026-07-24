@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SharedUI
 
 struct StatusIndicator: View {
     let color: Color
@@ -17,7 +18,7 @@ struct StatusIndicator: View {
             ZStack {
                 Circle()
                     .fill(color.opacity(0.25))
-                    .frame(width: 26, height: 26)
+                    .frame(width: BillingHubTheme.Dimensions.statusIndicatorOuter, height: BillingHubTheme.Dimensions.statusIndicatorOuter)
                     .overlay(
                         Circle()
                             .stroke(color.opacity(0.55), lineWidth: 1.5)
@@ -25,30 +26,30 @@ struct StatusIndicator: View {
 
                 Circle()
                     .fill(color.opacity(0.65))
-                    .frame(width: 14, height: 14)
+                    .frame(width: BillingHubTheme.Dimensions.statusIndicatorInner, height: BillingHubTheme.Dimensions.statusIndicatorInner)
                     .overlay(
                         Circle()
                             .fill(color)
-                            .frame(width: 8, height: 8)
+                            .frame(width: BillingHubTheme.Dimensions.statusIndicatorDot, height: BillingHubTheme.Dimensions.statusIndicatorDot)
                     )
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(count)
-                    .font(.system(size: 13, weight: .heavy))
+                    .font(BillingHubTheme.Typography.statusCount)
                     .foregroundColor(BillingHubTheme.Palette.textPrimary)
 
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(BillingHubTheme.Typography.statusLabel)
                     .foregroundColor(BillingHubTheme.Palette.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.9)
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
+        .padding(.horizontal, StyleGuide.Dimensions.paddingXMedium)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.paddingXMedium, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [color.opacity(0.28), color.opacity(0.12)],
@@ -57,10 +58,12 @@ struct StatusIndicator: View {
                     )
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.paddingXMedium, style: .continuous)
                         .stroke(color.opacity(0.45), lineWidth: 1)
                 )
-                .shadow(color: color.opacity(0.3), radius: 10, x: 0, y: 6)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) status indicator")
+        .accessibilityValue("\(count) items")
     }
 }

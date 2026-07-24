@@ -1,12 +1,13 @@
 import SwiftUI
 import SharedUI
+import Observation
 
 // ─────────────────────────────────────────────────────────────
 // MARK: - Month Header View (Displays Weekday Names)
 // ─────────────────────────────────────────────────────────────
 
 struct MonthHeaderView: View {
-    @ObservedObject var viewModel: CalendarViewModel // Needed to get currentWeekDays for layout
+    @Bindable var viewModel: CalendarViewModel // Needed to get currentWeekDays for layout
 
     var body: some View {
         HStack(spacing: 0) {
@@ -18,18 +19,24 @@ struct MonthHeaderView: View {
                     // Add left border to all but the first day header
                     .overlay(
                         index > 0 ?
-                        Rectangle().frame(width: 0.5, height: nil).foregroundColor(Color.secondary.opacity(0.3))
+                        Rectangle().frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil).foregroundColor(StyleGuide.Colors.border.opacity(0.3))
                         : nil // No border for the first item
                         , alignment: .leading
                     )
             }
         }
         .background {
-            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                .fill(Color("Background", bundle: .sharedUI).opacity(0.3))
+            UnevenRoundedRectangle(
+                topLeadingRadius: StyleGuide.Dimensions.cornerRadiusLarge + 4,
+                topTrailingRadius: StyleGuide.Dimensions.cornerRadiusLarge + 4
+            )
+                .fill(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
         }
         // Add bottom border only to the day headers section
-        .overlay(Rectangle().frame(width: nil, height: 1).foregroundColor(Color.secondary.opacity(0.2)), alignment: .bottom)
+        .overlay(
+            Rectangle().frame(width: nil, height: 1).foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+            alignment: .bottom
+        )
     }
 }
 
@@ -40,25 +47,29 @@ struct MonthHeaderView: View {
 struct MonthDayHeaderItemView: View {
     let day: Date // A representative date for the weekday
 
-    private var isToday: Bool { Calendar.current.isDateInToday(day) }
-    private var isWeekend: Bool {
-        let wd = Calendar.current.component(.weekday, from: day)
-        return wd == 1 || wd == 7
+    private var isTodayWeekday: Bool {
+        let calendar = Calendar.current
+        let todayWeekday = calendar.component(.weekday, from: Date())
+        let dayWeekday = calendar.component(.weekday, from: day)
+        return todayWeekday == dayWeekday
     }
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
+
     private var dayOfWeekString: String {
-        let f = DateFormatter(); f.dateFormat = "EEE"; return f.string(from: day)
+        Self.dayOfWeekFormatter.string(from: day)
     }
 
     var body: some View {
-        // Match WeekView styling - just day name for month view
         HStack(spacing: 6) {
             Text(dayOfWeekString)
-                .font(.system(size: 20))
-                .fontWeight(isToday ? .bold : .semibold)
-                .tracking(1.5)
-                .foregroundColor(Color("Text", bundle: .sharedUI))
+                .font(StyleGuide.Typography.gridWeekday.weight(isTodayWeekday ? .bold : .semibold))
+                .foregroundColor(isTodayWeekday ? .accentColor : StyleGuide.Colors.text)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
         .frame(maxWidth: .infinity)
         .frame(height: 42)
     }

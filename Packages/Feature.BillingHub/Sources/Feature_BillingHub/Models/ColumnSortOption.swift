@@ -8,7 +8,7 @@
 import Foundation
 
 /// Available sorting options for Kanban columns
-public enum ColumnSortOption: String, CaseIterable, Codable {
+public enum ColumnSortOption: String, CaseIterable, Codable, Sendable {
     /// User-defined manual order (default)
     case manual
     /// Oldest first by date

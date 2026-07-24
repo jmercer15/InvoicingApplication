@@ -6,20 +6,26 @@ import SharedUI
 struct TravelChargeReviewSheet: View {
     let chargeSummaries: [String]
     let reviewSummaries: [String]
-    let detailedReviewItems: [DetailedReviewItem]
-    let reviewService: TravelChargeAutomationService?
-    
-    @Environment(\.dismiss) private var dismiss
+    let detailedReviewItems: [Core.DetailedReviewItem]
+
+    private static let dateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        return df
+    }()
+
+    @Environment(\.dismiss) var dismiss
     @State private var selectedTab = 0
     @State private var showingDetailedReview = false
     @State private var selectedReviewItem: String = ""
     @State private var showingViolationDetails = false
-    @State private var selectedDetailedReview: DetailedReviewItem?
+    @State private var selectedDetailedReview: Core.DetailedReviewItem?
     
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            VStack(spacing: 8) {
+            VStack(spacing: FormSectionTokens.fieldStackSpacing) {
                 HStack {
                     Text("Travel Charge Review")
                         .font(.title2.bold())
@@ -36,7 +42,7 @@ struct TravelChargeReviewSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
-            .glassEffect(.regular, in: .rect())
+            .background(Color("Background", bundle: .sharedUI))
             
             // Tab Picker
             Picker("View", selection: $selectedTab) {
@@ -68,7 +74,7 @@ struct TravelChargeReviewSheet: View {
             .tabViewStyle(.automatic)
             .animation(.spring(response: 0.6, dampingFraction: 0.7), value: selectedTab)
         }
-        .frame(minWidth: 600, minHeight: 500)
+        .frame(minWidth: StyleGuide.Dimensions.settingsSheetLargeMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetLargeMinHeight)
         .sheet(isPresented: $showingDetailedReview) {
             DetailedReviewView(reviewItem: selectedReviewItem)
             .fluidSheetTransition()
@@ -86,11 +92,11 @@ struct TravelChargeReviewSheet: View {
     // MARK: - Tab Views
     
     private var chargesTab: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             if chargeSummaries.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 48))
+                        .font(StyleGuide.Typography.emptyStateIcon)
                         .foregroundColor(Color("Active", bundle: .sharedUI))
                     Text("No Travel Charges Created")
                         .font(.title2.bold())
@@ -100,19 +106,19 @@ struct TravelChargeReviewSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Text("Travel Charges Would Be Created:")
                         .font(.headline)
                     
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: FormSectionTokens.fieldStackSpacing) {
                             ForEach(chargeSummaries, id: \.self) { summary in
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                     Text(summary)
                                         .font(.body)
                                         .padding()
                                         .background(Color.green.opacity(0.1))
-                                        .cornerRadius(8)
+                                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
                                 }
                             }
                         }
@@ -124,11 +130,11 @@ struct TravelChargeReviewSheet: View {
     }
     
     private var reviewsTab: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             if reviewSummaries.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 48))
+                        .font(StyleGuide.Typography.emptyStateIcon)
                         .foregroundColor(Color("Active", bundle: .sharedUI))
                     Text("No Review Items")
                         .font(.title2.bold())
@@ -138,18 +144,18 @@ struct TravelChargeReviewSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Text("Review Items Requiring Attention:")
                         .font(.headline)
                     
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: FormSectionTokens.fieldStackSpacing) {
                             ForEach(reviewSummaries, id: \.self) { summary in
                                 Button(action: {
                                     selectedReviewItem = summary
                                     showingDetailedReview = true
                                 }) {
-                                    VStack(alignment: .leading, spacing: 4) {
+                                    VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                         Text(summary)
                                             .font(.body)
                                             .foregroundColor(Color("Text", bundle: .sharedUI))
@@ -157,8 +163,8 @@ struct TravelChargeReviewSheet: View {
                                     }
                                     .padding()
                                     .background(Color.orange.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
+                                    .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -171,11 +177,11 @@ struct TravelChargeReviewSheet: View {
     }
     
     private var detailedReviewsTab: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             if detailedReviewItems.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 48))
+                        .font(StyleGuide.Typography.emptyStateIcon)
                         .foregroundColor(Color("Active", bundle: .sharedUI))
                     Text("No Detailed Reviews")
                         .font(.title2.bold())
@@ -185,12 +191,12 @@ struct TravelChargeReviewSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Text("Compliance Violations:")
                         .font(.headline)
                     
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: FormSectionTokens.fieldStackSpacing) {
                             ForEach(detailedReviewItems, id: \.id) { reviewItem in
                                 detailedReviewItemView(reviewItem)
                             }
@@ -202,14 +208,14 @@ struct TravelChargeReviewSheet: View {
         .padding()
     }
     
-    private func detailedReviewItemView(_ reviewItem: DetailedReviewItem) -> some View {
+    private func detailedReviewItemView(_ reviewItem: Core.DetailedReviewItem) -> some View {
         Button(action: {
             selectedDetailedReview = reviewItem
             showingViolationDetails = true
         }) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                 HStack {
-                    Text(reviewItem.session.title)
+                    Text(reviewItem.sessionTitle)
                         .font(.headline)
                         .foregroundColor(Color("Text", bundle: .sharedUI))
                     Spacer()
@@ -224,7 +230,7 @@ struct TravelChargeReviewSheet: View {
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
                 
-                Text("Date: \(reviewItem.timestamp, formatter: DateFormatter())")
+                Text("Date: \(reviewItem.timestamp, formatter: Self.dateFormatter)")
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 
@@ -243,8 +249,8 @@ struct TravelChargeReviewSheet: View {
             }
             .padding()
             .background(Color.red.opacity(0.1))
-            .cornerRadius(8)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
         }
         .buttonStyle(.plain)
     }

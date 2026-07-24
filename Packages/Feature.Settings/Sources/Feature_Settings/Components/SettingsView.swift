@@ -7,8 +7,6 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
-import Data
-import Core
 import SharedUI
 
 struct SettingsView: View {
@@ -20,14 +18,9 @@ struct SettingsView: View {
     init(selectedSection: Binding<SettingsSection?>) {
         self._selectedSection = selectedSection
     }
-    
-    // For initializing with a specific tab (for preview and backward compatibility)
-    init(initialTab: SettingsSection? = nil) {
-        self._selectedSection = .constant(initialTab)
-    }
-    
+
     // Enum to track selected settings section
-    enum SettingsSection: String, Identifiable, CaseIterable {
+    enum SettingsSection: String, Identifiable, CaseIterable, Hashable {
         case profile = "Profile"
         case company = "Company Details"
         case invoice = "Invoice Preferences"
@@ -56,131 +49,20 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        // Settings list with real-time selection
         settingsList
     }
     
     // MARK: - Settings List
     private var settingsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                Section {
-                    ForEach(SettingsSection.allCases) { section in
-                        SettingsRowView(
-                            section: section,
-                            isSelected: selectedSection == section,
-                            onTap: { selectedSection = section }
-                        )
-                    }
-                } header: {
-                    HStack {
-                        Text("Settings Categories")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12) // Reduced horizontal padding
-                    .padding(.vertical, 10) // Reduced vertical padding
+        List(selection: $selectedSection) {
+            Section("Settings Categories") {
+                ForEach(SettingsSection.allCases) { section in
+                    Label(section.rawValue, systemImage: section.icon)
+                        .tag(section)
                 }
             }
-            .padding(.horizontal, 12) // Reduced horizontal padding
-            .padding(.vertical, 8)
         }
+        .listStyle(.sidebar)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Settings Row View
-struct SettingsRowView: View {
-    let section: SettingsView.SettingsSection
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                Image(systemName: section.icon)
-                    .font(.title3)
-                    .foregroundColor(isSelected ? Color("Text", bundle: .sharedUI) : Color("TextSecondary", bundle: .sharedUI))
-                    .frame(width: 24)
-                
-                Text(section.rawValue)
-                    .font(.body)
-                    .foregroundColor(isSelected ? Color("Text", bundle: .sharedUI) : Color("TextSecondary", bundle: .sharedUI))
-                
-                Spacer()
-                
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
-                }
-            }
-            .padding(.horizontal, 12) // Reduced horizontal padding
-            .padding(.vertical, 10) // Reduced vertical padding
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.white.opacity(0.2) : Color.clear, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-    }
-}
-
-// About View
-struct AboutView: View {
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Image("AppIcon")
-                .resizable()
-                .frame(width: 128, height: 128)
-                .cornerRadius(20)
-                .shadow(radius: 5)
-            
-            Text("Invoicing Application")
-                .font(.largeTitle.bold())
-            
-            VStack(spacing: 6) {
-                Text("Version \(Bundle.main.appVersion) (\(Bundle.main.buildNumber))")
-                Text("© 2025 Your Company Name")
-            }
-            .font(.body)
-            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-            
-            Text("This application helps you manage invoices, track clients, and handle NDIS billing with ease.")
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            Spacer()
-            
-            Button("Close") {
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.bottom, 30)
-        }
-        .padding(.top, 40)
-        .frame(width: 400, height: 500)
-    }
-}
-
-// Helper Extension for Bundle Info
-extension Bundle {
-    var appVersion: String {
-        infoDictionary?["CFBundleShortVersionString"] as? String ?? "N/A"
-    }
-    var buildNumber: String {
-        infoDictionary?["CFBundleVersion"] as? String ?? "N/A"
     }
 }

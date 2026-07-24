@@ -1,3 +1,4 @@
+import Core
 import Foundation
 import SwiftData
 
@@ -5,7 +6,7 @@ public enum AddComplianceFoundationFields_v1 {
     public static let version = "1.0.0"
 
     public static func execute(modelContext: ModelContext) throws {
-        let descriptor = FetchDescriptor<BusinessEntity>()
+        let descriptor = FetchDescriptor<Business>()
         let businesses = try modelContext.fetch(descriptor)
 
         var changed = false
@@ -27,8 +28,7 @@ public enum AddComplianceFoundationFields_v1 {
         }
     }
 
-    public static func rollback(modelContext: ModelContext) throws {
-        _ = modelContext
+    public static func rollback(modelContext _: ModelContext) throws {
         // Additive migration. Explicit rollback not supported.
     }
 }

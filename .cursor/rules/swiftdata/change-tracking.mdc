@@ -1,0 +1,103 @@
+---
+description: SwiftData change-tracking and history processing for cross-process/store updates
+globs: Packages/Data/Sources/Data/Services/**/*Sync*.swift,Packages/Data/Sources/Data/Actors/**/*.swift,Packages/Data/Sources/Data/Migrations/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftData Change Tracking
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/fetching-and-filtering-time-based-model-changes
+https://developer.apple.com/documentation/swiftdata/historydescriptor
+https://developer.apple.com/documentation/swiftdata/historychange
+https://developer.apple.com/documentation/swiftdata/historyproviding
+https://developer.apple.com/documentation/swiftdata/defaultstore
+
+Scope
+
+Applies to:
+
+- history transaction retrieval and filtering
+- durable token management and incremental processing
+- model-change interpretation and re-fetch strategies
+- history cleanup and bounded retention policies
+
+Intent
+
+Process persisted changes as ordered transactions with durable checkpoints to
+support reliable sync and cross-process consistency.
+
+Core Principle
+
+Track persisted evolution as ordered history transactions; process incrementally
+using durable tokens.
+
+Implementation Rules
+
+- Fetch history with `HistoryDescriptor` scoped by token/author/predicate.
+- Persist the most recent processed token after successful processing.
+- Filter each transaction's changes to only model types/attributes relevant to current workflow.
+- Use changed model identifiers to refetch materialized models when needed.
+- Configure attribute preservation for delete tombstone scenarios that require stable post-delete identifiers.
+- Delete stale history in bounded windows after downstream processing succeeds.
+
+Canonical Patterns
+
+```swift
+var descriptor = HistoryDescriptor<History.DefaultTransaction>()
+descriptor.predicate = #Predicate { $0.token > token }
+let txns = try context.fetchHistory(descriptor)
+```
+
+```swift
+try context.deleteHistory(descriptorForExpiredTransactions)
+```
+
+Anti-Patterns
+
+- Reprocessing full history without token checkpoints.
+- Treating all transaction changes as relevant to every feature.
+- Deleting history before consumers finish processing.
+- Assuming deleted model values remain available without preserve-on-deletion setup.
+
+Checklist
+
+- Is token-based incremental processing in place?
+- Are transactions filtered by relevance?
+- Are changed identifiers resolved safely before action?
+- Is history cleanup policy defined and safe?
+
+Architectural Implications
+
+- History processing is an operational data pipeline, not a UI convenience API.
+- Token checkpoints are durability boundaries and must be persisted reliably.
+- Change relevance filtering prevents accidental cross-feature coupling.
+
+Advanced Notes
+
+- Transactions are heterogeneous; do not assume one transaction maps to one feature concern.
+- Preserve-on-deletion attributes are necessary for stable post-delete correlation use-cases.
+- Cleanup timing impacts recoverability and storage footprint; define retention policy explicitly.
+
+Integration With Architecture
+
+- Keep history readers in sync/integration layers, not in presentation views.
+- Route filtered change events into domain-specific handlers.
+- Coordinate token persistence with app lifecycle and background task completion semantics.
+
+Enforcement Summary
+
+Always prefer:
+
+- token-based incremental history processing
+- strict relevance filtering
+- identifier-based refetch for changed entities
+- explicit stale-history cleanup policy
+
+Never allow:
+
+- replaying full history by default
+- feature logic triggered by unrelated transaction noise
+- premature history deletion before downstream consumers finish
+- reliance on deleted values without tombstone strategy

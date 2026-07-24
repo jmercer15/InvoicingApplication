@@ -1,18 +1,19 @@
 //
-//  NDISItemEntity_ItemDescriptionToDescription_Migration.swift
+//  NDISItem_ItemDescriptionToDescription_Migration.swift
 //  InvoicingApplication
 //
 //  Created by AI Assistant on 21/7/2025.
 //
-//  Migration script for renaming NDISItemEntity.itemDescription property to description
+//  Migration script for renaming NDISItem.itemDescription property to description
 //  This migration ensures backward compatibility while updating the property name
 //  to match the domain model convention.
 //
 
+import Core
 import Foundation
 import SwiftData
 
-/// Migration script for NDISItemEntity.itemDescription -> description property rename
+/// Migration script for NDISItem.itemDescription -> description property rename
 /// 
 /// This migration handles the renaming of the itemDescription property to description
 /// to maintain consistency with the domain model naming conventions.
@@ -23,13 +24,13 @@ import SwiftData
 /// - Backward Compatibility: Yes (using @Attribute(.originalName))
 /// - Data Loss: None
 /// - Rollback: Supported
-public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
+public struct NDISItem_ItemDescriptionToDescription_Migration {
     
     /// Migration version identifier
     public static let version = "1.0.0"
     
     /// Migration description
-    public static let description = "Rename NDISItemEntity.itemDescription property to description for domain model consistency"
+    public static let description = "Rename NDISItem.itemDescription property to description for domain model consistency"
     
     /// Migration date
     public static let migrationDate = Date()
@@ -44,7 +45,7 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting NDISItemEntity.itemDescription -> description migration (v\(version))")
+        print("🔄 Starting NDISItem.itemDescription -> description migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -56,7 +57,7 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ NDISItemEntity.itemDescription -> description migration completed successfully")
+        print("✅ NDISItem.itemDescription -> description migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -67,16 +68,16 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationNeeded(modelContext: ModelContext) throws {
-        // Check if any NDISItemEntity records exist
-        let descriptor = FetchDescriptor<NDISItemEntity>()
+        // Check if any NDISItem records exist
+        let descriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try modelContext.fetch(descriptor)
         
         if ndisItems.isEmpty {
-            print("ℹ️ No NDISItemEntity records found - migration not needed")
+            print("ℹ️ No NDISItem records found - migration not needed")
             return
         }
         
-        print("📊 Found \(ndisItems.count) NDISItemEntity records to migrate")
+        print("📊 Found \(ndisItems.count) NDISItem records to migrate")
     }
     
     /// Perform the actual migration
@@ -106,8 +107,8 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationSuccess(modelContext: ModelContext) throws {
-        // Fetch all NDISItemEntity records to verify they're accessible
-        let descriptor = FetchDescriptor<NDISItemEntity>()
+        // Fetch all NDISItem records to verify they're accessible
+        let descriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try modelContext.fetch(descriptor)
         
         // Verify that we can access the description property
@@ -126,8 +127,8 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
-    public static func rollback(modelContext: ModelContext) throws {
-        print("🔄 Rolling back NDISItemEntity.itemDescription -> description migration")
+    public static func rollback(modelContext _: ModelContext) throws {
+        print("🔄 Rolling back NDISItem.itemDescription -> description migration")
         
         // For Swift Data, rollback is handled by reverting the entity definition
         // and using @Attribute(.originalName) with the new property name
@@ -137,7 +138,7 @@ public struct NDISItemEntity_ItemDescriptionToDescription_Migration {
     }
 }
 
-/// Migration test utilities for NDISItemEntity
+/// Migration test utilities for NDISItem
 #if DEBUG
 public struct NDISItemMigrationTestUtils {
     
@@ -146,10 +147,10 @@ public struct NDISItemMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing NDISItemEntity.itemDescription -> description migration")
+        print("🧪 Testing NDISItem.itemDescription -> description migration")
         
         // Create test data
-        let testNDISItem = NDISItemEntity(
+        let testNDISItem = NDISItem(
             id: UUID(),
             itemNumber: "01_001_0101_1_1",
             name: "Test NDIS Item",
@@ -164,10 +165,10 @@ public struct NDISItemMigrationTestUtils {
         try modelContext.save()
         
         // Test migration
-        try NDISItemEntity_ItemDescriptionToDescription_Migration.execute(modelContext: modelContext)
+        try NDISItem_ItemDescriptionToDescription_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let descriptor = FetchDescriptor<NDISItemEntity>()
+        let descriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try modelContext.fetch(descriptor)
         
         guard let ndisItem = ndisItems.first else {

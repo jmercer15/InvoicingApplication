@@ -1,3 +1,4 @@
+import Core
 import Foundation
 
 /// Models used specifically for data export formatting
@@ -160,6 +161,19 @@ public struct ExportModels {
         }
     }
     
+    public struct InvoiceItemJSON: Codable, Sendable {
+        public let id: UUID
+        public let position: Int32
+        public let itemDescription: String
+        public let serviceDate: Date
+        public let itemCode: String?
+        public let quantity: Double
+        public let unit: String?
+        public let unitPrice: Double
+        public let taxRate: Double
+        public let gstCode: String?
+    }
+
     public struct InvoiceJSON: Codable, Sendable {
         public let invoiceNumber: String
         public let dateIssued: Date?
@@ -170,26 +184,84 @@ public struct ExportModels {
         public let totalAmountString: String?
         public let status: String?
         public let clientName: String?
-        
+        public let currencyCode: String
+        public let taxRate: Double
+        public let discount: Double
+        public let creditApplied: Double
+        public let paymentTerms: String?
+        public let notes: String?
+        public let paidDate: Date?
+        public let sentDate: Date?
+        public let businessName: String?
+        public let businessABN: String?
+        public let businessEmail: String?
+        public let businessPhone: String?
+        public let businessAddress: AddressSnapshot?
+        public let clientNDISNumber: String?
+        public let clientEmail: String?
+        public let clientPhone: String?
+        public let clientAddress: AddressSnapshot?
+        public let billingAuthority: String?
+        public let billToName: String?
+        public let billToEmail: String?
+        public let billToAddress: AddressSnapshot?
+        public let bankName: String?
+        public let bankAccountName: String?
+        public let bankBSB: String?
+        public let bankAccountNumber: String?
+        public let editorConfiguration: Data?
+        public let items: [InvoiceItemJSON]
+
         private enum CodingKeys: String, CodingKey {
             case invoiceNumber, dateIssued, dateIssuedString, dateDue, dateDueString
             case totalAmount, totalAmountString, status, clientName
+            case currencyCode, taxRate, discount, creditApplied, paymentTerms, notes
+            case paidDate, sentDate
+            case businessName, businessABN, businessEmail, businessPhone, businessAddress
+            case clientNDISNumber, clientEmail, clientPhone, clientAddress
+            case billingAuthority, billToName, billToEmail, billToAddress
+            case bankName, bankAccountName, bankBSB, bankAccountNumber
+            case editorConfiguration, items
         }
-        
-        public func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(invoiceNumber, forKey: .invoiceNumber)
-            try container.encodeIfPresent(dateIssued, forKey: .dateIssued)
-            try container.encodeIfPresent(dateIssuedString, forKey: .dateIssuedString)
-            try container.encodeIfPresent(dateDue, forKey: .dateDue)
-            try container.encodeIfPresent(dateDueString, forKey: .dateDueString)
-            try container.encodeIfPresent(totalAmount, forKey: .totalAmount)
-            try container.encodeIfPresent(totalAmountString, forKey: .totalAmountString)
-            try container.encodeIfPresent(status, forKey: .status)
-            try container.encodeIfPresent(clientName, forKey: .clientName)
-        }
-        
-        public init(invoiceNumber: String, dateIssued: Date?, dateIssuedString: String?, dateDue: Date?, dateDueString: String?, totalAmount: Double?, totalAmountString: String?, status: String?, clientName: String?) {
+
+        public init(
+            invoiceNumber: String,
+            dateIssued: Date?,
+            dateIssuedString: String?,
+            dateDue: Date?,
+            dateDueString: String?,
+            totalAmount: Double?,
+            totalAmountString: String?,
+            status: String?,
+            clientName: String?,
+            currencyCode: String,
+            taxRate: Double,
+            discount: Double,
+            creditApplied: Double,
+            paymentTerms: String?,
+            notes: String?,
+            paidDate: Date?,
+            sentDate: Date?,
+            businessName: String?,
+            businessABN: String?,
+            businessEmail: String?,
+            businessPhone: String?,
+            businessAddress: AddressSnapshot?,
+            clientNDISNumber: String?,
+            clientEmail: String?,
+            clientPhone: String?,
+            clientAddress: AddressSnapshot?,
+            billingAuthority: String?,
+            billToName: String?,
+            billToEmail: String?,
+            billToAddress: AddressSnapshot?,
+            bankName: String?,
+            bankAccountName: String?,
+            bankBSB: String?,
+            bankAccountNumber: String?,
+            editorConfiguration: Data?,
+            items: [InvoiceItemJSON]
+        ) {
             self.invoiceNumber = invoiceNumber
             self.dateIssued = dateIssued
             self.dateIssuedString = dateIssuedString
@@ -199,8 +271,35 @@ public struct ExportModels {
             self.totalAmountString = totalAmountString
             self.status = status
             self.clientName = clientName
+            self.currencyCode = currencyCode
+            self.taxRate = taxRate
+            self.discount = discount
+            self.creditApplied = creditApplied
+            self.paymentTerms = paymentTerms
+            self.notes = notes
+            self.paidDate = paidDate
+            self.sentDate = sentDate
+            self.businessName = businessName
+            self.businessABN = businessABN
+            self.businessEmail = businessEmail
+            self.businessPhone = businessPhone
+            self.businessAddress = businessAddress
+            self.clientNDISNumber = clientNDISNumber
+            self.clientEmail = clientEmail
+            self.clientPhone = clientPhone
+            self.clientAddress = clientAddress
+            self.billingAuthority = billingAuthority
+            self.billToName = billToName
+            self.billToEmail = billToEmail
+            self.billToAddress = billToAddress
+            self.bankName = bankName
+            self.bankAccountName = bankAccountName
+            self.bankBSB = bankBSB
+            self.bankAccountNumber = bankAccountNumber
+            self.editorConfiguration = editorConfiguration
+            self.items = items
         }
-        
+
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             invoiceNumber = try container.decode(String.self, forKey: .invoiceNumber)
@@ -212,6 +311,33 @@ public struct ExportModels {
             totalAmountString = try container.decodeIfPresent(String.self, forKey: .totalAmountString)
             status = try container.decodeIfPresent(String.self, forKey: .status)
             clientName = try container.decodeIfPresent(String.self, forKey: .clientName)
+            currencyCode = try container.decodeIfPresent(String.self, forKey: .currencyCode) ?? "AUD"
+            taxRate = try container.decodeIfPresent(Double.self, forKey: .taxRate) ?? 0
+            discount = try container.decodeIfPresent(Double.self, forKey: .discount) ?? 0
+            creditApplied = try container.decodeIfPresent(Double.self, forKey: .creditApplied) ?? 0
+            paymentTerms = try container.decodeIfPresent(String.self, forKey: .paymentTerms)
+            notes = try container.decodeIfPresent(String.self, forKey: .notes)
+            paidDate = try container.decodeIfPresent(Date.self, forKey: .paidDate)
+            sentDate = try container.decodeIfPresent(Date.self, forKey: .sentDate)
+            businessName = try container.decodeIfPresent(String.self, forKey: .businessName)
+            businessABN = try container.decodeIfPresent(String.self, forKey: .businessABN)
+            businessEmail = try container.decodeIfPresent(String.self, forKey: .businessEmail)
+            businessPhone = try container.decodeIfPresent(String.self, forKey: .businessPhone)
+            businessAddress = try container.decodeIfPresent(AddressSnapshot.self, forKey: .businessAddress)
+            clientNDISNumber = try container.decodeIfPresent(String.self, forKey: .clientNDISNumber)
+            clientEmail = try container.decodeIfPresent(String.self, forKey: .clientEmail)
+            clientPhone = try container.decodeIfPresent(String.self, forKey: .clientPhone)
+            clientAddress = try container.decodeIfPresent(AddressSnapshot.self, forKey: .clientAddress)
+            billingAuthority = try container.decodeIfPresent(String.self, forKey: .billingAuthority)
+            billToName = try container.decodeIfPresent(String.self, forKey: .billToName)
+            billToEmail = try container.decodeIfPresent(String.self, forKey: .billToEmail)
+            billToAddress = try container.decodeIfPresent(AddressSnapshot.self, forKey: .billToAddress)
+            bankName = try container.decodeIfPresent(String.self, forKey: .bankName)
+            bankAccountName = try container.decodeIfPresent(String.self, forKey: .bankAccountName)
+            bankBSB = try container.decodeIfPresent(String.self, forKey: .bankBSB)
+            bankAccountNumber = try container.decodeIfPresent(String.self, forKey: .bankAccountNumber)
+            editorConfiguration = try container.decodeIfPresent(Data.self, forKey: .editorConfiguration)
+            items = try container.decodeIfPresent([InvoiceItemJSON].self, forKey: .items) ?? []
         }
     }
     

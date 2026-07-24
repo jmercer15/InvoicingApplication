@@ -1,0 +1,2 @@
+## 2026-06-10T00:47:28Z
+Review and verify the design token unification changes in `Feature.Clients`. Verify that the package builds cleanly and passes all tests. Confirm that there are no remaining raw numeric literals for padding, corner-radius, and fonts in `Feature.Clients` source files. Ensure the layout is standardized and conforms to the `StyleGuide` and `ColorSystem`. Run the refactor verification script `scripts/refactor-verify.sh`. Working directory: `/Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/reviewer_clients_3_2`

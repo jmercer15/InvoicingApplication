@@ -1,3 +1,4 @@
+import Core
 import Foundation
 import SwiftData
 
@@ -8,13 +9,13 @@ public enum NormalizeInvoiceStatusValues_Migration {
     public static func execute(modelContext: ModelContext) throws {
         print("🔄 Starting invoice status normalization migration (v\(version))")
 
-        let descriptor = FetchDescriptor<InvoiceEntity>()
+        let descriptor = FetchDescriptor<Invoice>()
         let invoices = try modelContext.fetch(descriptor)
 
         var rewrites = 0
         for invoice in invoices {
-            // Assignment forces canonical raw value persistence with current enum encoding.
-            invoice.status = invoice.status
+            // Normalize nil or invalid status to canonical value so cast never fails on next load.
+            invoice.status = invoice.status ?? .reviewDraft
             rewrites += 1
         }
 
@@ -25,8 +26,7 @@ public enum NormalizeInvoiceStatusValues_Migration {
         print("✅ Invoice status normalization migration completed (\(rewrites) rewritten)")
     }
 
-    public static func rollback(modelContext: ModelContext) throws {
-        _ = modelContext
+    public static func rollback(modelContext _: ModelContext) throws {
         // One-way canonicalization; no rollback needed.
     }
 }

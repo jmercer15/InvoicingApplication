@@ -18,13 +18,6 @@ enum RecurrenceEndType: String, CaseIterable, Identifiable {
     case onDate = "On Date"
     var id: String { self.rawValue }
     
-    var displayName: String {
-        switch self {
-        case .never: return "Never"
-        case .afterCount: return "After"
-        case .onDate: return "On Date"
-        }
-    }
 }
 
 // Enum for Monthly/Yearly Recurrence Pattern Type
@@ -33,12 +26,6 @@ enum PositionalRecurrenceType: String, CaseIterable, Identifiable {
     case onTheOrdinalDayOfWeek = "On the..."
     var id: String { self.rawValue }
     
-    var displayName: String {
-        switch self {
-        case .onSpecificDays: return "On specific day(s)"
-        case .onTheOrdinalDayOfWeek: return "On the ordinal weekday"
-        }
-    }
 }
 
 // Helper Enum for Weekday Selection
@@ -93,13 +80,6 @@ enum DayOfWeekOption: Int, CaseIterable, Identifiable {
         case .saturday: return "Saturday"
         }
     }
-    
-    var ekDayOfWeek: EKRecurrenceDayOfWeek {
-        // Kept for compatibility with existing callers that expect a single value.
-        // Composite options (.day, .weekday, .weekendDay) return Sunday here;
-        // callers that need full coverage should use `ekDaysOfWeek`.
-        return ekDaysOfWeek?.first ?? EKRecurrenceDayOfWeek(.sunday)
-    }
 
     var ekDaysOfWeek: [EKRecurrenceDayOfWeek]? {
         let weekdays: [EKWeekday]
@@ -151,42 +131,5 @@ enum SelectableMonth: Int, CaseIterable, Identifiable {
         case .december: return "Dec"
         }
     }
-    
-    var fullName: String {
-        switch self {
-        case .january: return "January"
-        case .february: return "February"
-        case .march: return "March"
-        case .april: return "April"
-        case .may: return "May"
-        case .june: return "June"
-        case .july: return "July"
-        case .august: return "August"
-        case .september: return "September"
-        case .october: return "October"
-        case .november: return "November"
-        case .december: return "December"
-        }
-    }
 }
 
-// Helper for "Ordinal" options (First, Second, Third, Fourth, Last)
-enum OrdinalSelection: Int, CaseIterable, Identifiable {
-    case first = 1, second, third, fourth, last = -1
-
-    var id: Int { self.rawValue }
-
-    var displayName: String {
-        switch self {
-        case .first: return "First"
-        case .second: return "Second"
-        case .third: return "Third"
-        case .fourth: return "Fourth"
-        case .last: return "Last"
-        }
-    }
-    
-    init?(intValue: Int) {
-        self.init(rawValue: intValue)
-    }
-}

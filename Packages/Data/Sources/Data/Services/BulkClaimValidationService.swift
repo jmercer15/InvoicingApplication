@@ -16,27 +16,27 @@ public struct BulkClaimValidationSummary: Sendable, Equatable {
 }
 
 public struct BulkClaimValidationResult: Sendable, Equatable {
-    public let lines: [BulkClaimLine]
+    public let lines: [BulkClaimLineSnapshot]
     public let summary: BulkClaimValidationSummary
 
-    public init(lines: [BulkClaimLine], summary: BulkClaimValidationSummary) {
+    public init(lines: [BulkClaimLineSnapshot], summary: BulkClaimValidationSummary) {
         self.lines = lines
         self.summary = summary
     }
 }
 
-public final class BulkClaimValidationService: Sendable {
+public actor BulkClaimValidationService {
     private let validGSTCodes = Set(GSTCode.allCases.map(\.rawValue))
     private let validCancellationReasons = Set(CancellationReasonCode.allCases.map(\.rawValue))
     private let validClaimTypeCodes = Set(BPRClaimTypeCode.allCases.map(\.rawValue))
 
     public init() {}
 
-    public func validate(lines: [BulkClaimLine]) -> [BulkClaimLine] {
+    public func validate(lines: [BulkClaimLineSnapshot]) -> [BulkClaimLineSnapshot] {
         lines.map(validate(line:))
     }
 
-    public func summarize(lines: [BulkClaimLine]) -> BulkClaimValidationSummary {
+    public func summarize(lines: [BulkClaimLineSnapshot]) -> BulkClaimValidationSummary {
         let validRows = lines.filter(\.isValid).count
         return BulkClaimValidationSummary(
             totalRows: lines.count,
@@ -45,12 +45,12 @@ public final class BulkClaimValidationService: Sendable {
         )
     }
 
-    public func validateAndSummarize(lines: [BulkClaimLine]) -> BulkClaimValidationResult {
+    public func validateAndSummarize(lines: [BulkClaimLineSnapshot]) -> BulkClaimValidationResult {
         let validated = validate(lines: lines)
         return BulkClaimValidationResult(lines: validated, summary: summarize(lines: validated))
     }
 
-    private func validate(line: BulkClaimLine) -> BulkClaimLine {
+    private func validate(line: BulkClaimLineSnapshot) -> BulkClaimLineSnapshot {
         var errors: [String] = []
 
         if line.registrationNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -117,9 +117,8 @@ public final class BulkClaimValidationService: Sendable {
 
         let summary = errors.isEmpty ? nil : errors.joined(separator: "; ")
 
-        return BulkClaimLine(
+        return BulkClaimLineSnapshot(
             id: line.id,
-            batchId: line.batchId,
             registrationNumber: line.registrationNumber,
             ndisNumber: line.ndisNumber,
             supportsDeliveredFrom: line.supportsDeliveredFrom,
@@ -136,14 +135,19 @@ public final class BulkClaimValidationService: Sendable {
             claimTypeCode: line.claimTypeCode,
             cancellationReason: line.cancellationReason,
             abnOfSupportProvider: line.abnOfSupportProvider,
-            invoiceId: line.invoiceId,
-            invoiceItemId: line.invoiceItemId,
+            draftLineId: line.draftLineId,
             isValid: summary == nil,
             validationErrorSummary: summary,
             submissionStatus: line.submissionStatus,
             submissionRef: line.submissionRef,
             reconciliationNotes: line.reconciliationNotes,
-            reconciledAt: line.reconciledAt
+            reconciledAt: line.reconciledAt,
+            ndiaPaidAmount: line.ndiaPaidAmount,
+            ndiaErrorCode: line.ndiaErrorCode,
+            ndiaErrorMessage: line.ndiaErrorMessage,
+            batchId: line.batchId,
+            invoiceId: line.invoiceId,
+            invoiceItemId: line.invoiceItemId
         )
     }
 

@@ -1,34 +1,39 @@
 import SwiftUI
 import SwiftData
-import Data
-import Core
 import SharedUI
+import EventKit
+import Core
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - System Health View
 
 struct SystemHealthView: View {
-    @Environment(\.modelContext) private var viewContext
+    @Environment(\.modelContext) var viewContext
     @State private var healthChecks: [HealthCheck] = []
     @State private var isRunning = false
+    
+    @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+    @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall = StyleGuide.Dimensions.cornerRadiusSmall
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: StyleGuide.Dimensions.paddingXXLarge) {
+                VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingMedium) {
                     headerSection
                     actionButtonsSection
                 }
-                .padding(20)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .standardSectionStyle()
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingMediumLarge) {
                     resultsSection
                 }
-                .padding(20)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .standardSectionStyle()
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
@@ -39,16 +44,16 @@ struct SystemHealthView: View {
     }
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
             Text("System Health Check")
-                .font(.title.bold())
+                .font(StyleGuide.Typography.hero)
             Text("Verify system configuration and data integrity")
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
         }
     }
 
     private var actionButtonsSection: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: StyleGuide.Dimensions.paddingLarge) {
             Button(action: runHealthChecks) {
                 Label("Run Health Check", systemImage: "heart.fill")
             }
@@ -62,7 +67,7 @@ struct SystemHealthView: View {
     }
 
     private var resultsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
             Text("Health Check Results")
                 .font(.headline)
             
@@ -70,11 +75,9 @@ struct SystemHealthView: View {
                 Text("No health checks run yet")
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(healthChecks, id: \.id) { check in
-                            healthCheckRow(check)
-                        }
+                LazyVStack(spacing: FormSectionTokens.fieldStackSpacing) {
+                    ForEach(healthChecks, id: \.id) { check in
+                        healthCheckRow(check)
                     }
                 }
             }
@@ -82,7 +85,7 @@ struct SystemHealthView: View {
     }
     
     private func healthCheckRow(_ check: HealthCheck) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
             HStack {
                 Image(systemName: check.status.icon)
                     .foregroundColor(check.status.color)
@@ -96,49 +99,178 @@ struct SystemHealthView: View {
                     Button(action) { onAction(action, check) }.buttonStyle(.glass).controlSize(.small)
                 }
             }
-            Text(check.details).font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI)).padding(.leading, 32)
+            Text(check.details).font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI)).padding(.leading, StyleGuide.Dimensions.paddingXXLarge)
         }
-        .padding()
-        .background(Color.accentColor.opacity(StyleGuide.Opacity.faint))
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+        .standardCardStyle()
     }
     
     private func runHealthChecks() {
         isRunning = true
         healthChecks.removeAll()
-        
-        // Simulate health checks
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            healthChecks = [
-                HealthCheck(
-                    title: "Database Connection",
-                    description: "Core Data stack",
-                    status: .success,
-                    details: "Successfully connected to local database",
-                    action: nil
-                ),
-                HealthCheck(
-                    title: "Calendar Permissions",
-                    description: "EventKit access",
-                    status: .warning,
-                    details: "Calendar access granted but sync is disabled",
-                    action: "Enable Sync"
-                ),
-                HealthCheck(
+
+        // 1. Database Connection check
+        let dbCheck: HealthCheck
+        do {
+            let fetchDescriptor = FetchDescriptor<Business>()
+            _ = try viewContext.fetch(fetchDescriptor)
+            dbCheck = HealthCheck(
+                title: "Database Connection",
+                description: "Core Data stack",
+                status: .success,
+                details: "Successfully connected to local database and queried Business entities.",
+                action: nil
+            )
+        } catch {
+            dbCheck = HealthCheck(
+                title: "Database Connection",
+                description: "Core Data stack",
+                status: .error,
+                details: "Failed to query database: \(error.localizedDescription)",
+                action: nil
+            )
+        }
+
+        // 2. Calendar Permissions check
+        let calendarStatus = EKEventStore.authorizationStatus(for: .event)
+        let calendarCheck: HealthCheck
+        switch calendarStatus {
+        case .authorized:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .success,
+                details: "Calendar access is authorized.",
+                action: nil
+            )
+        case .notDetermined:
+            let actionName: String
+            if #available(iOS 17.0, macOS 14.0, *) {
+                actionName = "Request Full Access"
+            } else {
+                actionName = "Request Access"
+            }
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .warning,
+                details: "Calendar access has not been determined.",
+                action: actionName
+            )
+        case .denied:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .error,
+                details: "Calendar access is denied.",
+                action: "Open Settings"
+            )
+        case .restricted:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .error,
+                details: "Calendar access is restricted.",
+                action: "Open Settings"
+            )
+        #if compiler(>=5.9)
+        case .fullAccess:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .success,
+                details: "Calendar full access is authorized.",
+                action: nil
+            )
+        case .writeOnly:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .warning,
+                details: "Calendar access is write-only.",
+                action: "Request Full Access"
+            )
+        #endif
+        @unknown default:
+            calendarCheck = HealthCheck(
+                title: "Calendar Permissions",
+                description: "EventKit access",
+                status: .warning,
+                details: "Unknown calendar authorization status.",
+                action: nil
+            )
+        }
+
+        // 3. File System check
+        let fsCheck: HealthCheck
+        do {
+            let fileManager = FileManager.default
+            if let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let tempFileURL = documentsURL.appendingPathComponent("health_check_temp_\(UUID().uuidString).txt")
+                let testContent = "System Health Check: \(Date())"
+                try testContent.write(to: tempFileURL, atomically: true, encoding: .utf8)
+                let readContent = try String(contentsOf: tempFileURL, encoding: .utf8)
+                if readContent == testContent {
+                    try fileManager.removeItem(at: tempFileURL)
+                    fsCheck = HealthCheck(
+                        title: "File System",
+                        description: "Document directory",
+                        status: .success,
+                        details: "Read, write, and delete tests succeeded in the documents directory.",
+                        action: nil
+                    )
+                } else {
+                    fsCheck = HealthCheck(
+                        title: "File System",
+                        description: "Document directory",
+                        status: .error,
+                        details: "Data mismatch during read/write test.",
+                        action: nil
+                    )
+                }
+            } else {
+                fsCheck = HealthCheck(
                     title: "File System",
                     description: "Document directory",
-                    status: .success,
-                    details: "All required directories accessible",
+                    status: .error,
+                    details: "Documents directory could not be located.",
                     action: nil
                 )
-            ]
-            isRunning = false
+            }
+        } catch {
+            fsCheck = HealthCheck(
+                title: "File System",
+                description: "Document directory",
+                status: .error,
+                details: "File system test failed: \(error.localizedDescription)",
+                action: nil
+            )
         }
+
+        healthChecks = [dbCheck, calendarCheck, fsCheck]
+        isRunning = false
     }
     
     private func onAction(_ action: String, _ check: HealthCheck) {
-        // Handle health check actions
-        print("Health check action: \(action) for \(check.title)")
+        if action == "Request Access" || action == "Request Full Access" {
+            requestCalendarAccessAndRefresh()
+        } else if action == "Open Settings" {
+            #if os(macOS)
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                NSWorkspace.shared.open(url)
+            }
+            #endif
+        }
+    }
+
+    private func requestCalendarAccessAndRefresh() {
+        let store = EKEventStore()
+        if #available(iOS 17.0, macOS 14.0, *) {
+            store.requestFullAccessToEvents { _, _ in
+                Task { @MainActor in
+                    runHealthChecks()
+                }
+            }
+        }
     }
 }
 

@@ -6,68 +6,36 @@
 //
 import Foundation
 import EventKit
-import Combine
 import Core
-import Data
+import Observation
 
-/// Responsible for fetching raw data from repositories and EventKit
+/// Responsible for fetching raw data from SwiftData queries and EventKit.
 /// Extracted from CalendarViewModel for better separation of concerns and testability
-/// Uses repository pattern instead of direct ModelContext access
+/// Uses `@Query`-provided sessions (SwiftData entities) and fetches EventKit events.
+@Observable
 @MainActor
-public class CalendarDataManager: ObservableObject {
+public class CalendarDataManager {
     
-    private let sessionsRepository: SessionsRepository
-    private let eventKitService: EventKitSyncService
+    private let eventKitService: any CalendarEventService
     
-    public init(sessionsRepository: SessionsRepository, eventKitService: EventKitSyncService) {
-        self.sessionsRepository = sessionsRepository
+    public init(eventKitService: any CalendarEventService) {
         self.eventKitService = eventKitService
-    }
-    
-    // MARK: - Session Data Fetching
-    
-    /// Fetches sessions from repository for the specified date range
-    /// Handles both recurring and non-recurring sessions
-    func fetchSessions(from startDate: Date, to endDate: Date) async -> [Session] {
-        do {
-            // Recurring masters often start before the visible range, so we must evaluate
-            // recurrence candidates from the full local set (not only range-filtered fetches).
-            let allSessions = try await sessionsRepository.fetchAll()
-            
-            // Separate recurring and non-recurring
-            let nonRecurringSessions = allSessions.filter { $0.recurrenceRuleData == nil }
-            let recurringSessions = allSessions.filter { $0.recurrenceRuleData != nil }
-            
-            // Filter non-recurring sessions in memory (repository may fetch a wider range)
-            let filteredNonRecurring = nonRecurringSessions.filter { session in
-                guard let startTime = session.startTime else { return false }
-                return startTime >= startDate && startTime < endDate
-            }
-            
-            // For recurring sessions, include any series whose master starts before
-            // the view end so recurrence expansion can emit instances in-range.
-            let filteredRecurring = recurringSessions.filter {
-                ($0.startTime ?? Date.distantFuture) < endDate
-            }
-            
-            return filteredNonRecurring + filteredRecurring
-        } catch {
-            print("[CalendarDataManager] Failed to fetch sessions: \(error)")
-            return []
-        }
     }
     
     // MARK: - EventKit Data Fetching
     
     /// Fetches events from EventKit for the specified date range
     /// Filters out events that have corresponding Sessions
-    func fetchFilteredEvents(from startDate: Date, to endDate: Date, excludingSessionEventIDs: Set<String>) -> [EKEvent] {
-        let allEvents = eventKitService.fetchEvents(start: startDate, end: endDate)
+    func fetchFilteredEvents(from startDate: Date, to endDate: Date, excludingSessionEventIDs: Set<String>) async -> [EKEvent] {
+        let allEvents = await eventKitService.fetchEvents(start: startDate, end: endDate)
         
         return allEvents.filter { event in
-            guard let eventID = event.eventIdentifier else {
-                print("[CalendarDataManager] Skipping EKEvent with no eventIdentifier: \(event.title ?? "Untitled")")
-                return false
+            let eventID = event.eventIdentifier ?? event.calendarItemExternalIdentifier
+            guard let eventID, !eventID.isEmpty else {
+                // Some EventKit instances may not have a stable identifier materialized.
+                // Keep them visible in the calendar (we just can't exclude via session linkage).
+                print("[CalendarDataManager] EKEvent has no stable identifier (eventIdentifier/external). Keeping: \(event.title ?? "Untitled")")
+                return true
             }
             
             // Filter out events that have corresponding Sessions
@@ -77,49 +45,22 @@ public class CalendarDataManager: ObservableObject {
     
     // MARK: - Combined Data Fetching
     
-    /// Fetches both sessions and filtered events for a date range
-    /// Returns a tuple with sessions (domain models) and the event IDs that should be excluded
-    func fetchCalendarData(from startDate: Date, to endDate: Date) async -> (sessions: [Session], events: [EKEvent]) {
-        let sessions = await fetchSessions(from: startDate, to: endDate)
-        
-        // Collect event IDs that should be excluded
+    /// Uses the provided sessions (e.g. from SwiftUI @Query) and fetches only EventKit events for the range.
+    func fetchCalendarData(from startDate: Date, to endDate: Date, sessions: [Session]) async -> (sessions: [Session], events: [EKEvent]) {
         let derivedEventIDs = Set(sessions.compactMap { $0.derivedFromEKEventID })
         let sessionEventIDs = Set(sessions.compactMap { $0.eventIdentifier })
-        let excludingEventIDs = derivedEventIDs.union(sessionEventIDs)
-        
-        let events = fetchFilteredEvents(
-            from: startDate, 
-            to: endDate, 
+        let externalEventIDs = Set(sessions.compactMap { $0.eventExternalIdentifier })
+        let excludingEventIDs = derivedEventIDs.union(sessionEventIDs).union(externalEventIDs)
+
+        let events = await fetchFilteredEvents(
+            from: startDate,
+            to: endDate,
             excludingSessionEventIDs: excludingEventIDs
         )
-        
-        print("[CalendarDataManager] Fetched \(sessions.count) sessions and \(events.count) events for range \(startDate) to \(endDate)")
-        
+
+        print("[CalendarDataManager] Using \(sessions.count) sessions (from query) and \(events.count) events for range \(startDate) to \(endDate)")
+
         return (sessions: sessions, events: events)
-    }
-    
-    // MARK: - Utility Methods
-    
-    /// Finds a specific session by ID
-    func findSession(with id: String) async -> Session? {
-        guard let sessionUUID = UUID(uuidString: id) else { return nil }
-        
-        do {
-            return try await sessionsRepository.fetch(byId: sessionUUID)
-        } catch {
-            print("[CalendarDataManager] Failed to find session: \(error)")
-            return nil
-        }
-    }
-    
-    /// Checks if the data manager has access to EventKit
-    var hasEventKitAccess: Bool {
-        eventKitService.accessGranted
-    }
-    
-    /// Publisher for EventKit access changes
-    var eventKitAccessPublisher: AnyPublisher<Bool, Never> {
-        eventKitService.$accessGranted.eraseToAnyPublisher()
     }
 }
 

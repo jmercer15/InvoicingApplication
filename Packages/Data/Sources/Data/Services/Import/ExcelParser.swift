@@ -138,51 +138,13 @@ class ExcelParser {
     }
     
     private func parseCSVData(_ csvString: String) throws -> [[String: String]] {
-        let rows = csvString.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        
-        guard let headerRow = rows.first else { return [] }
-        
-        let header = headerRow
-            .replacingOccurrences(of: "\u{FEFF}", with: "")
-            .components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        
-        let dataRows = rows.dropFirst()
-        
-        return dataRows.map { row in
-            let values = row.components(separatedBy: ",")
-            var dict = [String: String]()
-            for (index, headerValue) in header.enumerated() {
-                if index < values.count {
-                    dict[headerValue] = values[index].trimmingCharacters(in: .whitespaces)
-                }
-            }
-            return dict
-        }
+        let parser = CSVParser()
+        return try parser.parse(content: csvString, fieldSeparator: ",")
     }
     
     private func parseTabSeparatedData(_ content: String) throws -> [[String: String]] {
-        let rows = content.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        
-        guard let headerRow = rows.first else { return [] }
-        
-        let header = headerRow
-            .replacingOccurrences(of: "\u{FEFF}", with: "")
-            .components(separatedBy: "\t")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        
-        let dataRows = rows.dropFirst()
-        
-        return dataRows.map { row in
-            let values = row.components(separatedBy: "\t")
-            var dict = [String: String]()
-            for (index, headerValue) in header.enumerated() {
-                if index < values.count {
-                    dict[headerValue] = values[index].trimmingCharacters(in: .whitespaces)
-                }
-            }
-            return dict
-        }
+        let parser = CSVParser()
+        return try parser.parse(content: content, fieldSeparator: "\t")
     }
 }
 

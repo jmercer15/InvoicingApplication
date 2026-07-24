@@ -1,0 +1,114 @@
+---
+description: SwiftUI list architecture, identity, sections, interaction, and editing
+globs: Packages/Feature.*/Sources/**/Views/**/*.swift,InvoicingApplication/App/Scenes/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftUI Lists
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/lists
+https://developer.apple.com/documentation/swiftui/scroll-views
+
+Scope
+
+Applies to `List`-based data presentation:
+
+- row identity and structure
+- sections, headers, separators, row backgrounds
+- selection, swipe actions, refresh, and edit operations
+
+Intent
+
+Represent one-dimensional collections with stable identity, clear interaction
+contracts, and scalable row rendering in macOS workflows.
+
+Core Principle
+
+Use `List` as a semantic data container (with built-in scrolling),
+not as a generic layout wrapper.
+
+Implementation Rules
+
+- Use stable model identity for rows.
+- Keep rows lightweight and deterministic.
+- Use `Section` for grouped semantics and discoverability.
+- Configure list appearance with list modifiers (`listStyle`, row/header/separator APIs)
+  instead of replacing `List` with custom stacks for table-like behavior.
+- Use row-level `swipeActions` for contextual operations.
+- Use `refreshable` for async data refresh workflows.
+- Guard destructive actions with clear intent and, when needed, confirmation.
+- Keep editing behavior (`onDelete`, move/delete enabled/disabled) near collection ownership.
+
+Canonical Patterns
+
+```swift
+List(selection: $selection) {
+    Section("Invoices") {
+        ForEach(invoices) { invoice in
+            InvoiceRow(invoice: invoice)
+        }
+        .onDelete(perform: deleteRows)
+    }
+}
+.listStyle(.inset)
+```
+
+```swift
+InvoiceRow(invoice: invoice)
+    .swipeActions {
+        Button(role: .destructive) { delete(invoice) } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+```
+
+Anti-Patterns
+
+- Using `VStack` + `ScrollView` to rebuild basic list behavior with no clear need.
+- Using index-based identity for mutable collections.
+- Embedding heavy synchronous work in row rendering.
+- Hiding critical destructive operations in ambiguous gestures.
+
+Checklist
+
+- Do rows use stable identity?
+- Is `List` used for one-dimensional data display semantics?
+- Are editing and destructive actions explicit and scoped?
+- Are section/header/separator choices intentional?
+- Is row rendering lightweight for large data sets?
+
+Architectural Implications
+
+- `List` is an information architecture surface, not just scrolling layout.
+- Row identity and edit semantics must align with persistence semantics (insert/move/delete) to avoid UI/data divergence.
+- Sectioning decisions should reflect user mental models (workflow, status, ownership), not implementation convenience.
+
+Performance Notes
+
+- Keep row body pure and lightweight; avoid expensive formatting/fetching in row render paths.
+- Use selection and swipe actions that do not trigger costly full-list recomputation unnecessarily.
+- Prefer precomputed display fields from feature state/model adapters when row rendering is hot.
+
+Integration With Architecture
+
+- In workspace lists, keep selection synchronized with detail panes and inspector state.
+- In SwiftData-backed lists, ensure delete/move operations respect model relationships and active selection cleanup.
+- Use list-level refresh and edit operations near feature-root ownership, not deep leaf rows.
+
+Enforcement Summary
+
+Always prefer:
+
+- stable model identity
+- semantic sections and explicit row interaction contracts
+- scoped edit and destructive behavior
+- lightweight deterministic row rendering
+
+Never allow:
+
+- index-based identity for mutable data
+- ad hoc scroll stack replacements for standard list workflows
+- hidden destructive behaviors
+- heavy work in row builders

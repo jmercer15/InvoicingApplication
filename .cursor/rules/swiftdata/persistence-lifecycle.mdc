@@ -1,0 +1,103 @@
+---
+description: SwiftData persistence lifecycle for create/update/delete, autosave, and undo behavior
+alwaysApply: false
+---
+
+# Rule: SwiftData Persistence Lifecycle
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/preserving-your-apps-model-data-across-launches
+https://developer.apple.com/documentation/swiftdata/adding-and-editing-persistent-data-in-your-app
+https://developer.apple.com/documentation/swiftdata/deleting-persistent-data-from-your-app
+https://developer.apple.com/documentation/swiftdata/reverting-data-changes-using-the-undo-manager
+https://developer.apple.com/documentation/swiftdata/modelcontext
+https://developer.apple.com/documentation/swiftdata/modelcontainer
+
+Scope
+
+Applies to:
+
+- create/update/delete lifecycle operations
+- save boundary semantics and autosave behavior
+- batch delete flows and destructive mutation handling
+- undo manager integration with context lifecycles
+
+Intent
+
+Make persistence commits explicit and recoverable so UI state, model state,
+and storage state stay consistent under both normal and destructive workflows.
+
+Core Principle
+
+Lifecycle operations are context-mediated and save-boundary aware.
+
+Implementation Rules
+
+- Insert new model graphs via root insertion into a context.
+- Let context track mutations; call `save()` when explicit commit boundaries are required.
+- Treat autosave behavior as a design choice; do not assume manual save paths if autosave is enabled.
+- For destructive operations, clear UI selection state before delete when needed.
+- Use batch delete API (`delete(model:where:includeSubclasses:)`) for mass operations.
+- Enable undo intentionally with model container configuration when product workflow requires it.
+- Remember undo automation applies to main context, not arbitrary background contexts.
+
+Canonical Patterns
+
+```swift
+let invoice = Invoice(...)
+modelContext.insert(invoice)
+try modelContext.save()
+```
+
+```swift
+try modelContext.delete(model: Invoice.self, where: #Predicate { $0.isArchived })
+```
+
+Anti-Patterns
+
+- Performing delete flows without reconciling selection/detail UI state.
+- Assuming undo automatically covers all contexts/threads.
+- Mixing staged edit state and direct model mutation without explicit commit/cancel semantics.
+- Ignoring save failures in explicit-save workflows.
+
+Checklist
+
+- Are insert/update/delete operations context-based and intentional?
+- Is save strategy explicit (autosave vs manual)?
+- Are delete paths safe for UI selection and relationships?
+- Is undo enabled only where product behavior requires it?
+
+Architectural Implications
+
+- Lifecycle operations define transactional semantics between UI, domain state, and persistence.
+- Save strategy (autosave/manual) must be explicit per workflow to avoid ambiguous commit boundaries.
+- Delete and undo behavior must preserve both data integrity and UI consistency.
+
+Advanced Notes
+
+- Context tracks changes automatically; update flow concerns boundary timing and failure handling.
+- Undo automation is main-context scoped; background contexts need explicit strategy.
+- Batch delete APIs are preferred for large-scale removal operations.
+
+Integration With Architecture
+
+- Keep create/edit/delete orchestration in feature-level use-case layers where possible.
+- Ensure list/detail selection models are reconciled before destructive operations.
+- Align undo availability with product UX expectations in editing-heavy flows.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit context-mediated lifecycle operations
+- clear commit/cancel boundaries
+- safe delete behavior with selection reconciliation
+- deliberate undo enablement
+
+Never allow:
+
+- implicit commit semantics in high-risk workflows
+- delete flows that leave stale UI selection pointers
+- silent save failure handling
+- assuming undo applies across all contexts automatically

@@ -1,0 +1,115 @@
+---
+description: SwiftData model-definition rules for @Model, attributes, indexes, transients, and inheritance
+globs: Packages/Data/Sources/Data/Persistence/**/*.swift,Packages/Data/Sources/Data/Migrations/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftData Model Definition
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/model()
+https://developer.apple.com/documentation/swiftdata/attribute(_:originalname:hashmodifier:)
+https://developer.apple.com/documentation/swiftdata/index(_:)-74ia2
+https://developer.apple.com/documentation/swiftdata/index(_:)-7d4z0
+https://developer.apple.com/documentation/swiftdata/transient()
+https://developer.apple.com/documentation/swiftdata/adopting-inheritance-in-swiftdata
+https://developer.apple.com/documentation/swiftdata/preserving-your-apps-model-data-across-launches
+
+Scope
+
+Applies to:
+
+- `@Model` type declarations
+- `@Attribute`, `@Transient`, and index macros
+- schema-level uniqueness and rename metadata
+- inheritance decisions within persistent model graphs
+
+Intent
+
+Define persistence semantics explicitly in code so schema behavior remains
+predictable across migrations, sync, and high-volume query workloads.
+
+Core Principle
+
+Define persistence semantics directly in model code with `@Model` and attribute macros.
+
+Implementation Rules
+
+- Annotate persistable classes with `@Model`.
+- Use `@Attribute` only when persistence behavior needs explicit customization
+  (for example unique constraints, rename metadata, preserved deletion value behavior).
+- Use `@Transient` for stored properties that must not persist.
+- Provide default values for non-optional transient stored properties.
+- Use `Index` macros for high-value query paths in large datasets.
+- Use inheritance only where there is a true model hierarchy and query strategy supports it.
+- Avoid deep inheritance for classification that an enum/value strategy can represent.
+
+Canonical Patterns
+
+```swift
+@Model
+final class Invoice {
+    @Attribute(.unique) var id: UUID
+    var createdAt: Date
+
+    @Transient var isSelected: Bool = false
+}
+```
+
+```swift
+@Model
+final class Quake {
+    @Attribute(.unique) var code: String
+    var magnitude: Double
+}
+```
+
+Anti-Patterns
+
+- Treating every property as persistable by default when some are UI-only/transient.
+- Adding inheritance where only one boolean/enum distinction exists.
+- Introducing unique constraints without migration strategy for existing data.
+- Using persistence schema to encode presentation-only state.
+
+Checklist
+
+- Are all persistable classes explicitly `@Model`?
+- Are `@Attribute` options justified and migration-safe?
+- Are transient properties explicitly marked where needed?
+- Are indexes added only for real query needs?
+- Is inheritance justified by both domain model and query pattern?
+
+Architectural Implications
+
+- Model declarations are the persistence source of truth and should mirror durable domain semantics, not UI mechanics.
+- Attribute/index choices directly shape migration risk and runtime query characteristics.
+- Inheritance strategy should be validated against expected query depth and specialization boundaries.
+
+Advanced Notes
+
+- Unique constraints improve local dedup/upsert flows but require migration awareness in existing datasets.
+- Transient properties are ideal for ephemeral runtime state that should never drive persistence behavior.
+- Index macros should be introduced based on measured query pressure, not proactively everywhere.
+
+Integration With Architecture
+
+- Keep model-definition policy aligned with `Packages/Data/Sources/Data/Persistence/`.
+- Avoid embedding view-only flags in persisted entities used by services, actors, or feature roots.
+- Coordinate model shape changes with migration files and release rollout strategy.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit `@Model` declarations for persistable classes
+- intentional attribute customization only when needed
+- transient markers for non-durable runtime state
+- measured index and inheritance decisions
+
+Never allow:
+
+- persistence of presentation-only fields
+- schema customization without migration impact review
+- inheritance used as classification shortcut without query rationale
+- indiscriminate index proliferation

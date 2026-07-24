@@ -2,71 +2,308 @@
 //  SessionModificationService.swift
 //  InvoicingApplication
 //
-//  Created by AI Assistant for Refactoring Initiative
-//
 import Foundation
+import SwiftData
 import Core
-import Data
 import EventKit
 
-/// Responsible for session creation, modification, and deletion business logic
-/// Extracted from NewSessionViewModel to isolate critical session management operations
+/// SwiftData-native session create/edit/delete and recurrence operations.
+///
+/// - Important: This service works with SwiftData `@Model` entities directly.
+///   It uses snapshots only at OS/service boundaries (e.g. `SyncService`).
 @MainActor
-class SessionModificationService {
-    
-    private let unitOfWork: UnitOfWorkService
-    private let eventKitService: EventKitSyncService
+final class SessionModificationService {
+    private let modelContext: ModelContext
+    private let syncService: SyncService
+    private let eventKitService: any CalendarEventService
     private let recurrenceRuleBuilder: RecurrenceRuleBuilder
-    
+    private let recurrenceRuleManager: Core.RecurrenceRuleManager
+
     init(
-        unitOfWork: UnitOfWorkService,
-        eventKitService: EventKitSyncService,
+        modelContext: ModelContext,
+        syncService: SyncService,
+        eventKitService: any CalendarEventService,
+        recurrenceRuleManager: Core.RecurrenceRuleManager,
         recurrenceRuleBuilder: RecurrenceRuleBuilder = RecurrenceRuleBuilder()
     ) {
-        self.unitOfWork = unitOfWork
+        self.modelContext = modelContext
+        self.syncService = syncService
         self.eventKitService = eventKitService
+        self.recurrenceRuleManager = recurrenceRuleManager
         self.recurrenceRuleBuilder = recurrenceRuleBuilder
     }
     
-    // MARK: - Session Creation
+    // MARK: - Public API (used by `NewSessionViewModel` / `CalendarViewModel`)
     
-    /// Creates a new session from form data (returns domain model)
     func createSession(from formModel: SessionFormModel) async throws -> Session {
-        // Validate form data first
         let validationErrors = formModel.validateForm()
         if !validationErrors.isEmpty {
-            throw SessionModificationError.validationFailed(validationErrors.map { $0.localizedDescription })
+            throw SessionModificationError.validationFailed(validationErrors.map(\.localizedDescription))
         }
-        
-        // Prepare model
-        var modelToUse = try await normalizedClientServiceSelection(for: formModel)
-        if await checkEventIdentifierDuplicate(modelToUse.sourceEventIdentifier) {
-            modelToUse.preventEventLinking = true
-        }
-        
-        let sessionID = UUID()
-        let sessionAddressID = resolvedAddressID(for: modelToUse, preferredID: sessionID)
-        var session = Session(
-            id: sessionID,
-            title: modelToUse.title,
-            startTime: modelToUse.startTime,
-            endTime: modelToUse.endTime,
-            isAllDay: modelToUse.isAllDay,
-            location: resolvedLocation(from: modelToUse),
-            notes: modelToUse.notes,
-            status: modelToUse.status,
-            clientId: modelToUse.selectedClientID,
-            clientServiceId: modelToUse.selectedClientServiceID,
-            addressId: sessionAddressID,
-            eventIdentifier: modelToUse.preventEventLinking ? "" : (modelToUse.sourceEventIdentifier ?? ""),
-            googleColorId: modelToUse.useGoogleColor ? modelToUse.googleCalendarColorId : nil,
-            sessionLatitude: modelToUse.sessionLatitude,
-            sessionLongitude: modelToUse.sessionLongitude
+
+        let session = Session(
+            id: UUID(),
+            title: formModel.title,
+            startTime: formModel.startTime,
+            endTime: formModel.endTime,
+            isAllDay: formModel.isAllDay,
+            location: resolvedLocation(from: formModel),
+            notes: formModel.notes,
+            status: Core.SessionStatus(normalized: formModel.status)?.asEntityStatus,
+            isTravel: false,
+            groupID: nil,
+            groupedPosition: 0,
+            travelDistanceKM: nil,
+            travelTimeMinutes: nil,
+            recurrenceRuleData: nil,
+            assignedServiceName: nil,
+            assignedRate: nil
         )
-        
-        // Handle recurrence
-        if let rule = recurrenceRuleBuilder.buildRecurrenceRule(from: modelToUse) {
-            guard let ruleData = RecurrenceRuleManager.shared.serialize(rule) else {
+
+        applyEventKitFields(to: session, formModel: formModel, forDetachedOccurrence: nil)
+        try applyRecurrenceIfNeeded(to: session, formModel: formModel)
+        try await resolveRelationships(for: session, formModel: formModel)
+        applyAddressIfNeeded(to: session, formModel: formModel, preferredID: session.id)
+
+        modelContext.insert(session)
+        try saveChanges()
+
+        scheduleSessionSync(session, span: .thisEvent)
+        return session
+    }
+
+    func modifySession(
+        _ session: Session,
+        with formModel: SessionFormModel,
+        mode: RecurringEditMode,
+        originalInstanceDate: Date?
+    ) async throws -> Session {
+        let validationErrors = formModel.validateForm()
+        if !validationErrors.isEmpty {
+            throw SessionModificationError.validationFailed(validationErrors.map(\.localizedDescription))
+        }
+
+        if session.recurrenceRuleData == nil {
+            applyEdits(to: session, formModel: formModel)
+            try await resolveRelationships(for: session, formModel: formModel)
+            applyAddressIfNeeded(to: session, formModel: formModel, preferredID: session.address?.id ?? session.id)
+            try saveChanges()
+            scheduleSessionSync(session, span: .thisEvent)
+            return session
+        }
+
+        // Recurring session edits.
+        switch mode {
+        case .all:
+            applyEdits(to: session, formModel: formModel)
+            try applyRecurrenceIfNeeded(to: session, formModel: formModel)
+            try await resolveRelationships(for: session, formModel: formModel)
+            applyAddressIfNeeded(to: session, formModel: formModel, preferredID: session.address?.id ?? session.id)
+            try saveChanges()
+            scheduleSessionSync(session, span: .futureEvents)
+            return session
+
+        case .thisOnly:
+            guard let instanceDate = originalInstanceDate else {
+                // Without an occurrence context, fall back to full-series edit.
+                return try await modifySession(session, with: formModel, mode: .all, originalInstanceDate: nil)
+            }
+
+            if let detached = try fetchDetachedInstance(master: session, occurrenceDate: instanceDate) {
+                applyEdits(to: detached, formModel: formModel)
+                try await resolveRelationships(for: detached, formModel: formModel)
+                applyAddressIfNeeded(to: detached, formModel: formModel, preferredID: detached.address?.id ?? detached.id)
+                try saveChanges()
+                scheduleSessionSync(detached, span: .thisEvent)
+                return detached
+            }
+
+            let detached = makeDetachedInstance(master: session, occurrenceDate: instanceDate)
+            applyEdits(to: detached, formModel: formModel)
+            try await resolveRelationships(for: detached, formModel: formModel)
+            applyAddressIfNeeded(to: detached, formModel: formModel, preferredID: detached.id)
+            modelContext.insert(detached)
+            try saveChanges()
+            scheduleSessionSync(detached, span: .thisEvent)
+            return detached
+
+        case .thisAndFuture:
+            guard let instanceDate = originalInstanceDate else {
+                // Without an occurrence context, treat as full series edit.
+                return try await modifySession(session, with: formModel, mode: .all, originalInstanceDate: nil)
+            }
+
+            // 1) Truncate current series before instanceDate
+            try truncateSeries(session, endingBefore: instanceDate)
+
+            // 2) Create a new series master starting at instanceDate using the edited form model.
+            let newMaster = makeFutureSeriesMaster(from: session, instanceDate: instanceDate, formModel: formModel)
+            try await resolveRelationships(for: newMaster, formModel: formModel)
+            applyAddressIfNeeded(to: newMaster, formModel: formModel, preferredID: newMaster.id)
+            modelContext.insert(newMaster)
+
+            // 3) Delete detached instances on/after instanceDate (they belong to the new series now).
+            try removeFutureDetachedInstances(of: session, onOrAfter: instanceDate)
+
+            try saveChanges()
+            scheduleSessionSync(newMaster, span: .futureEvents)
+            return newMaster
+        }
+    }
+
+    func deleteSession(_ session: Session, mode: RecurringEditMode, originalInstanceDate: Date?) async throws {
+        if session.recurrenceRuleData == nil {
+            deleteEntity(session)
+            try saveChanges()
+            scheduleEventDeletion(identifier: session.eventIdentifier, span: preferredDeletionSpan(for: session))
+            return
+        }
+
+        switch mode {
+        case .all:
+            let detached = try fetchDetachedInstances(master: session)
+            for d in detached where d.id != session.id {
+                deleteEntity(d)
+                if !d.eventIdentifier.isEmpty {
+                    scheduleEventDeletion(identifier: d.eventIdentifier, span: .thisEvent)
+                }
+            }
+            deleteEntity(session)
+            try saveChanges()
+            scheduleEventDeletion(identifier: session.eventIdentifier, span: preferredDeletionSpan(for: session))
+
+        case .thisOnly:
+            guard let instanceDate = originalInstanceDate else {
+                // No occurrence context -> delete series.
+                try await deleteSession(session, mode: .all, originalInstanceDate: nil)
+                return
+            }
+
+            if let detached = try fetchDetachedInstance(master: session, occurrenceDate: instanceDate) {
+                deleteEntity(detached)
+                try saveChanges()
+                if !detached.eventIdentifier.isEmpty {
+                    scheduleEventDeletion(identifier: detached.eventIdentifier, span: .thisEvent)
+                }
+                return
+            }
+
+            // Create a detached cancellation marker so the user-visible occurrence disappears
+            // and EventKit can be reconciled via the sync layer.
+            let cancelled = makeDetachedInstance(master: session, occurrenceDate: instanceDate)
+            cancelled.status = .cancelled
+            modelContext.insert(cancelled)
+            try saveChanges()
+            scheduleSessionSync(cancelled, span: .thisEvent)
+
+        case .thisAndFuture:
+            guard let instanceDate = originalInstanceDate else {
+                try await deleteSession(session, mode: .all, originalInstanceDate: nil)
+                return
+            }
+
+            try truncateSeries(session, endingBefore: instanceDate)
+            try removeFutureDetachedInstances(of: session, onOrAfter: instanceDate)
+            try saveChanges()
+            scheduleSessionSync(session, span: .futureEvents)
+        }
+    }
+
+    func processRecurringModification(
+        session: Session,
+        modification: RecurringModificationType,
+        mode: RecurringEditMode,
+        originalInstanceDate: Date?
+    ) async throws -> Session {
+        var formModel = SessionFormModel(from: session, recurrenceRuleManager: recurrenceRuleManager)
+        switch modification {
+        case .move(let newStartTime):
+            let duration = max(0, formModel.endTime.timeIntervalSince(formModel.startTime))
+            formModel.startTime = newStartTime
+            formModel.endTime = newStartTime.addingTimeInterval(duration)
+        case .resize(let newStartTime, let newEndTime):
+            formModel.startTime = newStartTime
+            formModel.endTime = newEndTime
+        }
+        return try await modifySession(session, with: formModel, mode: mode, originalInstanceDate: originalInstanceDate)
+    }
+
+    // MARK: - Core edits
+
+    private func applyEdits(to session: Session, formModel: SessionFormModel) {
+        session.title = formModel.title
+        session.startTime = formModel.startTime
+        session.endTime = formModel.endTime
+        session.isAllDay = formModel.isAllDay
+        session.location = resolvedLocation(from: formModel)
+        session.notes = formModel.notes
+        session.status = Core.SessionStatus(normalized: formModel.status)?.asEntityStatus
+        session.googleColorId = formModel.useGoogleColor ? formModel.googleCalendarColorId : nil
+        session.sessionLatitude = formModel.sessionLatitude
+        session.sessionLongitude = formModel.sessionLongitude
+        session.lastModifiedDate = Date()
+    }
+
+    private func applyEventKitFields(to session: Session, formModel: SessionFormModel, forDetachedOccurrence: Date?) {
+        // When we block linking due to duplicates, we store an empty identifier.
+        let eventIdentifier = formModel.preventEventLinking ? "" : (formModel.sourceEventIdentifier ?? "")
+        session.eventIdentifier = eventIdentifier
+        if let masterId = formModel.sourceEventIdentifier, !masterId.isEmpty {
+            session.derivedFromEKEventID = masterId
+        }
+        session.isDetached = forDetachedOccurrence != nil
+        session.occurrenceDate = forDetachedOccurrence
+    }
+
+    private func applyAddressIfNeeded(to session: Session, formModel: SessionFormModel, preferredID: UUID) {
+        let hasAddressData =
+            !formModel.unitNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.streetNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.streetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.suburb.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.postcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.country.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !formModel.poBox.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        if !hasAddressData {
+            // Clear relationship if it exists.
+            if let existing = session.address {
+                session.address = nil
+                deleteEntity(existing)
+            }
+            return
+        }
+
+        let address = session.address ?? Address()
+        address.id = address.id == UUID() ? preferredID : address.id
+        address.unitNumber = formModel.unitNumber
+        address.streetNumber = formModel.streetNumber
+        address.streetName = formModel.streetName
+        address.suburb = formModel.suburb
+        address.postcode = formModel.postcode
+        address.state = formModel.state
+        address.country = formModel.country
+        address.poBox = formModel.poBox
+        address.city = formModel.city
+        address.fullAddressText = address.fullFormattedAddress
+        address.latitude = formModel.sessionLatitude
+        address.longitude = formModel.sessionLongitude
+
+        if session.address == nil {
+            modelContext.insert(address)
+            session.address = address
+        }
+    }
+
+    private func resolvedLocation(from formModel: SessionFormModel) -> String? {
+        let trimmed = formModel.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func applyRecurrenceIfNeeded(to session: Session, formModel: SessionFormModel) throws {
+        if let rule = recurrenceRuleBuilder.buildRecurrenceRule(from: formModel) {
+            guard let ruleData = recurrenceRuleManager.serialize(rule) else {
                 throw SessionModificationError.recurrenceRuleEncodingFailed(
                     NSError(
                         domain: "SessionModificationService",
@@ -75,430 +312,147 @@ class SessionModificationService {
                     )
                 )
             }
-
-            session = Session(
-                id: session.id,
-                title: session.title,
-                startTime: session.startTime,
-                endTime: session.endTime,
-                isAllDay: session.isAllDay,
-                location: session.location,
-                notes: session.notes,
-                status: session.status,
-                clientId: session.clientId,
-                clientServiceId: session.clientServiceId,
-                addressId: session.addressId,
-                eventIdentifier: session.eventIdentifier,
-                recurrenceRuleData: ruleData,
-                googleColorId: session.googleColorId,
-                sessionLatitude: session.sessionLatitude,
-                sessionLongitude: session.sessionLongitude
-            )
-        }
-        
-        if let sourceEventID = modelToUse.sourceEventIdentifier, !sourceEventID.isEmpty {
-             // Re-init for derivedFromEKEventID if needed
-             // This is getting verbose, but acceptable for immutable structs
-             session = Session(
-                 id: session.id,
-                 title: session.title,
-                 startTime: session.startTime,
-                 endTime: session.endTime,
-                 isAllDay: session.isAllDay,
-                 location: session.location,
-                 notes: session.notes,
-                 status: session.status,
-                 clientId: session.clientId,
-                 clientServiceId: session.clientServiceId,
-                 addressId: session.addressId,
-                 eventIdentifier: session.eventIdentifier,
-                 recurrenceRuleData: session.recurrenceRuleData,
-                 derivedFromEKEventID: sourceEventID,
-                 googleColorId: session.googleColorId,
-                 sessionLatitude: session.sessionLatitude,
-                 sessionLongitude: session.sessionLongitude
-             )
-        }
-        
-        // Handle Address Creation
-        try await createOrUpdateAddress(from: modelToUse, for: session)
-        
-        // Save Session
-        let createdSession = try await unitOfWork.sessions.create(session)
-        print("[SessionModificationService] Created new session with id: \(createdSession.id.uuidString)")
-        
-        // Sync with EventKit
-        scheduleSessionSync(createdSession, span: .thisEvent)
-        
-        return createdSession
-    }
-    
-    // MARK: - Session Modification
-    
-    /// Modifies an existing session with support for recurring series modifications (domain model version)
-    func modifySession(
-        _ session: Session,
-        with formModel: SessionFormModel,
-        mode: RecurringEditMode,
-        originalInstanceDate: Date? = nil
-    ) async throws -> Session {
-        // Validate form data
-        let validationErrors = formModel.validateForm()
-        if !validationErrors.isEmpty {
-            throw SessionModificationError.validationFailed(validationErrors.map { $0.localizedDescription })
-        }
-
-        let consistencyCheckedModel = try await normalizedClientServiceSelection(for: formModel)
-        
-        // Normalize date/time semantics when editing a specific recurring instance.
-        // If the editor is showing the master date, project time fields onto the tapped instance date.
-        let modelToUse = normalizedFormModelForRecurringInstance(
-            consistencyCheckedModel,
-            session: session,
-            instanceDate: originalInstanceDate,
-            mode: mode
-        )
-        // Existing duplicate check was: checkEventIdentifierDuplicate(...) excluding current.
-        // We'll skip complex duplicate check refactor for brevity unless critical, or move logic to `createOrUpdate`
-        
-        // Handle different modification modes
-        switch mode {
-        case .thisOnly:
-            return try await modifyThisInstanceOnly(session, with: modelToUse, originalInstanceDate: originalInstanceDate)
-        case .thisAndFuture:
-            return try await modifyThisAndFuture(session, with: modelToUse, originalInstanceDate: originalInstanceDate)
-        case .all:
-            return try await modifyAllInstances(session, with: modelToUse)
+            session.recurrenceRuleData = ruleData
+        } else {
+            session.recurrenceRuleData = nil
         }
     }
-    
-    private func modifyThisInstanceOnly(
-        _ session: Session,
-        with formModel: SessionFormModel,
-        originalInstanceDate: Date?
-    ) async throws -> Session {
-        
-        guard let instanceDate = originalInstanceDate else {
-            // Non-recurring, modify directly
-            return try await modifyAllInstances(session, with: formModel)
-        }
-        
-        let existingDetached = try await existingDetachedInstance(for: session, occurrenceDate: instanceDate)
-        let detachedID = existingDetached?.id ?? UUID()
-        let detachedAddressID = resolvedAddressID(
-            for: formModel,
-            preferredID: existingDetached?.addressId ?? detachedID
-        )
-        let detachedEventIdentifier = existingDetached?.eventIdentifier ?? session.eventIdentifier
-        let detachedExternalIdentifier = existingDetached?.eventExternalIdentifier ?? session.eventExternalIdentifier
-        let detachedCalendarIdentifier = existingDetached?.calendarIdentifier ?? session.calendarIdentifier
-        let detachedLastSyncTag = existingDetached?.lastSyncTag ?? session.lastSyncTag
 
-        // Upsert detached session for this specific occurrence
-        let detachedSession = Session(
-            id: detachedID,
+    // MARK: - Relationships
+
+    private func resolveRelationships(for session: Session, formModel: SessionFormModel) async throws {
+        if let clientId = formModel.selectedClientID {
+            session.client = try fetchClient(id: clientId)
+        } else {
+            session.client = nil
+        }
+
+        if let clientServiceId = formModel.selectedClientServiceID {
+            session.clientService = try fetchClientService(id: clientServiceId)
+        } else {
+            session.clientService = nil
+        }
+    }
+
+    private func fetchClient(id: UUID) throws -> Client? {
+        var descriptor = FetchDescriptor<Client>(
+            predicate: #Predicate<Client> { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    private func fetchClientService(id: UUID) throws -> ClientService? {
+        var descriptor = FetchDescriptor<ClientService>(
+            predicate: #Predicate<ClientService> { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    // MARK: - Recurrence helpers
+
+    private func makeDetachedInstance(master: Session, occurrenceDate: Date) -> Session {
+        let detached = Session(
+            id: UUID(),
+            title: master.title,
+            startTime: master.startTime,
+            endTime: master.endTime,
+            isAllDay: master.isAllDay,
+            location: master.location,
+            notes: master.notes,
+            status: master.status,
+            isTravel: master.isTravel,
+            groupID: master.groupID,
+            groupedPosition: master.groupedPosition,
+            travelDistanceKM: master.travelDistanceKM,
+            travelTimeMinutes: master.travelTimeMinutes,
+            recurrenceRuleData: nil,
+            assignedServiceName: master.assignedServiceName,
+            assignedRate: master.assignedRate
+        )
+        detached.client = master.client
+        detached.clientService = master.clientService
+        detached.derivedFromEKEventID = master.id.uuidString
+        detached.isDetached = true
+        detached.occurrenceDate = occurrenceDate
+        detached.calendarIdentifier = master.calendarIdentifier
+        detached.eventIdentifier = ""
+        detached.lastModifiedDate = Date()
+        detached.travelTollsAmount = master.travelTollsAmount
+        return detached
+    }
+
+    private func makeFutureSeriesMaster(from master: Session, instanceDate: Date, formModel: SessionFormModel) -> Session {
+        let newMaster = Session(
+            id: UUID(),
             title: formModel.title,
             startTime: formModel.startTime,
             endTime: formModel.endTime,
             isAllDay: formModel.isAllDay,
             location: resolvedLocation(from: formModel),
             notes: formModel.notes,
-            status: formModel.status,
-            isTravel: session.isTravel,
-            isDetached: true,
-            occurrenceDate: instanceDate,
-            clientId: formModel.selectedClientID,
-            clientServiceId: formModel.selectedClientServiceID,
-            addressId: detachedAddressID,
-            groupID: existingDetached?.groupID ?? session.groupID,
-            groupedPosition: existingDetached?.groupedPosition ?? session.groupedPosition,
-            eventIdentifier: detachedEventIdentifier,
-            eventExternalIdentifier: detachedExternalIdentifier,
-            calendarIdentifier: detachedCalendarIdentifier,
-            lastModifiedDate: Date(),
-            lastSyncTag: detachedLastSyncTag,
-            recurrenceRuleData: nil,
-            attendeesCount: existingDetached?.attendeesCount ?? session.attendeesCount,
-            derivedFromEKEventID: session.id.uuidString, // Master ID
-            googleColorId: formModel.useGoogleColor ? formModel.googleCalendarColorId : nil,
-            sessionLatitude: formModel.sessionLatitude,
-            sessionLongitude: formModel.sessionLongitude,
-            assignedServiceName: existingDetached?.assignedServiceName ?? session.assignedServiceName,
-            assignedRate: existingDetached?.assignedRate ?? session.assignedRate,
-            travelDistanceKM: existingDetached?.travelDistanceKM ?? session.travelDistanceKM,
-            travelTimeMinutes: existingDetached?.travelTimeMinutes ?? session.travelTimeMinutes,
-            travelTollsAmount: existingDetached?.travelTollsAmount ?? session.travelTollsAmount
+            status: Core.SessionStatus(normalized: formModel.status)?.asEntityStatus,
+            isTravel: master.isTravel,
+            groupID: master.groupID,
+            groupedPosition: master.groupedPosition,
+            travelDistanceKM: master.travelDistanceKM,
+            travelTimeMinutes: master.travelTimeMinutes,
+            recurrenceRuleData: master.recurrenceRuleData,
+            assignedServiceName: master.assignedServiceName,
+            assignedRate: master.assignedRate
         )
-        
-        // Address
-        try await createOrUpdateAddress(from: formModel, for: detachedSession)
-        
-        // Save (upsert)
-        let created = try await upsertSession(detachedSession, existingSession: existingDetached)
-        
-        scheduleSessionSync(created, span: .thisEvent)
-        
-        return created
+        newMaster.derivedFromEKEventID = master.derivedFromEKEventID
+        newMaster.isDetached = false
+        newMaster.occurrenceDate = nil
+        newMaster.calendarIdentifier = master.calendarIdentifier
+        newMaster.eventIdentifier = ""
+        newMaster.lastModifiedDate = Date()
+        newMaster.travelTollsAmount = master.travelTollsAmount
+
+        // Ensure the new master logically starts on/after the split date.
+        if let start = newMaster.startTime, start < instanceDate {
+            newMaster.startTime = instanceDate
+        }
+        return newMaster
     }
-    
-    private func modifyThisAndFuture(
-        _ session: Session,
-        with formModel: SessionFormModel,
-        originalInstanceDate: Date?
-    ) async throws -> Session {
-        guard let instanceDate = originalInstanceDate else {
-            throw SessionModificationError.missingInstanceDate
-        }
 
-        guard session.recurrenceRuleData != nil else {
-            return try await modifyAllInstances(session, with: formModel)
-        }
-
-        if shouldApplyToEntireSeries(session, at: instanceDate) {
-            return try await modifyAllInstances(session, with: formModel)
-        }
-
-        try await truncateRecurringSeries(session, endingBefore: instanceDate)
-        try await removeFutureDetachedInstances(of: session, onOrAfter: instanceDate)
-
-        return try await createFutureSeries(from: session, with: formModel)
-    }
-    
-    private func modifyAllInstances(
-        _ session: Session,
-        with formModel: SessionFormModel
-    ) async throws -> Session {
-        
-        // Update existing session
-        let ruleData = try serializedRecurrenceRuleData(from: formModel)
-        let updatedAddressID = resolvedAddressID(
-            for: formModel,
-            preferredID: session.addressId ?? session.id
+    private func fetchDetachedInstances(master: Session) throws -> [Session] {
+        let masterId = master.id.uuidString
+        let descriptor = FetchDescriptor<Session>(
+            predicate: #Predicate<Session> {
+                $0.derivedFromEKEventID == masterId && $0.isDetached
+            }
         )
-        
-        let updatedSession = Session(
-            id: session.id,
-            title: formModel.title,
-            startTime: formModel.startTime,
-            endTime: formModel.endTime,
-            isAllDay: formModel.isAllDay,
-            location: resolvedLocation(from: formModel),
-            notes: formModel.notes,
-            status: formModel.status,
-            isTravel: session.isTravel, // Preserve
-            isDetached: session.isDetached, // Preserve
-            occurrenceDate: session.occurrenceDate, // Preserve
-            clientId: formModel.selectedClientID,
-            clientServiceId: formModel.selectedClientServiceID,
-            addressId: updatedAddressID,
-            groupID: session.groupID,
-            groupedPosition: session.groupedPosition,
-            eventIdentifier: session.eventIdentifier,
-            eventExternalIdentifier: session.eventExternalIdentifier,
-            calendarIdentifier: session.calendarIdentifier,
-            lastModifiedDate: Date(),
-            lastSyncTag: session.lastSyncTag,
-            recurrenceRuleData: ruleData,
-            attendeesCount: session.attendeesCount,
-            derivedFromEKEventID: session.derivedFromEKEventID,
-            googleColorId: formModel.useGoogleColor ? formModel.googleCalendarColorId : nil,
-            sessionLatitude: formModel.sessionLatitude,
-            sessionLongitude: formModel.sessionLongitude,
-            assignedServiceName: session.assignedServiceName,
-            assignedRate: session.assignedRate,
-            travelDistanceKM: session.travelDistanceKM,
-            travelTimeMinutes: session.travelTimeMinutes,
-            travelTollsAmount: session.travelTollsAmount
+        return try modelContext.fetch(descriptor)
+    }
+
+    private func fetchDetachedInstance(master: Session, occurrenceDate: Date) throws -> Session? {
+        let masterId = master.id.uuidString
+        var descriptor = FetchDescriptor<Session>(
+            predicate: #Predicate<Session> {
+                $0.derivedFromEKEventID == masterId &&
+                $0.isDetached &&
+                $0.occurrenceDate == occurrenceDate
+            }
         )
-        
-        // Update Address
-        try await createOrUpdateAddress(from: formModel, for: updatedSession)
-        
-        let saved = try await unitOfWork.sessions.update(updatedSession)
-        
-        scheduleSessionSync(saved, span: preferredSyncSpan(for: saved))
-        
-        return saved
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
-    
-    // MARK: - Session Deletion
-    
-    func deleteSession(
-        _ session: Session,
-        mode: RecurringEditMode,
-        originalInstanceDate: Date? = nil
-    ) async throws {
-        switch mode {
-        case .thisOnly:
-            try await deleteThisInstanceOnly(session, originalInstanceDate: originalInstanceDate)
-        case .thisAndFuture:
-            try await deleteThisAndFuture(session, originalInstanceDate: originalInstanceDate)
-        case .all:
-            try await deleteAllInstances(session)
-        }
-    }
-    
-    private func deleteThisInstanceOnly(_ session: Session, originalInstanceDate: Date?) async throws {
-        guard let instanceDate = originalInstanceDate else {
-            try await deleteAllInstances(session)
-            return
-        }
 
-        let existingDetached = try await existingDetachedInstance(for: session, occurrenceDate: instanceDate)
-        let sourceForDuration = existingDetached ?? session
-        let duration = max(
-            0,
-            (sourceForDuration.endTime ?? instanceDate).timeIntervalSince(sourceForDuration.startTime ?? instanceDate)
-        )
-        let instanceEndDate = instanceDate.addingTimeInterval(duration)
-        let cancelledID = existingDetached?.id ?? UUID()
-        let cancelledAddressID = existingDetached?.addressId
-        let cancelledEventIdentifier = existingDetached?.eventIdentifier ?? session.eventIdentifier
-        let cancelledExternalIdentifier = existingDetached?.eventExternalIdentifier ?? session.eventExternalIdentifier
-        let cancelledCalendarIdentifier = existingDetached?.calendarIdentifier ?? session.calendarIdentifier
-        let cancelledLastSyncTag = existingDetached?.lastSyncTag ?? session.lastSyncTag
-        
-        // Upsert cancelled detached instance for this specific occurrence
-        let cancelledSession = Session(
-            id: cancelledID,
-            title: session.title,
-            startTime: instanceDate, // Use instance date
-            endTime: instanceEndDate,
-            isAllDay: session.isAllDay,
-            location: session.location,
-            notes: session.notes,
-            status: SessionStatus.cancelled.rawValue,
-            isTravel: session.isTravel,
-            isDetached: true,
-            occurrenceDate: instanceDate,
-            clientId: existingDetached?.clientId ?? session.clientId,
-            clientServiceId: existingDetached?.clientServiceId ?? session.clientServiceId,
-            addressId: cancelledAddressID,
-            groupID: existingDetached?.groupID ?? session.groupID,
-            groupedPosition: existingDetached?.groupedPosition ?? session.groupedPosition,
-            eventIdentifier: cancelledEventIdentifier,
-            eventExternalIdentifier: cancelledExternalIdentifier,
-            calendarIdentifier: cancelledCalendarIdentifier,
-            lastModifiedDate: Date(),
-            lastSyncTag: cancelledLastSyncTag,
-            recurrenceRuleData: nil,
-            attendeesCount: existingDetached?.attendeesCount ?? session.attendeesCount,
-            derivedFromEKEventID: session.id.uuidString, // Master ID
-            googleColorId: existingDetached?.googleColorId ?? session.googleColorId,
-            sessionLatitude: existingDetached?.sessionLatitude ?? session.sessionLatitude,
-            sessionLongitude: existingDetached?.sessionLongitude ?? session.sessionLongitude,
-            assignedServiceName: existingDetached?.assignedServiceName ?? session.assignedServiceName,
-            assignedRate: existingDetached?.assignedRate ?? session.assignedRate,
-            travelDistanceKM: existingDetached?.travelDistanceKM ?? session.travelDistanceKM,
-            travelTimeMinutes: existingDetached?.travelTimeMinutes ?? session.travelTimeMinutes,
-            travelTollsAmount: existingDetached?.travelTollsAmount ?? session.travelTollsAmount
-        )
-        
-        let saved = try await upsertSession(cancelledSession, existingSession: existingDetached)
-        scheduleSessionSync(saved, span: .thisEvent)
-    }
-    
-    private func deleteThisAndFuture(_ session: Session, originalInstanceDate: Date?) async throws {
-        guard let instanceDate = originalInstanceDate else {
-            try await deleteAllInstances(session)
-            return
-        }
 
-        guard session.recurrenceRuleData != nil else {
-            try await deleteAllInstances(session)
-            return
-        }
-
-        if shouldApplyToEntireSeries(session, at: instanceDate) {
-            try await deleteAllInstances(session)
-            return
-        }
-
-        try await truncateRecurringSeries(session, endingBefore: instanceDate)
-        try await removeFutureDetachedInstances(of: session, onOrAfter: instanceDate)
-    }
-    
-    private func deleteAllInstances(_ session: Session) async throws {
-        var syncIdsToDelete: [(identifier: String, span: EKSpan)] = []
-
-        if session.recurrenceRuleData != nil, !session.isDetached {
-            let detachedInstances = try await unitOfWork.sessions.fetch(byDerivedFromEKEventID: session.id.uuidString)
-            for detached in detachedInstances where detached.id != session.id {
-                if !detached.eventIdentifier.isEmpty {
-                    syncIdsToDelete.append((identifier: detached.eventIdentifier, span: .thisEvent))
-                }
-                try await unitOfWork.sessions.delete(id: detached.id)
+    private func removeFutureDetachedInstances(of master: Session, onOrAfter date: Date) throws {
+        for detached in try fetchDetachedInstances(master: master) {
+            guard let occ = detached.occurrenceDate else { continue }
+            if occ >= date {
+                deleteEntity(detached)
             }
         }
-
-        if !session.eventIdentifier.isEmpty {
-            syncIdsToDelete.append((
-                identifier: session.eventIdentifier,
-                span: preferredDeletionSpan(for: session)
-            ))
-        }
-
-        try await unitOfWork.sessions.delete(id: session.id)
-
-        for syncTarget in syncIdsToDelete {
-            scheduleEventDeletion(identifier: syncTarget.identifier, span: syncTarget.span)
-        }
     }
 
-    private func createFutureSeries(from originalSession: Session, with formModel: SessionFormModel) async throws -> Session {
-        let newSessionID = UUID()
-        let recurrenceRuleData = try serializedRecurrenceRuleData(from: formModel)
-        let futureAddressID = resolvedAddressID(
-            for: formModel,
-            preferredID: originalSession.addressId ?? newSessionID
-        )
-
-        let futureSession = Session(
-            id: newSessionID,
-            title: formModel.title,
-            startTime: formModel.startTime,
-            endTime: formModel.endTime,
-            isAllDay: formModel.isAllDay,
-            location: resolvedLocation(from: formModel),
-            notes: formModel.notes,
-            status: formModel.status,
-            isTravel: originalSession.isTravel,
-            isDetached: false,
-            occurrenceDate: nil,
-            clientId: formModel.selectedClientID,
-            clientServiceId: formModel.selectedClientServiceID,
-            addressId: futureAddressID,
-            groupID: originalSession.groupID,
-            groupedPosition: originalSession.groupedPosition,
-            eventIdentifier: "",
-            eventExternalIdentifier: nil,
-            calendarIdentifier: originalSession.calendarIdentifier,
-            lastModifiedDate: Date(),
-            lastSyncTag: nil,
-            recurrenceRuleData: recurrenceRuleData,
-            attendeesCount: originalSession.attendeesCount,
-            derivedFromEKEventID: originalSession.derivedFromEKEventID,
-            googleColorId: formModel.useGoogleColor ? formModel.googleCalendarColorId : nil,
-            sessionLatitude: formModel.sessionLatitude,
-            sessionLongitude: formModel.sessionLongitude,
-            assignedServiceName: originalSession.assignedServiceName,
-            assignedRate: originalSession.assignedRate,
-            travelDistanceKM: originalSession.travelDistanceKM,
-            travelTimeMinutes: originalSession.travelTimeMinutes,
-            travelTollsAmount: originalSession.travelTollsAmount
-        )
-
-        try await createOrUpdateAddress(from: formModel, for: futureSession)
-        let created = try await unitOfWork.sessions.create(futureSession)
-
-        scheduleSessionSync(created, span: .thisEvent)
-
-        return created
-    }
-
-    private func truncateRecurringSeries(_ session: Session, endingBefore splitDate: Date) async throws {
-        guard let recurrenceData = session.recurrenceRuleData,
-              let currentRule = RecurrenceRuleManager.shared.deserialize(recurrenceData) else {
+    private func truncateSeries(_ master: Session, endingBefore splitDate: Date) throws {
+        guard let recurrenceData = master.recurrenceRuleData,
+              let currentRule = recurrenceRuleManager.deserialize(recurrenceData) else {
             throw SessionModificationError.seriesTruncationFailed
         }
 
@@ -506,9 +460,7 @@ class SessionModificationService {
         let truncatedRule = EKRecurrenceRule(
             recurrenceWith: currentRule.frequency,
             interval: currentRule.interval,
-            daysOfTheWeek: currentRule.daysOfTheWeek?.map {
-                EKRecurrenceDayOfWeek($0.dayOfTheWeek, weekNumber: $0.weekNumber)
-            },
+            daysOfTheWeek: currentRule.daysOfTheWeek?.map { EKRecurrenceDayOfWeek($0.dayOfTheWeek, weekNumber: $0.weekNumber) },
             daysOfTheMonth: currentRule.daysOfTheMonth,
             monthsOfTheYear: currentRule.monthsOfTheYear,
             weeksOfTheYear: currentRule.weeksOfTheYear,
@@ -517,7 +469,7 @@ class SessionModificationService {
             end: EKRecurrenceEnd(end: truncatedEndDate)
         )
 
-        guard let truncatedData = RecurrenceRuleManager.shared.serialize(truncatedRule) else {
+        guard let truncatedData = recurrenceRuleManager.serialize(truncatedRule) else {
             throw SessionModificationError.recurrenceRuleEncodingFailed(
                 NSError(
                     domain: "SessionModificationService",
@@ -527,344 +479,49 @@ class SessionModificationService {
             )
         }
 
-        let truncatedSession = Session(
-            id: session.id,
-            title: session.title,
-            startTime: session.startTime,
-            endTime: session.endTime,
-            isAllDay: session.isAllDay,
-            location: session.location,
-            notes: session.notes,
-            status: session.status,
-            isTravel: session.isTravel,
-            isDetached: session.isDetached,
-            occurrenceDate: session.occurrenceDate,
-            clientId: session.clientId,
-            clientServiceId: session.clientServiceId,
-            addressId: session.addressId,
-            groupID: session.groupID,
-            groupedPosition: session.groupedPosition,
-            eventIdentifier: session.eventIdentifier,
-            eventExternalIdentifier: session.eventExternalIdentifier,
-            calendarIdentifier: session.calendarIdentifier,
-            lastModifiedDate: Date(),
-            lastSyncTag: session.lastSyncTag,
-            recurrenceRuleData: truncatedData,
-            attendeesCount: session.attendeesCount,
-            derivedFromEKEventID: session.derivedFromEKEventID,
-            googleColorId: session.googleColorId,
-            sessionLatitude: session.sessionLatitude,
-            sessionLongitude: session.sessionLongitude,
-            assignedServiceName: session.assignedServiceName,
-            assignedRate: session.assignedRate,
-            travelDistanceKM: session.travelDistanceKM,
-            travelTimeMinutes: session.travelTimeMinutes,
-            travelTollsAmount: session.travelTollsAmount
-        )
-
-        let saved = try await unitOfWork.sessions.update(truncatedSession)
-
-        scheduleSessionSync(saved, span: .futureEvents)
+        master.recurrenceRuleData = truncatedData
+        master.lastModifiedDate = Date()
     }
 
-    private func removeFutureDetachedInstances(of session: Session, onOrAfter splitDate: Date) async throws {
-        let detached = try await unitOfWork.sessions.fetch(byDerivedFromEKEventID: session.id.uuidString)
-            .filter { $0.isDetached }
-            .filter { ($0.occurrenceDate ?? .distantPast) >= splitDate }
+    // MARK: - Sync & EventKit
 
-        guard !detached.isEmpty else { return }
-
-        for detachedSession in detached {
-            try await unitOfWork.sessions.delete(id: detachedSession.id)
-        }
-
-        for detachedSession in detached where !detachedSession.eventIdentifier.isEmpty {
-            scheduleEventDeletion(identifier: detachedSession.eventIdentifier, span: .thisEvent)
-        }
-    }
-
-    private func shouldApplyToEntireSeries(_ session: Session, at instanceDate: Date) -> Bool {
-        guard let startTime = session.startTime else { return false }
-        return instanceDate.timeIntervalSince(startTime) <= 1
-    }
-
-    private func existingDetachedInstance(for session: Session, occurrenceDate: Date) async throws -> Session? {
-        try await unitOfWork.sessions
-            .fetch(byDerivedFromEKEventID: session.id.uuidString)
-            .first(where: { detached in
-                guard detached.isDetached, let detachedDate = detached.occurrenceDate else { return false }
-                return abs(detachedDate.timeIntervalSince(occurrenceDate)) < 1
-            })
-    }
-
-    private func normalizedFormModelForRecurringInstance(
-        _ formModel: SessionFormModel,
-        session: Session,
-        instanceDate: Date?,
-        mode: RecurringEditMode
-    ) -> SessionFormModel {
-        guard mode != .all,
-              session.recurrenceRuleData != nil,
-              let instanceDate,
-              let masterStart = session.startTime else {
-            return formModel
-        }
-
-        let calendar = Calendar.current
-        var normalized = formModel
-
-        // If the editor is still on the master day, reinterpret the entered time on the tapped occurrence day.
-        if calendar.isDate(formModel.startTime, inSameDayAs: masterStart) {
-            let duration = max(0, formModel.endTime.timeIntervalSince(formModel.startTime))
-            let adjustedStart: Date
-            if formModel.isAllDay {
-                adjustedStart = calendar.startOfDay(for: instanceDate)
-            } else {
-                adjustedStart = dateByCombining(
-                    dayFrom: instanceDate,
-                    timeFrom: formModel.startTime,
-                    calendar: calendar
-                )
-            }
-            normalized.startTime = adjustedStart
-            normalized.endTime = adjustedStart.addingTimeInterval(duration)
-        }
-
-        return normalized
-    }
-
-    private func dateByCombining(dayFrom date: Date, timeFrom timeSource: Date, calendar: Calendar) -> Date {
-        let timeComponents = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: timeSource)
-        var dayComponents = calendar.dateComponents([.year, .month, .day], from: date)
-        dayComponents.hour = timeComponents.hour
-        dayComponents.minute = timeComponents.minute
-        dayComponents.second = timeComponents.second
-        dayComponents.nanosecond = timeComponents.nanosecond
-        return calendar.date(from: dayComponents) ?? date
-    }
-
-    private func preferredSyncSpan(for session: Session) -> EKSpan {
-        if session.recurrenceRuleData != nil, !session.isDetached {
-            return .futureEvents
-        }
-        return .thisEvent
-    }
-
-    private func preferredDeletionSpan(for session: Session) -> EKSpan {
-        if session.recurrenceRuleData != nil, !session.isDetached {
-            return .futureEvents
-        }
-        return .thisEvent
-    }
-
-    private func scheduleSessionSync(_ session: Session, span: EKSpan) {
+    private func scheduleSessionSync(_ session: Session, span _: EKSpan) {
         Task { @MainActor in
-            eventKitService.sync(session: session, unitOfWork: unitOfWork, span: span)
+            try? await syncService.sync(session: session.snapshot())
         }
     }
 
     private func scheduleEventDeletion(identifier: String, span: EKSpan) {
+        guard !identifier.isEmpty else { return }
         Task { @MainActor in
             eventKitService.delete(syncIdentifier: identifier, span: span)
         }
     }
 
-    private func serializedRecurrenceRuleData(from formModel: SessionFormModel) throws -> Data? {
-        guard let recurrenceRule = recurrenceRuleBuilder.buildRecurrenceRule(from: formModel) else {
-            return nil
-        }
-        guard let ruleData = RecurrenceRuleManager.shared.serialize(recurrenceRule) else {
-            throw SessionModificationError.recurrenceRuleEncodingFailed(
-                NSError(
-                    domain: "SessionModificationService",
-                    code: 2003,
-                    userInfo: [NSLocalizedDescriptionKey: "Unable to serialize recurrence rule."]
-                )
-            )
-        }
-        return ruleData
-    }
-    
-    // MARK: - Address Helper
-    
-    private func resolvedLocation(from formModel: SessionFormModel) -> String? {
-        let fullAddress = formModel.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !fullAddress.isEmpty {
-            return fullAddress
-        }
-        
-        let directLocation = formModel.location.trimmingCharacters(in: .whitespacesAndNewlines)
-        return directLocation.isEmpty ? nil : directLocation
-    }
-    
-    private func createOrUpdateAddress(from formModel: SessionFormModel, for session: Session) async throws {
-         let hasAddressData = !formModel.fullAddress.isEmpty
-         
-         if !hasAddressData {
-             if let addressId = session.addressId {
-                 do {
-                     try await unitOfWork.addresses.delete(id: addressId)
-                 } catch RepositoryError.entityNotFound {
-                     // Already removed or never existed; nothing else to do.
-                 } catch RepositoryError.notFound(id: _) {
-                     // Compatibility with newer RepositoryError variants.
-                 }
-             }
-             return
-         }
-         
-         let addressId = session.addressId ?? session.id // Use session ID as address ID if generic, or UUID() if new
-         // Logic to determine if we update existing or create new?
-         // Simpler: Just save an Address domain object with ID = session.id (1-to-1 mapping)
-         // UoW repositories upsert logic usually handles create vs update if ID exists?
-         // Assuming unitOfWork.addresses.update or create.
-         let resolvedCity = {
-             let suburb = formModel.suburb.trimmingCharacters(in: .whitespacesAndNewlines)
-             if !suburb.isEmpty {
-                 return suburb
-             }
-             return formModel.city
-         }()
-         
-         let address = Address(
-             id: addressId,
-             unitNumber: formModel.unitNumber,
-             streetNumber: formModel.streetNumber,
-             streetName: formModel.streetName,
-             suburb: formModel.suburb,
-             city: resolvedCity,
-             state: formModel.state,
-             postcode: formModel.postcode,
-             country: formModel.country,
-             poBox: formModel.poBox,
-             latitude: formModel.sessionLatitude,
-             longitude: formModel.sessionLongitude
-         )
-         
-         try await upsertAddress(address)
+    private func preferredDeletionSpan(for session: Session) -> EKSpan {
+        session.recurrenceRuleData == nil ? .thisEvent : .futureEvents
     }
 
-    private func resolvedAddressID(for formModel: SessionFormModel, preferredID: UUID) -> UUID? {
-        let fullAddress = formModel.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        return fullAddress.isEmpty ? nil : preferredID
+    // MARK: - ModelContext utilities
+
+    private func deleteEntity<T: PersistentModel>(_ model: T) {
+        modelContext.delete(model)
     }
 
-    private func normalizedClientServiceSelection(for formModel: SessionFormModel) async throws -> SessionFormModel {
-        var normalized = formModel
+    private func saveChanges() throws {
+        if modelContext.hasChanges {
+            try modelContext.save()
+        }
+    }
+}
 
-        if let selectedServiceID = normalized.selectedClientServiceID {
-            guard let selectedService = try await unitOfWork.clientServices.fetch(by: selectedServiceID) else {
-                throw SessionModificationError.validationFailed(["Selected service could not be found."])
-            }
-            if normalized.selectedClientID == nil || normalized.selectedClientID != selectedService.clientId {
-                normalized.selectedClientID = selectedService.clientId
-            }
-        }
+enum SessionModificationError: Error {
+    case validationFailed([String])
+    case recurrenceRuleEncodingFailed(Error)
+    case seriesTruncationFailed
+}
 
-        if let selectedClientID = normalized.selectedClientID {
-            guard try await unitOfWork.clients.fetch(by: selectedClientID) != nil else {
-                throw SessionModificationError.validationFailed(["Selected client could not be found."])
-            }
-        }
-
-        return normalized
-    }
-    
-    private func checkEventIdentifierDuplicate(_ eventID: String?) async -> Bool {
-        guard let eventID = eventID, !eventID.isEmpty else { return false }
-        do {
-            if let _ = try await unitOfWork.sessions.fetch(byEventIdentifier: eventID) {
-                return true
-            }
-        } catch {
-            return false
-        }
-        return false
-    }
-    
-    // MARK: - Recurring Modification Processing (for drag/drop, resize)
-
-    private func upsertSession(_ session: Session, existingSession: Session?) async throws -> Session {
-        if existingSession != nil {
-            return try await unitOfWork.sessions.update(session)
-        }
-        return try await unitOfWork.sessions.create(session)
-    }
-
-    private func upsertAddress(_ address: Address) async throws {
-        do {
-            _ = try await unitOfWork.addresses.update(address)
-        } catch RepositoryError.entityNotFound {
-            _ = try await unitOfWork.addresses.create(address)
-        } catch RepositoryError.notFound(id: _) {
-            _ = try await unitOfWork.addresses.create(address)
-        }
-    }
-    
-    /// Process a recurring modification (move or resize) with the given mode
-    func processRecurringModification(
-        session: Session,
-        modification: RecurringModificationType,
-        mode: RecurringEditMode,
-        originalInstanceDate: Date?
-    ) async throws -> Session {
-        switch modification {
-        case .move(let newStartTime):
-            // Calculate duration from existing session
-            let startTime = session.startTime ?? Date()
-            let endTime = session.endTime ?? startTime.addingTimeInterval(3600)
-            let duration = endTime.timeIntervalSince(startTime)
-            let newEndTime = newStartTime.addingTimeInterval(duration)
-            
-            // Create a form model to leverage existing modification logic
-            var formModel = SessionFormModel(from: session)
-            formModel.startTime = newStartTime
-            formModel.endTime = newEndTime
-            formModel.selectedClientID = session.clientId
-            formModel.selectedClientServiceID = session.clientServiceId
-            
-            return try await modifySession(session, with: formModel, mode: mode, originalInstanceDate: originalInstanceDate)
-            
-        case .resize(let newStartTime, let newEndTime):
-            var formModel = SessionFormModel(from: session)
-            formModel.startTime = newStartTime
-            formModel.endTime = newEndTime
-            formModel.selectedClientID = session.clientId
-            formModel.selectedClientServiceID = session.clientServiceId
-            
-            return try await modifySession(session, with: formModel, mode: mode, originalInstanceDate: originalInstanceDate)
-        }
-    }
-    
-    // MARK: - Supporting Types
-    
-    enum SessionModificationError: LocalizedError {
-        case validationFailed([String])
-        case dataApplicationFailed(Error)
-        case saveFailed(Error)
-        case detachedInstanceCreationFailed
-        case seriesTruncationFailed
-        case missingInstanceDate
-        case recurrenceRuleEncodingFailed(Error)
-        
-        var errorDescription: String? {
-            switch self {
-            case .validationFailed(let errors):
-                return "Validation failed: \(errors.joined(separator: ", "))"
-            case .dataApplicationFailed(let error):
-                return "Failed to apply data: \(error.localizedDescription)"
-            case .saveFailed(let error):
-                return "Save failed: \(error.localizedDescription)"
-            case .detachedInstanceCreationFailed:
-                return "Failed to create detached instance"
-            case .seriesTruncationFailed:
-                return "Failed to truncate series"
-            case .missingInstanceDate:
-                return "Instance date is required for recurring session modifications"
-            case .recurrenceRuleEncodingFailed(let error):
-                return "Failed to encode recurrence rule: \(error.localizedDescription)"
-            }
-        }
-    }
+private extension Core.SessionStatus {
+    var asEntityStatus: SessionStatus? { SessionStatus(normalized: token) }
 }
  

@@ -1,7 +1,6 @@
+import Core
 import Foundation
 import SwiftData
-import Data
-import Core
 
 // New struct to handle the provided JSON format
 struct PayeeImportJSON: Codable {
@@ -131,38 +130,36 @@ struct PayeeImport {
                     ])
                 }
                 // Find if the payee exists based on name
-                let descriptor = FetchDescriptor<PayeeEntity>(predicate: #Predicate { $0.fullName == payee.payeeName })
+                let payeeName = payee.payeeName
+                let descriptor = FetchDescriptor<Payee>(predicate: #Predicate<Payee> { $0.fullName == payeeName })
                 let existingPayees = try context.fetch(descriptor)
                 // Either update existing or create new
-                let payeeEntity: PayeeEntity
+                let payeeModel: Payee
                 if let existingPayee = existingPayees.first {
-                    payeeEntity = existingPayee
+                    payeeModel = existingPayee
                     messages.append("Updated payee: \(payee.payeeName)")
                 } else {
-                    payeeEntity = PayeeEntity(id: UUID(), fullName: payee.payeeName)
-                    context.insert(payeeEntity)
+                    payeeModel = Payee(id: UUID(), fullName: payee.payeeName)
+                    context.insert(payeeModel)
                     messages.append("Created payee: \(payee.payeeName)")
                 }
                 // Set properties
-                payeeEntity.fullName = payee.payeeName
-                payeeEntity.email = payee.email
-                payeeEntity.phone = payee.phone
-                // Handle address - always create an AddressEntity if we have an address string
+                payeeModel.fullName = payee.payeeName
+                payeeModel.email = payee.email
+                payeeModel.phone = payee.phone
+                // Handle address - always create an Address if we have an address string
                 if let addressString = payee.address, !addressString.isEmpty {
-                    let addressEntity = createOrUpdateAddress(for: payeeEntity, addressString: addressString, context: context)
-                    payeeEntity.address = addressEntity
-                    // Task {
-                    //     await GeocodingService.shared.geocodeAndSave(addressEntity: addressEntity, in: context)
-                    // }
+                    let addressModel = createOrUpdateAddress(for: payeeModel, addressString: addressString, context: context)
+                    payeeModel.address = addressModel
                 }
-                // Bank details cannot be stored - PayeeEntity.notes has been removed per architectural guidelines
+                // Bank details cannot be stored - Payee.notes has been removed per architectural guidelines
                 // Note: Bank details from import are discarded as payees should not store notes
                 if payee.bankAccount != nil || payee.bankBSB != nil {
-                    print("⚠️ [PayeeImport] Bank details for \(payee.payeeName) cannot be stored - PayeeEntity.notes removed per architectural guidelines")
+                    print("⚠️ [PayeeImport] Bank details for \(payee.payeeName) cannot be stored - Payee.notes removed per architectural guidelines")
                 }
                 // Set default status
-                payeeEntity.status = payee.status ?? "Active"
-                payeeEntity.relationToClient = payee.relationToClient
+                payeeModel.status = payee.status ?? "Active"
+                payeeModel.relationToClient = payee.relationToClient
                 successful += 1
             } catch {
                 failed += 1
@@ -179,20 +176,20 @@ struct PayeeImport {
         )
     }
     // Helper function to create or update an address entity
-    private static func createOrUpdateAddress(for payeeEntity: PayeeEntity, addressString: String, context: ModelContext) -> AddressEntity {
+    private static func createOrUpdateAddress(for payee: Payee, addressString: String, context: ModelContext) -> Address {
         // Get or create address entity
-        let addressEntity: AddressEntity
-        if let existingAddress = payeeEntity.address {
-            addressEntity = existingAddress
+        let addressModel: Address
+        if let existingAddress = payee.address {
+            addressModel = existingAddress
         } else {
-            addressEntity = AddressEntity()
-            context.insert(addressEntity)
+            addressModel = Address()
+            context.insert(addressModel)
         }
         // Try to parse address components
         let components = addressString.components(separatedBy: ", ")
         if components.count >= 1 {
-            addressEntity.fullAddressText = addressString
+            addressModel.fullAddressText = addressString
         }
-        return addressEntity
+        return addressModel
     }
 }

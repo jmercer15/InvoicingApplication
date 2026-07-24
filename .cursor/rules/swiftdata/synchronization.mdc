@@ -1,0 +1,109 @@
+---
+description: SwiftData CloudKit synchronization setup, compatibility, schema deployment, and local-server copy strategy
+globs: Packages/Data/Sources/Data/Services/**/*Sync*.swift,Packages/Data/Sources/Data/Migrations/**/*.swift,InvoicingApplication/App/**/*.swift,InvoicingApplication/Core/Configuration/**/*.entitlements,InvoicingApplication/*.entitlements
+alwaysApply: false
+---
+
+# Rule: SwiftData Synchronization
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices
+https://developer.apple.com/documentation/swiftdata/maintaining-a-local-copy-of-server-data
+https://developer.apple.com/documentation/swiftdata/modelcontainer
+https://developer.apple.com/documentation/swiftdata/preserving-your-apps-model-data-across-launches
+
+Scope
+
+Applies to:
+
+- CloudKit-enabled SwiftData container configuration
+- schema compatibility constraints for sync
+- local copy / server-truth synchronization patterns
+- environment-specific deployment and promotion workflows
+
+Intent
+
+Keep sync behavior production-safe by aligning capabilities, schema design,
+and migration/deployment practices with CloudKit requirements.
+
+Core Principle
+
+Sync reliability depends on correct capabilities, CloudKit-compatible schema,
+and deterministic container configuration.
+
+Implementation Rules
+
+- Enable required capabilities for CloudKit sync (`iCloud` + background remote notifications).
+- Configure `ModelConfiguration` explicitly when multiple CloudKit containers exist.
+- Use CloudKit-compatible schema design:
+  - avoid unique-constraint assumptions at server enforcement level
+  - prefer optional relationships and explicit inverses when needed
+  - avoid unsupported delete-rule assumptions in server processing
+- Initialize development CloudKit schema deliberately before production promotion.
+- Treat CloudKit schema as additive once promoted.
+- Allow opt-out (`cloudKitDatabase: .none`) for apps where SwiftData should not auto-sync.
+- For local copy of server truth workflows, use stable unique IDs and idempotent upsert semantics.
+
+Canonical Patterns
+
+```swift
+let config = ModelConfiguration(cloudKitDatabase: .private("iCloud.com.example.app"))
+let container = try ModelContainer(for: [Invoice.self, Client.self], configurations: config)
+```
+
+```swift
+@Model
+final class Quake {
+    @Attribute(.unique) var code: String
+}
+```
+
+Anti-Patterns
+
+- Relying on implicit first-entitlement container selection in multi-container apps.
+- Shipping schema changes without CloudKit compatibility review.
+- Assuming unique constraints are server-enforced the same way as local store semantics.
+- Mixing auto-sync and custom sync paths without explicit ownership boundaries.
+
+Checklist
+
+- Are CloudKit capabilities and notifications configured correctly?
+- Is container selection explicit where ambiguity exists?
+- Is schema reviewed for CloudKit compatibility constraints?
+- Is dev schema initialized and prod promotion planned?
+- Is synchronization strategy clear (auto-sync vs local-cache-from-server)?
+
+Architectural Implications
+
+- Synchronization strategy is a product architecture decision with schema, capability, and release-process consequences.
+- CloudKit compatibility constraints must influence schema design and migration planning from the start.
+- Auto-sync and custom local-copy-from-server strategies require clear ownership boundaries.
+
+Advanced Notes
+
+- Entitlement-driven container auto-selection can be ambiguous; explicit container configuration is safer in multi-container setups.
+- CloudKit schema promotion is additive; pre-promotion review is mandatory.
+- Background notification capability is required for robust remote change ingestion.
+
+Integration With Architecture
+
+- Keep sync bootstrap and container configuration near app assembly/bootstrap.
+- Ensure schema evolution decisions in `Packages/Data/Persistence` include CloudKit compatibility review.
+- Align sync orchestration services with history/change tracking and background task handling.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit CloudKit/container configuration
+- schema design aware of CloudKit constraints
+- deterministic sync strategy boundaries
+- pre-release schema initialization and promotion discipline
+
+Never allow:
+
+- implicit container ambiguity in production
+- schema changes shipped without CloudKit compatibility audit
+- mixed sync ownership without clear boundaries
+- assumptions that local uniqueness semantics equal server enforcement

@@ -1,18 +1,19 @@
 //
-//  PlanManagerEntity_BusinessNameToName_Migration.swift
+//  PlanManager_BusinessNameToName_Migration.swift
 //  InvoicingApplication
 //
 //  Created by AI Assistant on 21/7/2025.
 //
-//  Migration script for renaming PlanManagerEntity.businessName property to name
+//  Migration script for renaming PlanManager.businessName property to name
 //  This migration ensures backward compatibility while updating the property name
 //  to match the domain model convention.
 //
 
+import Core
 import Foundation
 import SwiftData
 
-/// Migration script for PlanManagerEntity.businessName -> name property rename
+/// Migration script for PlanManager.businessName -> name property rename
 /// 
 /// This migration handles the renaming of the businessName property to name
 /// to maintain consistency with the domain model naming conventions.
@@ -23,13 +24,13 @@ import SwiftData
 /// - Backward Compatibility: Yes (using @Attribute(.originalName))
 /// - Data Loss: None
 /// - Rollback: Supported
-public struct PlanManagerEntity_BusinessNameToName_Migration {
+public struct PlanManager_BusinessNameToName_Migration {
     
     /// Migration version identifier
     public static let version = "1.0.0"
     
     /// Migration description
-    public static let description = "Rename PlanManagerEntity.businessName property to name for domain model consistency"
+    public static let description = "Rename PlanManager.businessName property to name for domain model consistency"
     
     /// Migration date
     public static let migrationDate = Date()
@@ -44,7 +45,7 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting PlanManagerEntity.businessName -> name migration (v\(version))")
+        print("🔄 Starting PlanManager.businessName -> name migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -56,7 +57,7 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ PlanManagerEntity.businessName -> name migration completed successfully")
+        print("✅ PlanManager.businessName -> name migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -67,16 +68,16 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationNeeded(modelContext: ModelContext) throws {
-        // Check if any PlanManagerEntity records exist
-        let descriptor = FetchDescriptor<PlanManagerEntity>()
+        // Check if any PlanManager records exist
+        let descriptor = FetchDescriptor<PlanManager>()
         let planManagers = try modelContext.fetch(descriptor)
         
         if planManagers.isEmpty {
-            print("ℹ️ No PlanManagerEntity records found - migration not needed")
+            print("ℹ️ No PlanManager records found - migration not needed")
             return
         }
         
-        print("📊 Found \(planManagers.count) PlanManagerEntity records to migrate")
+        print("📊 Found \(planManagers.count) PlanManager records to migrate")
     }
     
     /// Perform the actual migration
@@ -106,8 +107,8 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationSuccess(modelContext: ModelContext) throws {
-        // Fetch all PlanManagerEntity records to verify they're accessible
-        let descriptor = FetchDescriptor<PlanManagerEntity>()
+        // Fetch all PlanManager records to verify they're accessible
+        let descriptor = FetchDescriptor<PlanManager>()
         let planManagers = try modelContext.fetch(descriptor)
         
         // Verify that we can access the name property
@@ -126,8 +127,8 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
-    public static func rollback(modelContext: ModelContext) throws {
-        print("🔄 Rolling back PlanManagerEntity.businessName -> name migration")
+    public static func rollback(modelContext _: ModelContext) throws {
+        print("🔄 Rolling back PlanManager.businessName -> name migration")
         
         // For Swift Data, rollback is handled by reverting the entity definition
         // and using @Attribute(.originalName) with the new property name
@@ -137,7 +138,7 @@ public struct PlanManagerEntity_BusinessNameToName_Migration {
     }
 }
 
-/// Migration test utilities for PlanManagerEntity
+/// Migration test utilities for PlanManager
 #if DEBUG
 public struct PlanManagerMigrationTestUtils {
     
@@ -146,10 +147,10 @@ public struct PlanManagerMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing PlanManagerEntity.businessName -> name migration")
+        print("🧪 Testing PlanManager.businessName -> name migration")
         
         // Create test data
-        let testPlanManager = PlanManagerEntity(id: UUID(), abn: "12345678901")
+        let testPlanManager = PlanManager(id: UUID(), abn: "12345678901")
         testPlanManager.name = "Test Plan Manager"
         testPlanManager.email = "test@example.com"
         testPlanManager.phone = "0412345678"
@@ -158,10 +159,10 @@ public struct PlanManagerMigrationTestUtils {
         try modelContext.save()
         
         // Test migration
-        try PlanManagerEntity_BusinessNameToName_Migration.execute(modelContext: modelContext)
+        try PlanManager_BusinessNameToName_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let descriptor = FetchDescriptor<PlanManagerEntity>()
+        let descriptor = FetchDescriptor<PlanManager>()
         let planManagers = try modelContext.fetch(descriptor)
         
         guard let planManager = planManagers.first else {

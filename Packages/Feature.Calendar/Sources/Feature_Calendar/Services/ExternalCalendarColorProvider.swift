@@ -20,6 +20,7 @@ protocol ExternalCalendarColorProvider {
 /// Handles the specific format used by Google Calendar for color identification
 struct GoogleCalendarColorProvider: ExternalCalendarColorProvider {
     // providerName removed - property is never accessed
+    private static let colorIdRegex = try? NSRegularExpression(pattern: "\\[(\\d+)\\]", options: [])
     
     func color(for event: EKEvent) -> Color? {
         if let colorId = getGoogleEventColorId(event) {
@@ -31,13 +32,7 @@ struct GoogleCalendarColorProvider: ExternalCalendarColorProvider {
     /// Extracts Google Calendar color ID from event title
     /// Uses regex pattern to find [colorId] format in the event title
     private func getGoogleEventColorId(_ event: EKEvent) -> String? {
-        guard let title = event.title else { return nil }
-        
-        // Look for [colorId] pattern in the title
-        let pattern = "\\[(\\d+)\\]"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return nil
-        }
+        guard let title = event.title, let regex = Self.colorIdRegex else { return nil }
         
         let range = NSRange(location: 0, length: title.utf16.count)
         guard let match = regex.firstMatch(in: title, options: [], range: range) else {
@@ -121,36 +116,5 @@ struct ExternalCalendarColorProviderFactory {
             return AppleCalendarColorProvider()
         }
     }
-    
-    /// Creates a provider for a specific service type
-    /// - Parameter serviceType: The service type to create a provider for
-    /// - Returns: The appropriate color provider
-    static func provider(for serviceType: CalendarServiceType) -> ExternalCalendarColorProvider {
-        // Switch is exhaustive with @unknown default case
-        switch serviceType {
-        case .google:
-            return GoogleCalendarColorProvider()
-        case .outlook:
-            return OutlookCalendarColorProvider()
-        case .apple:
-            return AppleCalendarColorProvider()
-        @unknown default:
-            return AppleCalendarColorProvider()
-        }
-    }
 }
 
-// MARK: - Calendar Service Type
-
-/// Enumeration of supported calendar service types
-enum CalendarServiceType: String, CaseIterable {
-    case google = "Google"
-    case outlook = "Outlook"
-    case apple = "Apple"
-    
-    var displayName: String {
-        return self.rawValue
-    }
-}
-
- 

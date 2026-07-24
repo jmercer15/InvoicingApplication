@@ -7,192 +7,257 @@
 
 import Foundation
 import Core
-import Data
-import os
+import SwiftData
 
 /// Service that integrates existing application data with the NDIS billing algorithm
 @MainActor
 public class NDISBillingIntegrationService {
-    private let invoicesRepository: InvoicesRepository
-    private let clientsRepository: ClientsRepository
-    private let businessRepository: BusinessRepository
-    private let clientServicesRepository: ClientServicesRepository
-    private let ndisItemsRepository: NDISItemRepository
-    private let billingService: NDISBillingService
-    private let configService: NDISBillingConfigService
-    private let unitOfWork: UnitOfWorkService
-    private let logger = Logger(subsystem: "com.invoicing.ndis", category: "BillingIntegration")
-    
-    /// Initialize with Repositories and UnitOfWork
+    private let modelContainer: ModelContainer
+    private let geocodingService: SwiftDataGeocodingService
+    private let mmmZoneLookup: Core.MMMZoneLookup
+
     public init(
-        invoicesRepository: InvoicesRepository,
-        clientsRepository: ClientsRepository,
-        businessRepository: BusinessRepository,
-        clientServicesRepository: ClientServicesRepository,
-        ndisItemsRepository: NDISItemRepository,
-        billingService: NDISBillingService,
-        unitOfWork: UnitOfWorkService,
-        configService: NDISBillingConfigService = NDISBillingConfigService()
+        modelContainer: ModelContainer,
+        geocodingService: SwiftDataGeocodingService,
+        mmmZoneLookup: Core.MMMZoneLookup
     ) {
-        self.invoicesRepository = invoicesRepository
-        self.clientsRepository = clientsRepository
-        self.businessRepository = businessRepository
-        self.clientServicesRepository = clientServicesRepository
-        self.ndisItemsRepository = ndisItemsRepository
-        self.billingService = billingService
-        self.unitOfWork = unitOfWork
-        self.configService = configService
+        self.modelContainer = modelContainer
+        self.geocodingService = geocodingService
+        self.mmmZoneLookup = mmmZoneLookup
     }
-    
-    /// Generate NDIS invoice using domain models and repositories
-    public func generateNDISInvoice(for sessions: [Session], client: Client) async throws -> NDISBillingReport {
-        logger.info("Starting NDIS invoice generation for \(sessions.count) sessions for client: \(client.ndisNumber)")
-        
-        // 1. Validate inputs
-        guard !sessions.isEmpty else {
-             logger.error("No sessions provided for invoice generation")
-             throw NDISBillingIntegrationError.invalidSessionData
+
+    /// Convenience initializer for callers that only have a `ModelContext`. Internally captures the
+    /// container so this service does not share UI save scope.
+    public convenience init(
+        modelContext: ModelContext,
+        geocodingService: SwiftDataGeocodingService,
+        mmmZoneLookup: Core.MMMZoneLookup
+    ) {
+        self.init(
+            modelContainer: modelContext.container,
+            geocodingService: geocodingService,
+            mmmZoneLookup: mmmZoneLookup
+        )
+    }
+
+    public func generateNDISInvoice(for sessionIds: [UUID], clientId: UUID) async throws -> Core.NDISBillingReport {
+        let uniqueSessionIds = Array(Set(sessionIds))
+        guard !uniqueSessionIds.isEmpty else {
+            return Core.NDISBillingReport(
+                invoice: nil,
+                processedSessionsCount: 0,
+                successfulSessionsCount: 0,
+                failedSessions: []
+            )
         }
+
+        let modelContext = ModelContext(modelContainer)
         
-        // 2. Prepare Context Data
-        let business = try await businessRepository.fetchFirst()
+        // 1. Fetch Client
+        guard let client = try modelContext.fetch(FetchDescriptor<Client>(predicate: #Predicate { $0.id == clientId })).first else {
+            return Core.NDISBillingReport(
+                invoice: nil,
+                processedSessionsCount: uniqueSessionIds.count,
+                successfulSessionsCount: 0,
+                failedSessions: uniqueSessionIds.map { Core.NDISBillingIssue(sessionId: $0, sessionTitle: "Unknown", reason: "Client not found") }
+            )
+        }
+
+        // 2. Create Invoice
+        let creationDefaults = InvoiceCreationDefaults.load(from: .standard)
+        let issueDate = Date()
+        let randomSuffix = String(format: "%04d", Int.random(in: 0..<10000))
+        let invoiceNumber = "NDIS-\(Int(Date().timeIntervalSince1970))-\(randomSuffix)"
+        let invoice = Invoice(id: UUID(), invoiceNumber: invoiceNumber)
+        invoice.client = client
+        invoice.date = issueDate
+        invoice.issueDate = issueDate
+        invoice.dueDate = Calendar.current.date(
+            byAdding: .day,
+            value: creationDefaults.paymentTermsDays,
+            to: issueDate
+        )
+        invoice.paymentTerms = creationDefaults.paymentTermsText.trimmedNil
+        invoice.notes = creationDefaults.notes.trimmedNil
+        invoice.status = .reviewDraft
+        invoice.totalAmount = 0
+        invoice.invoiceEditorStateData = try creationDefaults.editorConfiguration.encoded()
         
-        var invoiceItems: [InvoiceItem] = []
-        var totalAmount: Double = 0.0
-        let invoiceId = UUID()
+        // Link related data snapshots (crucial for PDF rendering)
+        invoice.snapshotRelatedData()
         
-        var failedSessions: [NDISBillingIssue] = []
-        var processedCount = 0
-        
-        // 3. Process sessions
-        for session in sessions {
-            processedCount += 1
+        modelContext.insert(invoice)
+
+        var successfulSessionsCount = 0
+        var failedSessions = [Core.NDISBillingIssue]()
+        var generatedItems: [InvoiceItem] = []
+
+        // 3. Process Sessions
+        for sessionId in uniqueSessionIds {
             do {
-                guard let clientServiceId = session.clientServiceId,
-                      let clientService = try await clientServicesRepository.fetch(by: clientServiceId) else {
-                    throw NDISBillingIntegrationError.missingClientService
+                guard let session = try modelContext.fetch(FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })).first else {
+                    failedSessions.append(Core.NDISBillingIssue(sessionId: sessionId, sessionTitle: "Unknown", reason: "Session not found"))
+                    continue
                 }
-                
-                let claimableItems = try await calculateBillableAmounts(for: session, client: client, service: clientService)
-                logger.debug("Calculated \(claimableItems.count) claimable items for session: \(session.title)")
-                
-                // Convert to invoice items
-                for claimableItem in claimableItems {
-                    let itemId = UUID()
+
+                // Determine claimable lines
+                let lineItems: [NDISClaimableLineItem]
+                if let draft = session.billableDrafts?.first, let items = draft.items, !items.isEmpty {
+                    // Use items from existing draft
+                    lineItems = items.map { line in
+                        NDISClaimableLineItem(
+                            supportItemNumber: line.supportItemNumber,
+                            quantity: line.quantityDecimal ?? 0,
+                            unitPrice: line.unitPrice,
+                            totalAmount: (line.quantityDecimal ?? 0) * line.unitPrice,
+                            claimType: line.claimType
+                        )
+                    }
+                } else {
+                    // Calculate live
+                    guard let service = session.clientService else {
+                        failedSessions.append(Core.NDISBillingIssue(sessionId: sessionId, sessionTitle: session.title, reason: "No service assigned to session"))
+                        continue
+                    }
                     
-                    let invoiceItem = InvoiceItem(
-                        id: itemId,
-                        invoiceId: invoiceId,
-                        sessionId: session.id,
-                        clientServiceId: clientService.id,
-                        itemDescription: createItemDescription(for: claimableItem, sessionTitle: session.title),
-                        quantity: claimableItem.quantity,
-                        rate: claimableItem.unitPrice,
-                        position: Int32(invoiceItems.count),
-                        serviceDate: session.startTime ?? Date(),
-                        ndisItemNumber: claimableItem.supportItemNumber,
-                        claimType: claimableItem.claimType,
-                        unit: getUnitForClaimType(claimableItem.claimType), 
-                        taxRate: 0.0
+                    let billingContext = await self.resolveBillingContext(for: session)
+                    lineItems = try await self.calculateBillableAmounts(
+                        for: session.snapshot(),
+                        client: client.snapshot(),
+                        service: service.snapshot(),
+                        billingContext: billingContext
                     )
-                    
-                    invoiceItems.append(invoiceItem)
-                    totalAmount += invoiceItem.lineTotal
                 }
-                
+
+                guard !lineItems.isEmpty else {
+                    failedSessions.append(Core.NDISBillingIssue(
+                        sessionId: sessionId,
+                        sessionTitle: session.title,
+                        reason: "No claimable line items"
+                    ))
+                    continue
+                }
+
+                // Create InvoiceItems
+                for item in lineItems {
+                    let invoiceItem = InvoiceItem(id: UUID(), itemDescription: item.supportItemNumber)
+                    invoiceItem.position = Int32(generatedItems.count)
+                    invoiceItem.ndisItemNumber = item.supportItemNumber
+                    invoiceItem.rate = item.unitPrice
+                    invoiceItem.quantity = item.quantity
+                    invoiceItem.serviceDate = session.startTime ?? Date()
+                    invoiceItem.claimType = NDISClaimType(rawValue: item.claimType) ?? .direct
+                    invoiceItem.invoice = invoice
+                    invoiceItem.session = session
+                    invoiceItem.clientService = session.clientService
+                    modelContext.insert(invoiceItem)
+                    generatedItems.append(invoiceItem)
+                }
+
+                session.invoice = invoice
+                successfulSessionsCount += 1
             } catch {
-                logger.error("Failed to process session \(session.title): \(error.localizedDescription)")
-                failedSessions.append(NDISBillingIssue(
-                    sessionId: session.id,
-                    sessionTitle: session.title,
-                    reason: error.localizedDescription
-                ))
+                failedSessions.append(Core.NDISBillingIssue(sessionId: sessionId, sessionTitle: "Session", reason: error.localizedDescription))
             }
         }
-        
-        // 4. Create Invoice Domain Model if we have successful items
-        guard !invoiceItems.isEmpty else {
-            logger.warning("No billable items generated. Invoice creation aborted.")
-            return NDISBillingReport(
+
+        guard !generatedItems.isEmpty else {
+            modelContext.delete(invoice)
+            if modelContext.hasChanges { try modelContext.save() }
+            return Core.NDISBillingReport(
                 invoice: nil,
-                processedSessionsCount: sessions.count,
+                processedSessionsCount: uniqueSessionIds.count,
                 successfulSessionsCount: 0,
                 failedSessions: failedSessions
             )
         }
+
+        invoice.items = generatedItems
+        invoice.recalculateStoredTotal()
         
-        // Generate number and save
-        let invoiceNumber = try await invoicesRepository.generateInvoiceNumber()
-        
-        let invoice = Invoice(
-            id: invoiceId,
-            invoiceNumber: invoiceNumber,
-            totalAmount: totalAmount,
-            date: Date(),
-            dueDate: Calendar.current.date(byAdding: .day, value: 14, to: Date()),
-            status: BillingStatus.reviewDrafts.rawValue,
-            clientId: client.id,
-            businessId: business?.id,
-            sessionIds: sessions.filter { s in !failedSessions.contains(where: { $0.sessionId == s.id }) }.map { $0.id }
-        )
-        
-        // 5. Transactional Persistence (via Repository)
-        logger.info("Saving invoice \(invoiceNumber) with \(invoiceItems.count) items")
-        let savedInvoice = try await invoicesRepository.create(invoice)
-        
-        for item in invoiceItems {
-            _ = try await invoicesRepository.addItem(item)
+        if modelContext.hasChanges {
+            try modelContext.save()
         }
-        
-        // Finalize transaction
-        try await unitOfWork.saveChanges()
-        logger.info("Successfully persisted invoice \(invoiceNumber)")
-        
-        let finalInvoice = try await invoicesRepository.fetch(by: savedInvoice.id) ?? savedInvoice
-        
-        return NDISBillingReport(
-            invoice: finalInvoice,
-            processedSessionsCount: sessions.count,
-            successfulSessionsCount: sessions.count - failedSessions.count,
+
+        return Core.NDISBillingReport(
+            invoice: invoice.snapshot(),
+            processedSessionsCount: uniqueSessionIds.count,
+            successfulSessionsCount: successfulSessionsCount,
             failedSessions: failedSessions
         )
     }
-    
-    /// Calculate billable amounts using domain models
-    public func calculateBillableAmounts(for session: Session) async throws -> [NDISClaimableLineItem] {
-        guard let clientServiceId = session.clientServiceId,
-              let clientService = try await clientServicesRepository.fetch(by: clientServiceId) else {
-            throw NDISBillingIntegrationError.missingClientService
-        }
-        guard let clientId = session.clientId,
-              let client = try await clientsRepository.fetch(by: clientId) else {
-             throw NDISBillingIntegrationError.missingClient
-        }
+
+    private func resolveBillingContext(for session: Session) async -> NDISBillingContext {
+        var context = NDISBillingContext()
+        context.supportItemNumber = session.clientService?.ndisCode ?? ""
         
-        return try await calculateBillableAmounts(for: session, client: client, service: clientService)
+        // Trigger automation flow to properly populate the context (e.g. travel, geographic area, etc.)
+        // This ensures the live calculation uses high-fidelity data like real travel distances.
+        let localContext = ModelContext(modelContainer)
+        let orchestrator = NDISBillingAutomationOrchestrator(
+            modelContext: localContext,
+            geocodingService: geocodingService,
+            mmmZoneLookup: mmmZoneLookup,
+            mapKitTravelService: MapKitTravelService()
+        )
+        
+        let (updatedContext, _) = await orchestrator.executeAutomationFlow(
+            sessionId: session.id,
+            context: context
+        )
+        return updatedContext
+    }
+
+    /// Geocoding, travel, and billing-context automation for NDIS billing.
+    public func executeAutomationFlow(for session: SessionSnapshot, context: inout NDISBillingContext) async -> AutomationResult {
+        let modelContext = ModelContext(modelContainer)
+        modelContext.autosaveEnabled = false
+        let orchestrator = NDISBillingAutomationOrchestrator(
+            modelContext: modelContext,
+            geocodingService: geocodingService,
+            mmmZoneLookup: mmmZoneLookup,
+            mapKitTravelService: MapKitTravelService()
+        )
+        let (updatedContext, result) = await orchestrator.executeAutomationFlow(
+            sessionId: session.id,
+            context: context
+        )
+        context = updatedContext
+        return result
     }
     
-    public func calculateBillableAmounts(for session: Session, client: Client, service: ClientService) async throws -> [NDISClaimableLineItem] {
-        let inputVector = try await createBillingInputVector(from: session, client: client, service: service)
+    public func calculateBillableAmounts(
+        for session: SessionSnapshot,
+        client: ClientSnapshot,
+        service: ClientServiceSnapshot,
+        billingContext: NDISBillingContext
+    ) async throws -> [NDISClaimableLineItem] {
+        let inputVector = try await createBillingInputVector(
+            from: session,
+            client: client,
+            service: service,
+            billingContext: billingContext
+        )
+        let modelContext = ModelContext(modelContainer)
+        let configService = NDISBillingConfigService(mmmZoneLookup: mmmZoneLookup)
+        let billingService = NDISBillingService(modelContext: modelContext, configService: configService)
         return try await billingService.calculateBillableAmount(context: inputVector)
     }
-    
-    public func calculateBillableAmounts(for session: Session, client: Client, service: ClientService, billingContext: NDISBillingContext) async throws -> [NDISClaimableLineItem] {
-        let inputVector = try await createBillingInputVector(from: session, client: client, service: service, billingContext: billingContext)
-        return try await billingService.calculateBillableAmount(context: inputVector)
-    }
-    
-    // MARK: - Helper Methods
-    
-    func createBillingInputVector(from session: Session, client: Client, service: ClientService) async throws -> NDISBillingInputVector {
+
+    // MARK: - Snapshot input vector construction
+
+    private func createBillingInputVector(
+        from session: SessionSnapshot,
+        client: ClientSnapshot,
+        service: ClientServiceSnapshot,
+        billingContext: NDISBillingContext
+    ) async throws -> NDISBillingInputVector {
         guard let startTime = session.startTime, let endTime = session.endTime else {
             throw NDISBillingIntegrationError.missingSessionTimes
         }
-        
-        // Get business information
-        let business = try await businessRepository.fetchFirst()
-        
-        // Create participant info
+
+        let business = try fetchFirstBusinessSnapshot()
+
         let participant = NDISParticipantInfo(
             ndisNumber: client.ndisNumber,
             planManagementType: client.planManagementType ?? "Plan-Managed",
@@ -200,108 +265,92 @@ public class NDISBillingIntegrationService {
                 postcode: client.address?.postcode ?? "",
                 suburb: client.address?.suburb,
                 state: client.address?.state,
-                latitude: session.sessionLatitude != 0 ? session.sessionLatitude : nil,
-                longitude: session.sessionLongitude != 0 ? session.sessionLongitude : nil
+                latitude: (session.sessionLatitude != 0) ? session.sessionLatitude : nil,
+                longitude: (session.sessionLongitude != 0) ? session.sessionLongitude : nil
             )
         )
-        
-        // Create provider info
+
         let provider = NDISProviderInfo(
             abn: business?.abn ?? "",
             location: NDISLocation(
                 postcode: business?.address?.postcode ?? "",
                 suburb: business?.address?.suburb,
-                state: business?.address?.state
+                state: business?.address?.state,
+                latitude: business?.address?.latitude,
+                longitude: business?.address?.longitude
             ),
             foundAlternativeWork: false
         )
-        
-        let duration = endTime.timeIntervalSince(startTime) / 3600.0
-        
+
+        let durationHours = endTime.timeIntervalSince(startTime) / 3600.0
+        let supportItemNumber = !billingContext.supportItemNumber.isEmpty
+            ? billingContext.supportItemNumber
+            : (service.ndisCode ?? "")
+
         let serviceInfo = NDISServiceInfo(
-            supportItemNumber: service.ndisCode ?? "",
+            supportItemNumber: supportItemNumber,
             startTime: startTime,
             endTime: endTime,
-            duration: duration,
-            quantity: duration,
+            duration: durationHours,
+            quantity: max(durationHours, 0),
             date: startTime,
             hoursPerMonth: nil,
             consecutiveMonths: nil,
             category: nil,
             silVacancyId: nil
         )
-        
+
         let agreement = NDISAgreementInfo(
             agreedPrice: service.rate,
             agreedCancellationPolicy: nil,
             agreedTravelRatePerKM: nil
         )
-        
-        let context = createContextInfo(from: session)
-        let travel = createTravelInfo(from: session)
-        let transport = createTransportInfo(from: session)
-        let cancellation = createCancellationInfo(from: session)
-        
-        return NDISBillingInputVector(
-            participant: participant,
-            provider: provider,
-            service: serviceInfo,
-            agreement: agreement,
-            context: context,
-            travel: travel,
-            transport: transport,
-            cancellation: cancellation,
-            prepayment: nil
+
+        let context = NDISContextInfo(
+            isPrepaymentClaim: billingContext.isPrepayment,
+            isSubscriptionClaim: false,
+            isBereavementClaim: false,
+            isCancellation: billingContext.isShortNoticeCancellation || session.status == .cancelled,
+            isProviderTravel: billingContext.isProviderTravel,
+            isActivityTransport: billingContext.isActivityTransport,
+            isNonFaceToFace: billingContext.isNonFaceToFace,
+            isNDIAReport: billingContext.isNdiaReport,
+            isShadowShift: billingContext.isShadowShift,
+            isSilUnplannedExit: billingContext.isSilUnplannedExit,
+            isComplexBehaviour: billingContext.isComplexBehavior,
+            isHighIntensity: billingContext.isHighIntensity,
+            isGroupSupport: billingContext.isGroupSupport,
+            isTelehealth: billingContext.isTelehealth,
+            isIrregularSil: billingContext.isSilUnplannedExit,
+            isDirectService: !(billingContext.isTelehealth || billingContext.isNonFaceToFace || billingContext.isNdiaReport),
+            groupSize: max(billingContext.groupSize, 1),
+            travelGroupSize: max(billingContext.groupSize, 1),
+            transportGroupSize: max(billingContext.groupSize, 1),
+            participantAttended: !billingContext.isShortNoticeCancellation,
+            nonFaceToFaceDuration: billingContext.isNonFaceToFace ? durationHours : nil,
+            ndiaReportDuration: billingContext.isNdiaReport ? durationHours : nil,
+            nonFaceToFaceActivityDescription: nil,
+            coPaymentAmount: max(billingContext.coPaymentAmount, 0),
+            travelTimeTo: billingContext.travelTime,
+            travelTimeFrom: 0,
+            travelKilometres: billingContext.travelDistance,
+            travelTolls: billingContext.travelTolls,
+            travelParking: billingContext.travelParking
         )
-    }
-    
-    func createBillingInputVector(from session: Session, client: Client, service: ClientService, billingContext: NDISBillingContext) async throws -> NDISBillingInputVector {
-        guard let startTime = session.startTime, let endTime = session.endTime else {
-            throw NDISBillingIntegrationError.missingSessionTimes
-        }
-        
-        let business = try await businessRepository.fetchFirst()
-        let participant = NDISParticipantInfo(
-            ndisNumber: client.ndisNumber,
-            planManagementType: client.planManagementType ?? "Plan-Managed",
-            location: NDISLocation(
-                postcode: client.address?.postcode ?? "",
-                suburb: client.address?.suburb,
-                state: client.address?.state,
-                latitude: session.sessionLatitude != 0 ? session.sessionLatitude : nil,
-                longitude: session.sessionLongitude != 0 ? session.sessionLongitude : nil
-            )
+
+        let travel = NDISTravelInfo(
+            timeTo: max(0, billingContext.travelTime),
+            timeFrom: 0,
+            kilometres: max(0, billingContext.travelDistance),
+            tolls: max(0, billingContext.travelTolls),
+            parking: max(0, billingContext.travelParking)
         )
-        let provider = NDISProviderInfo(
-            abn: business?.abn ?? "",
-            location: NDISLocation(
-                postcode: business?.address?.postcode ?? "",
-                suburb: business?.address?.suburb,
-                state: business?.address?.state
-            ),
-            foundAlternativeWork: false
-        )
-        let duration = endTime.timeIntervalSince(startTime) / 3600.0
-        let serviceInfo = NDISServiceInfo(
-            supportItemNumber: service.ndisCode ?? "",
-            startTime: startTime,
-            endTime: endTime,
-            duration: duration,
-            quantity: duration,
-            date: startTime,
-            hoursPerMonth: nil,
-            consecutiveMonths: nil,
-            category: nil,
-            silVacancyId: nil
-        )
-        let agreement = NDISAgreementInfo(
-            agreedPrice: service.rate,
-            agreedCancellationPolicy: nil,
-            agreedTravelRatePerKM: nil
-        )
-        let context = createContextInfo(from: session, billingContext: billingContext)
-        let travel = createTravelInfo(from: session, billingContext: billingContext)
-        
+
+        let cancellation: NDISCancellationInfo? = {
+            guard context.isCancellation else { return nil }
+            return NDISCancellationInfo(noticeTime: Date())
+        }()
+
         return NDISBillingInputVector(
             participant: participant,
             provider: provider,
@@ -310,236 +359,15 @@ public class NDISBillingIntegrationService {
             context: context,
             travel: travel,
             transport: nil,
-            cancellation: createCancellationInfo(from: session),
+            cancellation: cancellation,
             prepayment: nil
         )
     }
 
-    private func createItemDescription(for claimableItem: NDISClaimableLineItem, sessionTitle: String) -> String {
-        let baseDescription = sessionTitle
-        
-        if claimableItem.claimType.contains("ProviderTravel") {
-            if claimableItem.claimType.contains("Labour") && !claimableItem.claimType.contains("NonLabour") {
-                return "\(baseDescription) - Provider Travel (Labour)"
-            } else if claimableItem.claimType.contains("NonLabour") {
-                return "\(baseDescription) - Provider Travel (Non-Labour)"
-            } else if claimableItem.claimType.contains("OtherCosts") {
-                return "\(baseDescription) - Provider Travel (Tolls/Parking)"
-            }
-            return "\(baseDescription) - Provider Travel"
-        }
-        
-        switch claimableItem.claimType {
-        case "Cancellation":
-            return "\(baseDescription) - Cancellation Fee"
-        case "Prepayment":
-            return "\(baseDescription) - Prepayment"
-        case "Telehealth":
-            return "\(baseDescription) - Telehealth"
-        case "NonFaceToFace":
-            return "\(baseDescription) - Non-Face-to-Face"
-        case "NDIAReport":
-            return "\(baseDescription) - NDIA Report"
-        case "IrregularSILSupport":
-            return "\(baseDescription) - Irregular SIL Support"
-        case "ActivityTransport":
-            return "\(baseDescription) - Activity Based Transport"
-        case "CentreCapitalCost":
-            return "\(baseDescription) - Centre Capital Cost"
-        case "EstablishmentFee":
-            return "\(baseDescription) - Establishment Fee"
-        default:
-            return baseDescription
-        }
-    }
-    
-    private func getUnitForClaimType(_ claimType: String) -> String {
-        if claimType.contains("NonLabour") || claimType == "ActivityTransport" {
-            return "km"
-        }
-        if claimType.contains("OtherCosts") {
-            return "each"
-        }
-        if claimType == "CentreCapitalCost" || claimType == "EstablishmentFee" {
-            return "unit"
-        }
-        
-        switch claimType {
-        case "ProviderTravel", "Cancellation", "Prepayment":
-            return "hour"
-        case "NonFaceToFace", "NDIAReport":
-            return "hour"
-        case "IrregularSILSupport":
-            return "hour"
-        default:
-            return "hour"
-        }
-    }
-    
-    // MARK: - Domain Model Helpers
-    
-    func createContextInfo(from session: Session) -> NDISContextInfo {
-        let notes = (session.notes ?? "").lowercased()
-        let location = (session.location ?? "").lowercased()
-        
-        let isTelehealth = location.contains("telehealth") || location.contains("remote") || notes.contains("[telehealth]")
-        let isNonFaceToFace = notes.contains("[nf2f]") || notes.contains("[nftf]") || notes.contains("non-face-to-face") || notes.contains("writing")
-        let isNDIAReport = notes.contains("[report]") || notes.contains("ndia report") || notes.contains("treatment report")
-        let isGroupSupport = session.attendeesCount > 1
-        
-        return NDISContextInfo(
-            isPrepaymentClaim: false,
-            isSubscriptionClaim: false,
-            isBereavementClaim: false,
-            isCancellation: session.status == "cancelled",
-            isProviderTravel: (session.travelDistanceKM ?? 0) > 0 || (session.travelTimeMinutes ?? 0) > 0,
-            isActivityTransport: false,
-            isNonFaceToFace: isNonFaceToFace,
-            isNDIAReport: isNDIAReport,
-            isShadowShift: notes.contains("[shadow]") || notes.contains("shadow shift") || notes.contains("training shift") || notes.contains("introductory shift"),
-            isSilUnplannedExit: notes.contains("[sil_exit]") || notes.contains("sil exit") || notes.contains("unplanned exit") || notes.contains("vacated sil"),
-            isComplexBehaviour: notes.contains("[complex]") || notes.contains("complex behaviour") || notes.contains("restrictive practice") || notes.contains("behaviour support") || notes.contains("challenging behaviour"),
-            isHighIntensity: notes.contains("[high_intensity]") || notes.contains("high intensity") || notes.contains("tracheostomy") || notes.contains("ventilator") || notes.contains("peg feeding") || notes.contains("cathetering") || notes.contains("wound care") || notes.contains("subcutaneous injection"),
-            isGroupSupport: isGroupSupport,
-            isTelehealth: isTelehealth,
-            isIrregularSil: notes.contains("[irregular_sil]") || notes.contains("irregular sil") || notes.contains("sil irregular"),
-            isDirectService: !isTelehealth && !isNonFaceToFace && !isNDIAReport,
-            groupSize: isGroupSupport ? Int(session.attendeesCount) : 1,
-            travelGroupSize: (session.travelCharges.last?.splitCosts == true) ? (session.travelCharges.last?.participantCount ?? 1) : 1,
-            transportGroupSize: 1,
-            participantAttended: session.status != "cancelled",
-            nonFaceToFaceDuration: isNonFaceToFace ? session.durationHours : nil,
-            ndiaReportDuration: isNDIAReport ? session.durationHours : nil,
-            nonFaceToFaceActivityDescription: isNonFaceToFace ? (session.notes ?? "Non-Face-to-Face support") : nil,
-            coPaymentAmount: 0.0,
-            travelTimeTo: nil,
-            travelTimeFrom: nil,
-            travelKilometres: nil,
-            travelTolls: nil,
-            travelParking: nil
-        )
-    }
-    
-    func createContextInfo(from session: Session, billingContext: NDISBillingContext) -> NDISContextInfo {
-        NDISContextInfo(
-            isPrepaymentClaim: billingContext.isPrepayment,
-            isSubscriptionClaim: false,
-            isBereavementClaim: false,
-            isCancellation: billingContext.isShortNoticeCancellation,
-            isProviderTravel: billingContext.isProviderTravel,
-            isActivityTransport: billingContext.isActivityTransport,
-            isNonFaceToFace: false,
-            isNDIAReport: billingContext.isNdiaReport,
-            isShadowShift: billingContext.isShadowShift,
-            isSilUnplannedExit: billingContext.isSilUnplannedExit,
-            isComplexBehaviour: billingContext.isComplexBehavior,
-            isHighIntensity: billingContext.isHighIntensity,
-            isGroupSupport: billingContext.isGroupSupport,
-            isTelehealth: billingContext.isTelehealth,
-            isIrregularSil: false,
-            isDirectService: !(billingContext.isTelehealth),
-            groupSize: billingContext.isGroupSupport ? max(2, billingContext.groupSize) : 1,
-            travelGroupSize: (session.travelCharges.last?.splitCosts == true) ? (session.travelCharges.last?.participantCount ?? 1) : 1,
-            transportGroupSize: 1,
-            participantAttended: true,
-            nonFaceToFaceDuration: nil,
-            ndiaReportDuration: nil,
-            nonFaceToFaceActivityDescription: nil,
-            coPaymentAmount: 0.0,
-            travelTimeTo: nil,
-            travelTimeFrom: nil,
-            travelKilometres: billingContext.travelDistance > 0 ? billingContext.travelDistance : nil,
-            travelTolls: billingContext.travelTolls > 0 ? billingContext.travelTolls : nil,
-            travelParking: billingContext.travelParking > 0 ? billingContext.travelParking : nil
-        )
-    }
-    
-    private func createTravelInfo(from session: Session) -> NDISTravelInfo? {
-        // Prioritize rich TravelCharge data
-        if let charge = session.travelCharges.last {
-            // If split costs is enabled, the amount in charge.amount is the SPLIT amount.
-            // However, for the NDIS Billing Service, we usually pass the raw parameters and let it calculate.
-            // But here, we seem to be passing 'tolls' and 'parking' directly.
-            
-            // Critical: If splitCosts is true, we should pass the FULL cost here if the service divides it,
-            // OR the SPLIT cost if the service adds it directly.
-            // Looking at NDISBillingService.calculateProviderTravel:
-            // It uses context.travel.tolls and context.travel.parking directly.
-            // So we should pass the SPLIT amount if we want the invoice to reflect the split.
-            
-            // However, TravelCharge entity 'amount' is the total calculated amount (labour + non-labour + ancillary).
-            // 'tollCost' and 'parkingCost' in TravelCharge are the costs for this SPECIFIC charge entry.
-            // If the user selected "Split Costs" in the UI, the TravelCharge created usually represents the share?
-            // Let's check TravelCharge logic.
-            // In BillingHubViewModel.addTravelToSession:
-            // let breakdown = NDISTravelChargeCalculator.calculate(...)
-            // return TravelCharge(..., amount: breakdown.totalPerParticipant, ...)
-            // valid for 'parkingCost' and 'tollCost'?
-            // The calculator takes 'ancillaryCosts' (parking + tolls) and divides by participantCount.
-            // But the 'TravelCharge' struct simply stores 'parkingCost' and 'tollCost'.
-            // Does it store the total or the share?
-            // In ViewModel:
-            // let parkingPerPerson = parking / Double(effectiveCount)
-            // let tollsPerPerson = tolls / Double(effectiveCount)
-            // It seems we should ensure TravelCharge stores the PER PERSON amount if split.
-            // But wait, the ViewModel stores the RAW input in the entity?
-            // Let's check ViewModel.addTravelToSession in a later step if needed.
-            // For now, let's assume TravelCharge properties reflect the values applicable to THIS invoice.
-            
-            // Logic: Use the values from TravelCharge directly.
-            
-            let timeMinutes = (charge.travelTime ?? 0) / 60.0
-            let isFrom = charge.travelDirection.lowercased().contains("after") || 
-                         charge.travelDirection.lowercased().contains("from")
-            
-            return NDISTravelInfo(
-                timeTo: isFrom ? 0 : timeMinutes,
-                timeFrom: isFrom ? timeMinutes : 0,
-                kilometres: charge.distance ?? 0,
-                tolls: charge.tollCost,
-                parking: charge.parkingCost
-            )
-        }
-        
-        // Fallback to flat fields
-        let distance = session.travelDistanceKM ?? 0
-        let time = session.travelTimeMinutes ?? 0
-        let tolls = session.travelTollsAmount ?? 0
-        
-        if distance > 0 || time > 0 || tolls > 0 {
-            return NDISTravelInfo(
-                timeTo: time,
-                timeFrom: 0,
-                kilometres: distance,
-                tolls: tolls,
-                parking: 0
-            )
-        }
-        return nil
-    }
-    
-    private func createTravelInfo(from session: Session, billingContext: NDISBillingContext) -> NDISTravelInfo? {
-        guard billingContext.isProviderTravel || billingContext.travelDistance > 0 || billingContext.travelTolls > 0 || billingContext.travelParking > 0 else {
-            return nil
-        }
-        return NDISTravelInfo(
-            timeTo: max(0, billingContext.travelTime),
-            timeFrom: 0,
-            kilometres: max(0, billingContext.travelDistance),
-            tolls: max(0, billingContext.travelTolls),
-            parking: max(0, billingContext.travelParking)
-        )
-    }
-    
-    private func createTransportInfo(from session: Session) -> NDISTransportInfo? {
-        return nil
-    }
-    
-    private func createCancellationInfo(from session: Session) -> NDISCancellationInfo? {
-        if session.status == "cancelled" {
-            return NDISCancellationInfo(noticeTime: session.lastModifiedDate ?? Date())
-        }
-        return nil
+    private func fetchFirstBusinessSnapshot() throws -> BusinessSnapshot? {
+        let modelContext = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<Business>()
+        return try modelContext.fetch(descriptor).first?.snapshot()
     }
 }
 
@@ -547,22 +375,15 @@ public class NDISBillingIntegrationService {
 
 // MARK: - Supporting Types
 
-public struct NDISBillingReport {
-    public let invoice: Invoice?
-    public let processedSessionsCount: Int
-    public let successfulSessionsCount: Int
-    public let failedSessions: [NDISBillingIssue]
-}
-
-public struct NDISBillingIssue {
-    public let sessionId: UUID
-    public let sessionTitle: String
-    public let reason: String
-}
-
 enum NDISBillingIntegrationError: Error {
-    case missingClient
-    case missingClientService
     case missingSessionTimes
-    case invalidSessionData
+}
+
+extension NDISBillingIntegrationService: Core.NDISBillingIntegrationServiceProtocol {}
+
+private extension String {
+    var trimmedNil: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
 }

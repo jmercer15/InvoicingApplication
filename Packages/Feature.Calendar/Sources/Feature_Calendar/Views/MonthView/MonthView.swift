@@ -1,4 +1,6 @@
 import SwiftUI
+import SharedUI
+import Observation
 
 import EventKit
 
@@ -7,31 +9,19 @@ import EventKit
 // ─────────────────────────────────────────────────────────────
 
 struct MonthView: View {
-    @ObservedObject var viewModel: CalendarViewModel
+    @Bindable var viewModel: CalendarViewModel
     var precomputedWeeks: [[Date?]]? = nil
     
     // Access precomputed weeks if provided; otherwise fall back to ViewModel
-    private var weeks: [[Date?]] { precomputedWeeks ?? viewModel.monthGridWeeks }
+    private var weeks: [[Date?]] { precomputedWeeks ?? [] }
 
     var body: some View {
         HStack(spacing: 0) {
             // Main month grid/content with optimized styling
             monthGrid()
-                .shadow(
-                    color: Color.black.opacity(0.15),
-                    radius: 25,
-                    x: 0,
-                    y: 12
-                )
-                .shadow(
-                    color: Color.blue.opacity(0.1),
-                    radius: 15,
-                    x: 0,
-                    y: 6
-                )
                 .layoutPriority(1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge + 4))
     }
 
     // ════════════════════════════════════════════════════════
@@ -94,64 +84,77 @@ struct MonthView: View {
             dayIndex: dayIndex,
             isLastWeek: weekIndex == weeks.count - 1
         )
-        .overlay( // Highlight selected day
-            viewModel.isSelectedDay(date)
-                ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor.opacity(0.7), lineWidth: 2)
-                : nil
-        )
-        .contentShape(Rectangle())
-
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.15)) { viewModel.selectedDate = date }
-        }
     }
 
     // Placeholder for empty cells outside the current month
     @ViewBuilder
     private func emptyDayCellView(weekIndex: Int, dayIndex: Int) -> some View {
-        Rectangle()
-            .fill(Color.black.opacity(0.15)) // Consistent with WeekView styling
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedCorner(
-                    radius: 20,
-                    corners: weekIndex == weeks.count - 1 ? 
-                        (dayIndex == 0 ? .bottomLeft : dayIndex == 6 ? .bottomRight : []) : []
-                )
-                .fill(Color.black.opacity(0.15))
-            )
-            .contentShape(Rectangle())
+        let cellDate = dateForCell(weekIndex: weekIndex, dayIndex: dayIndex)
+        let numStr = dayNumber(for: cellDate)
+        
+        ZStack(alignment: .topTrailing) {
+            Rectangle()
+                .fill(StyleGuide.Colors.textSecondary.opacity(StyleGuide.Opacity.subtle))
+            
+            Text(numStr)
+                .font(StyleGuide.Typography.gridDayNumber)
+                .foregroundColor(StyleGuide.Colors.textSecondary.opacity(0.3))
+                .padding(.top, StyleGuide.Dimensions.paddingSmall)
+                .padding(.trailing, StyleGuide.Dimensions.paddingMedium)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .overlay(
+            // Top border (for all rows to maintain grid structure)
+            Rectangle()
+                .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
+                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+            alignment: .top
+        )
+        .overlay(
+            // Left border (only for first column)
+            dayIndex == 0 ? Rectangle()
+                .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
+                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)) : nil,
+            alignment: .leading
+        )
+        .overlay(
+            // Right border (only for last column to complete grid outline)
+            dayIndex == 6 ? Rectangle()
+                .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
+                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)) : nil,
+            alignment: .trailing
+        )
+        .overlay(
+            // Bottom border (for all rows to maintain grid structure)
+            Rectangle()
+                .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
+                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+            alignment: .bottom
+        )
+    }
 
-            .overlay(
-                // Top border (for all rows to maintain grid structure)
-                Rectangle()
-                    .frame(width: nil, height: 0.5)
-                    .foregroundColor(Color.secondary.opacity(0.2)),
-                alignment: .top
-            )
-            .overlay(
-                // Left border (only for first column)
-                dayIndex == 0 ? Rectangle()
-                    .frame(width: 0.5, height: nil)
-                    .foregroundColor(Color.secondary.opacity(0.2)) : nil,
-                alignment: .leading
-            )
-            .overlay(
-                // Right border (only for last column to complete grid outline)
-                dayIndex == 6 ? Rectangle()
-                    .frame(width: 0.5, height: nil)
-                    .foregroundColor(Color.secondary.opacity(0.2)) : nil,
-                alignment: .trailing
-            )
-            .overlay(
-                // Bottom border (for all rows to maintain grid structure)
-                Rectangle()
-                    .frame(width: nil, height: 0.5)
-                    .foregroundColor(Color.secondary.opacity(0.2)),
-                alignment: .bottom
-            )
-            .contentShape(Rectangle())
+    private func dateForCell(weekIndex: Int, dayIndex: Int) -> Date {
+        let calendar = Calendar.current
+        let month = viewModel.selectedDate.startOfMonth
+        let firstDayOfMonthWeekday = calendar.component(.weekday, from: month)
+        let firstWeekday = calendar.firstWeekday
+        let daysToPrepend = (firstDayOfMonthWeekday - firstWeekday + 7) % 7
+        guard let gridStartDate = calendar.date(byAdding: .day, value: -daysToPrepend, to: month) else {
+            return viewModel.selectedDate
+        }
+        let offsetDays = weekIndex * 7 + dayIndex
+        return calendar.date(byAdding: .day, value: offsetDays, to: gridStartDate) ?? gridStartDate
+    }
 
+    private static let dayNumberFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        return f
+    }()
+
+    private func dayNumber(for date: Date) -> String {
+        return Self.dayNumberFormatter.string(from: date)
     }
 }
 

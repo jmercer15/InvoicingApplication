@@ -1,0 +1,29 @@
+---
+description: SwiftUI Environment System
+alwaysApply: false
+---
+
+# Rule: SwiftUI Environment System
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/environment-values
+
+Core Principle
+
+The SwiftUI environment is a downward-propagating context system.
+
+Rules
+
+- Use the environment for contextual data that many descendants need to read.
+- Prefer explicit parameters for narrow, local dependencies.
+- Prefer bindings for editable child-owned interactions.
+- Inject environment values high enough to define context, but no higher.
+- Override environment values at meaningful subtree boundaries.
+- Avoid turning the environment into an unstructured global bag.
+
+Must Not
+
+- Do not hide normal view inputs in the environment.
+- Do not put every dependency into the environment because it is convenient.
+- Do not replace a clear initializer parameter with environment unless inheritance is genuinely beneficial.

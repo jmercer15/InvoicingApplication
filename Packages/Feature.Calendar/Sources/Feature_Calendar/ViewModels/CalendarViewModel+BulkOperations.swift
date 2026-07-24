@@ -28,35 +28,38 @@ extension CalendarViewModel {
         guard !sessionsToUpdate.isEmpty else { return }
         
         Task {
+            var failureCount = 0
             for sessionID in sessionsToUpdate {
                 do {
-                    if let session = try await unitOfWork.sessions.fetch(byId: sessionID) {
-                        var updatedSession = session
-                        // Since Session is a struct (Core.Session), we modify a copy and update
-                        // But wait, Session struct doesn't have mutable implementation logic here,
-                        // we need to call update on repo with modified session.
-                        // However, Session properties are 'let'. We cannot modify 'status'.
-                        // We must use 'updateStatus' method on repository if available.
-                        try await unitOfWork.sessions.updateStatus(id: session.id, status: newStatus)
-                    }
+                    try await updateSessionStatus(sessionId: sessionID, statusToken: newStatus)
                 } catch {
-                    print("[CalendarViewModel] Failed to update status for session \(sessionID): \(error)")
+                    failureCount += 1
                 }
-            }
-            // ...
-            
-            do {
-                try await unitOfWork.saveChanges()
-            } catch {
-                print("[CalendarViewModel] Failed to save bulk status changes: \(error)")
             }
             
             await MainActor.run {
                 self.isBulkSelectionMode = false
                 self.bulkSelectedSessionIDs.removeAll()
+                if failureCount > 0 {
+                    self.operationErrorMessage = "Bulk status update failed for \(failureCount) session(s)."
+                }
                 // Force refresh
                 self.updateDisplayableItems()
             }
         }
+    }
+    
+    func toggleSelection(for sessionId: UUID) {
+        if bulkSelectedSessionIDs.contains(sessionId) {
+            bulkSelectedSessionIDs.remove(sessionId)
+        } else {
+            bulkSelectedSessionIDs.insert(sessionId)
+        }
+        updateDisplayableItems()
+    }
+    
+    func isItemSelected(_ item: DisplayableCalendarItem) -> Bool {
+        guard let session = item.underlyingSession else { return false }
+        return bulkSelectedSessionIDs.contains(session.id)
     }
 }

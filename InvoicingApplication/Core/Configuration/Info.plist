@@ -28,67 +28,22 @@
 	<array>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>BillingHub Session ID</string>
+			<string>Billing Hub Board Transfer Item</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.invoicingapp.session-id</string>
+			<string>com.invoicingapp.billing-hub-board-transfer-item</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
-				<string>public.content</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>bhsession</string>
+					<string>bhboarditem</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
-					<string>application/x-invoicingapp-session-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>BillingHub Invoice ID</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.invoicingapp.invoice-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bhinvoice</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-invoicingapp-invoice-id</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeDescription</key>
-			<string>BillingHub Group ID</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.invoicingapp.group-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bhgroup</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-invoicingapp-group-id</string>
+					<string>application/x-invoicingapp-billing-hub-board-transfer-item</string>
 				</array>
 			</dict>
 		</dict>
@@ -126,7 +81,113 @@
 				</array>
 			</dict>
 		</dict>
-	</array>
+		<dict>
+			<key>UTTypeDescription</key>
+			<string>Fruit Identifier</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.example.fruit-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fruitid</string>
+				</array>
+			</dict>
+		</dict>
+			<dict>
+				<key>UTTypeDescription</key>
+				<string>Fruit Property Identifier</string>
+				<key>UTTypeIdentifier</key>
+				<string>com.example.fruit-property-id</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fruitpropertyid</string>
+					</array>
+				</dict>
+			</dict>
+			<dict>
+				<key>UTTypeDescription</key>
+				<string>Billing Hub Session Identifier</string>
+				<key>UTTypeIdentifier</key>
+				<string>com.invoicingapp.billing-hub-session-id</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>billinghubsessionid</string>
+					</array>
+				</dict>
+			</dict>
+			<dict>
+				<key>UTTypeDescription</key>
+				<string>Billing Hub Invoice Identifier</string>
+				<key>UTTypeIdentifier</key>
+				<string>com.invoicingapp.billing-hub-invoice-id</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>billinghubinvoiceid</string>
+					</array>
+				</dict>
+			</dict>
+			<dict>
+				<key>UTTypeDescription</key>
+				<string>Billing Hub Group Identifier</string>
+				<key>UTTypeIdentifier</key>
+				<string>com.invoicingapp.billing-hub-group-id</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>billinghubgroupid</string>
+					</array>
+				</dict>
+			</dict>
+			<dict>
+				<key>UTTypeDescription</key>
+				<string>Calendar Session Drag Item</string>
+				<key>UTTypeIdentifier</key>
+				<string>com.invoicingapp.calendar-session-drag-type</string>
+				<key>UTTypeConformsTo</key>
+				<array>
+					<string>public.data</string>
+				</array>
+				<key>UTTypeTagSpecification</key>
+				<dict>
+					<key>public.filename-extension</key>
+					<array>
+						<string>caldragitem</string>
+					</array>
+					<key>public.mime-type</key>
+					<array>
+						<string>application/x-invoicingapp-calendar-session-drag-type</string>
+					</array>
+				</dict>
+			</dict>
+		</array>
 	<key>NSServices</key>
 	<array>
 		<dict/>

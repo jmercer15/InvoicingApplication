@@ -1,5 +1,7 @@
 import SwiftUI
 import SharedUI
+import Observation
+import UniformTypeIdentifiers
 
 
 // ─────────────────────────────────────────────────────────────
@@ -9,9 +11,15 @@ import SharedUI
 struct DayColumnView: View {
     let day: Date
     let items: [DisplayableCalendarItem]
-    @ObservedObject var viewModel: CalendarViewModel
+    @Bindable var viewModel: CalendarViewModel
+    var interactionHandler: CalendarInteractionHandler
     let columnWidth: CGFloat
     let effectiveHourHeight: CGFloat
+    var visibleHourRange: ClosedRange<CGFloat> = 0...24
+
+    @ScaledMetric(relativeTo: .body) private var paddingSmall: CGFloat = StyleGuide.Dimensions.paddingSmall
+    @ScaledMetric(relativeTo: .body) private var paddingXSmall: CGFloat = StyleGuide.Dimensions.paddingXSmall
+    @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall: CGFloat = StyleGuide.Dimensions.cornerRadiusSmall
 
     // Inject lightweight layout helpers derived from inputs
     private var metrics: CalendarTimelineMetrics {
@@ -30,12 +38,11 @@ struct DayColumnView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            hourGridView()
             calendarItemBlocksView()
             
             // --- Visual guide for resizing ---
-            if let resizeInfo = viewModel.interactionHandler.resizingSessionInfo,
-               let resizePreviewDate = viewModel.interactionHandler.resizePreviewDate {
+            if let resizeInfo = interactionHandler.resizingSessionInfo,
+               let resizePreviewDate = interactionHandler.resizePreviewDate {
                 
                 let viewRange = viewModel.currentViewDateRange
                 if Calendar.current.isDate(resizePreviewDate, inSameDayAs: day) &&
@@ -52,17 +59,16 @@ struct DayColumnView: View {
                         .zIndex(20)
 
                         Text(viewModel.formatTime(resizePreviewDate))
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
-                            .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
+                            .font(StyleGuide.Typography.micro.weight(.bold))
+                            .padding(.horizontal, paddingSmall)
+                            .padding(.vertical, paddingXSmall)
                             .background(Color.accentColor)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
-                            .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                            .foregroundColor(StyleGuide.Colors.text)
+                            .cornerRadius(cornerRadiusSmall)
                             .offset(x: 5, y: yOffset - 12)
                             .zIndex(21)
                             .allowsHitTesting(false)
                     }
-                    .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: yOffset)
                 }
             }
         }
@@ -70,54 +76,43 @@ struct DayColumnView: View {
         .frame(width: columnWidth)
         .background(columnBackground)
         .overlay(columnBorder)
-        .onDrop(of: [.text], delegate: DayColumnDropDelegate(day: day, viewModel: viewModel, effectiveHourHeight: effectiveHourHeight, isTargeted: $isDropTargeted))
-    }
-
-    // Builds the grid lines for the hours
-    @ViewBuilder
-    private func hourGridView() -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(hours, id: \.self) { hour in
-                hourGridLines(hour: hour)
+        .onDrop(
+            of: [.calendarSessionDragType],
+            delegate: DayColumnDropDelegate(
+                day: day,
+                viewModel: viewModel,
+                interactionHandler: interactionHandler,
+                effectiveHourHeight: effectiveHourHeight,
+                isTargeted: $isDropTargeted
+            )
+        )
+        .accessibilityRotor("Scheduled Events") {
+            ForEach(items) { item in
+                AccessibilityRotorEntry(item.title, id: item.id)
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    // View for a single hour cell's grid lines
-    @ViewBuilder
-    private func hourGridLines(hour: Int) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Hour line
-            Rectangle()
-                .fill(Color.secondary.opacity(hour % 3 == 0 ? 0.08 : 0.05))
-                .frame(height: 1)
-
-            // Half-hour line space and line
-            Spacer().frame(height: effectiveHourHeight / 2 - 1)
-            Rectangle()
-                .fill(Color.secondary.opacity(0.03))
-                .frame(height: 1)
-            // Implicit Spacer fills the rest
-        }
-        .frame(height: effectiveHourHeight, alignment: .topLeading)
     }
 
     // Builds the overlay containing the actual calendar item blocks
+    // Pre-calculated relative placements from the view model
+    private var relativePlacements: [String: CalendarItemOverlapGeometry.RelativePlacement] {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        return viewModel.relativePlacementsByDay[components] ?? [:]
+    }
+
+    private func slotWidth(for id: String) -> CGFloat {
+        let placement = relativePlacements[id] ?? CalendarItemOverlapGeometry.RelativePlacement(columnIndex: 0, columnSpan: 1, totalColumns: 1)
+        return columnWidth * CGFloat(placement.columnSpan) / CGFloat(placement.totalColumns)
+    }
+
     @ViewBuilder
     private func calendarItemBlocksView() -> some View {
-        // Use .topLeading alignment for the ZStack holding the positioned items
+        let placements = relativePlacements
         ZStack(alignment: .topLeading) {
             // Drop-in placeholder view
-            if let dragInfo = viewModel.interactionHandler.draggingSessionInfo,
-               let targetTime = viewModel.interactionHandler.dropTargetTime,
+            if let dragInfo = interactionHandler.draggingSessionInfo,
+               let targetTime = interactionHandler.dropTargetTime,
                Calendar.current.isDate(targetTime, inSameDayAs: day) {
-                
-                let _ = PlaceholderCalendarItem(
-                    id: dragInfo.sessionID,
-                    startDate: targetTime,
-                    duration: dragInfo.duration
-                )
                 
                 let placeholder = layoutEngine.placeholderCenter(for: targetTime, duration: dragInfo.duration)
                 let calculatedHeight = placeholder.height
@@ -125,69 +120,67 @@ struct DayColumnView: View {
                 let centerY = placeholder.centerY
                 
                 DropPlaceholderView(height: calculatedHeight, time: viewModel.formatTime(targetTime))
-                    .position(x: centerX, y: centerY)
-                    .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: targetTime)
+                    .offset(x: centerX - layoutEngine.metrics.contentWidth / 2, y: centerY - calculatedHeight / 2)
             }
 
-            ForEach(items) { item in
-                // Hide the original view of the item being dragged
-                let isBeingDragged = viewModel.interactionHandler.draggingSessionInfo?.sessionID == item.id
-                if !isBeingDragged {
-                // Calculate position for this specific item here
-                let positioned = layoutEngine.positionedBlock(for: item)
-                let _ = positioned.width
-                let _ = positioned.height
-                let centerX = positioned.centerX
-                let centerY = positioned.centerY
+            CalendarItemLayout(hourHeight: effectiveHourHeight, relativePlacements: placements) {
+                let culledItems = items.filter { item in
+                    let itemStart = CGFloat(item.startHour)
+                    let itemEnd = itemStart + CGFloat(item.durationHours)
+                    return itemEnd >= visibleHourRange.lowerBound && itemStart <= visibleHourRange.upperBound
+                }
                 
-                CalendarItemBlockView(
-                    item: item,
-                    viewModel: viewModel,
-                    hourHeight: effectiveHourHeight,
-                    columnWidth: columnWidth
-                )
-                // Apply position modifier here
-                .position(x: centerX, y: centerY)
+                ForEach(culledItems) { item in
+                    let isBeingDragged = interactionHandler.draggingSessionInfo?.sessionID == (item.underlyingSession?.id.uuidString ?? item.id)
+                    CalendarItemBlockView(
+                        item: item,
+                        viewModel: viewModel,
+                        interactionHandler: interactionHandler,
+                        hourHeight: effectiveHourHeight,
+                        slotWidth: slotWidth(for: item.id)
+                    )
+                    .equatable()
+                    .layoutValue(key: CalendarItemKey.self, value: CalendarItemLayoutValue(item))
+                    .accessibilityIdentifier(item.id)
+                    .opacity(isBeingDragged ? 0.4 : 1.0)
+                    .allowsHitTesting(!isBeingDragged)
                 }
             }
-            .onAppear {
-                // Original debug print
-                print("[DayColumnView] for \(day.formatted(date: .numeric, time: .omitted)) got \(items.count) timed unified items.")
-            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(width: columnWidth, height: 24 * effectiveHourHeight, alignment: .topLeading)
         .background(Color.primary.opacity(0.0001)) // Ensure it captures clicks
         .contentShape(Rectangle())
-
-        .onTapGesture(coordinateSpace: .local) { location in
-
-        }
-
     }
 
     // Background color for the column
     private var columnBackground: some View {
-        let isDropTarget = isDropTargeted && viewModel.interactionHandler.draggingSessionInfo != nil
+        let isDropTarget = isDropTargeted && interactionHandler.draggingSessionInfo != nil
         return Rectangle()
             .fill(
                 isDropTarget ? Color.accentColor.opacity(0.15) :
-                (isToday ? Color.accentColor.opacity(0.04) : 
+                (isToday ? Color.accentColor.opacity(0.04) :
                  (isWeekend ? Color.black.opacity(0.08) : Color.clear))
             )
-            .animation(.easeOut(duration: 0.2), value: isDropTarget || isToday)
     }
 
     // Border for the column
     private var columnBorder: some View {
-        Rectangle()
-            .stroke(
-                isToday
-                    ? Color.accentColor.opacity(0.4)
-                    : Color.secondary.opacity(0.3),
-                lineWidth: isToday ? 1 : 0.5
-            )
-            .frame(maxWidth: .infinity)
-            .animation(.easeOut(duration: 0.2), value: isToday)
+        ZStack {
+            if isToday {
+                // Today has a full highlight border around it
+                Rectangle()
+                    .stroke(Color.accentColor.opacity(0.4), lineWidth: 1.5)
+            } else {
+                // Regular column has only a trailing divider line
+                HStack {
+                    Spacer()
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: StyleGuide.Dimensions.hairlineWidth)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -197,27 +190,19 @@ private struct PlaceholderCalendarItem: Identifiable {
     var id: String
     var startDate: Date
     var duration: TimeInterval
-
-    var startHour: CGFloat {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: startDate)
-        let minute = calendar.component(.minute, from: startDate)
-        return CGFloat(hour) + CGFloat(minute) / 60.0
-    }
-
-    var durationHours: CGFloat {
-        return CGFloat(duration / 3600.0)
-    }
 }
 
 private struct DropPlaceholderView: View {
     var height: CGFloat
     var time: String
     
+    @ScaledMetric(relativeTo: .body) private var paddingXSmall: CGFloat = StyleGuide.Dimensions.paddingXSmall
+    @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall: CGFloat = StyleGuide.Dimensions.cornerRadiusSmall
+
     var body: some View {
         HStack(spacing: 6) {
             Text(time)
-                .font(.system(size: 11, weight: .semibold))
+                .font(StyleGuide.Typography.caption.weight(.semibold))
                 .foregroundColor(.accentColor)
                 .padding(.leading, 8)
             
@@ -225,12 +210,12 @@ private struct DropPlaceholderView: View {
         }
         .frame(height: height)
         .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+            RoundedRectangle(cornerRadius: cornerRadiusSmall)
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                .background(Color.accentColor.opacity(StyleGuide.Opacity.light).cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall))
+                .background(Color.accentColor.opacity(StyleGuide.Opacity.light).cornerRadius(cornerRadiusSmall))
         )
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
+        .padding(.horizontal, paddingXSmall)
         .fluidTransition()
         .zIndex(0) // Ensure it's behind the actual items
     }
@@ -239,51 +224,92 @@ private struct DropPlaceholderView: View {
 struct DayColumnDropDelegate: DropDelegate {
     let day: Date
     let viewModel: CalendarViewModel
+    let interactionHandler: CalendarInteractionHandler
     let effectiveHourHeight: CGFloat
     @Binding var isTargeted: Bool
 
     func validateDrop(info: DropInfo) -> Bool {
-        // A more robust solution would use a custom UTI.
-        return info.hasItemsConforming(to: [.text])
+        return info.hasItemsConforming(to: [.calendarSessionDragType])
     }
     
     func dropUpdated(info: DropInfo) -> DropProposal? {
         let newTargetTime = calculateTargetTime(from: info.location)
-        DispatchQueue.main.async {
-            viewModel.interactionHandler.dropTargetTime = newTargetTime
+        if interactionHandler.dropTargetTime != newTargetTime {
+            interactionHandler.dropTargetTime = newTargetTime
+        }
+        if interactionHandler.draggingSessionInfo == nil,
+           let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
+            let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
+                DispatchQueue.main.async {
+                    if case .success(let payload) = result {
+                        interactionHandler.startDragging(
+                            sessionID: payload.sessionID,
+                            duration: payload.duration,
+                            originalInstanceDate: payload.originalInstanceDate
+                        )
+                    }
+                }
+            }
         }
         return DropProposal(operation: .move)
     }
 
     func dropEntered(info: DropInfo) {
         isTargeted = true
+        Task { @MainActor in
+            if interactionHandler.draggingSessionInfo == nil {
+                if let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
+                    let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
+                        DispatchQueue.main.async {
+                            if case .success(let payload) = result {
+                                interactionHandler.startDragging(
+                                    sessionID: payload.sessionID,
+                                    duration: payload.duration,
+                                    originalInstanceDate: payload.originalInstanceDate
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func dropExited(info: DropInfo) {
         isTargeted = false
         // Clear the placeholder when exiting
-        viewModel.interactionHandler.dropTargetTime = nil
+        interactionHandler.dropTargetTime = nil
     }
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
         let newStartDate = calculateTargetTime(from: info.location)
         
-        // Finalize the drop
-        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo,
-           let sessionID = UUID(uuidString: draggedItem.sessionID) {
-            viewModel.rescheduleSession(
-                with: sessionID,
-                originalInstanceDate: draggedItem.originalInstanceDate,
-                to: newStartDate,
-                isAllDay: false
-            )
+        guard let provider = info.itemProviders(for: [.calendarSessionDragType]).first else {
+            interactionHandler.draggingSessionInfo = nil
+            interactionHandler.dropTargetTime = nil
+            return false
         }
-
         
-        // Reset dragging state
-        viewModel.interactionHandler.draggingSessionInfo = nil
-        viewModel.interactionHandler.dropTargetTime = nil
+        let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let payload):
+                    if let sessionID = UUID(uuidString: payload.sessionID) {
+                        viewModel.rescheduleSession(
+                            with: sessionID,
+                            originalInstanceDate: payload.originalInstanceDate,
+                            to: newStartDate,
+                            isAllDay: false
+                        )
+                    }
+                case .failure(let error):
+                    print("Failed to load drag payload: \(error)")
+                }
+                interactionHandler.draggingSessionInfo = nil
+                interactionHandler.dropTargetTime = nil
+            }
+        }
         
         return true
     }

@@ -7,7 +7,7 @@ public enum PanelShellTokens {
     public static let panelVerticalPadding: CGFloat = 12
     public static let panelCornerRadius: CGFloat = 10
     public static let panelBorderOpacity: Double = 0.12
-    public static let shellTransition: Animation = .easeInOut(duration: 0.2)
+    public static let shellTransition: Animation = .easeInOut(duration: StyleGuide.Animations.durationMedium)
     public static let contentListHorizontalInset: CGFloat = 24
     public static let contentListVerticalInset: CGFloat = 16
     public static let contentListGridSpacing: CGFloat = 16

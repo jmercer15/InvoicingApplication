@@ -1,0 +1,72 @@
+---
+description: SwiftUI Toolbars / Commands / Menus
+alwaysApply: false
+---
+
+# Rule: SwiftUI Toolbars / Commands / Menus
+
+Sources
+
+- SwiftUI — Toolbars
+- SwiftUI — Menus and commands
+
+Scope
+
+Applies to command surfaces in SwiftUI:
+
+- toolbars
+- menu-bar commands
+- in-view menus
+- command groups
+- keyboard shortcut exposure
+- toolbar customization-related command structure
+
+This rule governs how actions are distributed across visible command surfaces
+so that the app remains consistent, discoverable, and platform-appropriate.
+
+Intent
+
+Build command architecture that is:
+
+- predictable
+- discoverable
+- scoped correctly
+- platform-appropriate
+- duplication-aware
+- easy to maintain
+
+Toolbars should expose the most important frequent actions.
+Menus and commands should expose the full action model in an organized way.
+In-view menus should provide compact, contextual access where space is limited.
+
+Do not treat all action surfaces as interchangeable.
+
+Core Principle
+
+SwiftUI command surfaces have different jobs.
+
+Toolbars:
+
+- foreground the most common, high-value actions
+- support immediate interaction
+- should stay concise and intentional
+
+Commands / menu bar:
+
+- represent the broader action model of the app or scene
+- provide discoverability and keyboard access
+- should be structurally organized
+
+Menus:
+
+- provide space-efficient, context-dependent access
+- should group related actions without cluttering the main interface
+
+## Enforcements
+
+- Use toolbars for a curated subset of the most common actions.
+- Use scene commands for the broader action model, especially on macOS.
+- Use in-view menus when context or space efficiency is the reason.
+- Keep scene-level commands and visible toolbar actions semantically aligned.
+- Do not overload toolbars with low-frequency or destructive actions by default.
+- Do not hide essential app actions exclusively inside toolbar-only UI.

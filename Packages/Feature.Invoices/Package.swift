@@ -1,9 +1,13 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
+private let strictConcurrencySettings: [SwiftSetting] = [
+    .enableExperimentalFeature("StrictConcurrency"),
+]
+
 let package = Package(
     name: "Feature.Invoices",
-    platforms: [.macOS("26.1")],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "Feature_Invoices", targets: ["Feature_Invoices"])
     ],
@@ -20,17 +24,21 @@ let package = Package(
                 "Core",
                 "Data",
                 "SharedUI",
-                .product(name: "Feature_InvoiceTemplateEditor", package: "Feature.InvoiceTemplateEditor")
-            ]
+                .product(
+                    name: "InvoiceTableLayoutEditor",
+                    package: "Feature.InvoiceTemplateEditor"
+                )
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "Feature_InvoicesTests",
             dependencies: [
                 "Feature_Invoices",
                 "Core",
-                "Data",
-                .product(name: "Feature_InvoiceTemplateEditor", package: "Feature.InvoiceTemplateEditor")
-            ]
+                "Data"
+            ],
+            swiftSettings: strictConcurrencySettings
         )
     ]
 )

@@ -1,7 +1,5 @@
 import SwiftUI
 import EventKit
-import Data
-import Core
 import SharedUI
 
 // MARK: - Calendar Row View with Color Picker
@@ -15,14 +13,17 @@ struct CalendarRowView: View {
     
     @State private var showingColorPicker = false
     
+    @ScaledMetric(relativeTo: .body) private var paddingMediumLarge = StyleGuide.Dimensions.paddingMediumLarge
+    @ScaledMetric(relativeTo: .body) private var paddingSmall = StyleGuide.Dimensions.paddingSmall
+    
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: FormSectionTokens.sectionStackSpacing) {
             // Checkbox
             Button(action: {
                 onToggle(!isSelected)
             }) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(StyleGuide.Typography.sectionTitle)
                     .foregroundColor(isSelected ? .accentColor : .white.opacity(0.6))
             }
             .contentShape(Rectangle())
@@ -40,7 +41,7 @@ struct CalendarRowView: View {
             }) {
                 Circle()
                     .fill(currentColor)
-                    .frame(width: 24, height: 24)
+                    .frame(width: StyleGuide.Dimensions.entityListIconWidth, height: StyleGuide.Dimensions.entityListIconWidth)
                     .overlay(
                         Circle()
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
@@ -49,7 +50,7 @@ struct CalendarRowView: View {
             .contentShape(Circle())
             .buttonStyle(.plain)
             .popover(isPresented: $showingColorPicker) {
-                VStack(spacing: 16) {
+                VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Text("Calendar Color")
                         .font(.headline)
                         .padding(.top)
@@ -59,7 +60,7 @@ struct CalendarRowView: View {
                         set: { onColorChange($0) }
                     ))
                     .labelsHidden()
-                    .frame(width: 200, height: 200)
+                    .frame(width: StyleGuide.Dimensions.settingsCalendarColorPickerSize, height: StyleGuide.Dimensions.settingsCalendarColorPickerSize)
                     
                     Button("Reset to Default") {
                         onColorChange(Color(calendar.cgColor))
@@ -69,14 +70,14 @@ struct CalendarRowView: View {
                     
                     Spacer()
                 }
-                .frame(width: 250, height: 300)
+                .frame(width: StyleGuide.Dimensions.settingsCalendarPopoverWidth, height: StyleGuide.Dimensions.settingsCalendarPopoverHeight)
                 .padding()
             }
         }
-        .padding(.horizontal, StyleGuide.Dimensions.paddingMediumLarge)
-        .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
+        .padding(.horizontal, paddingMediumLarge)
+        .padding(.vertical, paddingSmall)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact)
                 .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
         )
         .contentShape(Rectangle())

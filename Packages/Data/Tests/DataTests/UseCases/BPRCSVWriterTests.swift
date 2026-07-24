@@ -5,28 +5,23 @@ import Core
 final class BPRCSVWriterTests: XCTestCase {
     func testHeaderAndColumnOrderAreExact() {
         let writer = BPRCSVWriter()
-        let line = BulkClaimLine(
-            id: UUID(),
-            batchId: UUID(),
-            registrationNumber: "12345",
-            ndisNumber: "4300000000",
-            supportsDeliveredFrom: Date(timeIntervalSince1970: 1_700_000_000),
-            supportsDeliveredTo: Date(timeIntervalSince1970: 1_700_003_600),
-            supportNumber: "01_001_0107_1_1",
-            claimReference: "INV-1",
-            quantity: 1,
-            hours: nil,
-            unitPrice: 100,
-            gstCode: "P2",
-            authorisedBy: "Worker",
-            participantApproved: "Y",
-            inKindFundingProgram: nil,
-            claimTypeCode: nil,
-            cancellationReason: nil,
-            abnOfSupportProvider: "12345678901",
-            invoiceId: UUID(),
-            invoiceItemId: UUID()
-        )
+        let line = BulkClaimLine(id: UUID())
+        line.registrationNumber = "12345"
+        line.ndisNumber = "4300000000"
+        line.supportsDeliveredFrom = Date(timeIntervalSince1970: 1_700_000_000)
+        line.supportsDeliveredTo = Date(timeIntervalSince1970: 1_700_003_600)
+        line.supportNumber = "01_001_0107_1_1"
+        line.claimReference = "INV-1"
+        line.quantity = 1
+        line.hours = nil
+        line.unitPrice = 100
+        line.gstCode = "P2"
+        line.authorisedBy = "Worker"
+        line.participantApproved = "Y"
+        line.inKindFundingProgram = nil
+        line.claimTypeCode = nil
+        line.cancellationReason = nil
+        line.abnOfSupportProvider = "12345678901"
 
         let csv = writer.csvString(lines: [line])
         let rows = csv.split(separator: "\n", omittingEmptySubsequences: true)
@@ -43,28 +38,23 @@ final class BPRCSVWriterTests: XCTestCase {
 
     func testCSVEscapingAndChecksumAreDeterministic() {
         let writer = BPRCSVWriter()
-        let line = BulkClaimLine(
-            id: UUID(),
-            batchId: UUID(),
-            registrationNumber: "12345",
-            ndisNumber: "4300000000",
-            supportsDeliveredFrom: Date(timeIntervalSince1970: 1_700_000_000),
-            supportsDeliveredTo: Date(timeIntervalSince1970: 1_700_003_600),
-            supportNumber: "01_001_0107_1_1",
-            claimReference: "INV,\"Q\"",
-            quantity: nil,
-            hours: "001:30",
-            unitPrice: 100,
-            gstCode: "P2",
-            authorisedBy: "Worker",
-            participantApproved: "Y",
-            inKindFundingProgram: nil,
-            claimTypeCode: BPRClaimTypeCode.thlt.rawValue,
-            cancellationReason: nil,
-            abnOfSupportProvider: "12345678901",
-            invoiceId: UUID(),
-            invoiceItemId: UUID()
-        )
+        let line = BulkClaimLine(id: UUID())
+        line.registrationNumber = "12345"
+        line.ndisNumber = "4300000000"
+        line.supportsDeliveredFrom = Date(timeIntervalSince1970: 1_700_000_000)
+        line.supportsDeliveredTo = Date(timeIntervalSince1970: 1_700_003_600)
+        line.supportNumber = "01_001_0107_1_1"
+        line.claimReference = "INV,\"Q\""
+        line.quantity = nil
+        line.hours = "001:30"
+        line.unitPrice = 100
+        line.gstCode = "P2"
+        line.authorisedBy = "Worker"
+        line.participantApproved = "Y"
+        line.inKindFundingProgram = nil
+        line.claimTypeCode = BPRClaimTypeCode.thlt.rawValue
+        line.cancellationReason = nil
+        line.abnOfSupportProvider = "12345678901"
 
         let dataA = writer.csvData(lines: [line])
         let dataB = writer.csvData(lines: [line])

@@ -1,6 +1,7 @@
 import XCTest
 import SwiftData
 @testable import Data
+import Core
 
 @MainActor
 final class AllDataComplianceRoundTripTests: XCTestCase {
@@ -11,20 +12,22 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         let exportedData = try SwiftDataExportService.exportAllEntitiesToJSON(context: sourceContext)
         let exportedJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: exportedData) as? [String: Any])
 
-        XCTAssertEqual((exportedJSON["ServiceAgreementEntity"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["SupportLogEntity"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["BulkClaimBatchEntity"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["BulkClaimLineEntity"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((exportedJSON["ServiceAgreement"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((exportedJSON["SupportLog"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((exportedJSON["BulkClaimBatch"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((exportedJSON["BulkClaimLine"] as? [[String: Any]])?.count, 1)
 
         let destinationContext = try makeInMemoryContext()
         let importResults = try AllDataImportService.importAllData(from: exportedData, context: destinationContext)
         let totalFailed = importResults.reduce(0) { $0 + $1.failed }
         XCTAssertEqual(totalFailed, 0)
 
-        let importedAgreements = try destinationContext.fetch(FetchDescriptor<ServiceAgreementEntity>())
-        let importedLogs = try destinationContext.fetch(FetchDescriptor<SupportLogEntity>())
-        let importedBatches = try destinationContext.fetch(FetchDescriptor<BulkClaimBatchEntity>())
-        let importedLines = try destinationContext.fetch(FetchDescriptor<BulkClaimLineEntity>())
+        let importedAgreements = try destinationContext.fetch(FetchDescriptor<ServiceAgreement>())
+        let importedLogs = try destinationContext.fetch(FetchDescriptor<SupportLog>())
+        let importedBatches = try destinationContext.fetch(FetchDescriptor<BulkClaimBatch>())
+        let importedLines = try destinationContext.fetch(FetchDescriptor<BulkClaimLine>())
+        let importedInvoices = try destinationContext.fetch(FetchDescriptor<Invoice>())
+        let importedInvoiceItems = try destinationContext.fetch(FetchDescriptor<InvoiceItem>())
 
         XCTAssertEqual(importedAgreements.count, 1)
         XCTAssertEqual(importedLogs.count, 1)
@@ -41,6 +44,19 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         XCTAssertEqual(importedLines.first?.submissionRef, "SUB-ROUNDTRIP-001")
         XCTAssertEqual(importedLines.first?.reconciliationNotes, "Portal reconciliation matched.")
         XCTAssertNotNil(importedLines.first?.reconciledAt)
+        let importedInvoice = try XCTUnwrap(importedInvoices.first)
+        XCTAssertEqual(importedInvoice.currencyCode, "AUD")
+        XCTAssertEqual(importedInvoice.taxRate, 10)
+        XCTAssertEqual(importedInvoice.discount, 5)
+        XCTAssertEqual(importedInvoice.creditApplied, 3)
+        XCTAssertEqual(importedInvoice.businessPhone, "07 3000 0000")
+        XCTAssertEqual(importedInvoice.clientPhone, "0400 000 000")
+        XCTAssertEqual(importedInvoice.bankBSB, "123-456")
+        XCTAssertEqual(importedInvoice.invoiceEditorStateData, Data("layout-v2".utf8))
+        let importedItem = try XCTUnwrap(importedInvoiceItems.first)
+        XCTAssertEqual(importedItem.position, 2)
+        XCTAssertEqual(importedItem.unit, "hour")
+        XCTAssertEqual(importedItem.taxRate, 10)
     }
 
     private func makeInMemoryContext() throws -> ModelContext {
@@ -51,25 +67,33 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
     private func insertComplianceFixture(into context: ModelContext) throws {
         let baseDate = Date(timeIntervalSince1970: 1_738_800_000)
 
-        let business = BusinessEntity(id: UUID(), abn: "53004085616")
+        let business = Business(id: UUID(), abn: "53004085616")
         business.name = "Acme Support"
         business.defaultGstCode = GSTCode.p2.rawValue
         business.isRegisteredProvider = true
         business.ndiaOrganisationID = "100200300"
 
-        let client = ClientEntity(
+        let client = Client(
             id: UUID(),
             ndisNumber: "4300123456",
             fullName: "Jordan Participant",
             status: .active
         )
 
-        let invoice = InvoiceEntity(id: UUID(), invoiceNumber: "INV-ROUNDTRIP-001")
+        let invoice = Invoice(id: UUID(), invoiceNumber: "INV-ROUNDTRIP-001")
         invoice.client = client
         invoice.business = business
         invoice.status = .readyToSend
+        invoice.currencyCode = "AUD"
+        invoice.taxRate = 10
+        invoice.discount = 5
+        invoice.creditApplied = 3
+        invoice.businessPhone = "07 3000 0000"
+        invoice.clientPhone = "0400 000 000"
+        invoice.bankBSB = "123-456"
+        invoice.invoiceEditorStateData = Data("layout-v2".utf8)
 
-        let session = SessionEntity(id: UUID())
+        let session = Session(id: UUID())
         session.title = "Community access support"
         session.startTime = baseDate
         session.endTime = baseDate.addingTimeInterval(3_600)
@@ -77,16 +101,19 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         session.client = client
         session.invoice = invoice
 
-        let invoiceItem = InvoiceItemEntity(id: UUID(), itemDescription: "Personal activities support")
+        let invoiceItem = InvoiceItem(id: UUID(), itemDescription: "Personal activities support")
         invoiceItem.invoice = invoice
         invoiceItem.session = session
         invoiceItem.quantity = 1.0
         invoiceItem.rate = 120.0
+        invoiceItem.position = 2
+        invoiceItem.unit = "hour"
+        invoiceItem.taxRate = 10
         invoiceItem.serviceDate = baseDate
         invoiceItem.gstCode = GSTCode.p1.rawValue
         invoiceItem.ndisItemNumber = "01_011_0107_1_1"
 
-        let agreement = ServiceAgreementEntity(id: UUID())
+        let agreement = ServiceAgreement(id: UUID())
         agreement.client = client
         agreement.effectiveFrom = baseDate.addingTimeInterval(-86_400 * 30)
         agreement.cancellationPolicyType = CancellationPolicyType.twoClearBusinessDays.rawValue
@@ -97,7 +124,7 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         agreement.participantSignatoryName = "Jordan Participant"
         agreement.signedAt = baseDate.addingTimeInterval(-86_400 * 20)
 
-        let supportLog = SupportLogEntity(id: UUID())
+        let supportLog = SupportLog(id: UUID())
         supportLog.client = client
         supportLog.session = session
         supportLog.participantName = "Jordan Participant"
@@ -115,7 +142,7 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         supportLog.signedBy = "Jordan Participant"
         supportLog.signedAt = baseDate.addingTimeInterval(3_660)
 
-        let batch = BulkClaimBatchEntity(id: UUID())
+        let batch = BulkClaimBatch(id: UUID())
         batch.createdAt = baseDate.addingTimeInterval(10_000)
         batch.fromDate = baseDate.addingTimeInterval(-86_400 * 7)
         batch.toDate = baseDate
@@ -129,7 +156,7 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         batch.errorCount = 0
         batch.checksumSHA256 = "0123456789abcdef"
 
-        let line = BulkClaimLineEntity(id: UUID())
+        let line = BulkClaimLine(id: UUID())
         line.batch = batch
         line.invoice = invoice
         line.invoiceItem = invoiceItem

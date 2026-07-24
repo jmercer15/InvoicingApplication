@@ -1,13 +1,11 @@
 import SwiftUI
-import Data
-import Core
 import SharedUI
 
 struct NDISBillingSettingsView: View {
-    @AppStorage("ndisBillingRate") private var billingRate: Double = 0.0
-    @AppStorage("ndisAutoGenerateCharges") private var autoGenerateCharges: Bool = true
-    @AppStorage("ndisIncludeTravelCharges") private var includeTravelCharges: Bool = true
-    @AppStorage("ndisDefaultChargeType") private var defaultChargeType: String = "Support Item"
+    @AppStorage("ndisBillingRate") var billingRate: Double = 0.0
+    @AppStorage("ndisAutoGenerateCharges") var autoGenerateCharges: Bool = true
+    @AppStorage("ndisIncludeTravelCharges") var includeTravelCharges: Bool = true
+    @AppStorage("ndisDefaultChargeType") var defaultChargeType: String = "Support Item"
     
     private let decimalFormatter: NumberFormatter = {
         let f = NumberFormatter()
@@ -24,9 +22,12 @@ struct NDISBillingSettingsView: View {
         return labels.map { $0.width() }.max() ?? 120
     }
 
+    @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: FormSectionTokens.pageStackSpacing) {
                 SettingsSection(
                     icon: "creditcard.fill",
                     title: "NDIS Billing Settings",
@@ -69,8 +70,8 @@ struct NDISBillingSettingsView: View {
                     }
                 }
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }

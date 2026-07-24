@@ -1,10 +1,8 @@
 import SwiftUI
-import Data
-import Core
 import SharedUI
 
 struct CreateCalendarSheet: View {
-    @Environment(\.presentationMode) private var presentationMode
+    @Environment(\.presentationMode) var presentationMode
     @State private var title: String = ""
     @State private var color: Color = .accentColor
     @State private var showError: Bool = false
@@ -30,7 +28,7 @@ struct CreateCalendarSheet: View {
             }
             if showError {
                 Text("Title is required.")
-                    .foregroundColor(.red)
+                    .foregroundColor(ColorSystem.Status.error)
                     .font(.caption)
             }
             HStack {
@@ -58,7 +56,7 @@ struct CreateCalendarSheet: View {
                 .pointerStyle(.link)
             }
         }
-        .padding(32)
-        .frame(width: 400)
+        .padding(StyleGuide.Dimensions.paddingXXLarge)
+        .frame(width: StyleGuide.Dimensions.settingsCreateCalendarWidth)
     }
 } 

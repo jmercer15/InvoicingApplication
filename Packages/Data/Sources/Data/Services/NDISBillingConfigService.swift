@@ -8,16 +8,19 @@
 import Foundation
 import CoreLocation
 import os
+import Core
 
 /// Service for managing NDIS billing configuration and regulatory values
 public class NDISBillingConfigService {
     private let logger = Logger(subsystem: "com.invoicing.ndis", category: "BillingConfig")
+    private let mmmZoneLookup: Core.MMMZoneLookup
     
     // MARK: - Configuration Storage
     
     private var configValues: [String: Any] = [:]
     
-    public init() {
+    public init(mmmZoneLookup: Core.MMMZoneLookup) {
+        self.mmmZoneLookup = mmmZoneLookup
         loadDefaultConfiguration()
         logger.debug("Initialized NDISBillingConfigService with default configuration")
     }
@@ -34,24 +37,9 @@ public class NDISBillingConfigService {
         return getConfigValue(key, defaultValue: 0.0)
     }
     
-    /// Gets a configuration value as String
-    func getConfigValueString(_ key: String) -> String {
-        return getConfigValue(key, defaultValue: "")
-    }
-    
-    /// Gets a configuration value as Bool
-    func getConfigValueBool(_ key: String) -> Bool {
-        return getConfigValue(key, defaultValue: false)
-    }
-    
     /// Gets a configuration value as Int
     func getConfigValueInt(_ key: String) -> Int {
         return getConfigValue(key, defaultValue: 0)
-    }
-    
-    /// Sets a configuration value
-    func setConfigValue(_ key: String, value: Any) {
-        configValues[key] = value
     }
     
     // MARK: - Default Configuration
@@ -123,36 +111,22 @@ public class NDISBillingConfigService {
     
     // MARK: - MMM Zone Lookup
     
-    /// Gets the MMM rating for a location
-    func getMmmRating(for location: NDISLocation) -> Int {
-        // Attempt high-accuracy lookup via coordinates first
-        if let lat = location.latitude, let lon = location.longitude {
-            if let mmmValue = MMMZoneLookup.shared.mmm(for: CLLocationCoordinate2D(latitude: lat, longitude: lon)) {
-                return mmmValue
-            }
+    /// Gets the MMM rating for a location using coordinates only.
+    func getMmmRating(for location: NDISLocation) -> Int? {
+        guard let lat = location.latitude, let lon = location.longitude else {
+            logger.warning("MMM lookup skipped because no coordinates were provided")
+            return nil
         }
-        
-        let postcode = location.postcode
-        let cleaned = postcode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let code = Int(cleaned), cleaned.count == 4 else { return 1 }
 
-        switch code {
-        case 6799, 2898...2899:
-            return 7
-        case 800...999, 6000...6998:
-            return 6
-        case 4700...4999, 7200...7999:
-            return 5
-        case 5200...5999, 6200...6798:
-            return 4
-        default:
-            return 1
-        }
+        return mmmZoneLookup.mmm(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
     }
     
     /// Gets the geographic multiplier for a location
-    func getGeoMultiplier(for location: NDISLocation) -> Double {
-        let mmmRating = getMmmRating(for: location)
+    func getGeoMultiplier(for location: NDISLocation) -> Double? {
+        guard let mmmRating = getMmmRating(for: location) else {
+            logger.warning("Geographic multiplier requires a resolved MMM zone")
+            return nil
+        }
         logger.debug("Applying geographic multiplier for MMM\(mmmRating)")
         switch mmmRating {
         case 6:
@@ -164,34 +138,24 @@ public class NDISBillingConfigService {
         }
     }
     
-    /// Gets the time cap for a location based on MMM rating
-    func getTimeCap(for location: NDISLocation) -> Double {
-        let mmmRating = getMmmRating(for: location)
-        
-        switch mmmRating {
-        case 1...3:
-            return getConfigValue("MMM.TimeCap.MMM1-3")
-        case 4...5:
-            return getConfigValue("MMM.TimeCap.MMM4-5")
-        case 6...7:
-            return getConfigValue("MMM.TimeCap.MMM6-7")
-        default:
-            return getConfigValue("MMM.TimeCap.MMM1-3")
-        }
-    }
-    
     // MARK: - Rate Calculations
     
     /// Gets the centre capital cost rate for a location
-    func getCentreCapitalRate(for location: NDISLocation) -> Double {
-        let mmmRating = getMmmRating(for: location)
+    func getCentreCapitalRate(for location: NDISLocation) -> Double? {
+        guard let mmmRating = getMmmRating(for: location) else {
+            logger.warning("Centre capital cost requires a resolved MMM zone")
+            return nil
+        }
         let key = "CentreCapital.Rate.MMM\(mmmRating)"
         return getConfigValue(key)
     }
     
     /// Gets the establishment fee rate for a location
-    func getEstablishmentFeeRate(for location: NDISLocation) -> Double {
-        let mmmRating = getMmmRating(for: location)
+    func getEstablishmentFeeRate(for location: NDISLocation) -> Double? {
+        guard let mmmRating = getMmmRating(for: location) else {
+            logger.warning("Establishment fee requires a resolved MMM zone")
+            return nil
+        }
         let key = "EstablishmentFee.Rate.MMM\(mmmRating)"
         return getConfigValue(key)
     }
@@ -278,71 +242,6 @@ public class NDISBillingConfigService {
         return false
     }
     
-    // MARK: - Support Item Mapping
-    
-    /// Maps a support item to its complex behaviour equivalent
-    func mapToComplexBehaviourItem(_ itemNumber: String) -> String {
-        if itemNumber.contains("_0106_") { return itemNumber }
-        let mapped = itemNumber.replacingOccurrences(of: "_0104_", with: "_0106_")
-        return mapped == itemNumber ? itemNumber : mapped
-    }
-    
-    /// Maps a support item to its high intensity equivalent
-    func mapToHighIntensityItem(_ itemNumber: String) -> String {
-        if itemNumber.contains("_0110_") { return itemNumber }
-        let mapped = itemNumber.replacingOccurrences(of: "_0104_", with: "_0110_")
-        return mapped == itemNumber ? itemNumber : mapped
-    }
-    
-    /// Maps a support item to its travel non-labour equivalent
-    func mapToTravelNonLabourItem(_ itemNumber: String) -> String {
-        if itemNumber.contains("_799_") { return itemNumber }
-        let components = itemNumber.split(separator: "_")
-        guard components.count >= 5 else { return "01_799_0106_6_3" }
-        return "\(components[0])_799_\(components[2])_\(components[3])_\(components[4])"
-    }
-    
-    /// Maps a support item to its activity transport equivalent
-    func mapToActivityTransportItem(_ itemNumber: String) -> String {
-        if itemNumber.contains("_590_") { return itemNumber }
-        let components = itemNumber.split(separator: "_")
-        guard components.count >= 5 else { return "09_590_0106_6_3" }
-        return "09_590_\(components[2])_\(components[3])_\(components[4])"
-    }
-    
-    /// Maps a support item to its centre capital equivalent
-    func mapToCentreCapitalItem(_ itemNumber: String) -> String {
-        if itemNumber.contains("_799_") { return itemNumber }
-        let components = itemNumber.split(separator: "_")
-        guard components.count >= 5 else { return "01_799_0106_6_3" }
-        return "\(components[0])_799_\(components[2])_\(components[3])_\(components[4])"
-    }
-    
-    /// Maps a support item to its establishment fee equivalent
-    func mapToEstablishmentFeeItem(_ itemNumber: String) -> String {
-        mapToCentreCapitalItem(itemNumber)
-    }
-    
-    /// Maps a provider type to its bereavement item
-    func mapToBereavementItem(_ providerType: String) -> String {
-        switch providerType {
-        case "SupportCoordinator":
-            return "07_501_0106_6_3"
-        case "PlanManager":
-            return "07_502_0106_6_3"
-        case "SILProvider":
-            return "07_503_0106_6_3"
-        default:
-            return "07_501_0106_6_3"
-        }
-    }
-    
-    /// Maps a support item to its hourly equivalent for sleepover calculations
-    func mapToHourlyEquivalent(_ itemNumber: String) -> String {
-        let transformed = itemNumber.replacingOccurrences(of: "_0136_", with: "_0104_")
-        return transformed
-    }
-
     private func observedHolidayDate(for holiday: Date, calendar: Calendar) -> Date? {
         let weekday = calendar.component(.weekday, from: holiday)
         switch weekday {
@@ -355,53 +254,8 @@ public class NDISBillingConfigService {
         }
     }
     
-    // MARK: - Eligibility Checks
-    
-    /// Gets the list of eligible capacity building items for activity transport
-    func getEligibleCapacityBuildingItems() -> [String] {
-        return [
-            "09_011_0125_6_3",
-            "09_012_0125_6_3",
-            "09_013_0125_6_3"
-        ]
-    }
-    
-    /// Gets the list of allowed registration groups for centre capital costs
-    func getAllowedCentreCapitalRegGroups() -> [String] {
-        return ["0104", "0133", "0136"]
-    }
-    
-    /// Gets the list of allowed registration groups for personal care establishment fees
-    func getAllowedPersonalCareRegGroups() -> [String] {
-        return ["0107", "0104"]
-    }
-    
-    /// Gets the list of allowed registration groups for participation establishment fees
-    func getAllowedParticipationRegGroups() -> [String] {
-        return ["0125", "0136", "0104", "0133"]
-    }
-    
-    /// Gets the list of allowed provider types for bereavement claims
-    func getAllowedBereavementProviderTypes() -> [String] {
-        return ["PlanManager", "SupportCoordinator", "SILProvider"]
-    }
-    
     // MARK: - Validation Rules
-    
-    /// Checks if an activity description is an excluded administrative task
-    func isExcludedAdminTask(_ activityDescription: String) -> Bool {
-        let excludedKeywords = [
-            "billing", "payment", "claim", "roster", 
-            "service agreement", "invoice", "administration",
-            "paperwork", "documentation", "reporting"
-        ]
-        
-        let lowercasedDescription = activityDescription.lowercased()
-        return excludedKeywords.contains { keyword in
-            lowercasedDescription.contains(keyword)
-        }
-    }
-    
+
     /// Validates notice period for cancellations
     func checkNoticePeriod(noticeTime: Date, serviceTime: Date, amount: Int, unit: String) -> Bool {
         switch unit {
@@ -437,28 +291,4 @@ public class NDISBillingConfigService {
         return weekday >= 2 && weekday <= 6 // Monday to Friday
     }
     
-    // MARK: - Configuration Persistence
-    
-    /// Saves configuration to UserDefaults
-    func saveConfiguration() {
-        if let data = try? JSONSerialization.data(withJSONObject: configValues) {
-            UserDefaults.standard.set(data, forKey: "NDISBillingConfig")
-        }
-    }
-    
-    /// Loads configuration from UserDefaults
-    func loadConfiguration() {
-        if let data = UserDefaults.standard.data(forKey: "NDISBillingConfig"),
-           let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            configValues = config
-        } else {
-            loadDefaultConfiguration()
-        }
-    }
-    
-    /// Resets configuration to defaults
-    func resetConfiguration() {
-        loadDefaultConfiguration()
-        saveConfiguration()
-    }
 } 

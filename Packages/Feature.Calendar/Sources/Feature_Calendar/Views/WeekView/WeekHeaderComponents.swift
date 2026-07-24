@@ -1,39 +1,54 @@
 import SwiftUI
 import SharedUI
+import Observation
 
 // ─────────────────────────────────────────────────────────────
 // MARK: - Week Header Bar View
 // ─────────────────────────────────────────────────────────────
 
 struct WeekHeaderView: View {
-    @ObservedObject var viewModel: CalendarViewModel
+    @Bindable var viewModel: CalendarViewModel
     let timeColumnWidth: CGFloat
     let dayColumnWidth: CGFloat
 
+    @ScaledMetric(relativeTo: .body) private var headerHeight: CGFloat = 42
+    @ScaledMetric(relativeTo: .body) private var cornerRadius: CGFloat = StyleGuide.Dimensions.cornerRadiusLarge + 4
+
     var body: some View {
         HStack(spacing: 0) {
+            // Placeholder for the time column
+            Color.clear
+                .frame(width: timeColumnWidth, height: headerHeight)
+                .overlay(
+                    Rectangle()
+                        .fill(StyleGuide.Colors.border.opacity(0.2))
+                        .frame(width: StyleGuide.Dimensions.hairlineWidth),
+                    alignment: .trailing
+                )
+
             // Day headers
-            HStack(spacing: 0) {
             ForEach(viewModel.currentWeekDays.indices, id: \.self) { index in
                 let day = viewModel.currentWeekDays[index]
                 DayHeaderItemView(day: day)
-                    .frame(width: index == 0 ? dayColumnWidth + timeColumnWidth : dayColumnWidth)
-                    // Add right border to all but the last day header
+                    .frame(width: dayColumnWidth)
                     .overlay(
-                        index < viewModel.currentWeekDays.count - 1 ?
-                        Rectangle().frame(width: 1.5, height: nil).foregroundColor(Color.secondary.opacity(0.3))
-                        : nil // No border for the last item
-                        , alignment: .trailing
+                        Rectangle()
+                            .fill(StyleGuide.Colors.border.opacity(0.2))
+                            .frame(width: StyleGuide.Dimensions.hairlineWidth),
+                        alignment: .trailing
                     )
             }
         }
-            .background(
-                UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                    .fill(Color("Background", bundle: .sharedUI).opacity(0.3))
-            )
-            // Add bottom border only to the day headers section
-        .overlay(Rectangle().frame(width: nil, height: 1).foregroundColor(Color.secondary.opacity(0.2)), alignment: .bottom)
-        }
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: cornerRadius, topTrailingRadius: cornerRadius)
+                .fill(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
+        )
+        .overlay(
+            Rectangle()
+                .fill(Color.secondary.opacity(0.2))
+                .frame(height: StyleGuide.Dimensions.hairlineWidth),
+            alignment: .bottom
+        )
     }
 }
 
@@ -44,33 +59,50 @@ struct WeekHeaderView: View {
 struct DayHeaderItemView: View {
     let day: Date
 
+    @ScaledMetric(relativeTo: .body) private var textFontSizeOfWeek: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var textFontSizeOfNumber: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var numberCircleSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var headerHeight: CGFloat = 42
+
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
-    private var isWeekend: Bool {
-        let wd = Calendar.current.component(.weekday, from: day)
-        return wd == 1 || wd == 7
-    }
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
+    
+    private static let dayNumberFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        return f
+    }()
+
     private var dayOfWeekString: String {
-        let f = DateFormatter(); f.dateFormat = "EEE"; return f.string(from: day)
+        Self.dayOfWeekFormatter.string(from: day)
     }
     private var dayNumberString: String {
-        let f = DateFormatter(); f.dateFormat = "d"; return f.string(from: day)
+        Self.dayNumberFormatter.string(from: day)
     }
 
     var body: some View {
         HStack(spacing: 6) {
             Text(dayOfWeekString)
-                .font(.system(size: 20))
-                .fontWeight(isToday ? .bold : .semibold)
-                .tracking(1.5)
-                .foregroundColor(Color("Text", bundle: .sharedUI))
+                .font(CalendarTypography.headerWeekday(size: textFontSizeOfWeek, isToday: isToday))
+                .foregroundColor(isToday ? .accentColor : StyleGuide.Colors.text)
 
             Text(dayNumberString)
-                .font(.system(size: 20, weight: .ultraLight))
-                .tracking(1.5)
-                .foregroundColor(Color("Text", bundle: .sharedUI))
+                .font(CalendarTypography.headerDayNumber(size: textFontSizeOfNumber, isToday: isToday))
+                .foregroundColor(isToday ? .white : StyleGuide.Colors.textSecondary)
+                .frame(width: numberCircleSize, height: numberCircleSize)
+                .background {
+                    if isToday {
+                        Circle()
+                            .fill(Color.accentColor)
+                    }
+                }
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
-        .frame(height: 42)
+        .frame(height: headerHeight)
     }
 } 

@@ -42,6 +42,12 @@ public struct HierarchySectionCard<Content: View>: View {
     private let headerGlassStyle: Glass
     private let content: () -> Content
 
+    @ScaledMetric(relativeTo: .body) private var cornerRadius: CGFloat = 10
+    @ScaledMetric(relativeTo: .body) private var paddingTop: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var paddingBottom: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var paddingLeading: CGFloat = 16
+    @ScaledMetric(relativeTo: .body) private var paddingTrailing: CGFloat = 16
+
     public init(
         title: String,
         isExpanded: Binding<Bool>,
@@ -70,7 +76,7 @@ public struct HierarchySectionCard<Content: View>: View {
         let bodyContent = //VStack(alignment: .leading, spacing: childSpacing) {
         Group {
             header
-
+ 
             if isExpanded {
                 content()
                     //.padding(.leading, 16)
@@ -128,18 +134,18 @@ public struct HierarchySectionCard<Content: View>: View {
                 .baselineOffset(style.baselineOffset)
         } else {
             headerBase
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(StyleGuide.Typography.breadcrumb)
                 .foregroundColor(Color.primary)
         }
     }
 
-    private var defaultCornerRadius: CGFloat { 10 }
+    private var defaultCornerRadius: CGFloat { cornerRadius }
     private var defaultHeaderPadding: EdgeInsets {
-        EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+        EdgeInsets(top: paddingTop, leading: paddingLeading, bottom: paddingBottom, trailing: paddingTrailing)
     }
 
     private func toggle() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.easeInOut(duration: StyleGuide.Animations.durationMedium)) {
             let expanding = !isExpanded
             isExpanded.toggle()
             if expanding {

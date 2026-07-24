@@ -1,0 +1,104 @@
+---
+description: SwiftUI system event handling for URLs, activities, background tasks, and external events
+alwaysApply: false
+---
+
+# Rule: SwiftUI System Events
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/system-events
+
+Scope
+
+Applies to:
+
+- inbound URL handling and outbound URL invocation
+- user activity continuation/restoration pathways
+- background task integration in SwiftUI scenes
+- external event targeting and scene routing
+
+Intent
+
+Treat system events as boundary contracts that route into explicit feature
+intents instead of ad hoc view-level side effects.
+
+Core Principle
+
+System events are app-boundary integration points. Handle them centrally with
+explicit routing and side-effect isolation.
+
+Implementation Rules
+
+- Handle inbound URLs with `onOpenURL` at app/scene boundaries, then route
+  into feature-specific intent handlers.
+- Use `openURL` for outbound navigation only from explicit user intent.
+- Use `onContinueUserActivity` / `userActivity` for continuity and restoration scenarios.
+- Use `backgroundTask` for async background event handling with deterministic task boundaries.
+- Keep external event handling (`handlesExternalEvents`) scoped to scene responsibilities.
+- Use transferable import/export service APIs where integration with system services is required.
+
+Canonical Patterns
+
+```swift
+WindowGroup {
+    RootView()
+}
+.onOpenURL { url in
+    router.handleIncoming(url: url)
+}
+```
+
+```swift
+.backgroundTask(.urlSession("sync-session")) {
+    await syncOrchestrator.processBackgroundCompletion()
+}
+```
+
+Anti-Patterns
+
+- Routing deep-link logic from arbitrary leaf views.
+- Performing heavy synchronous work directly in event callbacks.
+- Treating inbound URLs as trusted without validation.
+- Splitting one system event path across many unrelated handlers.
+
+Checklist
+
+- Are URL/user-activity handlers defined at app/scene entry boundaries?
+- Is event routing centralized and testable?
+- Are background tasks isolated, async, and idempotent?
+- Are external events mapped to the correct scene responsibilities?
+
+Architectural Implications
+
+- System events represent external entry points and should be routed through explicit intent handlers.
+- Scene-level event handling should preserve workspace isolation and predictable side effects.
+- Background task handlers should be idempotent and resilient to repeated delivery.
+
+Advanced Notes
+
+- Inbound URLs/user activities are untrusted inputs and require validation/routing contracts.
+- External-event handling should specify whether to open new scenes or target existing ones.
+- Background events should avoid UI coupling and remain service-layer oriented.
+
+Integration With Architecture
+
+- Route `onOpenURL` and user-activity events into app-level router/coordinator abstractions.
+- Keep feature-specific handlers behind typed intents to avoid leaf-view event sprawl.
+- Use background task handlers in app/scene scope with explicit orchestration boundaries.
+
+Enforcement Summary
+
+Always prefer:
+
+- centralized event routing at app/scene boundaries
+- validated inbound payload handling
+- idempotent async background processing
+- explicit scene responsibility mapping
+
+Never allow:
+
+- deep-link parsing spread across leaf views
+- heavy blocking work in event callbacks
+- unvalidated external inputs mutating model state
+- ambiguous external-event ownership

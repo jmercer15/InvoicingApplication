@@ -46,15 +46,6 @@ import SwiftUI
 
 
 
-extension View {
-    /// Conditionally applies a transform to a view if the condition is true.
-    @ViewBuilder func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition { transform(self) } else { self }
-    }
-}
-
-
-
 
 
 // MARK: - Generic List View (Refactored to use List)
@@ -78,89 +69,26 @@ public struct EmptyStateView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 15) {
+        VStack(spacing: EmptyStateTokens.iconTitleSpacing) {
             Image(systemName: icon)
-                .font(.system(size: 40))
-                .foregroundColor(.secondary.opacity(0.6))
+                .font(StyleGuide.Typography.emptyStateIcon)
+                .foregroundStyle(StyleGuide.Colors.textSecondary.opacity(0.6))
 
-            VStack(spacing: 5) {
+            VStack(spacing: EmptyStateTokens.titleMessageSpacing) {
                 Text(title)
-                    .font(.headline)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .font(StyleGuide.Typography.itemTitle)
+                    .foregroundStyle(StyleGuide.Colors.text)
 
                 Text(message)
-                    .font(.subheadline)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        .padding(StyleGuide.Dimensions.paddingLarge)
         .background(Color.clear)
-    }
-}
-
-// Shared AddressMapView component for address map rendering
-struct NonInteractiveMapView: View {
-    var address: String
-    var mapType: MKMapType
-    var showsTraffic: Bool
-
-    var body: some View {
-        _MapView(address: address, mapType: mapType, showsTraffic: showsTraffic)
-            .edgesIgnoringSafeArea(.all)
-    }
-
-    private struct _MapView: NSViewRepresentable {
-        var address: String
-        var mapType: MKMapType
-        var showsTraffic: Bool
-
-        func makeNSView(context: Context) -> MKMapView {
-            let mapView = MKMapView()
-            mapView.isZoomEnabled = true
-            mapView.isScrollEnabled = false
-            mapView.isPitchEnabled = false
-            mapView.isRotateEnabled = false
-            mapView.mapType = mapType
-            mapView.showsTraffic = showsTraffic
-            mapView.showsZoomControls = true
-            return mapView
-        }
-
-        func updateNSView(_ nsView: MKMapView, context: Context) {
-            nsView.mapType = mapType
-            nsView.showsTraffic = showsTraffic
-            nsView.showsZoomControls = true
-            
-            // Use the new MapKit geocoding API
-            Task {
-                do {
-                    guard let request = MKGeocodingRequest(addressString: address) else {
-                        print("Failed to create geocoding request for '\(address)'")
-                        return
-                    }
-                    let mapItems = try await request.mapItems
-                    
-                    guard let firstItem = mapItems.first else {
-                        return
-                    }
-                    let location = firstItem.location
-                    
-                    let coordinate = location.coordinate
-                    let region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 1000, longitudinalMeters: 1000)
-                    nsView.setRegion(region, animated: false)
-                    
-                    let annotation = MKPointAnnotation()
-                    annotation.coordinate = coordinate
-                    nsView.removeAnnotations(nsView.annotations)
-                    nsView.addAnnotation(annotation)
-                } catch {
-                    print("Geocoding failed for '\(address)': \(error.localizedDescription)")
-                }
-            }
-        }
     }
 }
 
@@ -168,7 +96,7 @@ struct NonInteractiveMapView: View {
 
 public struct InteractiveMapView: View {
     let address: String
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     
     public init(address: String) {
         self.address = address
@@ -241,10 +169,9 @@ struct MapViewRepresentable: NSViewRepresentable {
                 annotation.coordinate = coordinate
                 annotation.title = address
                 
-                DispatchQueue.main.async {
+                await MainActor.run {
                     mapView.addAnnotation(annotation)
-                    
-                    // Zoom to the annotation with wider view
+
                     let region = MKCoordinateRegion(
                         center: coordinate,
                         latitudinalMeters: 5000,

@@ -67,33 +67,14 @@ public enum AppConstants {
     public static let defaultInvoiceDueDays = 14
 } 
 
-// String extensions for easy access to AppConstants and status colors
+// String extensions for session status shims and status colors
 extension String {
-    // MARK: - Invoice Status Constants
-    static var invoiceStatusReviewDraft: String { AppConstants.invoiceStatusReviewDraft }
-    static var invoiceStatusReadyToSend: String { AppConstants.invoiceStatusReadyToSend }
-    static var invoiceStatusPending: String { AppConstants.invoiceStatusPending }
-    static var invoiceStatusReceived: String { AppConstants.invoiceStatusReceived }
-    static var invoiceStatusOverdue: String { AppConstants.invoiceStatusOverdue }
-    static var invoiceStatusCancelled: String { AppConstants.invoiceStatusCancelled }
-    static var invoiceStatusVoided: String { AppConstants.invoiceStatusVoided }
-
     // MARK: - Session Status Constants
     public static var sessionStatusPlanned: String { AppConstants.sessionStatusPlanned }
     public static var sessionStatusConfirmed: String { AppConstants.sessionStatusConfirmed }
     public static var sessionStatusCompleted: String { AppConstants.sessionStatusCompleted }
     public static var sessionStatusCancelled: String { AppConstants.sessionStatusCancelled }
     public static var sessionStatusNoShow: String { AppConstants.sessionStatusNoShow }
-
-    // MARK: - General Status Constants
-    static var statusActive: String { AppConstants.statusActive }
-    static var statusInactive: String { AppConstants.statusInactive }
-    static var statusArchived: String { AppConstants.statusArchived }
-
-    // MARK: - Client Status Constants
-    static var clientStatusActive: String { AppConstants.clientStatusActive }
-    static var clientStatusInactive: String { AppConstants.clientStatusInactive }
-    static var clientStatusOnHold: String { AppConstants.clientStatusOnHold }
 
     // MARK: - Status Color
     // Returns a dynamic NSColor based on the status string's content

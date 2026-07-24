@@ -1,14 +1,19 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
+private let strictConcurrencySettings: [SwiftSetting] = [
+    .enableExperimentalFeature("StrictConcurrency"),
+]
+
 let package = Package(
     name: "Data",
-    platforms: [.macOS("26.1")],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "Data", targets: ["Data"])
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../DataInterfaces"),
         .package(url: "https://github.com/CoreOffice/CoreXLSX.git", from: "0.14.0")
     ],
     targets: [
@@ -16,23 +21,34 @@ let package = Package(
             name: "Data", 
             dependencies: [
                 "Core",
+                "DataInterfaces",
                 .product(name: "CoreXLSX", package: "CoreXLSX")
             ],
-            exclude: [
-                "Mapping/TravelCharge_Architectural_Analysis.md",
-                "Mapping/Property_Usage_Audit_Report.md",
-                "Mapping/Troubleshooting_Guide.md",
-                "Mapping/Architectural_Patterns_and_Conventions.md",
-                "Mapping/Entity_Relationship_Diagram_Updates.md",
-                "Mapping/Relationship_Delete_Rules_Audit.md",
-                "Mapping/Data_Migration_Strategy.md",
-                "Documentation/NDIS_Price_Handling_Migration.md"
-            ]
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataUseCaseTests",
             dependencies: ["Data", "Core"],
-            path: "Tests/DataTests/UseCases"
+            path: "Tests/DataTests/UseCases",
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "DataServiceTests",
+            dependencies: ["Data", "Core"],
+            path: "Tests/DataTests/Services",
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "DataBusinessLogicTests",
+            dependencies: ["Data", "Core"],
+            path: "Tests/DataTests/BusinessLogic",
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "DataValidationTests",
+            dependencies: ["Data", "Core"],
+            path: "Tests/DataTests/Validation",
+            swiftSettings: strictConcurrencySettings
         )
     ]
 )

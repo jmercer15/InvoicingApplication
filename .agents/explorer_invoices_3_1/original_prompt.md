@@ -1,0 +1,2 @@
+## 2026-06-10T10:59:33Z
+Scan and analyze `Packages/Feature.Invoices` for design token compliance and structural layout issues. Identify and list all occurrences of raw numeric padding/spacing, hardcoded colors, standard fonts, raw frame dimensions, and missing panel shells or reusable components. Provide a clear analysis and recommendation plan in `handoff.md`. Working directory: `/Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/explorer_invoices_3_1`

@@ -1,15 +1,17 @@
 import Combine
 import SwiftUI
+import Observation
 
-public class EmailValidator: ObservableObject {
-    @Published public var email: String = "" {
+@Observable
+public class EmailValidator {
+    public var email: String = "" {
         didSet {
             validate(email: email)
         }
     }
     
-    @Published public var isValid: Bool = false
-    @Published public var validationMessage: String? = nil
+    public var isValid: Bool = false
+    public var validationMessage: String? = nil
 
     public init(initialEmail: String = "") {
         // Normalize and validate the initial email

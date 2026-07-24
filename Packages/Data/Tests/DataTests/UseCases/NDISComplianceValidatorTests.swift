@@ -5,144 +5,167 @@ import Core
 
 @MainActor
 final class NDISComplianceValidatorTests: XCTestCase {
+    private typealias PersistenceNDISClaimType = NDISClaimType
+
+    private var modelContainer: ModelContainer!
     private var modelContext: ModelContext!
     private var validator: NDISComplianceValidator!
 
     override func setUp() async throws {
         try await super.setUp()
 
-        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        let (container, context) = try ModelContainerFactory.makeInMemoryContext()
+        modelContainer = container
         modelContext = context
 
-        let businessRepository = BusinessRepositorySwiftData(modelContext: modelContext)
-        let invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
-        let sessionsRepository = SessionsRepositorySwiftData(modelContext: modelContext)
-        let serviceAgreementRepository = ServiceAgreementRepositorySwiftData(modelContext: modelContext)
-        let supportLogRepository = SupportLogRepositorySwiftData(modelContext: modelContext)
-
-        validator = NDISComplianceValidator(
-            businessRepository: businessRepository,
-            invoicesRepository: invoicesRepository,
-            sessionsRepository: sessionsRepository,
-            serviceAgreementRepository: serviceAgreementRepository,
-            supportLogRepository: supportLogRepository
-        )
+        validator = NDISComplianceValidator(modelContainer: modelContainer)
     }
 
     override func tearDown() async throws {
         validator = nil
         modelContext = nil
+        modelContainer = nil
         try await super.tearDown()
     }
 
-    func testRegisteredProviderMissingOrgIdBlocksTransition() async throws {
-        try insertBusiness(isRegisteredProvider: true, ndiaOrganisationID: nil)
-        let invoice = try insertInvoice()
+    func testMissingBusinessBlocksInvoiceTransition() async throws {
+        let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
 
         let result = try await validator.validateInvoiceTransition(
             invoiceId: invoice.id,
-            action: .sendInvoice
+            action: .sendInvoice,
+            targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains(where: { $0.id == "BUS-ORG-001" }))
+        XCTAssertTrue(result.blockers.contains { $0.id == "business.missing" })
     }
 
-    func testMissingServiceAgreementBlocksTransition() async throws {
-        try insertBusiness()
+    func testInvalidABNBlocksInvoiceTransition() async throws {
+        _ = try insertBusiness(abn: "123", isRegisteredProvider: true)
+        let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
+
+        let result = try await validator.validateInvoiceTransition(
+            invoiceId: invoice.id,
+            action: .sendInvoice,
+            targetStatus: nil
+        )
+
+        XCTAssertTrue(result.blockers.contains { $0.id == "business.abn.invalid" })
+    }
+
+    func testNonRegisteredProviderProducesWarning() async throws {
+        _ = try insertBusiness(abn: "53004085616", isRegisteredProvider: false)
+        let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
+
+        let result = try await validator.validateInvoiceTransition(
+            invoiceId: invoice.id,
+            action: .sendInvoice,
+            targetStatus: nil
+        )
+
+        XCTAssertTrue(result.warnings.contains { $0.id == "business.ndis_provider.not_registered" })
+        XCTAssertTrue(result.blockers.contains { $0.id == "invoice.items.empty" })
+    }
+
+    func testMissingServiceAgreementBlocksWhenSessionLinked() async throws {
+        _ = try insertBusiness()
         let client = try insertClient()
         let session = try insertSession(client: client)
-        _ = try insertSupportLog(client: client, session: session)
         let invoice = try insertInvoice(session: session, claimType: .direct, gstCode: GSTCode.p2.rawValue)
 
         let result = try await validator.validateInvoiceTransition(
             invoiceId: invoice.id,
-            action: .sendInvoice
+            action: .sendInvoice,
+            targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains(where: { $0.id == "AGR-ACT-001" }))
+        XCTAssertTrue(result.blockers.contains { $0.id == "agreement.missing" })
     }
 
-    func testMissingSupportLogBlocksTransition() async throws {
-        try insertBusiness()
+    func testTelehealthDisallowedByAgreementBlocks() async throws {
+        _ = try insertBusiness()
         let client = try insertClient()
+        _ = try insertServiceAgreement(client: client, allowsTelehealth: false)
         let session = try insertSession(client: client)
-        _ = try insertServiceAgreement(client: client, allowsTelehealth: true, allowsNonFaceToFace: true, allowsProviderTravel: true)
-        let invoice = try insertInvoice(session: session, claimType: .direct, gstCode: GSTCode.p2.rawValue)
-
-        let result = try await validator.validateInvoiceTransition(
-            invoiceId: invoice.id,
-            action: .sendInvoice
-        )
-
-        XCTAssertTrue(result.blockers.contains(where: { $0.id == "LOG-REQ-001" }))
-    }
-
-    func testTelehealthClaimDisallowedByAgreementBlocksTransition() async throws {
-        try insertBusiness()
-        let client = try insertClient()
-        let session = try insertSession(client: client)
-        _ = try insertServiceAgreement(client: client, allowsTelehealth: false, allowsNonFaceToFace: true, allowsProviderTravel: true)
-        _ = try insertSupportLog(client: client, session: session)
         let invoice = try insertInvoice(session: session, claimType: .telehealth, gstCode: GSTCode.p2.rawValue)
 
         let result = try await validator.validateInvoiceTransition(
             invoiceId: invoice.id,
-            action: .sendInvoice
+            action: .sendInvoice,
+            targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains(where: { $0.id == "AGR-AUTH-THLT" }))
+        XCTAssertTrue(result.blockers.contains { $0.id == "agreement.telehealth.disallowed" })
     }
 
-    func testMissingLineGSTProducesWarningOnly() async throws {
-        try insertBusiness()
-        let invoice = try insertInvoice(claimType: .direct, gstCode: nil)
+    func testMissingSupportLogProducesWarningForSessionValidation() async throws {
+        _ = try insertBusiness()
+        let client = try insertClient()
+        _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
+        let session = try insertSession(client: client)
+
+        let result = try await validator.validateSessionForInvoicing(sessionId: session.id)
+
+        XCTAssertTrue(result.warnings.contains { $0.id == "support_log.missing" })
+        XCTAssertTrue(result.blockers.isEmpty)
+    }
+
+    func testInvalidInvoiceItemGSTProducesWarningOnly() async throws {
+        _ = try insertBusiness()
+        let client = try insertClient()
+        _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
+        let session = try insertSession(client: client)
+        _ = try insertSupportLog(client: client, session: session)
+        let invoice = try insertInvoice(session: session, claimType: .direct, gstCode: "ZZ_INVALID")
 
         let result = try await validator.validateInvoiceTransition(
             invoiceId: invoice.id,
-            action: .sendInvoice
+            action: .sendInvoice,
+            targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.isEmpty)
-        XCTAssertTrue(result.warnings.contains(where: { $0.id == "GST-LINE-001" }))
+        XCTAssertTrue(result.warnings.contains { $0.id == "invoice_item.gst.invalid" })
     }
 
-    func testBulkValidationReturnsMixedPassFailResults() async throws {
-        try insertBusiness()
-
-        let passingInvoice = try insertInvoice()
-
+    func testBulkValidationReturnsPerInvoiceResults() async throws {
+        _ = try insertBusiness()
         let client = try insertClient()
-        let blockedSession = try insertSession(client: client)
-        _ = try insertSupportLog(client: client, session: blockedSession)
-        let blockedInvoice = try insertInvoice(session: blockedSession, claimType: .direct, gstCode: GSTCode.p2.rawValue)
+        _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
+        let session = try insertSession(client: client)
+        _ = try insertSupportLog(client: client, session: session)
+
+        let good = try insertInvoice(session: session, claimType: .direct, gstCode: GSTCode.p2.rawValue)
+        let empty = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
 
         let results = try await validator.validateBulkInvoices(
-            invoiceIds: [passingInvoice.id, blockedInvoice.id],
+            invoiceIds: [good.id, empty.id],
             action: .bulkSendReady
         )
 
-        XCTAssertEqual(results[passingInvoice.id]?.blockers.count, 0)
-        XCTAssertTrue((results[blockedInvoice.id]?.blockers.isEmpty) == false)
+        XCTAssertEqual(results.count, 2)
+        XCTAssertFalse(results[good.id]?.isBlocked ?? true)
+        XCTAssertTrue(results[empty.id]?.blockers.contains { $0.id == "invoice.items.empty" } ?? false)
     }
+
+    // MARK: - Fixtures
 
     @discardableResult
     private func insertBusiness(
-        defaultGSTCode: String = GSTCode.p2.rawValue,
-        isRegisteredProvider: Bool = false,
-        ndiaOrganisationID: String? = nil
-    ) throws -> BusinessEntity {
-        let entity = BusinessEntity(id: UUID(), abn: "53004085616")
+        abn: String = "53004085616",
+        isRegisteredProvider: Bool = true
+    ) throws -> Business {
+        let entity = Business(id: UUID(), abn: abn)
         entity.name = "Test Business"
-        entity.defaultGstCode = defaultGSTCode
+        entity.defaultGstCode = GSTCode.p2.rawValue
         entity.isRegisteredProvider = isRegisteredProvider
-        entity.ndiaOrganisationID = ndiaOrganisationID
+        entity.ndiaOrganisationID = "ORG123"
         modelContext.insert(entity)
         try modelContext.save()
         return entity
     }
 
-    private func insertClient() throws -> ClientEntity {
-        let entity = ClientEntity(
+    private func insertClient() throws -> Client {
+        let entity = Client(
             id: UUID(),
             ndisNumber: "4300123456",
             fullName: "Test Client",
@@ -153,8 +176,8 @@ final class NDISComplianceValidatorTests: XCTestCase {
         return entity
     }
 
-    private func insertSession(client: ClientEntity) throws -> SessionEntity {
-        let entity = SessionEntity(id: UUID())
+    private func insertSession(client: Client) throws -> Session {
+        let entity = Session(id: UUID())
         entity.title = "Support Session"
         entity.startTime = Date().addingTimeInterval(-3_600)
         entity.endTime = Date()
@@ -166,12 +189,12 @@ final class NDISComplianceValidatorTests: XCTestCase {
     }
 
     private func insertServiceAgreement(
-        client: ClientEntity,
+        client: Client,
         allowsTelehealth: Bool,
-        allowsNonFaceToFace: Bool,
-        allowsProviderTravel: Bool
-    ) throws -> ServiceAgreementEntity {
-        let entity = ServiceAgreementEntity(id: UUID())
+        allowsNonFaceToFace: Bool = true,
+        allowsProviderTravel: Bool = true
+    ) throws -> ServiceAgreement {
+        let entity = ServiceAgreement(id: UUID())
         entity.client = client
         entity.effectiveFrom = Date().addingTimeInterval(-86_400)
         entity.effectiveTo = Date().addingTimeInterval(86_400 * 365)
@@ -184,8 +207,8 @@ final class NDISComplianceValidatorTests: XCTestCase {
         return entity
     }
 
-    private func insertSupportLog(client: ClientEntity, session: SessionEntity) throws -> SupportLogEntity {
-        let entity = SupportLogEntity(id: UUID())
+    private func insertSupportLog(client: Client, session: Session) throws -> SupportLog {
+        let entity = SupportLog(id: UUID())
         entity.client = client
         entity.session = session
         entity.participantName = client.fullName
@@ -206,11 +229,11 @@ final class NDISComplianceValidatorTests: XCTestCase {
     }
 
     private func insertInvoice(
-        session: SessionEntity? = nil,
-        claimType: NDISClaimType? = nil,
-        gstCode: String? = nil
-    ) throws -> InvoiceEntity {
-        let invoice = InvoiceEntity(
+        session: Session?,
+        claimType: PersistenceNDISClaimType?,
+        gstCode: String?
+    ) throws -> Invoice {
+        let invoice = Invoice(
             id: UUID(),
             invoiceNumber: "INV-\(UUID().uuidString.prefix(8))"
         )
@@ -227,7 +250,7 @@ final class NDISComplianceValidatorTests: XCTestCase {
         modelContext.insert(invoice)
 
         if let claimType {
-            let item = InvoiceItemEntity(id: UUID(), itemDescription: "NDIS Support")
+            let item = InvoiceItem(id: UUID(), itemDescription: "NDIS Support")
             item.invoice = invoice
             item.session = session
             item.claimType = claimType
@@ -235,10 +258,78 @@ final class NDISComplianceValidatorTests: XCTestCase {
             item.quantity = 1
             item.gstCode = gstCode
             modelContext.insert(item)
-            invoice.items.append(item)
+            invoice.items = (invoice.items ?? []) + [item]
         }
 
         try modelContext.save()
         return invoice
+    }
+
+    func testExportValidation_blocksMissingSupportItemCode() async throws {
+        let business = try insertBusiness(abn: "53004085616", isRegisteredProvider: true)
+        business.bankAccountName = "Provider Account"
+        business.bankBSB = "123456"
+        business.bankAccountNumber = "987654321"
+        try modelContext.save()
+
+        let client = try insertClient()
+        let invoice = try insertInvoice(session: nil, claimType: .direct, gstCode: GSTCode.p2.rawValue)
+        invoice.client = client
+        invoice.clientNDISNumber = client.ndisNumber
+        invoice.bankAccountName = business.bankAccountName
+        invoice.bankBSB = business.bankBSB
+        invoice.bankAccountNumber = business.bankAccountNumber
+        if let item = invoice.items?.first {
+            item.ndisItemNumber = nil
+            item.serviceDate = Date(timeIntervalSince1970: 1_704_067_200)
+        }
+        try modelContext.save()
+
+        let snapshot = try XCTUnwrap(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
+
+        let result = validator.validateInvoiceForExport(
+            invoice: snapshot,
+            items: items,
+            business: business.snapshot(),
+            strict: true
+        )
+
+        XCTAssertTrue(result.blockers.contains { $0.id == "invoice_item.support_item_code.missing" })
+    }
+
+    func testExportValidation_blocksPAPLRateExceeded() async throws {
+        let business = try insertBusiness(abn: "53004085616", isRegisteredProvider: true)
+        business.bankAccountName = "Provider Account"
+        business.bankBSB = "123456"
+        business.bankAccountNumber = "987654321"
+        try modelContext.save()
+
+        let client = try insertClient()
+        let invoice = try insertInvoice(session: nil, claimType: .direct, gstCode: GSTCode.p2.rawValue)
+        invoice.client = client
+        invoice.clientNDISNumber = client.ndisNumber
+        invoice.bankAccountName = business.bankAccountName
+        invoice.bankBSB = business.bankBSB
+        invoice.bankAccountNumber = business.bankAccountNumber
+        if let item = invoice.items?.first {
+            item.ndisItemNumber = "01_011_0107_1_1"
+            item.serviceDate = Date(timeIntervalSince1970: 1_704_067_200)
+            item.rate = 120
+            item.finalRateLimit = 100
+        }
+        try modelContext.save()
+
+        let snapshot = try XCTUnwrap(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
+
+        let result = validator.validateInvoiceForExport(
+            invoice: snapshot,
+            items: items,
+            business: business.snapshot(),
+            strict: true
+        )
+
+        XCTAssertTrue(result.blockers.contains { $0.id == "invoice_item.papl_rate_exceeded" })
     }
 }

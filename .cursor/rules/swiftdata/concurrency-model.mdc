@@ -1,0 +1,103 @@
+---
+description: SwiftData concurrency model with ModelActor, executors, and context isolation
+globs: Packages/Data/Sources/Data/Actors/**/*.swift,Packages/Data/Sources/Data/Services/**/*.swift,Packages/Data/Sources/Data/Persistence/**/*.swift,InvoicingApplication/App/Composition/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftData Concurrency Model
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/concurrencysupport
+https://developer.apple.com/documentation/swiftdata/modelactor()
+https://developer.apple.com/documentation/swiftdata/modelactor
+https://developer.apple.com/documentation/swiftdata/defaultserialmodelexecutor
+https://developer.apple.com/documentation/swiftdata/serialmodelexecutor
+https://developer.apple.com/documentation/swiftdata/modelexecutor
+https://developer.apple.com/documentation/swiftdata/modelcontext
+
+Scope
+
+Applies to:
+
+- `@ModelActor` usage and executor isolation
+- cross-thread/cross-actor model access patterns
+- identifier-based re-resolution workflows
+- main-actor vs background-actor persistence boundaries
+
+Intent
+
+Prevent thread-safety violations by enforcing context isolation and actor-based
+coordination for all nontrivial SwiftData operations.
+
+Core Principle
+
+Cross-thread SwiftData work must run through isolated contexts and actor-coordinated executors.
+
+Implementation Rules
+
+- Use `@ModelActor` for serial, mutually exclusive background data operations.
+- Keep context-bound model instances within their owning context/actor boundary.
+- Pass stable identifiers/value snapshots across boundaries; refetch models in the receiving context.
+- Use `DefaultSerialModelExecutor` semantics through model actors for background safety.
+- Do not force sendability workarounds on model types to bypass boundary issues.
+- Keep UI-bound context work on main actor and heavy persistence tasks off main actor.
+
+Canonical Patterns
+
+```swift
+@ModelActor
+actor BillingStoreActor {
+    func load(id: PersistentIdentifier) -> Invoice? {
+        self[id, as: Invoice.self]
+    }
+}
+```
+
+Anti-Patterns
+
+- Passing live model instances between unrelated contexts/actors.
+- Doing heavy batch persistence work on main-actor UI paths.
+- Relying on unchecked sendability to suppress concurrency violations.
+- Creating ad hoc background contexts without clear executor isolation.
+
+Checklist
+
+- Are background writes routed through model actors?
+- Are cross-actor payloads value-based (IDs/snapshots) rather than model references?
+- Are model instances used only in owning context?
+- Are executor/isolation boundaries explicit in code review?
+
+Architectural Implications
+
+- Concurrency boundaries are data integrity boundaries; violations create nondeterministic crashes and corruption risk.
+- Model actor design should mirror service ownership and background workflow needs.
+- Cross-actor data contracts should be value-based and explicit.
+
+Advanced Notes
+
+- Model instances are context-bound; resolve by persistent identifier inside receiving actor/context.
+- `DefaultSerialModelExecutor` patterns provide safe serialized access for background tasks.
+- Main-context UI and background persistence paths must remain separated by design.
+
+Integration With Architecture
+
+- Place model actors near persistence service boundaries in `Packages/Data`.
+- Keep DI/bootstrap code responsible for creating actor-backed services in non-main contexts.
+- Review all background import/sync workflows for value-snapshot boundary compliance.
+
+Enforcement Summary
+
+Always prefer:
+
+- `@ModelActor` for background persistence serialization
+- value snapshot boundary crossing
+- in-context model resolution by identifier
+- explicit executor ownership in architecture
+
+Never allow:
+
+- passing live models across actor/context boundaries
+- main-thread heavy persistence operations
+- unchecked sendability workarounds on model types
+- implicit concurrent writes without serialized model actor path

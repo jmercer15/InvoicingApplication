@@ -8,20 +8,27 @@ public struct LoadingView: View {
         self.message = message
     }
     
+    @ScaledMetric(relativeTo: .body) private var cornerRadius: CGFloat = StyleGuide.Dimensions.cornerRadiusMedium
+
     public var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
             ProgressView()
-                .scaleEffect(1.2) // Slightly larger for better visibility
-            
+                .scaleEffect(1.2)
+
             if let message = message {
                 Text(message)
-                    .font(.subheadline)
-                    .foregroundColor(Color.secondary)
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
         }
-        .padding()
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-        .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+        .padding(StyleGuide.Dimensions.paddingLarge)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
+        .shadow(
+            color: Color.black.opacity(StyleGuide.Opacity.light),
+            radius: StyleGuide.Shadows.darkRadius + 2,
+            x: 0,
+            y: StyleGuide.Shadows.darkOffsetY + 1
+        )
     }
 }
 

@@ -1,14 +1,14 @@
 import Foundation
-import SwiftData // Import SwiftData
+import SwiftData
 import Core
 
 /// Service for managing NDIS item versioning and historical tracking
 public class NDISVersioningService {
     
-    // MARK: - UnitOfWork-Based Methods (Domain Models)
+    // MARK: - Snapshot-Based Methods
     
-    /// Determines if an NDIS domain item is currently effective based on its effective date range.
-    public static func isItemCurrent(_ item: NDISItem, asOf date: Date = Date()) -> Bool {
+    /// Determines if an NDIS item snapshot is currently effective based on its effective date range.
+    public static func isItemCurrent(_ item: NDISItemSnapshot, asOf date: Date = Date()) -> Bool {
         guard let startDate = item.effectiveStartDate else {
             // No start date - assume always current
             return true
@@ -27,130 +27,13 @@ public class NDISVersioningService {
         // No end date means ongoing
         return true
     }
+
+    // MARK: - ModelContext-Based Methods (Model Level)
     
-    /// Gets current NDIS items using UnitOfWork (async, domain models)
-    public static func getCurrentItems(using unitOfWork: UnitOfWorkService, asOf date: Date = Date()) async throws -> [NDISItem] {
-        let items = try await unitOfWork.ndisItems.fetchCurrent()
-        return items.filter { isItemCurrent($0, asOf: date) }
-    }
-    
-    /// Gets all versions of an NDIS item by item number using UnitOfWork
-    public static func findAllVersions(itemNumber: String, using unitOfWork: UnitOfWorkService) async throws -> [NDISItem] {
-        return try await unitOfWork.ndisItems.search(query: itemNumber)
-    }
-    
-    /// Gets the effective NDIS item for a specific date using UnitOfWork
-    public static func getEffectiveItem(itemNumber: String, asOf date: Date, using unitOfWork: UnitOfWorkService) async throws -> NDISItem? {
-        let items = try await unitOfWork.ndisItems.fetchEffective()
-        return items.first { $0.itemNumber == itemNumber && isItemCurrent($0, asOf: date) }
-    }
-    
-    /// Gets a summary of all NDIS item changes over time using UnitOfWork
-    public static func getChangesSummary(using unitOfWork: UnitOfWorkService) async throws -> Core.NDISChangesSummary {
-        let allItems = try await unitOfWork.ndisItems.fetchAll()
-        
-        // Group by item number
-        let groupedItems = Dictionary(grouping: allItems) { $0.itemNumber }
-        
-        var totalItems = 0
-        var currentItems = 0
-        var historicalItems = 0
-        var itemsWithChanges = 0
-        
-        for (_, versions) in groupedItems {
-            let sortedVersions = versions.sorted { item1, item2 in
-                let date1 = item1.effectiveStartDate ?? .distantPast
-                let date2 = item2.effectiveStartDate ?? .distantPast
-                return date1 > date2
-            }
-            
-            totalItems += versions.count
-            
-            if versions.count > 1 {
-                itemsWithChanges += 1
-            }
-            
-            for version in sortedVersions {
-                if isItemCurrent(version) {
-                    currentItems += 1
-                } else {
-                    historicalItems += 1
-                }
-            }
-        }
-        
-        return Core.NDISChangesSummary(
-            totalUniqueItems: groupedItems.count,
-            totalVersions: totalItems,
-            currentItems: currentItems,
-            historicalItems: historicalItems,
-            itemsWithChanges: itemsWithChanges
-        )
-    }
-    
-    /// Analyzes how an NDIS item has changed over time using UnitOfWork
-    public static func analyzeItemChanges(itemNumber: String, using unitOfWork: UnitOfWorkService) async throws -> [NDISItemChange] {
-        let versions = try await unitOfWork.ndisItems.search(query: itemNumber)
-        // Ensure we only have versions for THIS specific item number (search might be broad)
-        let filteredVersions = versions.filter { $0.itemNumber == itemNumber }
-            .sorted { ($0.effectiveStartDate ?? .distantPast) > ($1.effectiveStartDate ?? .distantPast) }
-            
-        var changes: [NDISItemChange] = []
-        
-        for i in 1..<filteredVersions.count {
-            let currentVersion = filteredVersions[i-1]
-            let previousVersion = filteredVersions[i]
-            
-            let change = NDISItemChange(
-                itemNumber: itemNumber,
-                changeDate: currentVersion.effectiveStartDate ?? Date(),
-                previousVersion: extractItemData(from: previousVersion),
-                newVersion: extractItemData(from: currentVersion),
-                changeType: determineChangeType(from: previousVersion, to: currentVersion)
-            )
-            
-            changes.append(change)
-        }
-        
-        return changes
-    }
-    
-    private static func extractItemData(from item: NDISItem) -> NDISItemSnapshot {
-        return NDISItemSnapshot(
-            itemNumber: item.itemNumber,
-            name: item.name,
-            registrationGroup: item.registrationGroup,
-            features: (item.features ?? "").components(separatedBy: ",").filter { !$0.isEmpty },
-            unit: item.unit,
-            effectiveStartDate: item.effectiveStartDate,
-            effectiveEndDate: item.effectiveEndDate,
-            quoteRequired: item.quoteRequired ?? false,
-            regionalPrices: item.regionalPrices
-        )
-    }
-    
-    private static func determineChangeType(from previous: NDISItem, to current: NDISItem) -> NDISChangeType {
-        if previous.name != current.name { return .nameChanged }
-        if previous.registrationGroup != current.registrationGroup { return .categoryChanged }
-        if previous.unit != current.unit { return .unitChanged }
-        
-        // Handle features comparison
-        let previousFeatures = (previous.features ?? "").components(separatedBy: ",").filter { !$0.isEmpty }
-        let currentFeatures = (current.features ?? "").components(separatedBy: ",").filter { !$0.isEmpty }
-        if previousFeatures.sorted() != currentFeatures.sorted() { return .featuresChanged }
-        
-        if previous.effectiveStartDate != current.effectiveStartDate { return .effectiveDateRangeChanged }
-        if previous.effectiveEndDate != current.effectiveEndDate { return .effectiveDateRangeChanged }
-        
-        return .priceChanged
-    }
-    
-    // MARK: - ModelContext-Based Methods (Entity Level)
-    
-    /// Determines if an NDIS item entity is currently effective based on its effective date range.
+    /// Determines if an NDIS item model is currently effective based on its effective date range.
     /// This checks if an item is effective on a given date, not if it's part of the current dataset.
     /// For current dataset determination, use updateCurrentStatusForAllItems() which sets isCurrent flags.
-    static func isItemCurrent(_ item: NDISItemEntity, asOf date: Date = Date()) -> Bool { // Change to NDISItemEntity
+    static func isItemCurrentModel(_ item: NDISItem, asOf date: Date = Date()) -> Bool {
         let startDate = item.effectiveStartDate ?? Date() // Use optional with default
         
         // Check if current date is after start date
@@ -191,35 +74,26 @@ public class NDISVersioningService {
     }
     
     /// Determines which versions within a single item number should be marked as current
-    private static func determineCurrentVersionIDs(from versions: [NDISItemEntity], asOf date: Date) -> Set<UUID> {
+    private static func determineCurrentVersionIDs(from versions: [NDISItem], asOf date: Date) -> Set<UUID> {
         guard !versions.isEmpty else { return [] }
         
-        let currentlyEffective = versions.filter { isItemCurrent($0, asOf: date) }
+        let currentlyEffective = versions.filter { isItemCurrentModel($0, asOf: date) }
         let candidates = currentlyEffective.isEmpty ? versions : currentlyEffective
         
         let highestStartDate = candidates.compactMap { $0.effectiveStartDate }.max()
         if let highestStartDate {
             let matching = candidates.filter { $0.effectiveStartDate == highestStartDate }
             if !matching.isEmpty {
-                return Set(matching.map(\.id))
+                return Set(matching.map { $0.id })
             }
         }
         
         let nilStartCandidates = candidates.filter { $0.effectiveStartDate == nil }
         if !nilStartCandidates.isEmpty {
-            return Set(nilStartCandidates.map(\.id))
+            return Set(nilStartCandidates.map { $0.id })
         }
         
-        return Set(candidates.map(\.id))
-    }
-    
-    /// Convenience method to manually update current status - useful for testing or corrections
-    /// Returns 0 (legacy signature matching)
-    @discardableResult
-    public static func recalculateAllCurrentFlags(in context: ModelContext) throws -> Int {
-        print("Manually recalculating isCurrent flags for all NDIS items...")
-        try updateCurrentStatusForAllItems(in: context)
-        return 0
+        return Set(candidates.map { $0.id })
     }
     
     // MARK: - Version Management
@@ -241,33 +115,16 @@ public class NDISVersioningService {
         }
     }
     
-    /// Creates a composite key for uniquely identifying an NDIS item
-    static func createCompositeKey(itemNumber: String, itemName: String) -> String {
-        return "\(itemNumber)_\(itemName.hash.magnitude)"
-    }
-    
     /// Finds all versions of an NDIS item by composite key (item number + name)
-    static func findAllVersions(itemNumber: String, itemName: String, in context: ModelContext) throws -> [NDISItemEntity] { // Change to ModelContext and NDISItemEntity
+    static func findAllVersions(itemNumber: String, itemName: String, in context: ModelContext) throws -> [NDISItem] { // Change to ModelContext and NDISItem
         let resolver = EntityResolutionService(context: context)
         return try resolver.resolveNDISItems(itemNumber: itemNumber, name: itemName)
     }
     
     /// Legacy method - finds all versions by item number only (may return multiple different items)
-    static func findAllVersionsByItemNumber(of itemNumber: String, in context: ModelContext) throws -> [NDISItemEntity] { // Change to ModelContext and NDISItemEntity
+    static func findAllVersionsByItemNumber(of itemNumber: String, in context: ModelContext) throws -> [NDISItem] { // Change to ModelContext and NDISItem
         let resolver = EntityResolutionService(context: context)
         return try resolver.resolveNDISItems(itemNumber: itemNumber)
-    }
-    
-    /// Gets the current version of an NDIS item using composite key
-    static func getCurrentVersion(itemNumber: String, itemName: String, in context: ModelContext, asOf date: Date = Date()) throws -> NDISItemEntity? { // Change to ModelContext and NDISItemEntity
-        let allVersions = try findAllVersions(itemNumber: itemNumber, itemName: itemName, in: context)
-        return allVersions.first { isItemCurrent($0, asOf: date) }
-    }
-    
-    /// Gets all current NDIS items (only the current versions)
-    static func getCurrentItems(in context: ModelContext, asOf date: Date = Date()) throws -> [NDISItemEntity] { // Change to ModelContext and NDISItemEntity
-        let resolver = EntityResolutionService(context: context)
-        return try resolver.resolveCurrentNDISItems()
     }
     
     // MARK: - Historical Analysis
@@ -324,7 +181,7 @@ public class NDISVersioningService {
             }
             
             for version in sortedVersions {
-                if isItemCurrent(version) {
+                if isItemCurrentModel(version) {
                     currentItems += 1
                 } else {
                     historicalItems += 1
@@ -343,28 +200,43 @@ public class NDISVersioningService {
     
     // MARK: - Private Helpers
     
-    private static func extractItemData(from item: NDISItemEntity) -> NDISItemSnapshot { // Change to NDISItemEntity
-        let priceSnapshots = item.regionalPrices
-            .map { price -> RegionalPriceSnapshot in
+    private static func extractItemData(from item: NDISItem) -> NDISItemSnapshot {
+        let priceSnapshots = (item.regionalPrices ?? [])
+            .map { (price: RegionalPrice) -> RegionalPriceSnapshot in
                 let region = price.regionIdentifier?.isEmpty == false ? price.regionIdentifier! : "Unspecified"
-                return RegionalPriceSnapshot(regionIdentifier: region, amount: price.amount)
+                return RegionalPriceSnapshot(id: price.id, amount: price.amount, regionIdentifier: region)
             }
-            .sorted { $0.regionIdentifier < $1.regionIdentifier }
+            .sorted { ($0.regionIdentifier ?? "") < ($1.regionIdentifier ?? "") }
         
         return NDISItemSnapshot(
+            id: item.id,
             itemNumber: item.itemNumber,
             name: item.name,
-            registrationGroup: item.registrationGroup,
-            features: item.features?.components(separatedBy: ",").filter { !$0.isEmpty } ?? [],
-            unit: item.unit,
+            versionIdentifier: item.versionIdentifier,
+            isCurrent: item.isCurrent,
+            category: item.category,
             effectiveStartDate: item.effectiveStartDate,
             effectiveEndDate: item.effectiveEndDate,
-            quoteRequired: item.quoteRequired ?? false,
-            regionalPrices: priceSnapshots
+            features: item.features,
+            itemDescription: item.itemDescription,
+            ndiaRequestedReports: item.ndiaRequestedReports,
+            nonFaceToFaceProvision: item.nonFaceToFaceProvision,
+            providerTravel: item.providerTravel,
+            quoteRequired: item.quoteRequired,
+            registrationGroup: item.registrationGroup,
+            registrationGroupNumber: item.registrationGroupNumber,
+            shortNoticeCancellations: item.shortNoticeCancellations,
+            irregularSILSupports: item.irregularSILSupports,
+            status: item.status,
+            type: item.type,
+            unit: item.unit,
+            regionalPrices: priceSnapshots,
+            price: nil,
+            effectiveDateRange: ""
         )
     }
     
-    private static func determineChangeType(from previous: NDISItemEntity, to current: NDISItemEntity) -> NDISChangeType { // Change to NDISItemEntity
+    private static func determineChangeType(from previous: NDISItem, to current: NDISItem) -> NDISChangeType {
         
         if previous.name != current.name { return .nameChanged }
         if previous.registrationGroup != current.registrationGroup { return .categoryChanged }
@@ -391,7 +263,7 @@ public class NDISVersioningService {
     @discardableResult
     /// Fetches all unique effective dates for NDIS items
     public static func fetchEffectiveDates(context: ModelContext) throws -> [Date] {
-        let descriptor = FetchDescriptor<NDISItemEntity>()
+        let descriptor = FetchDescriptor<NDISItem>()
         let items = try context.fetch(descriptor)
         let dates = Set(items.compactMap { $0.effectiveStartDate })
         return Array(dates).sorted(by: >)

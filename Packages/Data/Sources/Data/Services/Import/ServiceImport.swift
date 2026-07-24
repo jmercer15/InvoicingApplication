@@ -1,7 +1,6 @@
+import Core
 import Foundation
 import SwiftData
-import Data
-import Core
 
 // Add struct for services.json format
 struct ServicesImportJSON: Codable {
@@ -59,26 +58,27 @@ struct ServiceImport {
         
         for item in servicesImport {
             do {
-                let clientDescriptor = FetchDescriptor<ClientEntity>(predicate: #Predicate { $0.fullName == item.studentName })
-                guard let clientEntity = try context.fetch(clientDescriptor).first else {
+                let studentName = item.studentName
+                let clientDescriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.fullName == studentName })
+                guard let clientModel = try context.fetch(clientDescriptor).first else {
                     throw NSError(domain: "ImportError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Client not found: \(item.studentName)"])
                 }
                 
-                let name = item.taskName
-                let linkDescriptor = FetchDescriptor<ClientServiceEntity>(predicate: #Predicate { $0.serviceName == name })
+                let serviceName = item.taskName
+                let linkDescriptor = FetchDescriptor<ClientService>(predicate: #Predicate<ClientService> { $0.serviceName == serviceName })
                 let existingLinks = try context.fetch(linkDescriptor)
-                let clientService: ClientServiceEntity
-                if let existing = existingLinks.first(where: { $0.client?.id == clientEntity.id }) {
+                let clientService: ClientService
+                if let existing = existingLinks.first(where: { $0.client?.id == clientModel.id }) {
                     clientService = existing
                     messages.append("Updated service link: \(item.taskName) for client \(item.studentName)")
                 } else {
-                    clientService = ClientServiceEntity(
+                    clientService = ClientService(
                         id: UUID(),
                         serviceName: item.taskName,
                         unit: item.unit.isEmpty ? "hour" : item.unit,
                         rate: 0.0
                     )
-                    clientService.client = clientEntity
+                    clientService.client = clientModel
                     clientService.startDate = Date()
                     messages.append("Linked service '\(item.taskName)' to client '\(item.studentName)'")
                 }
@@ -128,10 +128,10 @@ struct ServiceImport {
         )
     }
     
-    private static func findNDISItem(matching code: String, in context: ModelContext) throws -> NDISItemEntity? {
+    private static func findNDISItem(matching code: String, in context: ModelContext) throws -> NDISItem? {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let descriptor = FetchDescriptor<NDISItemEntity>(predicate: #Predicate { $0.itemNumber == trimmed })
+        let descriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> { $0.itemNumber == trimmed })
         return try context.fetch(descriptor).first
     }
 }

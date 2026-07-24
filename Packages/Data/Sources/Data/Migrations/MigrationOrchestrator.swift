@@ -9,6 +9,7 @@
 //  and provides comprehensive logging and error handling.
 //
 
+import Core
 import Foundation
 import SwiftData
 
@@ -18,7 +19,7 @@ import SwiftData
 /// provides comprehensive logging and error handling, and ensures data integrity
 /// throughout the migration process.
 public class MigrationOrchestrator {
-    private static let migrationHistoryUserDefaultsKey = "com.invoicingapp.migrations.applied"
+    private static let migrationHistoryFileName = "migration-history.json"
     
     /// Migration result types
     public enum MigrationResult {
@@ -54,33 +55,33 @@ public class MigrationOrchestrator {
     private let migrations: [MigrationInfo] = [
         MigrationInfo(
             id: "address_suburb_to_city",
-            name: "AddressEntity.suburb -> city",
+            name: "Address.suburb -> city",
             version: "1.0.0",
-            description: "Rename AddressEntity.suburb property to city for domain model consistency",
-            execute: { try AddressEntity_SuburbToCity_Migration.execute(modelContext: $0) },
-            rollback: { try AddressEntity_SuburbToCity_Migration.rollback(modelContext: $0) }
+            description: "Rename Address.suburb property to city for domain model consistency",
+            execute: { try Address_SuburbToCity_Migration.execute(modelContext: $0) },
+            rollback: { try Address_SuburbToCity_Migration.rollback(modelContext: $0) }
         ),
         MigrationInfo(
             id: "planmanager_businessname_to_name",
-            name: "PlanManagerEntity.businessName -> name",
+            name: "PlanManager.businessName -> name",
             version: "1.0.0",
-            description: "Rename PlanManagerEntity.businessName property to name for domain model consistency",
-            execute: { try PlanManagerEntity_BusinessNameToName_Migration.execute(modelContext: $0) },
-            rollback: { try PlanManagerEntity_BusinessNameToName_Migration.rollback(modelContext: $0) }
+            description: "Rename PlanManager.businessName property to name for domain model consistency",
+            execute: { try PlanManager_BusinessNameToName_Migration.execute(modelContext: $0) },
+            rollback: { try PlanManager_BusinessNameToName_Migration.rollback(modelContext: $0) }
         ),
         MigrationInfo(
             id: "ndisitem_itemdescription_to_description",
-            name: "NDISItemEntity.itemDescription -> description",
+            name: "NDISItem.itemDescription -> description",
             version: "1.0.0",
-            description: "Rename NDISItemEntity.itemDescription property to description for domain model consistency",
-            execute: { try NDISItemEntity_ItemDescriptionToDescription_Migration.execute(modelContext: $0) },
-            rollback: { try NDISItemEntity_ItemDescriptionToDescription_Migration.rollback(modelContext: $0) }
+            description: "Rename NDISItem.itemDescription property to description for domain model consistency",
+            execute: { try NDISItem_ItemDescriptionToDescription_Migration.execute(modelContext: $0) },
+            rollback: { try NDISItem_ItemDescriptionToDescription_Migration.rollback(modelContext: $0) }
         ),
         MigrationInfo(
             id: "remove_unused_properties",
             name: "Remove unused properties",
             version: "1.0.0",
-            description: "Remove unused properties from SessionEntity and TravelChargeEntity",
+            description: "Remove unused properties from Session and TravelCharge",
             execute: { try RemoveUnusedProperties_Migration.execute(modelContext: $0) },
             rollback: { try RemoveUnusedProperties_Migration.rollback(modelContext: $0) }
         ),
@@ -88,15 +89,15 @@ public class MigrationOrchestrator {
             id: "remove_colorhex_columns",
             name: "Remove colorHex columns",
             version: "1.0.0",
-            description: "Remove colorHex columns from ClientEntity and PayeeEntity",
+            description: "Remove colorHex columns from Client and Payee",
             execute: { try RemoveColorHexColumns_Migration.execute(modelContext: $0) },
             rollback: { try RemoveColorHexColumns_Migration.rollback(modelContext: $0) }
         ),
         MigrationInfo(
             id: "remove_payee_notes_column",
-            name: "Remove PayeeEntity.notes column",
+            name: "Remove Payee.notes column",
             version: "1.0.0",
-            description: "Remove notes column from PayeeEntity",
+            description: "Remove notes column from Payee",
             execute: { try RemovePayeeNotesColumn_Migration.execute(modelContext: $0) },
             rollback: { try RemovePayeeNotesColumn_Migration.rollback(modelContext: $0) }
         ),
@@ -115,6 +116,46 @@ public class MigrationOrchestrator {
             description: "Initialize claiming config defaults on business profile",
             execute: { try AddComplianceFoundationFields_v1.execute(modelContext: $0) },
             rollback: { try AddComplianceFoundationFields_v1.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "enum_rawvalue_column",
+            name: "Enum rawValue column backfill",
+            version: "1.0.0",
+            description: "Backfill *Raw String columns that replaced stored enum properties",
+            execute: { try EnumRawValueColumn_Migration.execute(modelContext: $0) },
+            rollback: { try EnumRawValueColumn_Migration.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "backfill_eventkit_sync_metadata_v1",
+            name: "Backfill EventKit sync metadata v1",
+            version: "1.0.0",
+            description: "Backfill durable EventKit sync metadata from legacy Session fields",
+            execute: { try BackfillEventKitSyncMetadata_v1.execute(modelContext: $0) },
+            rollback: { try BackfillEventKitSyncMetadata_v1.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "backfill_eventkit_sync_metadata_v2",
+            name: "Backfill EventKit sync metadata v2",
+            version: "1.0.0",
+            description: "Backfill additional EventKit reconciliation metadata",
+            execute: { try BackfillEventKitSyncMetadata_v2.execute(modelContext: $0) },
+            rollback: { try BackfillEventKitSyncMetadata_v2.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "backfill_invoice_address_snapshots_v1",
+            name: "Backfill invoice address snapshots v1",
+            version: "1.0.0",
+            description: "Copy legacy invoice address relationships into value snapshots",
+            execute: { try BackfillInvoiceAddressSnapshots_v1.execute(modelContext: $0) },
+            rollback: { try BackfillInvoiceAddressSnapshots_v1.rollback(modelContext: $0) }
+        ),
+        MigrationInfo(
+            id: "drain_legacy_invoice_address_relationships_v1",
+            name: "Drain legacy invoice address relationships v1",
+            version: "1.0.0",
+            description: "Copy any remaining legacy invoice address links into snapshots and clear the old relationships",
+            execute: { try DrainLegacyInvoiceAddressRelationships_v1.execute(modelContext: $0) },
+            rollback: { try DrainLegacyInvoiceAddressRelationships_v1.rollback(modelContext: $0) }
         )
     ]
     
@@ -135,8 +176,10 @@ public class MigrationOrchestrator {
     /// - Returns: Array of migration results
     /// - Throws: MigrationError if the orchestration fails
     public func executeAllMigrations(modelContext: ModelContext) throws -> [MigrationResult] {
+        let historyPath = migrationHistoryURL(for: modelContext).path
         print("🚀 Starting migration orchestration")
         print("📋 Found \(migrations.count) migrations to process")
+        print("🗂️ Migration history file: \(historyPath)")
         
         var results: [MigrationResult] = []
         var failedMigrations: [String] = []
@@ -228,8 +271,7 @@ public class MigrationOrchestrator {
     /// - Returns: True if the migration has been applied
     /// - Throws: MigrationError if the check fails
     private func isMigrationApplied(_ migrationId: String, modelContext: ModelContext) throws -> Bool {
-        _ = modelContext
-        return appliedMigrationIDs().contains(migrationId)
+        try appliedMigrationIDs(modelContext: modelContext).contains(migrationId)
     }
     
     /// Mark a migration as applied
@@ -239,16 +281,51 @@ public class MigrationOrchestrator {
     ///   - modelContext: The Swift Data model context
     /// - Throws: MigrationError if the marking fails
     private func markMigrationAsApplied(_ migrationId: String, modelContext: ModelContext) throws {
-        _ = modelContext
-        var applied = appliedMigrationIDs()
+        var applied = try appliedMigrationIDs(modelContext: modelContext)
         applied.insert(migrationId)
-        UserDefaults.standard.set(Array(applied).sorted(), forKey: Self.migrationHistoryUserDefaultsKey)
+        try persistAppliedMigrationIDs(applied, modelContext: modelContext)
         print("📝 Marking migration \(migrationId) as applied")
     }
 
-    private func appliedMigrationIDs() -> Set<String> {
-        let stored = UserDefaults.standard.stringArray(forKey: Self.migrationHistoryUserDefaultsKey) ?? []
-        return Set(stored)
+    private var cachedAppliedMigrationIDs: Set<String>?
+
+    private func appliedMigrationIDs(modelContext: ModelContext) throws -> Set<String> {
+        if let cached = cachedAppliedMigrationIDs {
+            return cached
+        }
+        let historyURL = migrationHistoryURL(for: modelContext)
+        guard FileManager.default.fileExists(atPath: historyURL.path) else {
+            cachedAppliedMigrationIDs = []
+            return []
+        }
+
+        let data = try Data(contentsOf: historyURL)
+        let stored = try JSONDecoder().decode([String].self, from: data)
+        let ids = Set(stored)
+        cachedAppliedMigrationIDs = ids
+        return ids
+    }
+
+    private func persistAppliedMigrationIDs(_ ids: Set<String>, modelContext: ModelContext) throws {
+        let historyURL = migrationHistoryURL(for: modelContext)
+        let directoryURL = historyURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
+        let payload = Array(ids).sorted()
+        let encoded = try JSONEncoder().encode(payload)
+        try encoded.write(to: historyURL, options: [.atomic])
+        cachedAppliedMigrationIDs = ids
+    }
+
+    /// Keep migration history durable and store-scoped.
+    private func migrationHistoryURL(for modelContext: ModelContext) -> URL {
+        if let storeURL = modelContext.container.configurations.first?.url {
+            return storeURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(Self.migrationHistoryFileName)
+        } else {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("invoicingapp-inmemory-\(Self.migrationHistoryFileName)")
+        }
     }
     
     /// Rollback all migrations
@@ -345,6 +422,8 @@ public class MigrationOrchestrator {
             try PayeeNotesColumnMigrationTestUtils.testMigration(modelContext: modelContext)
         case "add_compliance_foundation_fields_v1":
             break
+        case "enum_rawvalue_column", "backfill_eventkit_sync_metadata_v1", "backfill_eventkit_sync_metadata_v2":
+            break
         default:
             throw MigrationError.testFailed("Unknown migration type: \(migration.id)")
         }
@@ -380,15 +459,15 @@ public enum MigrationError: Error, LocalizedError {
 #if DEBUG
 public struct MigrationTestUtils {
     
-    /// Test AddressEntity migration
+    /// Test Address migration
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testAddressMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing AddressEntity.suburb -> city migration")
+        print("🧪 Testing Address.suburb -> city migration")
         
         // Create test data
-        let testAddress = AddressEntity()
+        let testAddress = Address()
         testAddress.id = UUID()
         testAddress.city = "Test City"
         testAddress.state = "NSW"
@@ -398,10 +477,10 @@ public struct MigrationTestUtils {
         try modelContext.save()
         
         // Test migration
-        try AddressEntity_SuburbToCity_Migration.execute(modelContext: modelContext)
+        try Address_SuburbToCity_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let descriptor = FetchDescriptor<AddressEntity>()
+        let descriptor = FetchDescriptor<Address>()
         let addresses = try modelContext.fetch(descriptor)
         
         guard let address = addresses.first else {

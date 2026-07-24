@@ -1,0 +1,106 @@
+---
+description: SwiftData query architecture with @Query, predicates, sort order, and fetch descriptors
+alwaysApply: false
+---
+
+# Rule: SwiftData Query System
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/filtering-and-sorting-persistent-data
+https://developer.apple.com/documentation/swiftdata/query()
+https://developer.apple.com/documentation/swiftdata/additionalquerymacros
+https://developer.apple.com/documentation/swiftdata/query
+https://developer.apple.com/documentation/swiftdata/fetchdescriptor
+https://developer.apple.com/documentation/swiftdata/modelcontext
+
+Scope
+
+Applies to:
+
+- view-bound reactive queries with `@Query`
+- service/actor fetches with `FetchDescriptor`
+- predicate construction and sort descriptor policy
+- dynamic query reconstruction for runtime filtering/sorting
+
+Intent
+
+Model query behavior as explicit descriptors and predicates so filtering,
+sorting, and pagination remain deterministic and maintainable at scale.
+
+Core Principle
+
+Queries are descriptor- and predicate-driven; dynamic filtering must be modeled as
+query reconstruction, not ad hoc mutation of static query definitions.
+
+Implementation Rules
+
+- Use `@Query` for view-bound reactive data retrieval.
+- Use `FetchDescriptor` and context fetch APIs for service- or actor-level fetches.
+- Centralize reusable predicates for cross-view query consistency.
+- For dynamic view filtering/sorting, rebuild query in initializer using input state.
+- Use fetch limits/offset and prefetch key paths where scale requires it.
+- Keep query predicates deterministic and side-effect free.
+
+Canonical Patterns
+
+```swift
+@Query(sort: \Invoice.createdAt, order: .reverse)
+private var invoices: [Invoice]
+```
+
+```swift
+let descriptor = FetchDescriptor<Invoice>(
+    predicate: #Predicate { $0.status == .due },
+    sortBy: [.init(\.createdAt)]
+)
+let due = try modelContext.fetch(descriptor)
+```
+
+Anti-Patterns
+
+- Mutating a variable and expecting an existing `@Query` instance to retarget itself.
+- Duplicating equivalent predicates inconsistently across map/list/detail views.
+- Pulling full datasets without limits in high-volume contexts.
+- Mixing rendering and query predicate logic inside row builders.
+
+Checklist
+
+- Is query API choice aligned with layer (view vs service)?
+- Are predicate/sort definitions centralized where shared?
+- Are dynamic query updates implemented via reconstruction?
+- Are fetch limits/prefetching configured for large datasets?
+
+Architectural Implications
+
+- Query design is part of feature architecture, not only data access syntax.
+- Shared predicate contracts are critical for synchronized multi-view representations.
+- Dynamic query behavior must be explicitly modeled to keep UI and data coherence.
+
+Advanced Notes
+
+- `@Query` is reactive and view-oriented; descriptor fetches are better for service and actor workflows.
+- Dynamic filtering with `@Query` requires initializer-driven reconstruction patterns.
+- Prefetching and fetch limits are essential tools for scaling large relational datasets.
+
+Integration With Architecture
+
+- Keep query logic in dedicated adapters or services when reused across list/map/detail features.
+- Use shared predicate builders for consistency between related screens.
+- Validate query shapes against sorting/filtering command and search interactions.
+
+Enforcement Summary
+
+Always prefer:
+
+- layer-appropriate query mechanisms
+- centralized reusable predicate/sort definitions
+- explicit dynamic query reconstruction
+- scale-aware descriptor configuration
+
+Never allow:
+
+- predicate duplication drift across features
+- mutable-static `@Query` assumptions
+- unbounded fetches in high-volume workflows
+- query logic embedded in row rendering paths

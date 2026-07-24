@@ -65,6 +65,39 @@ public final class BPRCSVWriter: Sendable {
         Data(csvString(lines: lines).utf8)
     }
 
+    public func csvString(snapshots: [BulkClaimLineSnapshot]) -> String {
+        var rows: [String] = []
+        rows.append(Self.columns.joined(separator: ","))
+
+        for line in snapshots {
+            let values: [String] = [
+                line.registrationNumber,
+                line.ndisNumber,
+                dateFormatter.string(from: line.supportsDeliveredFrom),
+                dateFormatter.string(from: line.supportsDeliveredTo),
+                line.supportNumber,
+                line.claimReference ?? "",
+                line.quantity.map(formatQuantity) ?? "",
+                line.hours ?? "",
+                formatUnitPrice(line.unitPrice),
+                line.gstCode.uppercased(),
+                line.authorisedBy ?? "",
+                line.participantApproved ?? "",
+                line.inKindFundingProgram ?? "",
+                line.claimTypeCode ?? "",
+                line.cancellationReason ?? "",
+                line.abnOfSupportProvider ?? ""
+            ]
+            rows.append(values.map(escapeCSV).joined(separator: ","))
+        }
+
+        return rows.joined(separator: "\n") + "\n"
+    }
+
+    public func csvData(snapshots: [BulkClaimLineSnapshot]) -> Data {
+        Data(csvString(snapshots: snapshots).utf8)
+    }
+
     public func sha256Hex(for data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()

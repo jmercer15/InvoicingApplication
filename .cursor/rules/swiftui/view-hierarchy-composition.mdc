@@ -1,0 +1,441 @@
+---
+description: SwiftUI View Hierarchy & Composition
+alwaysApply: false
+---
+
+# Rule: SwiftUI View Hierarchy & Composition
+
+Sources
+
+https://developer.apple.com/tutorials/swiftui-concepts/specifying-the-view-hierarchy-of-an-app-using-a-scene
+https://developer.apple.com/tutorials/swiftui-concepts/layering-content
+https://developer.apple.com/tutorials/swiftui-concepts/choosing-the-right-way-to-hide-a-view
+https://developer.apple.com/documentation/swiftui/view-fundamentals
+https://developer.apple.com/documentation/swiftui/view-configuration
+https://developer.apple.com/documentation/swiftui/view-groupings
+
+Scope
+
+Applies to how SwiftUI views are structured, composed, grouped, layered,
+configured, and conditionally included in a hierarchy.
+
+This rule governs:
+
+- root view composition
+- subview extraction
+- container choice
+- modifier placement
+- overlay/background usage
+- conditional inclusion and hiding
+
+Intent
+
+Build SwiftUI interfaces as clear, stable hierarchies of small views.
+
+Compose UI from focused subviews and purpose-driven containers.
+Use modifiers to configure views in place.
+Use layering APIs intentionally.
+Choose conditional removal vs visual hiding deliberately.
+
+The resulting hierarchy must be:
+
+- readable
+- modular
+- semantically clear
+- easy to evolve
+- resistant to “massive body” view implementations
+
+Core Principle
+
+SwiftUI UI is a hierarchy of views.
+
+A parent view should describe structure.
+Child views should encapsulate reusable or conceptually distinct pieces.
+Containers should express intent, not just appearance.
+Modifiers should refine a view rather than obscure its role.
+
+Prefer a hierarchy that explains:
+
+1. what the screen contains
+2. how pieces relate
+3. which parts are reusable
+4. which parts are conditional
+5. which parts are decorative vs structural
+
+Architectural Translation
+
+Translate Apple’s view-hierarchy model into these project rules:
+
+- Every feature screen must have one clear root composition view.
+- Large screens must be split into semantic subviews.
+- Each extracted subview must have a single responsibility.
+- Container choice must reflect meaning, not convenience.
+- Decoration must not be allowed to distort structural hierarchy.
+- Conditional UI must preserve intent and readability.
+- View bodies must remain declarative composition layers, not logic dumps.
+
+---
+
+## HIERARCHY DESIGN
+
+Each view should describe one level of the UI hierarchy.
+
+A view body should answer:
+
+- what are this view’s immediate children?
+- what container relationship do they have?
+- what state/configuration affects them?
+
+Rules
+
+- Keep each `body` focused on immediate composition.
+- Extract child views when a branch has its own meaning.
+- Avoid deeply nested anonymous layout code when a named subview would clarify intent.
+- Prefer semantic view names over generic names.
+
+Good
+
+struct ClientDetailScreen: View {
+var body: some View {
+ClientDetailContent()
+}
+}
+
+struct ClientDetailContent: View {
+var body: some View {
+VStack {
+ClientHeaderSection()
+ClientContactSection()
+ClientNotesSection()
+}
+}
+}
+Bad
+struct ClientDetailScreen: View {
+var body: some View {
+VStack {
+HStack {
+VStack {
+Text("Name")
+Text("Email")
+Text("Phone")
+}
+}
+VStack {
+Text("Notes")
+TextEditor(text: .constant(""))
+}
+}
+}
+}
+ONE STRUCTURAL CONCERN PER VIEW
+A view should own one structural concern.
+Examples:
+
+screen root
+section
+row
+card
+inspector pane
+toolbar content
+overlay badge
+empty state
+Rules
+Do not mix screen orchestration, section composition, and leaf rendering in one view.
+Split “screen”, “section”, and “row/item” responsibilities into separate types.
+Extract leaf views before extracting layout helpers.
+Prefer private helper views over large inline branches.
+Preferred hierarchy
+Screen
+└─ Content
+├─ Section
+│ ├─ Row
+│ └─ Row
+└─ Section
+
+Avoid
+
+Screen
+└─ one 300-line body with all sections, rows, and decorations inline
+
+CONTAINER SELECTION
+Use containers that match intent.
+Choose structure based on relationship:
+
+use stack/grid/layout containers for layout relationships
+use grouping/container APIs for purpose-driven grouping
+use Group when you need logical grouping without changing layout semantics
+use higher-level containers when the UI is semantically a form, control group, section, or similar
+Rules
+Do not use a generic container when a more meaningful one exists.
+Do not introduce containers solely to “make code compile” if they blur intent.
+Prefer containers that explain purpose to future maintainers.
+Use Group for structural grouping, conditional grouping, or modifier scoping when no layout container is intended.
+Good
+Group {
+if model.isLoading {
+LoadingView()
+} else {
+LoadedContentView(model: model)
+}
+}
+Bad
+VStack {
+if model.isLoading {
+LoadingView()
+} else {
+LoadedContentView(model: model)
+}
+}
+Use a layout container only when layout is the reason it exists.
+MODIFIER PLACEMENT
+Modifiers configure views in the hierarchy.
+They should reinforce structure, not conceal it.
+Rules
+
+Apply modifiers as close as possible to the view they affect.
+Apply shared modifiers at the lowest common ancestor.
+Do not stack long modifier chains on giant container views when only some descendants need them.
+Prefer extracting a subview over creating an unreadable modifier chain.
+Keep styling modifiers separate from structural composition when possible.
+Good
+ClientHeaderSection(client: client)
+.padding()
+.background(.thinMaterial)
+Good
+VStack(alignment: .leading) {
+ClientHeaderSection(client: client)
+ClientNotesSection(client: client)
+}
+.padding()
+Bad
+VStack {
+ClientHeaderSection(client: client)
+ClientNotesSection(client: client)
+FooterView()
+}
+.padding()
+.background(.thinMaterial)
+.font(.headline)
+.foregroundStyle(.secondary)
+.lineLimit(1)
+The container now obscures which modifiers are structural and which are accidental.
+SUBVIEW EXTRACTION
+Extract subviews when they improve:
+readability
+reuse
+testability
+previewability
+ownership boundaries
+Rules
+Extract a subview when:
+
+a branch has a clear domain name
+a branch is reused
+a branch has distinct state/configuration
+a branch needs separate previews
+a branch exceeds comfortable scanning size
+Do not extract a subview when:
+the extraction produces a meaningless name
+the extraction hides important local context
+the extracted view exists only to avoid scrolling
+Preferred extraction thresholds
+repeated UI -> always extract
+named conceptual region -> extract
+deeply nested conditional branch -> usually extract
+tiny one-off leaf with no semantic value -> keep inline
+LAYERING
+Use layering intentionally.
+Prefer APIs that express parent-child decoration relationships:
+
+.overlay
+.background
+Use stack-based layering only when multiple sibling layers are truly peers.
+Rules
+
+Use .background for background decoration attached to a view.
+Use .overlay for adornments, outlines, badges, progress masks, or attached foreground layers.
+Do not default to ZStack when the layer is conceptually attached to one base view.
+Keep decorative layers separate from structural child content.
+Good
+Text(client.name)
+.padding(8)
+.background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+Good
+AvatarView(client: client)
+.overlay(alignment: .bottomTrailing) {
+StatusDot(isOnline: client.isActive)
+}
+Bad
+ZStack {
+RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+Text(client.name)
+}
+Use ZStack only when the layered views are true peers in composition.
+HIDING VS REMOVING
+Treat “hidden” and “not in the hierarchy” as different architectural decisions.
+Rules
+
+Remove a view conditionally when it should not participate in structure.
+Hide a view without removal only when you intentionally want to preserve layout role, identity, or surrounding composition behavior.
+Do not leave inactive UI in the hierarchy by default.
+Do not use opacity as a substitute for structural decisions.
+Make conditional presence explicit in the hierarchy.
+Good
+if model.hasWarning {
+WarningBanner(message: model.warningMessage)
+}
+Good
+StatusIcon()
+.hidden(!showsStatusIcon)
+Only use this pattern when preserved layout/placement is desired.
+Bad
+
+WarningBanner(message: model.warningMessage)
+.opacity(model.hasWarning ? 1 : 0)
+This keeps the view structurally present without making that intention clear.
+CONDITIONAL COMPOSITION
+Conditional branches should preserve readability and identity.
+Rules
+
+Prefer if branches that swap meaningful subtrees.
+Prefer extracting conditional branches into named subviews when they are substantial.
+Keep conditional logic shallow in body.
+Avoid pyramids of nested if / switch directly inside large screens.
+Good
+var body: some View {
+Group {
+switch model.phase {
+case .loading:
+LoadingStateView()
+case .empty:
+EmptyStateView()
+case .loaded:
+LoadedClientContent(model: model)
+case .failed(let error):
+ErrorStateView(error: error)
+}
+}
+}
+Bad
+var body: some View {
+VStack {
+if model.phase == .loading {
+ProgressView()
+} else {
+if model.phase == .empty {
+Text("Empty")
+} else {
+if case .loaded = model.phase {
+// lots of inline content
+} else {
+Text("Error")
+}
+}
+}
+}
+}
+ROOT VIEW COMPOSITION
+Feature root views should compose structure, not implement every detail.
+Rules
+
+A feature root view should establish the primary container structure.
+Root views may connect feature state to subviews.
+Root views should delegate leaf rendering to child views.
+Root views should remain readable from top to bottom.
+Preferred example
+struct BillingHubView: View {
+@State private var selection: Invoice.ID?
+
+    var body: some View {
+        NavigationSplitView {
+            BillingSidebar(selection: $selection)
+        } detail: {
+            BillingDetailPane(selection: selection)
+        }
+    }
+
+}
+Not preferred
+struct BillingHubView: View {
+var body: some View {
+NavigationSplitView {
+List { ... many rows ... }
+} detail: {
+ScrollView {
+VStack {
+// all detail rendering inline
+// all overlays inline
+// all empty states inline
+// all toolbars inline
+}
+}
+}
+}
+}
+PROJECT-SCALE RULES
+For a large macOS SwiftUI app:
+Keep app/scene structure separate from feature composition.
+Keep each feature screen split into screen/section/row layers.
+Prefer dedicated files for major composed subviews.
+Co-locate private helper views with their feature when reuse is local.
+Promote subviews to shared modules only after true cross-feature reuse appears.
+Suggested file pattern
+Features/
+BillingHub/
+BillingHubView.swift
+BillingSidebar.swift
+BillingDetailPane.swift
+BillingEmptyState.swift
+Components/
+InvoiceRow.swift
+ClientChip.swift
+
+ANTI-PATTERNS
+Massive Body View
+One view contains:
+navigation
+layout
+styling
+conditional states
+row rendering
+overlays
+alerts
+toolbars
+Meaningless Extraction
+Extracting TopPartView, MiddleThingView, Content2View
+Container Abuse
+Using VStack or ZStack where the code is logically grouping/configuring,
+not laying out
+Modifier Fog
+Long modifier chains on ancestors that make descendant behavior unclear
+Fake Hiding
+Using .opacity(0) or off-screen tricks when the view should be conditionally removed
+Decorative Structure Pollution
+Using structural containers primarily to implement background/overlay decoration
+Conditional Pyramids
+Deeply nested inline branches instead of named state subtrees
+CHECKLIST
+Before finalizing a SwiftUI view hierarchy, verify:
+Does this view describe one level of hierarchy clearly?
+Are major branches extracted into semantic subviews?
+Is each container present for a real structural reason?
+Are modifiers attached at the correct level?
+Are overlays/backgrounds used instead of unnecessary stack layering?
+Is conditional inclusion explicit and readable?
+Is hidden-vs-removed behavior intentional?
+Could another developer understand the screen structure in one pass?
+ENFORCEMENT SUMMARY
+Always prefer:
+small semantic views
+explicit hierarchy
+purpose-driven containers
+localized modifiers
+intentional layering
+explicit conditional composition
+Never allow:
+monolithic bodies
+accidental containers
+decorative structure leakage
+opaque modifier chains
+ambiguous hiding behavior

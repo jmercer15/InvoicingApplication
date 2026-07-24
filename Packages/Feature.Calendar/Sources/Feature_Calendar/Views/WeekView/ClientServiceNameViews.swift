@@ -1,60 +1,48 @@
 import SwiftUI
-import Core
 import SharedUI
+import Observation
 
-// MARK: - Helper Views for Async Client/Service Name Fetching
+// MARK: - Helper Views for Client/Service Labels
 
 struct ClientNameView: View {
     let clientId: UUID
-    @ObservedObject var viewModel: CalendarViewModel
-    var fontSize: CGFloat = 11
-    var textColor: Color = Color("TextSecondary", bundle: .sharedUI)
-    @State private var clientName: String?
-    
+    @Bindable var viewModel: CalendarViewModel
+    var fontSize: CGFloat = StyleGuide.Dimensions.fontSizeXSmall
+    var textColor: Color = StyleGuide.Colors.textSecondary
     var body: some View {
         Group {
-            if let name = clientName, !name.isEmpty {
-                HStack(spacing: 4) {
+            if let name = viewModel.clientName(for: clientId), !name.isEmpty {
+                HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
                     Image(systemName: "person.fill")
-                        .font(.system(size: max(8, fontSize - 1)))
+                        .font(CalendarTypography.inlineIcon(size: fontSize))
                         .foregroundColor(textColor)
                     Text(name)
-                        .font(.system(size: fontSize))
+                        .font(CalendarTypography.gridScaled(fontSize))
                         .foregroundColor(textColor)
                         .lineLimit(1)
                 }
             }
-        }
-        .task {
-            clientName = await viewModel.fetchClientName(for: clientId)
         }
     }
 }
 
 struct ServiceNameView: View {
     let serviceId: UUID
-    @ObservedObject var viewModel: CalendarViewModel
-    var fontSize: CGFloat = 11
-    var textColor: Color = Color("TextSecondary", bundle: .sharedUI)
-    @State private var serviceName: String?
-    
+    @Bindable var viewModel: CalendarViewModel
+    var fontSize: CGFloat = StyleGuide.Dimensions.fontSizeXSmall
+    var textColor: Color = StyleGuide.Colors.textSecondary
     var body: some View {
         Group {
-            if let name = serviceName, !name.isEmpty {
-                HStack(spacing: 4) {
+            if let name = viewModel.serviceName(for: serviceId), !name.isEmpty {
+                HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
                     Image(systemName: "tag.fill")
-                        .font(.system(size: max(8, fontSize - 1)))
+                        .font(CalendarTypography.inlineIcon(size: fontSize))
                         .foregroundColor(textColor)
                     Text(name)
-                        .font(.system(size: fontSize))
+                        .font(CalendarTypography.gridScaled(fontSize))
                         .foregroundColor(textColor)
                         .lineLimit(1)
                 }
-            }
-        }
-        .task {
-            if let service = await viewModel.fetchClientService(for: serviceId) {
-                serviceName = service.serviceName
             }
         }
     }

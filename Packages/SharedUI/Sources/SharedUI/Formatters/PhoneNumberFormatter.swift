@@ -1,8 +1,10 @@
 import Combine
 import SwiftUI
+import Observation
 
-public class PhoneNumberFormatter: ObservableObject {
-    @Published public var phoneNumber: String = "" {
+@Observable
+public class PhoneNumberFormatter {
+    public var phoneNumber: String = "" {
         didSet(oldValue) {
             print("[PNF didSet] Entered. Current phoneNumber: '\(phoneNumber)', oldValue: '\(oldValue)'")
             let currentValue = phoneNumber
@@ -41,8 +43,8 @@ public class PhoneNumberFormatter: ObservableObject {
         }
     }
     
-    @Published public var isValid: Bool = false
-    @Published public var validationMessage: String? = nil
+    public var isValid: Bool = false
+    public var validationMessage: String? = nil
 
     public init(initialPhoneNumber: String = "") {
         print("[PNF init] Entered with initialPhoneNumber: '\(initialPhoneNumber)'")

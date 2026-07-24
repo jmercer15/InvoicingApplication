@@ -22,21 +22,17 @@ final class BulkClaimExportHashVerifierTests: XCTestCase {
 
     func testVerifyLinesUsesDeterministicCSVHash() {
         let verifier = BulkClaimExportHashVerifier()
-        let lines = [
-            BulkClaimLine(
-                id: UUID(),
-                batchId: UUID(),
-                registrationNumber: "123456789",
-                ndisNumber: "4300123456",
-                supportsDeliveredFrom: Date(timeIntervalSince1970: 1_700_000_000),
-                supportsDeliveredTo: Date(timeIntervalSince1970: 1_700_003_600),
-                supportNumber: "01_011_0107_1_1",
-                quantity: 1.5,
-                unitPrice: 67.0,
-                gstCode: GSTCode.p2.rawValue,
-                isValid: true
-            )
-        ]
+        let line = BulkClaimLine(id: UUID())
+        line.registrationNumber = "123456789"
+        line.ndisNumber = "4300123456"
+        line.supportsDeliveredFrom = Date(timeIntervalSince1970: 1_700_000_000)
+        line.supportsDeliveredTo = Date(timeIntervalSince1970: 1_700_003_600)
+        line.supportNumber = "01_011_0107_1_1"
+        line.quantity = 1.5
+        line.unitPrice = 67.0
+        line.gstCode = GSTCode.p2.rawValue
+        line.isValid = true
+        let lines = [line]
 
         let hash = verifier.hash(for: lines)
 

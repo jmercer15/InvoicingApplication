@@ -1,21 +1,26 @@
-import SwiftUI
-import Combine
-import Data
+import Foundation
 import Core
-import SharedUI
+import Data
+import Observation
+import SwiftData
 
+@Observable
 @MainActor
-public final class TravelChargeReviewViewModel: ObservableObject {
+public final class TravelChargeReviewViewModel {
     // MARK: - Dependencies
-    private let unitOfWork: UnitOfWorkService
-    private let automationService: TravelChargeAutomationService
+    // MARK: - Dependencies
+    private let automationActor: TravelChargeAutomationActor
+    private let mmmZoneLookup: any Core.MMMZoneLookupProtocol
+    private let recurrenceRuleManager: RecurrenceRuleManager
+    private let modelContext: ModelContext
+    private let workflow: ReferenceDataWorkflowActor
     
     // MARK: - Published Properties
-    @Published var reviewItems: [Core.TravelChargeReviewItem] = []
-    @Published var filterStatus: ReviewStatusFilter = .all
-    @Published var selectedReviewItem: Core.TravelChargeReviewItem?
-    @Published var isLoading: Bool = false
-    @Published var isProcessing: Bool = false
+    // MARK: - Published Properties
+    var filterStatus: ReviewStatusFilter = .all
+    var isLoading: Bool = false
+    var isProcessing: Bool = false
+    public private(set) var reviewItemEntities: [TravelChargeReviewItem] = []
     
     public enum ReviewStatusFilter: String, CaseIterable {
         case all = "All"
@@ -25,74 +30,56 @@ public final class TravelChargeReviewViewModel: ObservableObject {
         case skipped = "Skipped"
     }
     
-    var filteredReviewItems: [Core.TravelChargeReviewItem] {
-        switch filterStatus {
-        case .all:
-            return reviewItems
-        case .pending:
-            return reviewItems.filter { $0.status == "pending" }
-        case .resolved:
-            return reviewItems.filter { $0.status == "resolved" }
-        case .overridden:
-            return reviewItems.filter { $0.status == "overridden" }
-        case .skipped:
-            return reviewItems.filter { $0.status == "skipped" }
-        }
-    }
-    
     // MARK: - Initialization
-    public init(unitOfWork: UnitOfWorkService) {
-        self.unitOfWork = unitOfWork
-        self.automationService = TravelChargeAutomationService(
-            unitOfWork: unitOfWork,
-            businessRules: BusinessRules(),
-            userPreferences: UserPreferences(),
-            mmmZoneTable: MMMZoneTable()
-        )
+    public init(
+        automationActor: TravelChargeAutomationActor,
+        mmmZoneLookup: any Core.MMMZoneLookupProtocol,
+        recurrenceRuleManager: RecurrenceRuleManager,
+        modelContext: ModelContext,
+        modelContainer: ModelContainer
+    ) {
+        self.automationActor = automationActor
+        self.mmmZoneLookup = mmmZoneLookup
+        self.recurrenceRuleManager = recurrenceRuleManager
+        self.modelContext = modelContext
+        self.workflow = ReferenceDataWorkflowActor(modelContainer: modelContainer)
     }
-    
-    // MARK: - Public API
-    
-    func loadReviewItems() {
-        Task {
-            await fetchReviewItems()
-        }
-    }
-    
-    func fetchReviewItems() async {
-        isLoading = true
-        defer { isLoading = false }
 
+    public func refreshReviews() async {
         do {
-            self.reviewItems = try await unitOfWork.travelChargeReviewItems.fetchAll()
+            let descriptor = FetchDescriptor<TravelChargeReviewItem>()
+            let reviews = try modelContext.fetch(descriptor)
+            self.reviewItemEntities = reviews
         } catch {
-            print("❌ [TravelChargeReviewViewModel] Error fetching review items: \(error)")
+            print("❌ [TravelChargeReviewViewModel] Error fetching reviews: \(error)")
         }
     }
-    
-    func resolveWithOverride(reviewItemId: UUID, overrideType: String, reason: String?) async {
+
+    func resolveWithOverride(reviewModelID: PersistentIdentifier, overrideType: String, reason: String?) async {
         isProcessing = true
         defer { isProcessing = false }
         
         do {
-            try await automationService.resolveReviewWithOverride(
-                reviewItemId: reviewItemId,
+            try await automationActor.resolveReviewWithOverride(
+                reviewModelID: reviewModelID,
                 overrideType: overrideType,
-                overrideReason: reason
+                overrideReason: reason,
+                mmmZoneLookup: mmmZoneLookup,
+                recurrenceRuleManager: recurrenceRuleManager
             )
-            await fetchReviewItems()
+            await refreshReviews()
         } catch {
             print("❌ [TravelChargeReviewViewModel] Error resolving with override: \(error)")
         }
     }
-    
-    func resolveBySkipping(reviewItemId: UUID) async {
+
+    func resolveBySkipping(reviewModelID: PersistentIdentifier) async {
         isProcessing = true
         defer { isProcessing = false }
         
         do {
-            try await automationService.resolveReviewBySkipping(reviewItemId: reviewItemId)
-            await fetchReviewItems()
+            try await automationActor.resolveReviewBySkipping(reviewModelID: reviewModelID)
+            await refreshReviews()
         } catch {
             print("❌ [TravelChargeReviewViewModel] Error skipping review: \(error)")
         }

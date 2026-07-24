@@ -1,37 +1,44 @@
 import SwiftUI
-import Data
-import Core
 import SharedUI
 
 struct ProfileView: View {
-    @AppStorage("userName") private var userName: String = ""
-    @AppStorage("userEmail") private var userEmail: String = ""
-    @AppStorage("userPhone") private var userPhone: String = ""
-    @AppStorage("userRole") private var userRole: String = ""
-    
-    private var maxLabelWidth: CGFloat {
-        let labels = ["Name:", "Email:", "Phone:", "Role:"]
-        return labels.map { $0.width() }.max() ?? 120
+    @State private var viewModel: ProfileViewModel
+
+    init(viewModel: @autoclosure @escaping () -> ProfileViewModel) {
+        _viewModel = State(initialValue: viewModel())
     }
     
+    // Cached to avoid NSString sizing during layout (constraint update loops).
+    @State private var maxLabelWidth: CGFloat = 120
+
+    @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: FormSectionTokens.pageStackSpacing) {
                 SettingsSection(
                     icon: "person.crop.circle",
                     title: "Personal Information",
                     description: "Enter your personal information. This will be used for invoice generation and client communications."
                 ) {
-                    SettingsCard(title: "Personal Details") {
+                        SettingsCard(title: "Personal Details") {
                         SettingsRow(label: "Name:", labelWidth: maxLabelWidth) { 
-                            TextField("Enter your full name", text: $userName)
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityLabel("User name")
-                                .accessibilityHint("Enter your full name")
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Enter your full name", text: $viewModel.name)
+                                    .textFieldStyle(.roundedBorder)
+                                    .accessibilityLabel("User name")
+                                    .accessibilityHint("Enter your full name")
+                                if let error = viewModel.validationErrors["name"] {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            }
                         }
                         
                         SettingsRow(label: "Role:", labelWidth: maxLabelWidth) { 
-                            TextField("Enter your job role", text: $userRole)
+                            TextField("Enter your job role", text: $viewModel.role)
                                 .textFieldStyle(.roundedBorder)
                                 .accessibilityLabel("User role")
                                 .accessibilityHint("Enter your job role")
@@ -40,14 +47,21 @@ struct ProfileView: View {
                     
                     SettingsCard(title: "Contact Information") {
                         SettingsRow(label: "Email:", labelWidth: maxLabelWidth) { 
-                            TextField("Enter your email address", text: $userEmail)
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityLabel("User email")
-                                .accessibilityHint("Enter your email address")
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Enter your email address", text: $viewModel.email)
+                                    .textFieldStyle(.roundedBorder)
+                                    .accessibilityLabel("User email")
+                                    .accessibilityHint("Enter your email address")
+                                if let error = viewModel.validationErrors["email"] {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            }
                         }
                         
                         SettingsRow(label: "Phone:", labelWidth: maxLabelWidth) { 
-                            TextField("Enter your phone number", text: $userPhone)
+                            TextField("Enter your phone number", text: $viewModel.phone)
                                 .textFieldStyle(.roundedBorder)
                                 .accessibilityLabel("User phone")
                                 .accessibilityHint("Enter your phone number")
@@ -55,14 +69,27 @@ struct ProfileView: View {
                     }
                 }
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
 #if os(macOS)
         .scrollIndicators(.visible)
 #endif
+        .onAppear {
+            let labels = ["Name:", "Email:", "Phone:", "Role:"]
+            maxLabelWidth = labels.map { $0.width() }.max() ?? 120
+        }
+        .onDisappear {
+            viewModel.save()
+        }
+        .onChange(of: viewModel.name) { _, _ in
+            _ = viewModel.validate()
+        }
+        .onChange(of: viewModel.email) { _, _ in
+            _ = viewModel.validate()
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

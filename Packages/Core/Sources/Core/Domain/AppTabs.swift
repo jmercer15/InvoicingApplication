@@ -1,13 +1,12 @@
 import Foundation
 
-public enum AppTab: String, CaseIterable, Identifiable, Hashable {
+public enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case invoices
     case billingHub
     case invoiceTemplateEditor
     case relationships
     case calendar
     case ndisCatalogue
-    case settings
     // Old comments removed; this file now only provides tab metadata
 
     public var id: String { self.rawValue }
@@ -26,8 +25,6 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
             return "Calendar"
         case .ndisCatalogue:
             return "NDIS Catalogue"
-        case .settings:
-            return "Settings"
         }
     }
 
@@ -38,15 +35,23 @@ public enum AppTab: String, CaseIterable, Identifiable, Hashable {
         case .billingHub:
             return "square.grid.3x2"
         case .invoiceTemplateEditor:
-            return "doc.badge.plus"
+            return "doc.richtext"
         case .relationships:
             return "person.2"
         case .calendar:
             return "calendar"
         case .ndisCatalogue:
             return "list.bullet.rectangle"
-        case .settings:
-            return "gearshape"
+        }
+    }
+
+    /// Tabs that retain typed workspace routes for restoration and navigation history.
+    public var usesWorkspaceRouteNavigation: Bool {
+        switch self {
+        case .invoices, .relationships, .ndisCatalogue, .calendar:
+            return true
+        case .billingHub, .invoiceTemplateEditor:
+            return false
         }
     }
 }

@@ -4,21 +4,22 @@
 //
 //  Created by AI Assistant on 21/7/2025.
 //
-//  Migration script for removing PayeeEntity.notes column
+//  Migration script for removing Payee.notes column
 //  This migration handles the removal of the notes property that violates
 //  architectural guidelines and has been removed from entity definitions.
 //
 
+import Core
 import Foundation
 import SwiftData
 
-/// Migration script for removing PayeeEntity.notes column
+/// Migration script for removing Payee.notes column
 /// 
 /// This migration handles the removal of the notes property that violates
 /// architectural guidelines and has been removed from entity definitions.
 /// 
 /// Properties Removed:
-/// - PayeeEntity.notes
+/// - Payee.notes
 /// 
 /// Migration Details:
 /// - Type: Property Removal
@@ -31,14 +32,14 @@ public struct RemovePayeeNotesColumn_Migration {
     public static let version = "1.0.0"
     
     /// Migration description
-    public static let description = "Remove notes column from PayeeEntity"
+    public static let description = "Remove notes column from Payee"
     
     /// Migration date
     public static let migrationDate = Date()
     
     /// Execute the migration
     /// 
-    /// This method handles the removal of the notes property from PayeeEntity.
+    /// This method handles the removal of the notes property from Payee.
     /// For Swift Data, the migration is handled automatically when the entity
     /// definitions are updated to remove the properties.
     /// 
@@ -46,7 +47,7 @@ public struct RemovePayeeNotesColumn_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting PayeeEntity.notes column removal migration (v\(version))")
+        print("🔄 Starting Payee.notes column removal migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -58,7 +59,7 @@ public struct RemovePayeeNotesColumn_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ PayeeEntity.notes column removal migration completed successfully")
+        print("✅ Payee.notes column removal migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -69,16 +70,16 @@ public struct RemovePayeeNotesColumn_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationNeeded(modelContext: ModelContext) throws {
-        // Check if any PayeeEntity records exist
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        // Check if any Payee records exist
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         if payees.isEmpty {
-            print("ℹ️ No PayeeEntity records found - migration not needed")
+            print("ℹ️ No Payee records found - migration not needed")
             return
         }
         
-        print("📊 Found \(payees.count) PayeeEntity records to migrate")
+        print("📊 Found \(payees.count) Payee records to migrate")
     }
     
     /// Perform the actual migration
@@ -108,8 +109,8 @@ public struct RemovePayeeNotesColumn_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationSuccess(modelContext: ModelContext) throws {
-        // Fetch all PayeeEntity records to verify they're accessible
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        // Fetch all Payee records to verify they're accessible
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         // Verify that we can access the remaining properties
@@ -123,7 +124,7 @@ public struct RemovePayeeNotesColumn_Migration {
             let _ = payee.status
         }
         
-        print("✅ Migration validation successful - all \(payees.count) PayeeEntity records accessible")
+        print("✅ Migration validation successful - all \(payees.count) Payee records accessible")
     }
     
     /// Rollback the migration
@@ -134,8 +135,8 @@ public struct RemovePayeeNotesColumn_Migration {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
-    public static func rollback(modelContext: ModelContext) throws {
-        print("🔄 Attempting to rollback PayeeEntity.notes column removal migration")
+    public static func rollback(modelContext _: ModelContext) throws {
+        print("🔄 Attempting to rollback Payee.notes column removal migration")
         
         // For property removal migrations, rollback is not supported
         // as the properties are permanently removed from the entity definitions
@@ -143,7 +144,7 @@ public struct RemovePayeeNotesColumn_Migration {
     }
 }
 
-/// Migration test utilities for PayeeEntity.notes column removal
+/// Migration test utilities for Payee.notes column removal
 #if DEBUG
 public struct PayeeNotesColumnMigrationTestUtils {
     
@@ -152,10 +153,10 @@ public struct PayeeNotesColumnMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing PayeeEntity.notes column removal migration")
+        print("🧪 Testing Payee.notes column removal migration")
         
-        // Create test PayeeEntity data
-        let testPayee = PayeeEntity(id: UUID(), fullName: "Test Payee")
+        // Create test Payee data
+        let testPayee = Payee(id: UUID(), fullName: "Test Payee")
         testPayee.email = "payee@example.com"
         testPayee.phone = "0412345679"
         testPayee.relationToClient = "parent"
@@ -168,7 +169,7 @@ public struct PayeeNotesColumnMigrationTestUtils {
         try RemovePayeeNotesColumn_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         guard let payee = payees.first else {
@@ -183,7 +184,7 @@ public struct PayeeNotesColumnMigrationTestUtils {
         modelContext.delete(testPayee)
         try modelContext.save()
         
-        print("✅ PayeeEntity.notes column removal migration test completed successfully")
+        print("✅ Payee.notes column removal migration test completed successfully")
     }
 }
 #endif

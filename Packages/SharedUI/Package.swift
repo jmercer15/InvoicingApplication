@@ -1,23 +1,33 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
+private let strictConcurrencySettings: [SwiftSetting] = [
+    .enableExperimentalFeature("StrictConcurrency"),
+]
+
 let package = Package(
     name: "SharedUI",
-    platforms: [.macOS("26.1")],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        .package(path: "../Core"),
-        .package(path: "../Data")
+        .package(path: "../Core")
     ],
     targets: [
         .target(
             name: "SharedUI",
-            dependencies: ["Core", "Data"],
+            dependencies: ["Core"],
             resources: [
                 .process("Assets")
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "SharedUITests",
+            dependencies: ["SharedUI", "Core"],
+            path: "Tests/SharedUITests",
+            swiftSettings: strictConcurrencySettings
         )
     ]
 )

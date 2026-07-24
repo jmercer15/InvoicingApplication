@@ -1,18 +1,25 @@
 import SwiftUI
 import EventKit
 import Data
-import Core
 import SharedUI
 
 // MARK: - Main View
 
 public struct CalendarSettingsView: View {
 // Placeholder to ensure line removal
-    @StateObject private var viewModel: CalendarSettingsViewModel
+    @State private var viewModel: CalendarSettingsViewModel
     
     public init(viewModel: @autoclosure @escaping () -> CalendarSettingsViewModel) {
-        _viewModel = StateObject(wrappedValue: viewModel())
+        _viewModel = State(initialValue: viewModel())
     }
+
+    private var preferences: CalendarPreferencesStore {
+        _viewModel.wrappedValue.preferences
+    }
+    
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingLarge = StyleGuide.Dimensions.paddingLarge
+    @ScaledMetric(relativeTo: .body) private var cornerRadiusLarge = StyleGuide.Dimensions.cornerRadiusLarge
     
     private var maxLabelWidth: CGFloat {
         let labels = [
@@ -27,7 +34,7 @@ public struct CalendarSettingsView: View {
     
     public var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: FormSectionTokens.pageStackSpacing) {
                 permissionsSection
                 defaultCalendarSection
                 defaultsForNewEventsSection
@@ -37,7 +44,7 @@ public struct CalendarSettingsView: View {
                 conflictResolutionSection
                 
                 // Action buttons at bottom
-                HStack(spacing: 16) {
+                HStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Button("Reset All Calendar Settings") {
                         viewModel.showingResetConfirmation = true
                     }
@@ -56,13 +63,13 @@ public struct CalendarSettingsView: View {
                     .font(.callout)
                     .fontWeight(.semibold)
                     .buttonStyle(.glass)
-                    .foregroundColor(.red)
+                    .foregroundColor(ColorSystem.Status.error)
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.top, 16)
+                .padding(.top, StyleGuide.Dimensions.paddingLarge)
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
@@ -96,7 +103,7 @@ public struct CalendarSettingsView: View {
                 set: { viewModel.showingResetConfirmation = $0 }
             )
         ) {
-            Button("Reset", role: .destructive) { viewModel.preferences.resetToDefaults() }
+            Button("Reset", role: .destructive) { preferences.resetToDefaults() }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
@@ -130,9 +137,9 @@ public struct CalendarSettingsView: View {
                     .glassEffect(.regular, in: .rect())
             }
             if let error = viewModel.errorMessage {
-                VStack(spacing: 8) {
+                VStack(spacing: FormSectionTokens.fieldStackSpacing) {
                     Text(error)
-                        .foregroundColor(.red)
+                        .foregroundColor(ColorSystem.Status.error)
                         .font(.headline)
                     Text("To enable calendar access, go to System Settings > Privacy & Security > Calendars and enable access for this app.")
                         .font(.footnote)
@@ -146,10 +153,10 @@ public struct CalendarSettingsView: View {
                     .buttonStyle(.glassProminent)
                     #endif
                 }
-                .padding(StyleGuide.Dimensions.paddingLarge)
+                .padding(paddingLarge)
                 .background(Color.red.opacity(0.08))
-                .cornerRadius(StyleGuide.Dimensions.cornerRadiusLarge)
-                .padding(StyleGuide.Dimensions.paddingLarge)
+                .cornerRadius(cornerRadiusLarge)
+                .padding(paddingLarge)
             }
         }
     }
@@ -162,7 +169,7 @@ public struct CalendarSettingsView: View {
             title: "Calendar Access",
             description: "Grant access to your calendars so the app can sync events and create new sessions. This is required before you can select which calendars to sync."
         ) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: FormSectionTokens.sectionStackSpacing) {
                 Text(viewModel.accessGranted ? "Calendar Access: Granted" : "Calendar Access: Not Granted")
                     .font(.callout)
                     .fontWeight(.semibold)
@@ -187,7 +194,7 @@ public struct CalendarSettingsView: View {
                 #endif
                 InfoIcon(tooltip: "Calendar access is required to sync events and create new sessions.")
             }
-            .glassCardStyle()
+            .standardCardStyle()
         }
     }
     
@@ -200,8 +207,8 @@ public struct CalendarSettingsView: View {
             SettingsRow(label: "Default Calendar:", labelWidth: maxLabelWidth) {
                 HStack {
                     Picker("", selection: Binding<EKCalendar?>(
-                        get: { viewModel.writableCalendars.first(where: { $0.calendarIdentifier == viewModel.preferences.selectedCalendarIdentifier }) },
-                        set: { viewModel.preferences.selectedCalendarIdentifier = $0?.calendarIdentifier ?? "" }
+                        get: { viewModel.writableCalendars.first(where: { $0.calendarIdentifier == preferences.selectedCalendarIdentifier }) },
+                        set: { preferences.selectedCalendarIdentifier = $0?.calendarIdentifier ?? "" }
                     )) {
                         Text("Select Calendar").tag(nil as EKCalendar?)
                         ForEach(viewModel.writableCalendars, id: \.calendarIdentifier) { calendar in
@@ -232,15 +239,15 @@ public struct CalendarSettingsView: View {
             SettingsRow(label: "Default Reminder Minutes:", labelWidth: maxLabelWidth) {
                 HStack {
                     TextField("Enter reminder minutes", value: Binding<Double>(
-                        get: { Double(viewModel.preferences.defaultReminderMinutes) },
-                        set: { viewModel.preferences.defaultReminderMinutes = Int($0) }
+                        get: { Double(preferences.defaultReminderMinutes) },
+                        set: { preferences.defaultReminderMinutes = Int($0) }
                     ), format: .number)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Default reminder minutes")
                     .accessibilityHint("Enter the number of minutes before an event for the default reminder")
                     Stepper("", value: Binding<Double>(
-                        get: { Double(viewModel.preferences.defaultReminderMinutes) },
-                        set: { viewModel.preferences.defaultReminderMinutes = Int($0) }
+                        get: { Double(preferences.defaultReminderMinutes) },
+                        set: { preferences.defaultReminderMinutes = Int($0) }
                     ), in: 0...120, step: 5)
                     .accessibilityLabel("Adjust default reminder minutes")
                     InfoIcon(tooltip: "How many minutes before the event should the default reminder be set?")
@@ -250,15 +257,15 @@ public struct CalendarSettingsView: View {
             SettingsRow(label: "Default Event Duration:", labelWidth: maxLabelWidth) {
                 HStack {
                     TextField("Enter duration minutes", value: Binding<Double>(
-                        get: { Double(viewModel.preferences.defaultEventDurationMinutes) },
-                        set: { viewModel.preferences.defaultEventDurationMinutes = Int($0) }
+                        get: { Double(preferences.defaultEventDurationMinutes) },
+                        set: { preferences.defaultEventDurationMinutes = Int($0) }
                     ), format: .number)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Default event duration minutes")
                     .accessibilityHint("Enter the default duration in minutes for new events")
                     Stepper("", value: Binding<Double>(
-                        get: { Double(viewModel.preferences.defaultEventDurationMinutes) },
-                        set: { viewModel.preferences.defaultEventDurationMinutes = Int($0) }
+                        get: { Double(preferences.defaultEventDurationMinutes) },
+                        set: { preferences.defaultEventDurationMinutes = Int($0) }
                     ), in: 15...240, step: 15)
                     .accessibilityLabel("Adjust default event duration minutes")
                     InfoIcon(tooltip: "How long should new events last by default?")
@@ -286,7 +293,10 @@ public struct CalendarSettingsView: View {
         ) {
             SettingsRow(label: "Enable Sync:", labelWidth: maxLabelWidth) {
                 HStack {
-                    Toggle("", isOn: $viewModel.preferences.syncEnabled)
+                    Toggle("", isOn: Binding(
+                        get: { preferences.syncEnabled },
+                        set: { preferences.syncEnabled = $0 }
+                    ))
                         .toggleStyle(.switch)
                         .accessibilityLabel("Enable sync")
                         .accessibilityHint("Toggle to enable or disable calendar synchronization")
@@ -296,7 +306,10 @@ public struct CalendarSettingsView: View {
             
             SettingsRow(label: "Sync Google Colors:", labelWidth: maxLabelWidth) {
                 HStack {
-                    Toggle("", isOn: $viewModel.preferences.syncGoogleColors)
+                    Toggle("", isOn: Binding(
+                        get: { preferences.syncGoogleColors },
+                        set: { preferences.syncGoogleColors = $0 }
+                    ))
                         .toggleStyle(.switch)
                         .accessibilityLabel("Sync Google calendar colors")
                         .accessibilityHint("Toggle to sync colors from Google Calendar")
@@ -307,11 +320,11 @@ public struct CalendarSettingsView: View {
             SettingsRow(label: "Sync Direction:", labelWidth: maxLabelWidth) {
                 HStack {
                     Picker("", selection: Binding<CalendarPreferences.SyncDirection?>(
-                        get: { viewModel.preferences.syncDirection },
-                        set: { viewModel.preferences.syncDirection = $0 ?? .bidirectional }
+                        get: { preferences.syncDirection },
+                        set: { preferences.syncDirection = $0 ?? .bidirectional }
                     )) {
                         ForEach(CalendarPreferences.SyncDirection.allCases, id: \.self) { direction in
-                            Text(direction.rawValue).tag(direction as CalendarPreferences.SyncDirection?)
+                            Text(direction.displayName).tag(direction as CalendarPreferences.SyncDirection?)
                         }
                     }
                     .pickerStyle(.menu)
@@ -321,8 +334,8 @@ public struct CalendarSettingsView: View {
                 }
             }
             
-            if viewModel.preferences.lastSyncTimestamp > Date.distantPast {
-                Text("Last Sync: \(viewModel.preferences.lastSyncTimestamp.formatted(.dateTime)) (\(viewModel.preferences.lastSyncStatus))")
+            if preferences.lastSyncTimestamp > Date.distantPast {
+                Text("Last Sync: \(preferences.lastSyncTimestamp.formatted(.dateTime)) (\(preferences.lastSyncStatus))")
                     .formDescriptionStyle()
             }
         }
@@ -356,27 +369,21 @@ public struct CalendarSettingsView: View {
                     )
                 }
             }
-            .padding(StyleGuide.Dimensions.paddingLarge)
-            .background(Color.accentColor.opacity(0.05))
-            .cornerRadius(StyleGuide.Dimensions.cornerRadiusLarge)
-            .overlay(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge)
-                    .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
-            )
+            .standardCardStyle()
             
             HStack {
                 Image(systemName: "info.circle")
-                    .foregroundColor(.blue)
+                    .foregroundColor(ColorSystem.Status.info)
                 Text("Tip: Use the calendar visibility toggle (📅) in the main calendar view to control which synced calendars are visible.")
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             }
-            .padding(.top, 4)
+            .padding(.top, StyleGuide.Dimensions.paddingXSmall)
         }
     }
     
     private var recurrenceDefaultsSection: some View {
-        RecurrenceDefaultsView(viewModel: viewModel, maxLabelWidth: maxLabelWidth)
+        RecurrenceDefaultsView(viewModel: viewModel, preferences: preferences, maxLabelWidth: maxLabelWidth)
     }
     
     private var conflictResolutionSection: some View {
@@ -388,11 +395,11 @@ public struct CalendarSettingsView: View {
             SettingsRow(label: "Conflict Resolution Policy:", labelWidth: maxLabelWidth) {
                 HStack {
                     Picker("", selection: Binding<CalendarPreferences.ConflictResolutionPolicy?>(
-                        get: { viewModel.preferences.conflictResolutionPolicy },
-                        set: { viewModel.preferences.conflictResolutionPolicy = $0 ?? .prompt }
+                        get: { preferences.conflictResolutionPolicy },
+                        set: { preferences.conflictResolutionPolicy = $0 ?? .prompt }
                     )) {
                         ForEach(CalendarPreferences.ConflictResolutionPolicy.allCases, id: \.self) { policy in
-                            Text(policy.rawValue).tag(policy as CalendarPreferences.ConflictResolutionPolicy?)
+                            Text(policy.displayName).tag(policy as CalendarPreferences.ConflictResolutionPolicy?)
                         }
                     }
                     .pickerStyle(.menu)
@@ -404,7 +411,10 @@ public struct CalendarSettingsView: View {
             
             SettingsRow(label: "Auto-resolve Conflicts:", labelWidth: maxLabelWidth) {
                 HStack {
-                    Toggle("", isOn: $viewModel.preferences.autoResolveRecurringConflicts)
+                    Toggle("", isOn: Binding(
+                        get: { preferences.autoResolveRecurringConflicts },
+                        set: { preferences.autoResolveRecurringConflicts = $0 }
+                    ))
                         .toggleStyle(.switch)
                         .accessibilityLabel("Auto-resolve recurring conflicts")
                         .accessibilityHint("Toggle to automatically resolve recurring event conflicts")

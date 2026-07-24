@@ -3,39 +3,42 @@ import SwiftUI
 import EventKit
 import Combine
 import SwiftData
-import Data
 import Core
+import Data
+import SharedUI
+import Observation
 
 /// ViewModel for CalendarSettingsView, mediating between CalendarPreferences, EventKitSyncService, and the UI.
+@Observable
 @MainActor
-public class CalendarSettingsViewModel: ObservableObject {
+public class CalendarSettingsViewModel {
     // MARK: - Dependencies
-    private let unitOfWork: UnitOfWorkService
-    @Published var preferences = CalendarPreferences()
-    @Published var eventKitService: EventKitSyncService = .shared
+    private let modelContext: ModelContext
+    let preferences: CalendarPreferencesStore
+    private let eventKitService: any CalendarIntegrationService
 
     // MARK: - UI State
-    @Published var showingInvalidCalendarAlert: Bool = false
-    @Published var showCreateCalendarSheet: Bool = false
-    @Published var isLoading: Bool = false
-    @Published var errorMessage: String? = nil
+    var showingInvalidCalendarAlert: Bool = false
+    var showCreateCalendarSheet: Bool = false
+    var isLoading: Bool = false
+    var errorMessage: String? = nil
     
     
-    @Published var showingResetConfirmation: Bool = false
-    @Published var showingClearSessionsConfirmation: Bool = false
+    var showingResetConfirmation: Bool = false
+    var showingClearSessionsConfirmation: Bool = false
 
     // MARK: - Reactive State Properties
-    @Published private(set) var accessGranted: Bool = false
-    @Published private(set) var availableCalendars: [EKCalendar] = []
-    @Published private(set) var writableCalendars: [EKCalendar] = []
-    @Published private(set) var calendarLabels: [EKCalendar: String] = [:]
-    @Published private(set) var monitoredCalendarOptions: [CalendarIdentifier] = []
-    @Published private(set) var selectedMonitoredCalendars: Set<CalendarIdentifier> = []
+    private(set) var accessGranted: Bool = false
+    private(set) var availableCalendars: [EKCalendar] = []
+    private(set) var writableCalendars: [EKCalendar] = []
+    private(set) var calendarLabels: [EKCalendar: String] = [:]
+    private(set) var monitoredCalendarOptions: [CalendarIdentifier] = []
+    private(set) var selectedMonitoredCalendars: Set<CalendarIdentifier> = []
     
     // MARK: - Validation State
-    @Published var calendarErrorText: String? = nil
-    @Published var recurrenceErrorText: String? = nil
-    @Published var recurrenceHelperText: String? = nil
+    var calendarErrorText: String? = nil
+    var recurrenceErrorText: String? = nil
+    var recurrenceHelperText: String? = nil
 
     // MARK: - CalendarIdentifier Wrapper
     struct CalendarIdentifier: Identifiable, Hashable {
@@ -44,8 +47,14 @@ public class CalendarSettingsViewModel: ObservableObject {
     }
 
     // MARK: - Initialization
-    public init(unitOfWork: UnitOfWorkService) {
-        self.unitOfWork = unitOfWork
+    public init(
+        modelContext: ModelContext,
+        preferencesStore: CalendarPreferencesStore,
+        eventKitService: any CalendarIntegrationService
+    ) {
+        self.modelContext = modelContext
+        self.preferences = preferencesStore
+        self.eventKitService = eventKitService
         setupStateObservers()
         initializeState()
     }
@@ -55,14 +64,14 @@ public class CalendarSettingsViewModel: ObservableObject {
 
     private func setupStateObservers() {
         // Observe EventKitSyncService state changes
-        eventKitService.$accessGranted
+        eventKitService.accessGrantedPublisher
             .sink { [weak self] granted in
                 self?.accessGranted = granted
                 self?.validateCalendarSelection()
             }
             .store(in: &cancellables)
 
-        eventKitService.$availableCalendars
+        eventKitService.availableCalendarsPublisher
             .sink { [weak self] calendars in
                 self?.availableCalendars = calendars
                 self?.updateWritableCalendars()
@@ -73,21 +82,6 @@ public class CalendarSettingsViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Observe CalendarPreferences changes
-        $preferences
-            .sink { [weak self] _ in
-                self?.updateSelectedMonitoredCalendars()
-                self?.validateCalendarSelection()
-                self?.validateRecurrenceDefaults()
-            }
-            .store(in: &cancellables)
-
-        // Observe specific preference changes for more granular updates
-        preferences.objectWillChange
-            .sink { [weak self] in
-                self?.objectWillChange.send()
-            }
-            .store(in: &cancellables)
     }
 
     private func initializeState() {
@@ -173,14 +167,14 @@ public class CalendarSettingsViewModel: ObservableObject {
         }
         
         // Monthly: if onSpecificDays, at least one day
-        if preferences.defaultRecurrenceFrequency == .monthly && 
-           preferences.defaultMonthlyRecurrenceType == .onSpecificDays && 
+        if preferences.defaultRecurrenceFrequency == .monthly &&
+           preferences.defaultMonthlyRecurrenceType == .onSpecificDays &&
            preferences.defaultSelectedMonthDaysNumbers.isEmpty {
             recurrenceErrorText = "Select at least one day of the month."
         }
         
         // Yearly: if onSpecificDays, at least one day and month
-        if preferences.defaultRecurrenceFrequency == .yearly && 
+        if preferences.defaultRecurrenceFrequency == .yearly &&
            preferences.defaultYearlyRecurrenceType == .onSpecificDays {
             if preferences.defaultSelectedYearlyDaysNumbers.isEmpty {
                 recurrenceErrorText = "Select at least one day of the year."
@@ -260,7 +254,7 @@ public class CalendarSettingsViewModel: ObservableObject {
     // MARK: - Calendar Color Management
     func updateCalendarColor(calendarIdentifier: String, color: Color) {
         var currentPreferences = preferences.perCalendarPreferences
-        var calendarSettings = currentPreferences[calendarIdentifier] ?? CalendarPreferences.PerCalendarSettings(colorHex: nil, isMonitored: false, customSyncDirection: nil)
+        var calendarSettings = currentPreferences[calendarIdentifier] ?? CalendarPerCalendarSettings(colorHex: nil, isMonitored: false, customSyncDirection: nil)
         
         // Store color as hex for backward compatibility
         // Note: Calendar colors support arbitrary user selections, so we store hex values
@@ -271,8 +265,6 @@ public class CalendarSettingsViewModel: ObservableObject {
         currentPreferences[calendarIdentifier] = calendarSettings
         preferences.perCalendarPreferences = currentPreferences
         
-        // Trigger UI update
-        objectWillChange.send()
     }
     
     func getCalendarColor(calendarIdentifier: String) -> Color? {
@@ -283,30 +275,20 @@ public class CalendarSettingsViewModel: ObservableObject {
         // Use the new color system to migrate from hex
         return ColorSystem.migrateFromHex(hexString)
     }
-    
-    func resetCalendarColor(calendarIdentifier: String) {
-        var currentPreferences = preferences.perCalendarPreferences
-        if var calendarSettings = currentPreferences[calendarIdentifier] {
-            calendarSettings.colorHex = nil
-            currentPreferences[calendarIdentifier] = calendarSettings
-            preferences.perCalendarPreferences = currentPreferences
-            
-            // Trigger UI update
-            objectWillChange.send()
-        }
-    }
 
     func clearAllSessions() async {
+        let container = modelContext.container
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
         do {
-            let sessions = try await unitOfWork.sessions.fetchAll()
-            let sessionCount = sessions.count
-            for session in sessions {
-                 try await unitOfWork.sessions.delete(id: session.id)
-            }
-            try await unitOfWork.saveChanges()
-            print("All sessions deleted successfully. Deleted \(sessionCount) sessions.")
+            let wipeActor = SessionWipeActor(modelContainer: container)
+            try await wipeActor.wipeSessions()
+            print("All sessions deleted successfully.")
         } catch {
             print("Failed to delete all sessions: \(error)")
+            errorMessage = "Failed to delete sessions: \(error.localizedDescription)"
         }
     }
 }

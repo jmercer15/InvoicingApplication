@@ -1,0 +1,107 @@
+---
+description: SwiftData storage infrastructure for model containers, model contexts, store configuration, and composition-layer wiring
+globs: Packages/Data/Sources/Data/Persistence/**/*.swift,Packages/Data/Sources/Data/Actors/**/*.swift,Packages/Data/Sources/Data/Services/**/*.swift,InvoicingApplication/App/Composition/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftData Storage Infrastructure
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/modelcontainer
+https://developer.apple.com/documentation/swiftdata/modelcontext
+https://developer.apple.com/documentation/swiftdata/defaultstore
+https://developer.apple.com/documentation/swiftdata/datastore
+https://developer.apple.com/documentation/swiftdata/datastorebatching
+https://developer.apple.com/documentation/swiftdata/preserving-your-apps-model-data-across-launches
+
+Scope
+
+Applies to:
+
+- `ModelContainer` lifecycle and dependency injection
+- `ModelContext` ownership boundaries
+- `ModelConfiguration` store setup (in-memory, read-only, app group, CloudKit)
+- custom `DataStore` adoption and batching integration
+
+Intent
+
+Establish explicit storage boundaries so persistence behavior is deterministic
+across app runtime, tests, and production sync environments.
+
+Core Principle
+
+`ModelContainer` defines schema/storage boundaries; `ModelContext` owns model lifecycle operations.
+
+Implementation Rules
+
+- Create and inject a single authoritative `ModelContainer` per app environment boundary.
+- Use context operations (`insert`, `fetch`, `delete`, `save`) through the owning context.
+- Do not access persistence operations directly from arbitrary UI leaf nodes.
+- Use `ModelConfiguration` for explicit storage behavior (in-memory, read-only, app group, CloudKit database).
+- Keep test storage isolated with in-memory containers.
+- For custom store implementations, conform to `DataStore` (and `DataStoreBatching` where needed)
+  only when default store behavior is insufficient.
+
+Canonical Patterns
+
+```swift
+WindowGroup {
+    RootView()
+}
+.modelContainer(for: [Invoice.self, Client.self])
+```
+
+```swift
+@Environment(\.modelContext) private var modelContext
+modelContext.insert(newInvoice)
+try modelContext.save()
+```
+
+Anti-Patterns
+
+- Multiple ad hoc containers created per feature without explicit boundary reasons.
+- UI components creating independent contexts casually.
+- Production/test stores sharing configuration.
+- Ignoring container configuration needs in CloudKit or app-group scenarios.
+
+Checklist
+
+- Is container setup centralized and explicit?
+- Are context operations scoped to appropriate layers?
+- Are model configurations correct for runtime environment (prod/test)?
+- Is custom store usage justified and bounded?
+
+Architectural Implications
+
+- Container/context boundaries are architectural seams for data ownership and mutation flow.
+- Store configuration choices influence durability, sync behavior, and test determinism.
+- Custom datastore adoption increases complexity and must be justified by clear capability gaps.
+
+Advanced Notes
+
+- Environment-provided `modelContext` depends on an attached model container; missing container leads to unusable schema-less context behavior.
+- Context save/fetch lifecycles should be observable and bounded for debugging and reliability.
+- In-memory test containers prevent cross-test pollution and accidental production-store coupling.
+
+Integration With Architecture
+
+- Keep container bootstrap centralized in app composition layers.
+- Keep services, actors, and explicit scene contexts as primary persistence interaction boundaries.
+- Ensure test targets create dedicated in-memory containers per test lifecycle.
+
+Enforcement Summary
+
+Always prefer:
+
+- centralized container construction
+- explicit context ownership and operation boundaries
+- environment-appropriate model configuration
+- isolated in-memory test stores
+
+Never allow:
+
+- ad hoc container proliferation
+- leaf-view persistence infrastructure ownership
+- shared prod/test store setup
+- custom datastore complexity without hard requirements

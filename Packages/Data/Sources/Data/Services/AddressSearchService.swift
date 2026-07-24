@@ -1,14 +1,17 @@
 import Foundation
 import MapKit
+import Observation
 
+@Observable
 @MainActor
-public final class AddressSearchService: NSObject, ObservableObject, @preconcurrency MKLocalSearchCompleterDelegate {
-    @Published public var searchResults: [MKLocalSearchCompletion] = []
-    @Published public var isSearching: Bool = false
-    @Published public var errorMessage: String?
+public final class AddressSearchService: NSObject, @preconcurrency MKLocalSearchCompleterDelegate {
+    public var searchResults: [MKLocalSearchCompletion] = []
+    public var isSearching: Bool = false
+    public var errorMessage: String?
 
     private let completer: MKLocalSearchCompleter
     private var debounceTimer: Timer?
+    private var searchGeneration = 0
 
     public override init() {
         self.completer = MKLocalSearchCompleter()
@@ -20,6 +23,8 @@ public final class AddressSearchService: NSObject, ObservableObject, @preconcurr
 
     public func performSearch(query: String) {
         debounceTimer?.invalidate()
+        searchGeneration &+= 1
+        let activeGeneration = searchGeneration
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -33,14 +38,11 @@ public final class AddressSearchService: NSObject, ObservableObject, @preconcurr
         self.errorMessage = nil
 
         debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 self.completer.queryFragment = trimmed
-            }
-
-            // Timeout safeguard
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-                guard let self = self else { return }
+                try? await Task.sleep(for: .seconds(3))
+                guard self.searchGeneration == activeGeneration else { return }
                 if self.searchResults.isEmpty && self.isSearching {
                     self.isSearching = false
                     self.errorMessage = "Search timed out. Please try again."
@@ -73,32 +75,4 @@ public final class AddressSearchService: NSObject, ObservableObject, @preconcurr
             return nil
         }
     }
-
-    public func resolveAddress(
-        for completion: MKLocalSearchCompletion
-    ) async -> (mapItem: MKMapItem, parsedAddress: EventKitLocationParser.ParsedLocation)? {
-        guard let mapItem = await fetchMapItem(for: completion) else { return nil }
-        let parsed = MapKitAddressResolver.parseAddress(from: mapItem)
-        return (mapItem, parsed)
-    }
-
-    // MARK: - Parsing Helpers
-    /// Parses an address string to extract individual components
-    /// This is a best-effort parsing that may not work for all address formats
-    public func parseAddressString(_ addressString: String) -> [String: String] {
-        let parsed = EventKitLocationParser.parse(locationText: addressString)
-        var components: [String: String] = [:]
-        components["unit"] = parsed.unitNumber
-        components["streetNumber"] = parsed.streetNumber
-        components["streetName"] = parsed.streetName
-        components["suburb"] = parsed.suburb
-        components["city"] = parsed.city
-        components["state"] = parsed.state
-        components["postcode"] = parsed.postcode
-        components["country"] = parsed.country
-        components["poBox"] = parsed.poBox
-        components["fullAddressText"] = parsed.fullAddressText
-        return components
-    }
 }
-

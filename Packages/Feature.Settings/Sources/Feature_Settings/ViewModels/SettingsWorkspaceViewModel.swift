@@ -1,23 +1,9 @@
-import Data
-import Combine
+import Observation
 
+@Observable
 @MainActor
-public final class SettingsWorkspaceViewModel: ObservableObject {
-    @Published var selectedSection: SettingsView.SettingsSection? = nil
-    @Published var displayedSection: SettingsView.SettingsSection? = nil
-    @Published var isTransitioning: Bool = false
-    
-    public let unitOfWork: UnitOfWorkService
-    public let dataImporterActor: DataImporterActor
-    public let dataExporterActor: DataExporterActor
+public final class SettingsWorkspaceViewModel {
+    var selectedSection: SettingsView.SettingsSection? = .profile
 
-    public init(
-        unitOfWork: UnitOfWorkService,
-        dataImporterActor: DataImporterActor,
-        dataExporterActor: DataExporterActor
-    ) {
-        self.unitOfWork = unitOfWork
-        self.dataImporterActor = dataImporterActor
-        self.dataExporterActor = dataExporterActor
-    }
+    public init() {}
 }

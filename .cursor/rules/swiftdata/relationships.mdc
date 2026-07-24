@@ -1,0 +1,106 @@
+---
+description: SwiftData relationship modeling, delete rules, inverse links, and optionality constraints
+globs: Packages/Data/Sources/Data/Persistence/**/*.swift,Packages/Data/Sources/Data/Migrations/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftData Relationships
+
+Sources
+
+https://developer.apple.com/documentation/swiftdata/defining-data-relationships-with-enumerations-and-model-classes
+https://developer.apple.com/documentation/swiftdata/relationship(_:deleterule:minimummodelcount:maximummodelcount:originalname:inverse:hashmodifier:)
+https://developer.apple.com/documentation/swiftdata/preserving-your-apps-model-data-across-launches
+https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices
+
+Scope
+
+Applies to:
+
+- one-to-one, one-to-many, and many-to-many model relationships
+- delete-rule selection (`.cascade`, `.nullify`, `.deny`, `.noAction`)
+- inverse relationship declaration and optionality constraints
+- migration-sensitive relationship evolution in CloudKit-backed stores
+
+Intent
+
+Encode data lifecycle ownership directly in relationship definitions to avoid
+orphaned data, invalid references, and sync/migration instability.
+
+Core Principle
+
+Model relationships explicitly and choose delete rules based on data lifecycle intent.
+
+Implementation Rules
+
+- Use `@Relationship` on model references/collections when behavior must be explicit.
+- Define inverse relationships explicitly when automatic inference is ambiguous.
+- Use `.cascade` when child lifetime is owned by parent.
+- Use `.nullify` only when orphaning is valid and expected.
+- Prefer optional relationships for CloudKit-compatible schemas.
+- Ensure relationship cardinality and optionality align with real business constraints.
+- Treat delete-rule changes as migration-sensitive schema evolution.
+
+Canonical Patterns
+
+```swift
+@Model
+final class Category {
+    @Relationship(deleteRule: .cascade, inverse: \Item.category)
+    var items: [Item] = []
+}
+
+@Model
+final class Item {
+    @Relationship(inverse: \Category.items)
+    var category: Category?
+}
+```
+
+Anti-Patterns
+
+- Relying on implicit delete semantics for critical parent-child data.
+- Defining non-optional relationships that conflict with CloudKit sync constraints.
+- Omitting inverse where write-order ambiguity can occur.
+- Using relationships for static vocabularies better represented by enums.
+
+Checklist
+
+- Is delete behavior intentional for each relationship?
+- Is inverse configured or safely inferred?
+- Are optionality/cardinality choices CloudKit-compatible where needed?
+- Would deletions produce expected graph behavior without orphan leaks?
+
+Architectural Implications
+
+- Relationship modeling defines aggregate boundaries and lifecycle ownership.
+- Delete rules should match business invariants and retention obligations.
+- Inverse and optionality design must support both local correctness and sync compatibility.
+
+Advanced Notes
+
+- `.cascade` encodes ownership; `.nullify` encodes optional association retention.
+- Relationship constraints interact with migration and sync behavior; changes must be versioned carefully.
+- Enum-based relationships remain preferable for static taxonomies.
+
+Integration With Architecture
+
+- Validate relationship behavior against service, actor, and direct `ModelContext` delete/update use-cases in `Packages/Data`.
+- Ensure inspector/detail UI assumptions align with nullify/cascade outcomes.
+- Keep relationship decisions synchronized with schema and migration rules.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit relationship intent
+- delete rules aligned to lifecycle ownership
+- explicit inverse where inference is ambiguous
+- CloudKit-safe optionality decisions
+
+Never allow:
+
+- implicit critical delete semantics
+- relationship constraints that conflict with synchronization model
+- business-static vocabularies modeled as dynamic relationships
+- orphan/leak risk from unreviewed nullify/cascade choices

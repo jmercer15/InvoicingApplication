@@ -1,0 +1,99 @@
+---
+description: SwiftUI table architecture for sortable multicolumn macOS data views
+globs: Packages/Feature.*/Sources/**/Views/**/*Table*.swift,Packages/Feature.*/Sources/**/Layout/Table/**/*.swift,Packages/Feature.*/Sources/**/Models/Table/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftUI Tables
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/tables
+https://developer.apple.com/documentation/swiftui/scroll-views
+
+Scope
+
+Applies to `Table` usage on macOS and large-screen contexts:
+
+- multicolumn data modeling
+- table columns/rows and customization
+- sorting and selection architecture
+
+Intent
+
+Provide desktop-grade multicolumn data workflows with explicit column
+semantics, sort behavior, and selection-driven detail coordination.
+
+Core Principle
+
+Use `Table` for multicolumn structured data where columns are first-class.
+
+Implementation Rules
+
+- Choose `Table` when users need concurrent visibility of multiple fields.
+- Define explicit `TableColumn` structures with clear semantics.
+- Keep column definitions stable and sortable where relevant.
+- Keep selection state explicit and synchronized with detail panes.
+- Use table style/customization APIs for table concerns instead of list hacks.
+- Keep row content fast and avoid complex nested layout in every cell.
+
+Canonical Patterns
+
+```swift
+Table(rows, selection: $selection, sortOrder: $sortOrder) {
+    TableColumn("Client", value: \.clientName)
+    TableColumn("Status", value: \.statusText)
+    TableColumn("Amount") { row in
+        Text(row.amountText)
+    }
+}
+```
+
+Anti-Patterns
+
+- Emulating tables with multiple stacked lists.
+- Using table columns for decorative, non-informative fields.
+- Hiding key row actions that users expect from a data grid workflow.
+- Rebuilding full table data on every keystroke without scoped filtering logic.
+
+Checklist
+
+- Is `Table` chosen because the workflow is truly multicolumn?
+- Are columns semantically meaningful and ordered by user value?
+- Is sorting predictable and stable?
+- Is selection behavior explicit and integrated with detail context?
+- Is per-cell rendering efficient?
+
+Architectural Implications
+
+- Tables define desktop information architecture where columns are first-class navigational and analytical affordances.
+- Column model, sort model, and selection model should be explicit feature state, not implicit side effects.
+- Table customization choices should preserve operational clarity for power-user workflows.
+
+Performance Notes
+
+- Keep cell content shallow and deterministic; avoid deep nested view composition in every column.
+- Avoid rebuilding table schema/column sets on every small state change.
+- Ensure sort and filter operations are appropriately layered (view query vs service fetch).
+
+Integration With Architecture
+
+- In macOS workspace flows, table selection must drive detail/inspector panes predictably.
+- Use column definitions aligned to domain-critical fields (status, amount, due date, owner).
+- Keep table-level sort state near feature root for restoration and command integration.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit column semantics
+- stable sorting and selection contracts
+- lightweight cell rendering
+- table architecture for genuinely multicolumn workflows
+
+Never allow:
+
+- pseudo-table composition from unrelated list stacks
+- decorative/noise columns with no user value
+- hidden sort behavior
+- heavy per-cell computation in large datasets

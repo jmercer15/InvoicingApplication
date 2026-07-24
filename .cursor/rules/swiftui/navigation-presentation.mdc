@@ -1,0 +1,223 @@
+---
+description: SwiftUI Navigation & Presentation
+alwaysApply: false
+---
+
+# Rule: SwiftUI Navigation & Presentation
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/navigation
+https://developer.apple.com/documentation/swiftui/modal-presentations
+
+Scope
+
+Applies to navigation structure and modal presentation architecture in SwiftUI:
+
+- navigation containers
+- navigation destinations
+- navigation paths
+- selection-driven navigation
+- deep linking and restoration-friendly navigation
+- sheets
+- popovers
+- alerts
+- confirmation dialogs
+- presentation state ownership
+- dismissal flow
+
+This rule governs how users move through the app and how focused temporary flows are presented.
+
+Intent
+
+Build SwiftUI navigation and presentation systems that are:
+
+- predictable
+- state-driven
+- scalable
+- restoration-friendly
+- platform-appropriate
+- easy to reason about
+
+Navigation must describe movement through app structure.
+Presentation must describe temporary focused interaction.
+
+Use navigation for traversing app content.
+Use modal presentation for temporary, interruptive, or focused tasks.
+
+Do not blur the two.
+
+Core Principle
+
+Navigation and presentation are different architectural concerns.
+
+Navigation:
+
+- moves through the app’s information hierarchy
+- should be durable and state-representable
+- should support selection, deep linking, and restoration
+
+Presentation:
+
+- temporarily surfaces focused interaction
+- should be explicitly state-driven
+- should be dismissible and scoped
+
+A well-architected SwiftUI app keeps these concerns separate:
+
+- navigation owns where the user is in the app
+- presentation owns what temporary flow is currently shown
+
+Architectural Translation
+
+Translate Apple’s model into these project rules:
+
+- Use `NavigationStack` for linear/hierarchical flows.
+- Use `NavigationSplitView` for multi-column application structure.
+- Prefer value-driven navigation over ad hoc imperative push logic.
+- Represent navigable state in data, not only in transient view events.
+- Use sheets/popovers/dialogs/alerts only for temporary tasks or decisions.
+- Keep presentation state localized to the feature that owns the flow.
+- Never use modal presentation to simulate primary navigation.
+- Never bury core app navigation inside stacked modal flows.
+
+---
+
+## NAVIGATION CONTAINER SELECTION
+
+Choose the navigation container that matches the app structure.
+
+Use:
+
+- `NavigationStack` for drill-down flows and stack-based traversal
+- `NavigationSplitView` for sidebar/content/detail or two-/three-column applications
+
+Rules
+
+- Prefer `NavigationStack` for single-column navigation hierarchies.
+- Prefer `NavigationSplitView` as the root workspace container in larger macOS features.
+- Do not use modal presentation where the interaction is actually a navigation transition.
+- A feature should usually have one primary navigation container at its root.
+
+Good
+struct InvoicesView: View {
+var body: some View {
+NavigationStack {
+InvoiceList()
+}
+}
+}
+Good
+struct BillingWorkspaceView: View {
+@State private var selection: Invoice.ID?
+
+    var body: some View {
+        NavigationSplitView {
+            InvoiceSidebar(selection: $selection)
+        } detail: {
+            InvoiceDetailHost(selection: selection)
+        }
+    }
+
+}
+Bad
+struct InvoicesView: View {
+var body: some View {
+VStack {
+InvoiceList()
+}
+.sheet(isPresented: .constant(true)) {
+InvoiceDetailView()
+}
+}
+}
+This uses presentation to replace structural navigation.
+VALUE-DRIVEN NAVIGATION
+Navigation should be driven by values and destinations, not scattered imperative triggers.
+Rules
+
+Prefer selection/value/path-driven navigation.
+Register destinations close to the owning navigation container.
+Use strongly typed navigation data where possible.
+Make navigable state representable as domain or feature values.
+Good
+enum Route: Hashable {
+case invoice(UUID)
+case client(UUID)
+}
+
+struct RootView: View {
+@State private var path: [Route] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            DashboardView()
+                .navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .invoice(let id):
+                        InvoiceDetailScreen(invoiceID: id)
+                    case .client(let id):
+                        ClientDetailScreen(clientID: id)
+                    }
+                }
+        }
+    }
+
+}
+Bad
+struct RootView: View {
+@State private var showInvoice = false
+
+    var body: some View {
+        VStack {
+            Button("Open Invoice") {
+                showInvoice = true
+            }
+        }
+        .background(
+            NavigationLink("", destination: InvoiceDetailScreen(), isActive: $showInvoice)
+                .hidden()
+        )
+    }
+
+}
+This hides navigation mechanics inside unrelated view structure.
+PRESENTATION IS TEMPORARY, NOT STRUCTURAL
+Use modal presentation only for temporary interaction modes.
+Use modal presentation for:
+
+editing tasks
+focused data entry
+destructive confirmations
+transient decisions
+short-lived supplemental flows
+Do not use modal presentation for:
+primary app traversal
+replacing core workspace navigation
+chaining the main content architecture
+Rules
+If the user is moving to another primary area of the app, use navigation.
+If the user is temporarily entering a focused task, use presentation.
+Presentation must have a clear owner and dismissal condition.
+Modal flows should return the user to a stable navigation context.
+ANTI-PATTERNS
+Hidden-Link Navigation Hacks
+Boolean Explosion
+Modal-as-Navigation
+Leaf-Owned Global Navigation
+Stringly Typed Routing
+Presentation Without Ownership
+Deep Modal Nesting
+Detail-in-Sheet for Desktop Workspace
+CHECKLIST
+Before finalizing navigation and presentation, verify:
+Is primary app movement implemented as navigation rather than modal presentation?
+Did I choose NavigationStack or NavigationSplitView appropriately?
+Is navigation state representable as stable typed values?
+Are destinations registered at the correct container level?
+Can this flow support restoration or reconstruction?
+Is each modal flow temporary and clearly owned?
+Is presentation state modeled coherently rather than scattered across booleans?
+Does every presented view have a clear dismissal/completion path?
+Am I avoiding modal stacking as the main architecture?
+For macOS, does the workspace remain stable and desktop-appropriate?

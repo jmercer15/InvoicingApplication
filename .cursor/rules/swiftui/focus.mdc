@@ -1,0 +1,99 @@
+---
+description: SwiftUI focus management for keyboard-first and multicolumn workflows
+alwaysApply: false
+---
+
+# Rule: SwiftUI Focus
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/focus
+
+Scope
+
+Applies to:
+
+- focusable element declaration
+- programmatic focus ownership and transitions
+- focus scopes/sections in multicolumn or complex layouts
+- focused values/objects used for context-sensitive behavior
+
+Intent
+
+Make keyboard-first interaction reliable by modeling focus as explicit state
+with predictable traversal and command alignment.
+
+Core Principle
+
+Focus is explicit state. Manage it intentionally for keyboard and command workflows.
+
+Implementation Rules
+
+- Use `@FocusState` for local focus ownership.
+- Bind focus with `focused(_:)` / `focused(_:equals:)` at clear field boundaries.
+- Use focus scopes/sections to constrain and clarify movement in complex layouts.
+- Use focused values/objects only for scoped interaction contracts.
+- Keep default focus policies explicit where first-responder behavior matters.
+- Keep search-field focus state separate from general field focus state.
+
+Canonical Patterns
+
+```swift
+enum Field: Hashable { case name, reference }
+@FocusState private var focusedField: Field?
+
+TextField("Name", text: $name)
+    .focused($focusedField, equals: .name)
+```
+
+```swift
+.onAppear { focusedField = .name }
+```
+
+Anti-Patterns
+
+- Implicit focus assumptions with no managed focus state in keyboard-heavy screens.
+- Overloading one focus state for unrelated regions.
+- Using focus side effects to mutate unrelated domain state.
+- Relying on pointer-only interaction in workflows that require keyboard support.
+
+Checklist
+
+- Is focus ownership explicit for editable controls?
+- Are default focus and traversal behavior intentional?
+- Are focus scopes used where layouts are complex?
+- Are command/key handlers aligned with current focus state?
+
+Architectural Implications
+
+- Focus is a first-class navigation/input state for keyboard-first macOS workflows.
+- Focus boundaries shape command routing, key handling, and selection ownership.
+- Default focus policies should be stable and aligned with task entry points.
+
+Advanced Notes
+
+- Use focus scopes/sections to reduce ambiguous traversal in complex split views and inspectors.
+- Focused values/objects are contextual channels; avoid turning them into hidden global dependency flow.
+- Reset/default focus behavior should support predictable recovery after modal dismissal and data refresh.
+
+Integration With Architecture
+
+- Keep feature-root focus state near primary editors and selection panes.
+- Align table/list selection with focus state in multicolumn workspace layouts.
+- Ensure search focus and form field focus are modeled independently when both coexist.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit `@FocusState` ownership
+- scoped focus traversal in complex regions
+- clear default focus entry behavior
+- focus-aligned command/key handling
+
+Never allow:
+
+- implicit focus assumptions in keyboard-heavy screens
+- one shared focus state for unrelated regions
+- focus changes causing hidden domain side effects
+- pointer-only interaction assumptions in desktop workflows

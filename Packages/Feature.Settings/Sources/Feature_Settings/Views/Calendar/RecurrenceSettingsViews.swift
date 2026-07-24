@@ -2,6 +2,7 @@ import SwiftUI
 import Data
 import Core
 import SharedUI
+import Observation
 
 // Simple replacement for OrdinalPickerView
 struct OrdinalPickerView: View {
@@ -38,7 +39,7 @@ struct MonthDayGridView: View {
     @Binding var selectedDays: Set<Int>
     
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 4) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: FormSectionTokens.labelFieldSpacing) {
             ForEach(1...31, id: \.self) { day in
                 Button(action: {
                     if selectedDays.contains(day) {
@@ -49,11 +50,11 @@ struct MonthDayGridView: View {
                 }) {
                     Text("\(day)")
                         .font(.caption)
-                        .frame(width: 24, height: 24)
+                        .frame(width: StyleGuide.Dimensions.entityListIconWidth, height: StyleGuide.Dimensions.entityListIconWidth)
                         .background(selectedDays.contains(day) ? Color.blue : Color.clear)
                         .foregroundColor(selectedDays.contains(day) ? .white : .primary)
-                        .cornerRadius(4)
-                        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
@@ -64,32 +65,33 @@ struct MonthDayGridView: View {
 // MARK: - Recurrence Settings Views
 
 struct RecurrenceDefaultsView: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     let maxLabelWidth: CGFloat
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.formGroupSpacing) {
             SectionHeader(
                 icon: "repeat",
                 title: "Default Recurrence Rule",
                 description: "Set up how new recurring events repeat by default. You can customize frequency, days, and end conditions."
             )
-            VStack(spacing: 12) {
-                RecurrenceBasicSettingsCard(viewModel: viewModel, maxLabelWidth: maxLabelWidth)
+            VStack(spacing: FormSectionTokens.sectionStackSpacing) {
+                RecurrenceBasicSettingsCard(preferences: preferences, maxLabelWidth: maxLabelWidth)
                 
-                if viewModel.preferences.defaultRecurrenceFrequency == .weekly {
-                    RecurrenceWeeklyOptionsCard(viewModel: viewModel)
+                if preferences.defaultRecurrenceFrequency == .weekly {
+                    RecurrenceWeeklyOptionsCard(preferences: preferences)
                 }
                 
-                if viewModel.preferences.defaultRecurrenceFrequency == .monthly {
-                    RecurrenceMonthlyOptionsCard(viewModel: viewModel, maxLabelWidth: maxLabelWidth)
+                if preferences.defaultRecurrenceFrequency == .monthly {
+                    RecurrenceMonthlyOptionsCard(preferences: preferences, maxLabelWidth: maxLabelWidth)
                 }
                 
-                if viewModel.preferences.defaultRecurrenceFrequency == .yearly {
-                    RecurrenceYearlyOptionsCard(viewModel: viewModel, maxLabelWidth: maxLabelWidth)
+                if preferences.defaultRecurrenceFrequency == .yearly {
+                    RecurrenceYearlyOptionsCard(preferences: preferences, maxLabelWidth: maxLabelWidth)
                 }
                 
-                RecurrenceEndOptionsCard(viewModel: viewModel, maxLabelWidth: maxLabelWidth)
+                RecurrenceEndOptionsCard(preferences: preferences, maxLabelWidth: maxLabelWidth)
                 
                 if let error = viewModel.recurrenceErrorText {
                     Text(error).formErrorStyle()
@@ -99,20 +101,20 @@ struct RecurrenceDefaultsView: View {
                 }
             }
         }
-        .sectionStyle()
+        .standardSectionStyle()
     }
 }
 
 struct RecurrenceBasicSettingsCard: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     let maxLabelWidth: CGFloat
     
     var body: some View {
         SettingsRow(label: "Recurrence Frequency:", labelWidth: maxLabelWidth) {
             HStack {
                 Picker("", selection: Binding<RecurrenceFrequency?>(
-                    get: { viewModel.preferences.defaultRecurrenceFrequency },
-                    set: { viewModel.preferences.defaultRecurrenceFrequency = $0 ?? .none }
+                    get: { preferences.defaultRecurrenceFrequency },
+                    set: { preferences.defaultRecurrenceFrequency = $0 ?? .none }
                 )) {
                     ForEach(RecurrenceFrequency.allCases, id: \.self) { frequency in
                         Text(frequency.rawValue).tag(frequency as RecurrenceFrequency?)
@@ -128,13 +130,13 @@ struct RecurrenceBasicSettingsCard: View {
         SettingsRow(label: "Recurrence Interval:", labelWidth: maxLabelWidth) {
             HStack {
                 TextField("Enter interval", value: Binding<Double>(
-                    get: { Double(viewModel.preferences.defaultRecurrenceInterval) },
-                    set: { viewModel.preferences.defaultRecurrenceInterval = Int($0) }
+                    get: { Double(preferences.defaultRecurrenceInterval) },
+                    set: { preferences.defaultRecurrenceInterval = Int($0) }
                 ), format: .number)
                 .textFieldStyle(.roundedBorder)
                 Stepper("", value: Binding<Double>(
-                    get: { Double(viewModel.preferences.defaultRecurrenceInterval) },
-                    set: { viewModel.preferences.defaultRecurrenceInterval = Int($0) }
+                    get: { Double(preferences.defaultRecurrenceInterval) },
+                    set: { preferences.defaultRecurrenceInterval = Int($0) }
                 ), in: 1...100, step: 1)
                     .accessibilityLabel("Adjust recurrence interval")
                 InfoIcon(tooltip: "Every X frequency units (e.g., every 2 weeks)")
@@ -144,7 +146,7 @@ struct RecurrenceBasicSettingsCard: View {
 }
 
 struct RecurrenceWeeklyOptionsCard: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -152,33 +154,33 @@ struct RecurrenceWeeklyOptionsCard: View {
                 .font(.caption)
                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     ForEach(SelectableWeekday.allCases, id: \.self) { weekday in
                         HStack {
                             Button(action: {
-                                if viewModel.preferences.defaultSelectedWeekdays.contains(weekday.rawValue) {
-                                    viewModel.preferences.defaultSelectedWeekdays.remove(weekday.rawValue)
+                                if preferences.defaultSelectedWeekdays.contains(weekday.rawValue) {
+                                    preferences.defaultSelectedWeekdays.remove(weekday.rawValue)
                                 } else {
-                                    viewModel.preferences.defaultSelectedWeekdays.insert(weekday.rawValue)
+                                    preferences.defaultSelectedWeekdays.insert(weekday.rawValue)
                                 }
                             }) {
-                                Image(systemName: viewModel.preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(viewModel.preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? .blue : .gray)
+                                Image(systemName: preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? "checkmark.square.fill" : "square")
+                                    .foregroundColor(preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? .blue : .gray)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             Text(weekday.shortName)
                             Spacer()
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
                     }
                 }
             }
             .frame(maxHeight: 100)
         }
-        .padding(10)
+        .padding(StyleGuide.Dimensions.paddingXMedium)
         .background(Color.accentColor.opacity(0.05))
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
         
         HStack {
             Spacer()
@@ -188,15 +190,15 @@ struct RecurrenceWeeklyOptionsCard: View {
 }
 
 struct RecurrenceMonthlyOptionsCard: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     let maxLabelWidth: CGFloat
     
     var body: some View {
         SettingsRow(label: "Monthly Rule Type:", labelWidth: maxLabelWidth) {
             HStack {
                 Picker("", selection: Binding<PositionalRecurrenceType?>(
-                    get: { viewModel.preferences.defaultMonthlyRecurrenceType },
-                    set: { viewModel.preferences.defaultMonthlyRecurrenceType = $0 ?? .onSpecificDays }
+                    get: { preferences.defaultMonthlyRecurrenceType },
+                    set: { preferences.defaultMonthlyRecurrenceType = $0 ?? .onSpecificDays }
                 )) {
                     ForEach(PositionalRecurrenceType.allCases, id: \.self) { type in
                         Text(type.rawValue).tag(type as PositionalRecurrenceType?)
@@ -209,20 +211,20 @@ struct RecurrenceMonthlyOptionsCard: View {
             }
         }
         
-        if viewModel.preferences.defaultMonthlyRecurrenceType == .onSpecificDays {
+        if preferences.defaultMonthlyRecurrenceType == .onSpecificDays {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Select Days")
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 MonthDayGridView(selectedDays: Binding(get: {
-                    viewModel.preferences.defaultSelectedMonthDaysNumbers
+                    preferences.defaultSelectedMonthDaysNumbers
                 }, set: { newSet in
-                    viewModel.preferences.defaultSelectedMonthDaysNumbers = newSet
+                    preferences.defaultSelectedMonthDaysNumbers = newSet
                 }))
             }
-            .padding(10)
+            .padding(StyleGuide.Dimensions.paddingXMedium)
             .background(Color.accentColor.opacity(0.05))
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
             HStack {
                 Spacer()
                 InfoIcon(tooltip: "Select the days of the month for the event to repeat.")
@@ -234,18 +236,18 @@ struct RecurrenceMonthlyOptionsCard: View {
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 OrdinalPickerView(
                     ordinalSelection: Binding<OrdinalSelection?>(
-                        get: { OrdinalSelection(intValue: viewModel.preferences.defaultSelectedOrdinal) },
-                        set: { if let newValue = $0 { viewModel.preferences.defaultSelectedOrdinal = newValue.rawValue } }
+                        get: { OrdinalSelection(intValue: preferences.defaultSelectedOrdinal) },
+                        set: { if let newValue = $0 { preferences.defaultSelectedOrdinal = newValue.rawValue } }
                     ),
                     dayOfWeekSelection: Binding<DayOfWeekOption?>(
-                        get: { DayOfWeekOption(rawValue: viewModel.preferences.defaultSelectedDayOfWeekForOrdinal) },
-                        set: { if let newV = $0 { viewModel.preferences.defaultSelectedDayOfWeekForOrdinal = newV.rawValue } }
+                        get: { DayOfWeekOption(rawValue: preferences.defaultSelectedDayOfWeekForOrdinal) },
+                        set: { if let newV = $0 { preferences.defaultSelectedDayOfWeekForOrdinal = newV.rawValue } }
                     )
                 )
             }
-            .padding(10)
+            .padding(StyleGuide.Dimensions.paddingXMedium)
             .background(Color.accentColor.opacity(0.05))
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
             HStack {
                 Spacer()
                 InfoIcon(tooltip: "Set a positional rule, like 'second Tuesday' of the month.")
@@ -255,15 +257,15 @@ struct RecurrenceMonthlyOptionsCard: View {
 }
 
 struct RecurrenceYearlyOptionsCard: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     let maxLabelWidth: CGFloat
     
     var body: some View {
         SettingsRow(label: "Yearly Rule Type:", labelWidth: maxLabelWidth) {
             HStack {
                 Picker("", selection: Binding<PositionalRecurrenceType?>(
-                    get: { viewModel.preferences.defaultYearlyRecurrenceType },
-                    set: { viewModel.preferences.defaultYearlyRecurrenceType = $0 ?? .onSpecificDays }
+                    get: { preferences.defaultYearlyRecurrenceType },
+                    set: { preferences.defaultYearlyRecurrenceType = $0 ?? .onSpecificDays }
                 )) {
                     ForEach(PositionalRecurrenceType.allCases, id: \.self) { type in
                         Text(type.rawValue).tag(type as PositionalRecurrenceType?)
@@ -281,48 +283,48 @@ struct RecurrenceYearlyOptionsCard: View {
                 .font(.caption)
                 .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     ForEach(SelectableMonth.allCases, id: \.self) { month in
                         HStack {
                             Button(action: {
-                                if viewModel.preferences.defaultSelectedYearMonths.contains(month.rawValue) {
-                                    viewModel.preferences.defaultSelectedYearMonths.remove(month.rawValue)
+                                if preferences.defaultSelectedYearMonths.contains(month.rawValue) {
+                                    preferences.defaultSelectedYearMonths.remove(month.rawValue)
                                 } else {
-                                    viewModel.preferences.defaultSelectedYearMonths.insert(month.rawValue)
+                                    preferences.defaultSelectedYearMonths.insert(month.rawValue)
                                 }
                             }) {
-                                Image(systemName: viewModel.preferences.defaultSelectedYearMonths.contains(month.rawValue) ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(viewModel.preferences.defaultSelectedYearMonths.contains(month.rawValue) ? .blue : .gray)
+                                Image(systemName: preferences.defaultSelectedYearMonths.contains(month.rawValue) ? "checkmark.square.fill" : "square")
+                                    .foregroundColor(preferences.defaultSelectedYearMonths.contains(month.rawValue) ? .blue : .gray)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             Text(month.shortName)
                             Spacer()
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
                     }
                 }
             }
             .frame(maxHeight: 100)
         }
-        .padding(10)
+        .padding(StyleGuide.Dimensions.paddingXMedium)
         .background(Color.accentColor.opacity(0.05))
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
         
-        if viewModel.preferences.defaultYearlyRecurrenceType == .onSpecificDays {
+        if preferences.defaultYearlyRecurrenceType == .onSpecificDays {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Select Days")
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 MonthDayGridView(selectedDays: Binding(get: {
-                    viewModel.preferences.defaultSelectedYearlyDaysNumbers
+                    preferences.defaultSelectedYearlyDaysNumbers
                 }, set: { newSet in
-                    viewModel.preferences.defaultSelectedYearlyDaysNumbers = newSet
+                    preferences.defaultSelectedYearlyDaysNumbers = newSet
                 }))
             }
-            .padding(10)
+            .padding(StyleGuide.Dimensions.paddingXMedium)
             .background(Color.accentColor.opacity(0.05))
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
             HStack {
                 Spacer()
                 InfoIcon(tooltip: "Select the days of the year for the event to repeat.")
@@ -334,18 +336,18 @@ struct RecurrenceYearlyOptionsCard: View {
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 OrdinalPickerView(
                     ordinalSelection: Binding<OrdinalSelection?>(
-                        get: { OrdinalSelection(intValue: viewModel.preferences.defaultSelectedOrdinal) },
-                        set: { if let newValue = $0 { viewModel.preferences.defaultSelectedOrdinal = newValue.rawValue } }
+                        get: { OrdinalSelection(intValue: preferences.defaultSelectedOrdinal) },
+                        set: { if let newValue = $0 { preferences.defaultSelectedOrdinal = newValue.rawValue } }
                     ),
                     dayOfWeekSelection: Binding<DayOfWeekOption?>(
-                        get: { DayOfWeekOption(rawValue: viewModel.preferences.defaultSelectedDayOfWeekForOrdinal) },
-                        set: { if let newV = $0 { viewModel.preferences.defaultSelectedDayOfWeekForOrdinal = newV.rawValue } }
+                        get: { DayOfWeekOption(rawValue: preferences.defaultSelectedDayOfWeekForOrdinal) },
+                        set: { if let newV = $0 { preferences.defaultSelectedDayOfWeekForOrdinal = newV.rawValue } }
                     )
                 )
             }
-            .padding(10)
+            .padding(StyleGuide.Dimensions.paddingXMedium)
             .background(Color.accentColor.opacity(0.05))
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall, style: .continuous))
             HStack {
                 Spacer()
                 InfoIcon(tooltip: "Set a positional rule for yearly recurrence, like 'third Friday' in June.")
@@ -355,15 +357,15 @@ struct RecurrenceYearlyOptionsCard: View {
 }
 
 struct RecurrenceEndOptionsCard: View {
-    @ObservedObject var viewModel: CalendarSettingsViewModel
+    @Bindable var preferences: CalendarPreferencesStore
     let maxLabelWidth: CGFloat
     
     var body: some View {
         SettingsRow(label: "Recurrence End Type:", labelWidth: maxLabelWidth) {
             HStack {
                 Picker("", selection: Binding<RecurrenceEndType?>(
-                    get: { viewModel.preferences.defaultRecurrenceEndType },
-                    set: { viewModel.preferences.defaultRecurrenceEndType = $0 ?? .never }
+                    get: { preferences.defaultRecurrenceEndType },
+                    set: { preferences.defaultRecurrenceEndType = $0 ?? .never }
                 )) {
                     ForEach(RecurrenceEndType.allCases, id: \.self) { endType in
                         Text(endType.rawValue).tag(endType as RecurrenceEndType?)
@@ -376,31 +378,31 @@ struct RecurrenceEndOptionsCard: View {
             }
         }
         
-        if viewModel.preferences.defaultRecurrenceEndType == .afterCount {
-            VStack(alignment: .leading, spacing: 4) {
+        if preferences.defaultRecurrenceEndType == .afterCount {
+            VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                 SettingsRow(label: "Recurrence Count:", labelWidth: maxLabelWidth) {
                     HStack {
                         TextField("Enter count", value: Binding<Double>(
-                            get: { Double(viewModel.preferences.defaultRecurrenceCount) },
-                            set: { viewModel.preferences.defaultRecurrenceCount = Int($0) }
+                            get: { Double(preferences.defaultRecurrenceCount) },
+                            set: { preferences.defaultRecurrenceCount = Int($0) }
                         ), format: .number)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("Recurrence count")
                         .accessibilityHint("Enter the number of times the event should repeat")
                         Stepper("", value: Binding<Double>(
-                            get: { Double(viewModel.preferences.defaultRecurrenceCount) },
-                            set: { viewModel.preferences.defaultRecurrenceCount = Int($0) }
+                            get: { Double(preferences.defaultRecurrenceCount) },
+                            set: { preferences.defaultRecurrenceCount = Int($0) }
                         ), in: 1...999, step: 1)
                         .accessibilityLabel("Adjust recurrence count")
                         InfoIcon(tooltip: "Set how many times the event should repeat before ending.")
                     }
                 }
             }
-        } else if viewModel.preferences.defaultRecurrenceEndType == .onDate {
-            VStack(alignment: .leading, spacing: 4) {
+        } else if preferences.defaultRecurrenceEndType == .onDate {
+            VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                 SettingsRow(label: "Recurrence End Date:", labelWidth: maxLabelWidth) {
                     HStack {
-                        DatePicker("", selection: $viewModel.preferences.defaultRecurrenceEndDate, in: Date()...Date.distantFuture, displayedComponents: .date)
+                        DatePicker("", selection: $preferences.defaultRecurrenceEndDate, in: Date()...Date.distantFuture, displayedComponents: .date)
                             .accessibilityLabel("Recurrence end date")
                             .accessibilityHint("Select the date when the recurrence should stop")
                         InfoIcon(tooltip: "Pick the date when the recurrence should stop.")

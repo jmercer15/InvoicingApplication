@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "XcodeBuildMCP": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "xcodebuildmcp@latest",
+        "mcp"
+      ],
+      "env": {
+        "ENABLE_INCREMENTAL_BUILDS": "true",
+        "SKIP_MACRO_VALIDATION": "true"
+      }
+    },
+    "apple-docs": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@kimsungwhee/apple-docs-mcp@latest"
+      ],
+      "env": {
+        "USER_AGENT_ROTATION_ENABLED": "true",
+        "USER_AGENT_POOL_STRATEGY": "smart",
+        "USER_AGENT_MAX_RETRIES": "5"
+      }
+    },
+    "xcode-tools": {
+      "command": "xcrun",
+      "args": [
+        "mcpbridge"
+      ]
+    },
+    "swiftlens": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.13",
+        "swiftlens"
+      ]
+    }
+  }
+}

@@ -1,27 +1,35 @@
-import SwiftUI
-import Data
 import Core
+import SwiftUI
 import SharedUI
 
 struct InvoiceSettingsView: View {
-    @AppStorage("defaultPaymentTerms") private var defaultPaymentTerms: Int = 14
-    @AppStorage("defaultTaxRate") private var taxRate: Double = 10.0
-    @AppStorage("showTaxColumn") private var showTaxColumn: Bool = true
-    @AppStorage("autogenerateInvoiceNumbers") private var autogenerateInvoiceNumbers: Bool = true
-    @AppStorage("defaultNotes") private var defaultNotes: String = ""
-    @AppStorage("defaultPaymentTermsText") private var defaultPaymentTermsText: String = "Payment due within 14 days."
+    @AppStorage(InvoicePreferenceKey.paymentTermsDays)
+    private var defaultPaymentTerms = InvoiceCreationDefaults.standard.paymentTermsDays
+    @AppStorage(InvoicePreferenceKey.taxRate)
+    private var taxRate = InvoiceCreationDefaults.standard.taxRate
+    @AppStorage(InvoicePreferenceKey.showsTaxSummary)
+    private var showTaxSummary = InvoiceCreationDefaults.standard.showsTaxSummary
+    @AppStorage(InvoicePreferenceKey.autoGeneratesInvoiceNumbers)
+    private var autogenerateInvoiceNumbers = InvoiceCreationDefaults.standard.autoGeneratesInvoiceNumbers
+    @AppStorage(InvoicePreferenceKey.notes)
+    private var defaultNotes = InvoiceCreationDefaults.standard.notes
+    @AppStorage(InvoicePreferenceKey.paymentTermsText)
+    private var defaultPaymentTermsText = InvoiceCreationDefaults.standard.paymentTermsText
     
     private let paymentTermOptions = [7, 14, 30, 45, 60]
     private let taxRateOptions = [0.0, 10.0, 15.0, 20.0]
     
     private var maxLabelWidth: CGFloat {
-        let labels = ["Payment Terms:", "Payment Terms Text:", "Default Tax Rate:", "Show Tax Column:", "Auto-generate Invoice Numbers:", "Default Notes:"]
+        let labels = ["Payment Terms:", "Payment Terms Text:", "Default Tax Rate:", "Show Tax Summary:", "Auto-generate Invoice Numbers:", "Default Notes:"]
         return labels.map { $0.width() }.max() ?? 120
     }
     
+    @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: FormSectionTokens.pageStackSpacing) {
                 SettingsSection(
                     icon: "doc.text",
                     title: "Invoice Defaults",
@@ -43,7 +51,7 @@ struct InvoiceSettingsView: View {
                             TextEditor(text: $defaultPaymentTermsText)
                                 .frame(height: 100)
                                 .textFieldStyle(.roundedBorder)
-                                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                                .standardCardStyle()
                                 .accessibilityLabel("Payment terms text")
                                 .accessibilityHint("Enter default payment terms text")
                         }
@@ -61,11 +69,11 @@ struct InvoiceSettingsView: View {
                     }
                     
                     SettingsCard(title: "Display Settings") {
-                        SettingsRow(label: "Show Tax Column:", labelWidth: maxLabelWidth) {
-                            Toggle("", isOn: $showTaxColumn)
+                        SettingsRow(label: "Show Tax Summary:", labelWidth: maxLabelWidth) {
+                            Toggle("", isOn: $showTaxSummary)
                                 .toggleStyle(.switch)
-                                .accessibilityLabel("Show tax column")
-                                .accessibilityHint("Toggle to show or hide tax column in invoice editor")
+                                .accessibilityLabel("Show tax summary")
+                                .accessibilityHint("Show or hide the tax summary on new invoice documents")
                         }
                         
                         SettingsRow(label: "Auto-generate Invoice Numbers:", labelWidth: maxLabelWidth) {
@@ -81,15 +89,15 @@ struct InvoiceSettingsView: View {
                             TextEditor(text: $defaultNotes)
                                 .frame(height: 100)
                                 .textFieldStyle(.roundedBorder)
-                                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                                .standardCardStyle()
                                 .accessibilityLabel("Default notes")
                                 .accessibilityHint("Enter default notes for invoices")
                         }
                     }
                 }
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }

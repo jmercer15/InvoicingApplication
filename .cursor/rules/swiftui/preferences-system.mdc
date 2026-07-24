@@ -1,0 +1,29 @@
+---
+description: SwiftUI Preferences System
+alwaysApply: false
+---
+
+# Rule: SwiftUI Preferences System
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/preferences
+
+Core Principle
+
+SwiftUI preferences are an upward communication channel.
+
+Rules
+
+- Use preferences only when information must move from descendants up to ancestors.
+- Prefer environment for downward contextual data.
+- Prefer bindings for editable downward data access.
+- Use preferences primarily for layout, geometry, and container coordination.
+- Keep preference keys narrow and semantically focused.
+- Let ancestors interpret preferences; children should only emit them.
+
+Anti-Patterns
+
+- Preferences as an event bus.
+- Business data ownership in preference values.
+- Catch-all preference keys for unrelated concerns.

@@ -9,6 +9,7 @@
 //  architectural guidelines and have been removed from entity definitions.
 //
 
+import Core
 import Foundation
 import SwiftData
 
@@ -18,8 +19,8 @@ import SwiftData
 /// architectural guidelines and have been removed from entity definitions.
 /// 
 /// Properties Removed:
-/// - ClientEntity.colorHex
-/// - PayeeEntity.colorHex
+/// - Client.colorHex
+/// - Payee.colorHex
 /// 
 /// Migration Details:
 /// - Type: Property Removal
@@ -32,7 +33,7 @@ public struct RemoveColorHexColumns_Migration {
     public static let version = "1.0.0"
     
     /// Migration description
-    public static let description = "Remove colorHex columns from ClientEntity and PayeeEntity"
+    public static let description = "Remove colorHex columns from Client and Payee"
     
     /// Migration date
     public static let migrationDate = Date()
@@ -70,20 +71,20 @@ public struct RemoveColorHexColumns_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationNeeded(modelContext: ModelContext) throws {
-        // Check if any ClientEntity records exist
-        let clientDescriptor = FetchDescriptor<ClientEntity>()
+        // Check if any Client records exist
+        let clientDescriptor = FetchDescriptor<Client>()
         let clients = try modelContext.fetch(clientDescriptor)
         
-        // Check if any PayeeEntity records exist
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        // Check if any Payee records exist
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         if clients.isEmpty && payees.isEmpty {
-            print("ℹ️ No ClientEntity or PayeeEntity records found - migration not needed")
+            print("ℹ️ No Client or Payee records found - migration not needed")
             return
         }
         
-        print("📊 Found \(clients.count) ClientEntity records and \(payees.count) PayeeEntity records to migrate")
+        print("📊 Found \(clients.count) Client records and \(payees.count) Payee records to migrate")
     }
     
     /// Perform the actual migration
@@ -113,8 +114,8 @@ public struct RemoveColorHexColumns_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationSuccess(modelContext: ModelContext) throws {
-        // Fetch all ClientEntity records to verify they're accessible
-        let clientDescriptor = FetchDescriptor<ClientEntity>()
+        // Fetch all Client records to verify they're accessible
+        let clientDescriptor = FetchDescriptor<Client>()
         let clients = try modelContext.fetch(clientDescriptor)
         
         // Verify that we can access the remaining properties
@@ -123,7 +124,7 @@ public struct RemoveColorHexColumns_Migration {
             let _ = client.id
             let _ = client.ndisNumber
             let _ = client.fullName
-            let _ = client.status
+            let _ = client.effectiveStatus
             let _ = client.email
             let _ = client.notes
             let _ = client.phone
@@ -137,8 +138,8 @@ public struct RemoveColorHexColumns_Migration {
             let _ = client.sendInvoicesToPlanManager
         }
         
-        // Fetch all PayeeEntity records to verify they're accessible
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        // Fetch all Payee records to verify they're accessible
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         // Verify that we can access the remaining properties
@@ -152,7 +153,7 @@ public struct RemoveColorHexColumns_Migration {
             let _ = payee.status
         }
         
-        print("✅ Migration validation successful - all \(clients.count) ClientEntity and \(payees.count) PayeeEntity records accessible")
+        print("✅ Migration validation successful - all \(clients.count) Client and \(payees.count) Payee records accessible")
     }
     
     /// Rollback the migration
@@ -163,7 +164,7 @@ public struct RemoveColorHexColumns_Migration {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
-    public static func rollback(modelContext: ModelContext) throws {
+    public static func rollback(modelContext _: ModelContext) throws {
         print("🔄 Attempting to rollback colorHex columns removal migration")
         
         // For property removal migrations, rollback is not supported
@@ -183,8 +184,8 @@ public struct ColorHexColumnsMigrationTestUtils {
     public static func testMigration(modelContext: ModelContext) throws {
         print("🧪 Testing colorHex columns removal migration")
         
-        // Create test ClientEntity data
-        let testClient = ClientEntity(id: UUID(), ndisNumber: "123456789", fullName: "Test Client", status: .active)
+        // Create test Client data
+        let testClient = Client(id: UUID(), ndisNumber: "123456789", fullName: "Test Client", status: .active)
         testClient.email = "test@example.com"
         testClient.notes = "Test notes"
         testClient.phone = "0412345678"
@@ -196,8 +197,8 @@ public struct ColorHexColumnsMigrationTestUtils {
         
         modelContext.insert(testClient)
         
-        // Create test PayeeEntity data
-        let testPayee = PayeeEntity(id: UUID(), fullName: "Test Payee")
+        // Create test Payee data
+        let testPayee = Payee(id: UUID(), fullName: "Test Payee")
         testPayee.email = "payee@example.com"
         testPayee.phone = "0412345679"
         testPayee.relationToClient = "parent"
@@ -210,7 +211,7 @@ public struct ColorHexColumnsMigrationTestUtils {
         try RemoveColorHexColumns_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let clientDescriptor = FetchDescriptor<ClientEntity>()
+        let clientDescriptor = FetchDescriptor<Client>()
         let clients = try modelContext.fetch(clientDescriptor)
         
         guard let client = clients.first else {
@@ -221,7 +222,7 @@ public struct ColorHexColumnsMigrationTestUtils {
             throw MigrationError.validationFailed("Client full name not accessible")
         }
         
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try modelContext.fetch(payeeDescriptor)
         
         guard let payee = payees.first else {

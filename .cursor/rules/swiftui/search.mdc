@@ -1,0 +1,50 @@
+---
+description: SwiftUI Search
+alwaysApply: false
+---
+
+# Rule: SwiftUI Search
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/search
+https://developer.apple.com/documentation/swiftui/performing-a-search-operation
+https://developer.apple.com/documentation/swiftui/managing-search-interface-activation
+https://developer.apple.com/documentation/swiftui/view-search
+https://developer.apple.com/documentation/swiftui/environmentvalues/issearching
+https://developer.apple.com/documentation/SwiftUI/Adding-a-search-interface-to-your-app
+
+Scope
+
+Applies to search architecture in SwiftUI:
+
+- searchable view modifiers
+- search text state
+- token-based search
+- search suggestions
+- search activation state
+- result filtering
+- search UI placement and ownership
+
+Core Principle
+
+SwiftUI search should be modeled as explicit feature state attached to the view hierarchy that owns the searchable content.
+
+Rules
+
+- Apply `searchable` at the level that owns the searchable content.
+- Keep search text in explicit state.
+- Keep filtering/query execution separate from row rendering.
+- Use search suggestions only when they meaningfully reduce effort.
+- Use token-based search only when discrete query facets are valuable.
+- Treat search activation as UI state, not business state.
+- Keep search results and search-empty states inside the same feature context.
+- Never scatter one search flow across unrelated subviews without a clear owner.
+
+Checklist
+
+- Does the correct view own the search query?
+- Is searchable attached at the right level?
+- Is search execution separated from rendering?
+- Are suggestions useful and scoped?
+- Are empty/loading/no-results states distinct?

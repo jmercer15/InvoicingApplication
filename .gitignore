@@ -102,6 +102,19 @@ iOSInjectionProject/
 # macOS
 .DS_Store
 
+# Periphery scan artifacts
+/periphery_*
+/build_cache_periphery/
+
+# Script outputs (e.g. scripts/aggregate-swift-sources.sh)
+/artifacts/
+
+# Periphery / analysis outputs (regenerated locally)
+/periphery_report.json
+/periphery_scan_output.txt
+/PERIPHERY_DEAD_CODE.md
+/build_cache_periphery/
+
 # Python virtual environment
 venv/
 __pycache__/
@@ -113,6 +126,9 @@ __pycache__/
 
 # Logs
 *.log
+Packages/Data/build_log.txt
+Packages/Data/test_log.txt
+Packages/Data/test_results.txt
 
 # Temporary files
 *.tmp
@@ -216,6 +232,7 @@ $RECYCLE.BIN/
 
 # Large data files
 *.geojson
+!InvoicingApplication/Resources/Data/mmm_sa1.geojson
 *.csv
 *.xlsx
 *.xls

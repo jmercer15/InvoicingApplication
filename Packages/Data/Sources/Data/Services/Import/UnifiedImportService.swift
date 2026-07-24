@@ -1,45 +1,38 @@
+import Core
 import Foundation
 import SwiftData
 
-/// Public enum for import source types
-public enum ImportSource: String, CaseIterable, Sendable {
-    case clients
-    case payees
-    case services
-    case ndisItems
-    case invoices
-    case sessions
-    case allData
-    case unknown
-    
-    public var description: String {
-        switch self {
-        case .clients: return "Clients"
-        case .payees: return "Payees"
-        case .services: return "Services"
-        case .ndisItems: return "NDIS Items"
-        case .invoices: return "Invoices"
-        case .sessions: return "Sessions"
-        case .allData: return "All Data (Export)"
-        case .unknown: return "Unknown"
-        }
-    }
-}
+/// Data now uses the shared domain import source type.
+public typealias ImportSource = Core.ImportSource
 
 /// Public wrapper for import results
 public struct ImportResult: Sendable {
     public let source: ImportSource
+    public let success: Bool
     public let successful: Int
     public let failed: Int
+    public let importedCounts: [String: Int]
     public let messages: [String]
     public let fileName: String
+    public let timestamp: Date
     
-    public init(source: ImportSource, successful: Int, failed: Int, messages: [String], fileName: String) {
+    public init(
+        source: ImportSource,
+        successful: Int,
+        failed: Int,
+        importedCounts: [String: Int] = [:],
+        messages: [String],
+        fileName: String,
+        timestamp: Date = Date()
+    ) {
         self.source = source
+        self.success = failed == 0
         self.successful = successful
         self.failed = failed
+        self.importedCounts = importedCounts
         self.messages = messages
         self.fileName = fileName
+        self.timestamp = timestamp
     }
 }
 
@@ -54,83 +47,35 @@ public struct UnifiedImportService {
     /// Internal method that does the actual work
     static func importAllDataInternal(context: ModelContext) throws -> [ImportResult] {
         var results: [ImportResult] = []
+        let importJobs: [(source: ImportSource, fileName: String, importer: (Data, String, ModelContext) throws -> ImportResult)] = [
+            (.payees, "payees.json", { data, fileName, context in
+                try PayeeImport.importPayees(data: data, fileName: fileName, context: context)
+            }),
+            (.clients, "clients.json", { data, fileName, context in
+                try ClientImport.importClients(data: data, fileName: fileName, context: context)
+            }),
+            (.services, "services.json", { data, fileName, context in
+                try ServiceImport.importServices(data: data, fileName: fileName, context: context)
+            }),
+            (.invoices, "invoices.json", { data, fileName, context in
+                try InvoiceImport.importInvoices(data: data, fileName: fileName, context: context)
+            }),
+            (.ndisItems, "NDIS_Support_Catalogue.json", { data, fileName, context in
+                try NDISItemImport.importNDISItems(data: data, fileName: fileName, context: context)
+            })
+        ]
         
-        // Import payees
-        if let payeesData = loadJSONData(from: "payees.json") {
+        for job in importJobs {
+            guard let data = loadJSONData(from: job.fileName) else { continue }
             do {
-                let payeeResult = try PayeeImport.importPayees(data: payeesData, fileName: "payees.json", context: context)
-                results.append(payeeResult)
+                results.append(try job.importer(data, job.fileName, context))
             } catch {
                 results.append(ImportResult(
-                    source: .payees,
+                    source: job.source,
                     successful: 0,
                     failed: 1,
-                    messages: ["Failed to import payees: \(error.localizedDescription)"],
-                    fileName: "payees.json"
-                ))
-            }
-        }
-        
-        // Import clients
-        if let clientsData = loadJSONData(from: "clients.json") {
-            do {
-                let clientResult = try ClientImport.importClients(data: clientsData, fileName: "clients.json", context: context)
-                results.append(clientResult)
-            } catch {
-                results.append(ImportResult(
-                    source: .clients,
-                    successful: 0,
-                    failed: 1,
-                    messages: ["Failed to import clients: \(error.localizedDescription)"],
-                    fileName: "clients.json"
-                ))
-            }
-        }
-        
-        // Import services
-        if let servicesData = loadJSONData(from: "services.json") {
-            do {
-                let serviceResult = try ServiceImport.importServices(data: servicesData, fileName: "services.json", context: context)
-                results.append(serviceResult)
-            } catch {
-                results.append(ImportResult(
-                    source: .services,
-                    successful: 0,
-                    failed: 1,
-                    messages: ["Failed to import services: \(error.localizedDescription)"],
-                    fileName: "services.json"
-                ))
-            }
-        }
-        
-        // Import invoices
-        if let invoicesData = loadJSONData(from: "invoices.json") {
-            do {
-                let invoiceResult = try InvoiceImport.importInvoices(data: invoicesData, fileName: "invoices.json", context: context)
-                results.append(invoiceResult)
-            } catch {
-                results.append(ImportResult(
-                    source: .invoices,
-                    successful: 0,
-                    failed: 1,
-                    messages: ["Failed to import invoices: \(error.localizedDescription)"],
-                    fileName: "invoices.json"
-                ))
-            }
-        }
-        
-        // Import NDIS items
-        if let ndisData = loadJSONData(from: "NDIS_Support_Catalogue.json") {
-            do {
-                let ndisResult = try NDISItemImport.importNDISItems(data: ndisData, fileName: "NDIS_Support_Catalogue.json", context: context)
-                results.append(ndisResult)
-            } catch {
-                results.append(ImportResult(
-                    source: .ndisItems,
-                    successful: 0,
-                    failed: 1,
-                    messages: ["Failed to import NDIS items: \(error.localizedDescription)"],
-                    fileName: "NDIS_Support_Catalogue.json"
+                    messages: ["Failed to import \(job.source.description.lowercased()): \(error.localizedDescription)"],
+                    fileName: job.fileName
                 ))
             }
         }
@@ -248,7 +193,7 @@ public struct UnifiedImportService {
             case .services:
                 _ = try JSONDecoder().decode([ServicesImportJSON].self, from: data)
             case .invoices:
-                _ = try JSONDecoder().decode([InvoiceImportJSON].self, from: data)
+                _ = try JSONDecoder().decode([TabularInvoicePayload].self, from: data)
             case .ndisItems:
                 // NDIS items have complex structure, just check if it's valid JSON
                 _ = try JSONSerialization.jsonObject(with: data)
@@ -257,11 +202,11 @@ public struct UnifiedImportService {
             case .allData:
                 // AllData-Export has a specific structure with entity names as keys
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let expectedEntities = ["AddressEntity", "BusinessEntity", "ClientEntity", "ClientServiceEntity", 
-                                      "CreditHistoryEntryEntity", 
-                                      "InvoiceEntity", "InvoiceItemEntity", "NDISItemEntity", "PayeeEntity", 
-                                      "PlanManagerEntity", "RegionalPriceEntity", "SessionEntity", 
-                                      "TravelChargeAuditLog", "TravelChargeEntity", "TravelChargeReviewItem"]
+                let expectedEntities = ["Address", "Business", "Client", "ClientService",
+                                      "CreditHistoryEntry",
+                                      "Invoice", "InvoiceItem", "NDISItem", "Payee",
+                                      "PlanManager", "RegionalPrice", "Session",
+                                      "TravelChargeAuditLog", "TravelCharge", "TravelChargeReviewItem"]
                 return json != nil && expectedEntities.contains { json!.keys.contains($0) }
             case .unknown:
                 return false

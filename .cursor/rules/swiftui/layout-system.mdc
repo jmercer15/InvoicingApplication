@@ -1,0 +1,435 @@
+---
+description: SwiftUI Layout System
+alwaysApply: false
+---
+
+# Rule: SwiftUI Layout System
+
+Sources
+
+https://developer.apple.com/tutorials/swiftui-concepts/maintaining-the-adaptable-sizes-of-built-in-views
+https://developer.apple.com/tutorials/swiftui-concepts/scaling-views-to-complement-text
+https://developer.apple.com/tutorials/swiftui-concepts/organizing-and-aligning-content-with-stacks
+https://developer.apple.com/tutorials/swiftui-concepts/adjusting-the-space-between-views
+https://developer.apple.com/documentation/swiftui/layout-fundamentals
+https://developer.apple.com/documentation/swiftui/layout-adjustments
+https://developer.apple.com/documentation/swiftui/custom-layout
+
+Scope
+
+Applies to the structural layout of SwiftUI views:
+
+- built-in layout containers
+- sizing behavior
+- alignment and spacing
+- padding and frame adjustments
+- adaptive text-related scaling
+- escalation to custom layout
+
+This rule governs how views are measured, arranged, adjusted, and adapted
+across window sizes, content sizes, and dynamic type changes.
+
+Intent
+
+Build SwiftUI layouts that are:
+
+- adaptive
+- stable
+- text-aware
+- container-driven
+- readable
+- maintainable
+
+Prefer built-in layout behavior first.
+Use layout adjustments to refine behavior.
+Escalate to custom layout only when built-in containers cannot express the requirement clearly.
+
+Core Principle
+
+SwiftUI layout is container-driven.
+
+A parent container arranges child views according to layout rules.
+Built-in containers should be the default tool.
+Adjustment modifiers should refine layout rather than fight it.
+Custom layout should be used only when the layout requirement is real and reusable.
+
+The layout architecture must prioritize:
+
+1. adaptability
+2. semantic container choice
+3. text-respecting sizing
+4. explicit alignment and spacing decisions
+5. minimal layout hacks
+
+Architectural Translation
+
+Translate Apple’s layout model into these project rules:
+
+- Start with built-in layout containers.
+- Let content determine size where possible.
+- Let text remain readable and drive minimum useful size.
+- Prefer alignment and spacing APIs over offset hacks.
+- Use frames to constrain or negotiate layout intentionally, not blindly.
+- Prefer adaptive switching between layouts over forcing one layout to fit all cases.
+- Introduce custom layout only for real, repeated, domain-specific layout needs.
+
+---
+
+## LAYOUT STRATEGY ORDER
+
+Always design layout in this order:
+
+1. Choose the correct built-in container.
+2. Let intrinsic content and default behavior work first.
+3. Adjust spacing, alignment, padding, and frame constraints.
+4. Add adaptation for text size, window size, or content density.
+5. Introduce custom layout only if the above is insufficient.
+
+Rules
+
+- Never start with `GeometryReader` for ordinary screen layout.
+- Never start with fixed sizes unless the element is truly fixed-size.
+- Never use a custom layout when a stack/grid/frame solution is already clear.
+- Never use position/offset as a primary layout system.
+
+---
+
+## BUILT-IN CONTAINERS FIRST
+
+Use built-in layout containers as the default architecture.
+
+Preferred built-in tools:
+
+- `HStack`
+- `VStack`
+- `ZStack`
+- `Grid`
+- `Spacer`
+- `Group`
+- `ViewThatFits` where adaptation is needed
+
+Rules
+
+- Use stacks for one-dimensional relationships.
+- Use grids for two-dimensional alignment problems.
+- Use `ZStack` only for real layered composition.
+- Use `Spacer` to distribute flexible empty space.
+- Use `Group` for logical grouping, not layout.
+- Prefer composing multiple built-in containers before designing a custom layout.
+
+Good
+
+VStack(alignment: .leading, spacing: 12) {
+HeaderView()
+SummaryCard()
+ActionRow()
+}
+Good
+Grid(alignment: .leading) {
+GridRow {
+Text("Client")
+Text(client.name)
+}
+GridRow {
+Text("Status")
+StatusBadge(status: invoice.status)
+}
+}
+Bad
+ZStack {
+VStack {
+HStack { ... }
+}
+}
+.offset(x: 10, y: -6)
+This uses stacking and offsets to solve what should be a normal alignment problem.
+LET CONTENT SIZE NATURALLY
+SwiftUI layouts work best when content is allowed to express its natural size.
+Rules
+
+Avoid hard-coded widths and heights unless the design genuinely requires them.
+Prefer minimum viable constraints over rigid dimensions.
+Let text, controls, and images negotiate size with their container.
+Treat fixed frames as exceptions, not defaults.
+Do not make controls artificially small just to preserve a visual arrangement.
+Good
+Text(invoice.title)
+.lineLimit(2)
+Better constrained example
+Text(invoice.title)
+.frame(maxWidth: .infinity, alignment: .leading)
+Bad
+Text(invoice.title)
+.frame(width: 120, height: 20)
+This often truncates text and breaks adaptability.
+TEXT DRIVES LAYOUT
+Layout must complement text, not compete with it.
+Rules
+
+Prefer layouts that expand or reflow when text grows.
+Support Dynamic Type and larger content sizes by default.
+Avoid designing rows/cards that only work at one text size.
+Prefer adaptive container changes over aggressive compression.
+Prioritize readability over preserving a specific horizontal arrangement.
+Good
+ViewThatFits {
+HStack {
+Label("Due Date", systemImage: "calendar")
+Text(invoice.dueDate.formatted(date: .abbreviated, time: .omitted))
+}
+
+    VStack(alignment: .leading) {
+        Label("Due Date", systemImage: "calendar")
+        Text(invoice.dueDate.formatted(date: .abbreviated, time: .omitted))
+    }
+
+}
+Bad
+HStack(spacing: 4) {
+Text("Due Date")
+Text(invoice.dueDateString)
+}
+.frame(width: 160)
+This forces a single arrangement even when content no longer fits.
+ALIGNMENT IS STRUCTURAL
+Alignment should be chosen deliberately at the container level.
+Rules
+
+Use container alignment settings before introducing manual positional tweaks.
+Align related text and controls to shared structural edges.
+Prefer explicit alignment over relying on incidental default placement.
+Keep alignment consistent across sibling sections of the same semantic kind.
+Good
+VStack(alignment: .leading, spacing: 8) {
+Text("Client")
+Text(client.name)
+Text(client.email)
+}
+Bad
+VStack {
+Text("Client")
+.frame(maxWidth: .infinity, alignment: .leading)
+Text(client.name)
+.padding(.leading, 3)
+Text(client.email)
+.padding(.leading, 11)
+}
+This replaces structural alignment with manual nudging.
+SPACING MUST BE EXPLICIT AND SYSTEMATIC
+Spacing is part of architecture, not decoration.
+Rules
+
+Use container spacing values intentionally.
+Standardize spacing scales across the project.
+Differentiate between:
+internal spacing inside a component
+spacing between sibling components
+section spacing
+screen-edge padding
+Avoid stacking multiple unrelated padding calls to simulate spacing.
+Preferred spacing model
+4-8 points for tightly related inline elements
+8-12 points for internal control/content grouping
+12-20 points for section-level grouping
+larger values only when creating clear visual separation
+Good
+VStack(alignment: .leading, spacing: 16) {
+ClientHeader()
+InvoiceTotalsSection()
+PaymentStatusSection()
+}
+.padding(20)
+Bad
+VStack {
+ClientHeader()
+.padding(.bottom, 7)
+InvoiceTotalsSection()
+.padding(.bottom, 13)
+PaymentStatusSection()
+}
+.padding(.top, 11)
+.padding(.leading, 19)
+.padding(.trailing, 18)
+.padding(.bottom, 21)
+This produces arbitrary spacing that is hard to maintain.
+PADDING VS FRAME VS SPACER
+Use each tool for its actual purpose.
+Use:
+
+padding to add interior/exterior breathing room around a view
+frame to participate in sizing/alignment negotiation
+Spacer to consume flexible remaining space
+Rules
+Do not use padding to fake alignment.
+Do not use Spacer where fixed spacing is intended.
+Do not use frame(maxWidth: .infinity) reflexively on every child.
+Apply frame only when you want to influence proposal/placement behavior.
+Good
+HStack {
+VStack(alignment: .leading) {
+Text(client.name)
+Text(client.email)
+}
+Spacer()
+StatusBadge(status: client.status)
+}
+Bad
+HStack {
+VStack(alignment: .leading) {
+Text(client.name)
+Text(client.email)
+}
+Text(" ")
+Text(" ")
+Text(" ")
+StatusBadge(status: client.status)
+}
+Bad
+Text(client.name)
+.padding(.leading, 40)
+when the real need is parent-level alignment or spacer-driven distribution.
+ADAPTIVE LAYOUT IS PREFERRED OVER COMPRESSION
+When content, text, or window size changes, prefer switching layout strategies
+instead of crushing content into the same arrangement.
+Rules
+
+Prefer alternate container arrangements over unreadable compression.
+Use ViewThatFits or conditional composition when layout must change at narrower sizes.
+Allow vertical expansion when horizontal packing becomes fragile.
+Design for macOS window resizing explicitly.
+Good
+ViewThatFits(in: .horizontal) {
+HStack(alignment: .top, spacing: 12) {
+SummaryPane()
+DetailPane()
+}
+
+    VStack(alignment: .leading, spacing: 16) {
+        SummaryPane()
+        DetailPane()
+    }
+
+}
+Bad
+HStack(spacing: 2) {
+SummaryPane()
+.frame(width: 140)
+DetailPane()
+.frame(width: 140)
+}
+This preserves one arrangement at the cost of flexibility.
+CUSTOM LAYOUT ESCALATION
+Use custom layout only when the layout requirement is:
+real
+reusable
+not expressible cleanly with built-in containers
+central to the feature’s behavior or design
+Typical valid reasons:
+equalizing child sizes based on measured ideal sizes
+specialized inspector-style arrangements
+domain-specific grid/board/canvas arrangements
+animated transitions between layout types
+placement logic that depends on subview measurement
+Rules
+Do not create a custom layout just to avoid learning stack/grid behavior.
+Do not use custom layout for one-off cosmetic tweaks.
+Prefer a local custom layout type scoped to the feature unless reuse is proven.
+Measure subviews through layout APIs, not through hacky feedback loops.
+Good use case
+EqualWidthButtonRow {
+Button("Create") { }
+Button("Duplicate Invoice") { }
+Button("Archive") { }
+}
+Bad use case
+CustomRowLayout {
+Text("Title")
+Text("Value")
+}
+when a simple HStack or Grid already solves the problem.
+DO NOT USE GEOMETRYREADER AS YOUR DEFAULT LAYOUT ENGINE
+GeometryReader is for cases where container geometry is genuinely needed.
+It is not the default answer for ordinary view arrangement.
+Rules
+
+Do not introduce GeometryReader just to align ordinary rows, columns, or cards.
+Do not build parent-child measurement feedback loops for basic layout.
+Prefer built-in containers, layout modifiers, or custom Layout conformance.
+Use GeometryReader only when the child genuinely needs container geometry information.
+Bad
+GeometryReader { proxy in
+HStack {
+Text(title)
+.frame(width: proxy.size.width _ 0.4)
+Text(value)
+.frame(width: proxy.size.width _ 0.6)
+}
+}
+Better
+Grid {
+GridRow {
+Text(title)
+Text(value)
+}
+}
+MACOS-SPECIFIC EXPECTATIONS
+For macOS SwiftUI apps:
+layouts must tolerate window resizing
+sidebars, inspectors, and detail panes must adapt to changing width
+tables/forms/toolbars must not rely on phone-sized assumptions
+content should remain readable at large and small window sizes
+inspector/detail layouts should degrade gracefully rather than clipping
+Rules:
+Design every major feature for narrow, medium, and wide window states.
+Do not assume a full-width desktop window.
+Avoid hard-coded widths for major panes unless there is a justified minimum/ideal range.
+Prefer split, grid, and adaptive stacked arrangements over absolute positioning.
+
+HIGH DPI / RETINA (HiDPI) SUPPORT
+For macOS high-resolution displays:
+- Point-Based Layout: Design layouts using points (not pixels). Let SwiftUI scale to physical pixels automatically.
+- Layout Scaling: Use `@ScaledMetric` property wrapper for layout values (padding, spacing) so spacing adapts with text/display scaling preferences.
+- Pixel Drawing: For custom rendering or canvas rendering, use `NSView.convertRectToBacking(_:)` or `convertPointToBacking(_:)` to find exact physical pixel coordinates. Never hardcode scale factors.
+- Vector Assets: Import vector graphics (PDF/SVG) instead of raster graphics (PNG/JPG) to ensure crisp scaling on high-density screens.
+
+ANTI-PATTERNS
+Fixed-Size Everywhere
+Repeated hard-coded frames that break text growth and resizing.
+Offset Layout
+Using .offset or .position to “solve” normal alignment.
+Padding Soup
+Layering unrelated padding calls to fake spacing architecture.
+GeometryReader Abuse
+Measuring everything manually instead of using SwiftUI layout tools.
+One Layout for All Conditions
+Forcing the same horizontal arrangement at every width and text size.
+Decorative Containers
+Introducing extra stacks only to visually push views around.
+Premature Custom Layout
+Writing a Layout type for a problem already solved by stacks, grids, frames, or ViewThatFits.
+CHECKLIST
+Before finalizing layout, verify:
+Did I start with a built-in container?
+Is the chosen container semantically correct?
+Are text and controls allowed to size naturally?
+Are spacing and alignment explicit and systematic?
+Am I using padding, frame, and Spacer for their real purposes?
+Does the layout adapt to narrow widths and larger text?
+Am I avoiding offset/position hacks?
+Is custom layout truly necessary?
+Will this layout still work in a resized macOS window?
+Could another developer understand the layout strategy in one pass?
+ENFORCEMENT SUMMARY
+Always prefer:
+built-in layout containers first
+natural content sizing
+text-aware adaptation
+explicit alignment and spacing
+adaptive layout switching
+custom layout only when justified
+Never allow:
+frame-heavy rigid layouts
+offset-based layout architecture
+arbitrary spacing accumulation
+default GeometryReader usage for ordinary layout
+premature custom layout types

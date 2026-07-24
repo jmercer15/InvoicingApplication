@@ -1,0 +1,100 @@
+---
+description: SwiftUI Clipboard integration for copy, cut, and paste workflows
+alwaysApply: false
+---
+
+# Rule: SwiftUI Clipboard
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/clipboard
+
+Scope
+
+Applies to:
+
+- copy/cut/paste command behavior
+- Transferable payload contracts
+- item-provider fallback integrations
+- selection/focus ownership and mutation safety
+
+Intent
+
+Implement clipboard interactions that match system conventions while preserving
+type safety and predictable domain mutation boundaries.
+
+Core Principle
+
+Clipboard support should use standard system commands and transferable data types.
+
+Implementation Rules
+
+- Prefer Transferable-based APIs (`copyable`, `cuttable`, `pasteDestination`) for new implementations.
+- Provide copy/cut/paste on views that have clear selection or focused ownership.
+- Validate pasted items before mutation when using paste destination APIs.
+- Keep clipboard operations idempotent and explicit about move vs copy semantics.
+- Provide clear user feedback for invalid or rejected paste operations.
+- Use NSItemProvider command APIs only when Transferable is not feasible.
+
+Canonical Patterns
+
+```swift
+Text(selectionText)
+    .copyable(selectionText)
+```
+
+```swift
+List(selection: $selection) { ... }
+    .pasteDestination(for: InvoiceImportPayload.self) { items in
+        importItems(items)
+        return true
+    }
+```
+
+Anti-Patterns
+
+- Building custom nonstandard copy/paste gestures while ignoring system commands.
+- Pasting unvalidated payloads directly into persistent models.
+- Ambiguous cut behavior that deletes before successful paste path is confirmed.
+- Clipboard operations with no selection/focus ownership model.
+
+Checklist
+
+- Are copy/cut/paste behaviors aligned with system expectations?
+- Are transferable types used where possible?
+- Is pasted content validated before persistence changes?
+- Are operation semantics (copy vs move) explicit and safe?
+
+Architectural Implications
+
+- Clipboard behavior is part of platform contract and should be predictable across views/scenes.
+- Copy/cut/paste must align with selection ownership and model mutation boundaries.
+- Transfer representations should be stable and evolution-safe for cross-process usage.
+
+Advanced Notes
+
+- Prefer Transferable APIs for type-safe payload contracts and cleaner integration.
+- Fallback NSItemProvider paths should be isolated and documented for compatibility only.
+- Paste validation should happen before domain mutation and before persistence write paths.
+
+Integration With Architecture
+
+- Attach clipboard behavior at views that own clear selection context (lists, tables, editors).
+- Route paste results through feature-level import/mutation functions, not inline leaf closures.
+- Keep destructive cut semantics explicit and reversible where feasible.
+
+Enforcement Summary
+
+Always prefer:
+
+- standard system command integration
+- Transferable-first data contracts
+- validation-before-mutation paste handling
+- explicit copy/move semantics
+
+Never allow:
+
+- custom clipboard flows that bypass system conventions
+- unvalidated paste to persistent models
+- ambiguous cut behavior
+- clipboard actions without selection/focus ownership

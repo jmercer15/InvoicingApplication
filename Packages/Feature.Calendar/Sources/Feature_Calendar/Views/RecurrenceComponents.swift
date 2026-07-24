@@ -19,8 +19,8 @@ struct MonthDayGridView: View {
                     }
                 }) {
                     Text("\(day)")
-                        .font(.caption)
-                        .frame(width: 24, height: 24)
+                        .font(StyleGuide.Typography.itemSubtitle)
+                        .frame(width: StyleGuide.Dimensions.entityListIconWidth, height: StyleGuide.Dimensions.entityListIconWidth)
                         .background(
                             Circle()
                                 .fill(selectedDays.contains(day) ? Color.accentColor : Color.clear)
@@ -36,43 +36,9 @@ struct MonthDayGridView: View {
 
             }
         }
-        .padding(8)
+        .padding(StyleGuide.Dimensions.paddingMedium)
         .background(Color.accentColor.opacity(0.05))
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
     }
 }
 
-// MARK: - Ordinal Picker View
-struct OrdinalPickerView: View {
-    @Binding var ordinalSelection: OrdinalSelection?
-    @Binding var dayOfWeekSelection: DayOfWeekOption?
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Picker("Ordinal", selection: $ordinalSelection) {
-                Text("Select...").tag(nil as OrdinalSelection?)
-                ForEach(OrdinalSelection.allCases, id: \.self) { ordinal in
-                    Text(ordinal.displayName).tag(ordinal as OrdinalSelection?)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 100)
-            
-            Text("of")
-                .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-            
-            Picker("Day of Week", selection: $dayOfWeekSelection) {
-                Text("Select...").tag(nil as DayOfWeekOption?)
-                ForEach(
-                    DayOfWeekOption.allCases.filter { $0.rawValue >= DayOfWeekOption.sunday.rawValue },
-                    id: \.self
-                ) { dayOption in
-                    Text(dayOption.displayName).tag(dayOption as DayOfWeekOption?)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 120)
-        }
-    }
-}

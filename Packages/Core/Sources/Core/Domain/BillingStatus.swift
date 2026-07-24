@@ -9,7 +9,8 @@ public enum BillingStatus: String, CaseIterable, Codable, Sendable {
     case readyToSend = "ready_to_send"
     case pending = "pending"
     case received = "received"
-    
+    case fixAndResubmit = "fix_and_resubmit"
+
     /// Display name for UI
     public var displayName: String {
         switch self {
@@ -20,9 +21,10 @@ public enum BillingStatus: String, CaseIterable, Codable, Sendable {
         case .readyToSend: return "Ready to Send"
         case .pending: return "Pending"
         case .received: return "Received"
+        case .fixAndResubmit: return "Fix and Resubmit"
         }
     }
-    
+
     /// Column type for kanban board organization
     public var columnType: BillingColumnType {
         switch self {
@@ -32,6 +34,8 @@ public enum BillingStatus: String, CaseIterable, Codable, Sendable {
             return .processing
         case .pending, .received:
             return .payment
+        case .fixAndResubmit:
+            return .processing
         }
     }
 }

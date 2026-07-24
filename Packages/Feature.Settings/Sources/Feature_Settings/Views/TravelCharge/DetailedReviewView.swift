@@ -1,22 +1,28 @@
 import SwiftUI
 import Data
-import Core
 import SharedUI
 
 struct DetailedReviewView: View {
     let reviewItem: String
     
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     @State private var suggestedAction = "Fix Location"
     @State private var notes = ""
     
     private let actions = ["Fix Location", "Override Compliance", "Skip", "Manual Charge"]
     
+    private static let itemDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        return df
+    }()
+
     var body: some View {
         ScrollView {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             // Header
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                 Text("Detailed Review")
                     .font(.title2.bold())
                 Text("Review and resolve the flagged item")
@@ -26,19 +32,19 @@ struct DetailedReviewView: View {
             
             // Review Item Details
             GroupBox("Review Item") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Text(reviewItem)
                         .font(.body)
-                        .foregroundColor(.orange)
+                        .foregroundColor(ColorSystem.Status.warning)
                     
                     // Parse the review item to show structured information
                     if let parsedInfo = parseReviewItem(reviewItem) {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             Text("Session: \(parsedInfo.sessionTitle)")
                             Text("Client: \(parsedInfo.clientName)")
                             Text("Issue: \(parsedInfo.reason)")
                             if let date = parsedInfo.date {
-                                Text("Date: \(date, formatter: DateFormatter())")
+                                Text("Date: \(date, formatter: Self.itemDateFormatter)")
                             }
                         }
                         .font(.caption)
@@ -49,7 +55,7 @@ struct DetailedReviewView: View {
             
             // Action Selection
             GroupBox("Suggested Action") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Picker("Action", selection: $suggestedAction) {
                         ForEach(actions, id: \.self) { action in
                             Text(action).tag(action)
@@ -68,7 +74,7 @@ struct DetailedReviewView: View {
             }
             
             // Action Buttons
-            HStack(spacing: 16) {
+            HStack(spacing: FormSectionTokens.formGroupSpacing) {
                 Button("Cancel") {
                     dismiss()
                 }
@@ -88,7 +94,7 @@ struct DetailedReviewView: View {
         }
         .padding()
         }
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(minWidth: StyleGuide.Dimensions.settingsSheetStandardMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetStandardMinHeight)
     }
     
     private func parseReviewItem(_ item: String) -> ReviewItemInfo? {

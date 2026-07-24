@@ -11,7 +11,7 @@ import EventKit
 import Data
 import SharedUI
 
-struct SessionSupportLogDraft {
+struct SessionSupportLogDraft: Sendable {
     var isEnabled: Bool = false
     var participantName: String = ""
     var participantNdisNumber: String = ""
@@ -101,46 +101,15 @@ struct SessionFormModel {
                (isAllDay || startTime < endTime)
     }
     
-    var fullAddress: String {
-        let line1: String
-        if !poBox.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            line1 = "PO Box \(poBox.trimmingCharacters(in: .whitespacesAndNewlines))"
-        } else {
-            var streetParts: [String] = []
-            let unit = unitNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-            let number = streetNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-            let name = streetName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if !unit.isEmpty && !number.isEmpty {
-                streetParts.append("\(unit)/\(number)")
-            } else if !number.isEmpty {
-                streetParts.append(number)
-            }
-            
-            if !name.isEmpty {
-                streetParts.append(name)
-            }
-            line1 = streetParts.joined(separator: " ")
-        }
-        
-        var localityParts: [String] = []
-        let cityText = city.trimmingCharacters(in: .whitespacesAndNewlines)
-        let suburbText = suburb.trimmingCharacters(in: .whitespacesAndNewlines)
-        let locality = suburbText.isEmpty ? cityText : suburbText
-        if !locality.isEmpty { localityParts.append(locality) }
-        if !state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { localityParts.append(state.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        if !postcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { localityParts.append(postcode.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        
-        let line2 = localityParts.joined(separator: " ")
-        
-        return [line1, line2]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-    }
-    
     var hasRecurrence: Bool {
         return recurrenceFrequency != .none
+    }
+
+    /// True when any structured address field used by the map / manual address UI is non-empty.
+    var hasStructuredAddressInput: Bool {
+        !unitNumber.isEmpty || !streetNumber.isEmpty || !streetName.isEmpty ||
+            !suburb.isEmpty || !city.isEmpty || !state.isEmpty || !postcode.isEmpty ||
+            !country.isEmpty || !poBox.isEmpty
     }
     
     // MARK: - Initialization
@@ -149,8 +118,8 @@ struct SessionFormModel {
         // Default initialization
     }
     
-    /// Initialize from an existing SessionEntity
-    init(from session: SessionEntity) {
+    /// Initialize from a Session domain model
+    init(from session: Session, recurrenceRuleManager: Core.RecurrenceRuleManager) {
         self.title = session.title
         self.isAllDay = session.isAllDay
         self.startTime = session.startTime ?? Date()
@@ -162,58 +131,10 @@ struct SessionFormModel {
         self.supportLogDraft.deliveredTo = self.endTime
         self.supportLogDraft.location = self.location
         
-        self.selectedClientID = session.client?.id
-        self.selectedClientServiceID = session.clientService?.id
-        
-        // Load address data from linked AddressEntity
-        if let address = session.address {
-            self.unitNumber = address.unitNumber
-            self.streetNumber = address.streetNumber
-            self.streetName = address.streetName
-            self.suburb = address.suburb
-            self.city = address.city
-            self.state = address.state
-            self.postcode = address.postcode
-            self.country = address.country
-            self.poBox = address.poBox
-            self.sessionLatitude = address.latitude
-            self.sessionLongitude = address.longitude
-        } else {
-            // Fallback to legacy location field and session coordinates
-            self.sessionLatitude = session.sessionLatitude
-            self.sessionLongitude = session.sessionLongitude
-        }
-        
-        self.googleCalendarColorId = session.googleColorId
-        self.useGoogleColor = session.googleColorId != nil
-        
-        // Load recurrence settings if present
-        if let ruleData = session.recurrenceRuleData,
-           let rule = RecurrenceRuleManager.shared.deserialize(ruleData) {
-            populateRecurrenceSettings(from: rule)
-        }
-    }
-    
-    /// Initialize from a Session domain model
-    init(from session: Session) {
-        self.title = session.title
-        self.isAllDay = session.isAllDay
-        self.startTime = session.startTime ?? Date()
-        self.endTime = session.endTime ?? Date().addingTimeInterval(3600)
-        self.status = session.status ?? String.sessionStatusPlanned
-        self.location = session.location ?? ""
-        self.notes = session.notes ?? ""
-        self.supportLogDraft.deliveredFrom = self.startTime
-        self.supportLogDraft.deliveredTo = self.endTime
-        self.supportLogDraft.location = self.location
-        
         self.selectedClientID = session.clientId
         self.selectedClientServiceID = session.clientServiceId
         
-        // Session domain model has addressId but not full address details
-        // Address details should be fetched using AddressRepository when needed
-        // For now, use session coordinates which are sufficient for most cases
-        // Address details can be loaded when editing if needed by fetching from SessionEntity or AddressRepository
+        // Session stores coordinates directly; full address lookup can be derived from `Session` when needed.
         self.sessionLatitude = session.sessionLatitude
         self.sessionLongitude = session.sessionLongitude
         
@@ -222,14 +143,14 @@ struct SessionFormModel {
         
         // Load recurrence settings if present
         if let ruleData = session.recurrenceRuleData,
-           let rule = RecurrenceRuleManager.shared.deserialize(ruleData) {
+           let rule = recurrenceRuleManager.deserialize(ruleData) {
             populateRecurrenceSettings(from: rule)
         }
     }
     
     /// Initialize from an EKEvent
     init(from event: EKEvent) {
-        let parsedLocation = EventKitLocationParser.parse(event: event)
+        let parsedLocation = Core.EventKitLocationParser.parse(event: event)
         self.title = event.title ?? "New Session"
         self.isAllDay = event.isAllDay
         self.startTime = event.startDate
@@ -417,24 +338,6 @@ struct SessionFormModel {
     
     // MARK: - Mutation Methods
     
-    mutating func updateStartTime(_ newStartTime: Date) {
-        startTime = newStartTime
-        
-        // Only adjust end time if it would create an invalid time range
-        if !isAllDay && endTime <= startTime {
-            endTime = startTime.addingTimeInterval(3600)
-        }
-    }
-    
-    mutating func updateEndTime(_ newEndTime: Date) {
-        endTime = newEndTime
-        
-        // Only adjust start time if it would create an invalid time range
-        if !isAllDay && endTime <= startTime {
-            startTime = endTime.addingTimeInterval(-3600)
-        }
-    }
-    
     mutating func clearRecurrence() {
         recurrenceFrequency = .none
         recurrenceInterval = 1
@@ -455,44 +358,61 @@ struct SessionFormModel {
         selectedOrdinal = 1
         selectedDayOfWeekForOrdinal = .monday
     }
-    
-    mutating func updateFromEKEvent(_ event: EKEvent) {
-        let parsedLocation = EventKitLocationParser.parse(event: event)
-        title = event.title ?? title
-        isAllDay = event.isAllDay
-        startTime = event.startDate
-        endTime = event.endDate
-        
-        location = parsedLocation.preferredLocation ?? ""
-        notes = event.notes ?? notes
-        sourceEventIdentifier = event.eventIdentifier
-        unitNumber = parsedLocation.unitNumber
-        streetNumber = parsedLocation.streetNumber
-        streetName = parsedLocation.streetName
-        suburb = parsedLocation.suburb
-        city = parsedLocation.city
-        state = parsedLocation.state
-        postcode = parsedLocation.postcode
-        country = parsedLocation.country
-        poBox = parsedLocation.poBox
-        sessionLatitude = parsedLocation.latitude
-        sessionLongitude = parsedLocation.longitude
-        addressSearchText = parsedLocation.fullAddressText
-        
-        if let colorId = GoogleCalendarColors.getGoogleEventColorId(event) {
-            googleCalendarColorId = colorId
-            useGoogleColor = true
-        }
-        
-        if let ekRule = event.recurrenceRules?.first {
-            populateRecurrenceSettings(from: ekRule)
-        } else {
-            clearRecurrence()
-        }
+
+    // MARK: - Address sheet undo (cancel without saving)
+
+    struct AddressEditingUndoSnapshot: Equatable {
+        var unitNumber: String
+        var streetNumber: String
+        var streetName: String
+        var suburb: String
+        var city: String
+        var state: String
+        var postcode: String
+        var country: String
+        var poBox: String
+        var sessionLatitude: Double
+        var sessionLongitude: Double
+        var addressSearchText: String
+        var selectedAddress: AddressData?
+    }
+
+    var addressEditingUndoSnapshot: AddressEditingUndoSnapshot {
+        AddressEditingUndoSnapshot(
+            unitNumber: unitNumber,
+            streetNumber: streetNumber,
+            streetName: streetName,
+            suburb: suburb,
+            city: city,
+            state: state,
+            postcode: postcode,
+            country: country,
+            poBox: poBox,
+            sessionLatitude: sessionLatitude,
+            sessionLongitude: sessionLongitude,
+            addressSearchText: addressSearchText,
+            selectedAddress: selectedAddress
+        )
+    }
+
+    mutating func restoreAddressEditingUndo(_ snapshot: AddressEditingUndoSnapshot) {
+        unitNumber = snapshot.unitNumber
+        streetNumber = snapshot.streetNumber
+        streetName = snapshot.streetName
+        suburb = snapshot.suburb
+        city = snapshot.city
+        state = snapshot.state
+        postcode = snapshot.postcode
+        country = snapshot.country
+        poBox = snapshot.poBox
+        sessionLatitude = snapshot.sessionLatitude
+        sessionLongitude = snapshot.sessionLongitude
+        addressSearchText = snapshot.addressSearchText
+        selectedAddress = snapshot.selectedAddress
     }
     
     // MARK: - Supporting Types
-    
+
     enum ValidationError: String, CaseIterable {
         case emptyTitle = "Title cannot be empty"
         case noClientSelected = "Please select a client"

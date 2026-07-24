@@ -1,0 +1,74 @@
+# SwiftLint configuration for InvoicingApplication
+# Excludes third-party dependencies and build artifacts
+
+excluded:
+  - .build
+  - ".build/checkouts"
+  - "Packages/*/.build"
+  - "Packages/*/.*/checkouts"
+  - Carthage
+  - Pods
+  - DerivedData
+  - .swiftpm
+  - "Packages/*/.swiftpm"
+
+# Disable rules that flag third-party patterns (if any slip through)
+disabled_rules:
+  - todo # Allow TODO/FIXME in development
+
+# Opt-in rules (project standards)
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - modifier_order
+  - multiline_parameters
+  - overridden_super_call
+  - private_outlet
+  # redundant_nil_coalescing disabled: incorrectly "fixes" first(where:) on [String?] which returns String??
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+
+# Identifier naming (min 3 allows common names: min, max, url, log, ctx, lhs, rhs)
+identifier_name:
+  min_length: 3
+  max_length: 50
+
+# Type name length (T for generics allowed via excluded)
+type_name:
+  min_length: 2
+  max_length: 50
+
+# File length (warn only)
+file_length:
+  warning: 500
+  error: 800
+
+# Type/function body length
+type_body_length:
+  warning: 300
+  error: 400
+
+function_body_length:
+  warning: 40
+  error: 60
+
+function_parameter_count:
+  warning: 5
+  error: 8
+
+# Line length
+line_length:
+  warning: 150
+  error: 200
+  ignores_urls: true
+  ignores_comments: true
+
+# Force unwrapping - warning only
+force_unwrapping: warning
+
+# Reporter
+reporter: "xcode"

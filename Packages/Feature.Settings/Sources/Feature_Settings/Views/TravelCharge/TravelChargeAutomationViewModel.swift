@@ -1,39 +1,46 @@
 import SwiftUI
-import Combine
 import Data
 import Core
 import SharedUI
 import MapKit
+import Observation
+import SwiftData
 
+@Observable
 @MainActor
-public final class TravelChargeAutomationViewModel: ObservableObject {
+public final class TravelChargeAutomationViewModel {
     // MARK: - Dependencies
-    public let unitOfWork: UnitOfWorkService
-    public let automationService: TravelChargeAutomationService
-    
+    private let modelContext: ModelContext
+    /// Mirrors the latest `TravelChargeAutomationTestView` `@Query` snapshot for PID resolution without per-id fetches.
+    private var sessionsById: [UUID: Session] = [:]
+    /// Cancels stale background expansion when session query updates rapidly.
+    private var expansionTask: Task<Void, Never>?
+    private let automationActor: TravelChargeAutomationActor
+    private let geocodingService: any Core.GeocodingServiceProtocol
+    private let mmmZoneLookup: any Core.MMMZoneLookupProtocol
+    private let recurrenceRuleManager: Core.RecurrenceRuleManager
+    private let expansionWorker = TravelChargeSessionExpansionWorker()
+
     // MARK: - Published Properties
-    @Published var sessions: [SessionEntity] = []
-    @Published var selectedSessionInstances: Set<String> = []
-    @Published var cachedExpandedSessions: [TravelChargeAutomationService.SessionInstance] = []
+    var selectedSessionInstances: Set<String> = []
+    var cachedExpandedSessions: [Core.TravelChargeAutomationService.SessionInstance] = []
     
-    @Published var isRunning: Bool = false
-    @Published var errorMessage: String? = nil
-    @Published var mmmZoneResult: String? = nil
-    @Published var mmmZoneForAddress: String? = nil
+    var isRunning: Bool = false
+    var errorMessage: String? = nil
+    var mmmZoneResult: String? = nil
+    var mmmZoneForAddress: String? = nil
     
-    @Published var testChargeSummaries: [String] = []
-    @Published var testReviewSummaries: [String] = []
-    @Published var testDetailedReviewItems: [DetailedReviewItem] = []
+    var testChargeSummaries: [String] = []
+    var testReviewSummaries: [String] = []
+    var testDetailedReviewItems: [Core.DetailedReviewItem] = []
     
-    @Published var businessAddressInfo: BusinessAddressInfo? = nil
-    @Published var isLoadingBusinessAddress: Bool = false
+    var businessAddressInfo: BusinessAddressInfo? = nil
+    var isLoadingBusinessAddress: Bool = false
     
     // Address search state
-    @Published var addressSearchText: String = ""
-    @Published var selectedAddress: AddressData? = nil
-    
-    private var cancellables = Set<AnyCancellable>()
-    
+    var addressSearchText: String = ""
+    var selectedAddress: AddressData? = nil
+
     public struct BusinessAddressInfo {
         public let hasBusiness: Bool
         public let fullFormattedAddress: String
@@ -49,101 +56,56 @@ public final class TravelChargeAutomationViewModel: ObservableObject {
     }
     
     // MARK: - Initialization
-    public init(unitOfWork: UnitOfWorkService) {
-        self.unitOfWork = unitOfWork
-        // Initialize automation service in testing mode by default for the test view
-        self.automationService = TravelChargeAutomationService(
-            unitOfWork: unitOfWork,
-            businessRules: BusinessRules(),
-            userPreferences: UserPreferences(),
-            mmmZoneTable: MMMZoneTable(),
-            testingMode: true
-        )
+    public init(
+        modelContext: ModelContext,
+        automationActor: TravelChargeAutomationActor,
+        geocodingService: any Core.GeocodingServiceProtocol,
+        mmmZoneLookup: any Core.MMMZoneLookupProtocol,
+        recurrenceRuleManager: Core.RecurrenceRuleManager
+    ) {
+        self.modelContext = modelContext
+        self.automationActor = automationActor
+        self.geocodingService = geocodingService
+        self.mmmZoneLookup = mmmZoneLookup
+        self.recurrenceRuleManager = recurrenceRuleManager
     }
     
     // MARK: - Public API
     
-    func refreshSessions() async {
-        do {
-            let fetchedSessions = try await unitOfWork.sessions.fetchAll()
-            self.sessions = try resolveSessionEntities(for: fetchedSessions.map { $0.id })
-            self.computeExpandedSessions()
-        } catch {
-            self.errorMessage = "Failed to fetch sessions: \(error.localizedDescription)"
-        }
+    public func getSession(by id: UUID) -> Session? {
+        return sessionsById[id]
     }
-    
-    func computeExpandedSessions() {
-        var instances: [TravelChargeAutomationService.SessionInstance] = []
+
+    func updateSessions(_ sessions: [Session]) {
+        sessionsById = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let snapshots = sessions.map { $0.snapshot() }
         let calendar = Calendar.current
         let today = Date()
-        
+
         let startOfRange = calendar.date(byAdding: .month, value: -6, to: today) ?? today
         let endOfRange = calendar.date(byAdding: .month, value: 6, to: today) ?? today
-        
-        let recurrenceService = RecurrenceService()
-        
-        let recurringSessions = sessions.filter { $0.recurrenceRuleData != nil }
-        let domainSessions = recurringSessions.map { mapToDomain($0) }
-        
-        let expandedSessionData = recurrenceService.expandRecurringSessions(
-            domainSessions,
-            rangeStart: startOfRange,
-            rangeEnd: endOfRange
-        )
-        
-        for sessionData in expandedSessionData {
-            guard let masterSession = sessions.first(where: { $0.id == sessionData.masterSession.id }) else { continue }
-            for instance in sessionData.instances {
-                let sessionInstance = TravelChargeAutomationService.SessionInstance(
-                    session: masterSession,
-                    instanceStart: instance.instanceStart,
-                    instanceEnd: instance.instanceEnd
-                )
-                instances.append(sessionInstance)
-            }
-        }
-        
-        let nonRecurringSessions = sessions.filter { $0.recurrenceRuleData == nil }
-        for session in nonRecurringSessions {
-            if let start = session.startTime {
-                let end = session.endTime ?? start
-                let sessionInstance = TravelChargeAutomationService.SessionInstance(
-                    session: session,
-                    instanceStart: start,
-                    instanceEnd: end
-                )
-                instances.append(sessionInstance)
-            }
-        }
-        
-        self.cachedExpandedSessions = instances.sorted { $0.instanceStart < $1.instanceStart }
-    }
-    
-    func loadBusinessAddressInfo() async {
-        guard !isLoadingBusinessAddress else { return }
-        isLoadingBusinessAddress = true
-        defer { isLoadingBusinessAddress = false }
 
-        do {
-            if let business = try await unitOfWork.business.fetchFirst() {
-                let address = business.address
-                self.businessAddressInfo = BusinessAddressInfo(
-                    hasBusiness: true,
-                    fullFormattedAddress: address?.fullFormattedAddress ?? "",
-                    fullAddressText: address?.fullFormattedAddress ?? "",
-                    streetName: address?.streetName ?? "",
-                    suburb: address?.suburb ?? "",
-                    state: address?.state ?? "",
-                    postcode: address?.postcode ?? ""
-                )
-            } else {
-                self.businessAddressInfo = nil
+        let manager = recurrenceRuleManager
+        expansionTask?.cancel()
+        expansionTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let expanded = await self.expansionWorker.expand(
+                from: snapshots,
+                rangeStart: startOfRange,
+                rangeEnd: endOfRange,
+                recurrenceRuleManager: manager
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.cachedExpandedSessions = expanded
+                let validInstanceIDs = Set(expanded.map(\.uniqueInstanceId))
+                self.selectedSessionInstances = self.selectedSessionInstances.intersection(validInstanceIDs)
             }
-        } catch {
-            print("❌ [TravelChargeAutomationViewModel] Error loading business address: \(error)")
-            self.businessAddressInfo = nil
         }
+    }
+
+    func updateBusiness(_ business: Business?) {
+        applyBusinessAddressInfo(from: business)
     }
     
     func runAutomation() async {
@@ -155,50 +117,59 @@ public final class TravelChargeAutomationViewModel: ObservableObject {
         testReviewSummaries = []
         testDetailedReviewItems = []
         
-        // Convert selected session instances to proper Session domain models
-        var sessionsToProcess: [Session] = []
         let selectedInstances = cachedExpandedSessions.filter { selectedSessionInstances.contains($0.uniqueInstanceId) }
-        
-        for instance in selectedInstances {
-            sessionsToProcess.append(mapToDomain(instance.session))
-        }
+        let selectedSessionIDs = Set(selectedInstances.map { $0.session.session.id })
+        let modelIDs = modelIDs(for: selectedSessionIDs)
         
         let earliestDate = selectedInstances.map { $0.instanceStart }.min() ?? Date()
         let latestDate = selectedInstances.map { $0.instanceEnd }.max() ?? Date()
         let dateRange = earliestDate...latestDate
         
-        // Use the domain-based method
-        do {
-            try automationService.automateTravelCharges(for: sessionsToProcess, dateRange: dateRange)
-        } catch {
-            self.errorMessage = "Automation error: \(error.localizedDescription)"
-        }
-        
-        let (charges, reviews, detailedReviews) = automationService.getTestResults()
-        self.testChargeSummaries = charges
-        self.testReviewSummaries = reviews
-        self.testDetailedReviewItems = detailedReviews
+        let result = await automationActor.runAutomation(
+            sessionModelIDs: modelIDs,
+            dateRange: dateRange,
+            testingMode: true,
+            mmmZoneLookup: mmmZoneLookup,
+            recurrenceRuleManager: recurrenceRuleManager
+        )
+        self.testChargeSummaries = result.charges
+        self.testReviewSummaries = result.reviews
+        self.testDetailedReviewItems = result.detailedReviews
         self.isRunning = false
     }
     
-    func showMMMZone(for session: SessionEntity) async {
+    /// Uses the session model from the workspace `@Query` snapshot when available.
+    public func showMMMZone(for session: Session?) async {
+        guard let session else {
+            mmmZoneResult = "Session no longer available."
+            return
+        }
+        await resolveMMMZone(for: session)
+    }
+    
+    private func resolveMMMZone(for session: Session) async {
         if session.sessionLatitude != 0 || session.sessionLongitude != 0 {
             let coord = CLLocationCoordinate2D(latitude: session.sessionLatitude, longitude: session.sessionLongitude)
-            if let mmmCode = MMMZoneLookup.shared.mmm(for: coord) {
+            if let mmmCode = mmmZoneLookup.mmm(for: coord) {
                 mmmZoneResult = "Code: \(mmmCode) for coordinates"
             } else {
                 mmmZoneResult = "No MMM zone found for coordinates"
             }
         } else if let address = session.location, !address.isEmpty {
-            if let coordinate = await GeocodingService.shared.geocodeAddressString(address) {
+            if let coordinate = await geocodingService.geocodeAddressString(address) {
                 let resolvedCoordinate = CLLocationCoordinate2D(
                     latitude: coordinate.latitude,
                     longitude: coordinate.longitude
                 )
                 session.sessionLatitude = resolvedCoordinate.latitude
                 session.sessionLongitude = resolvedCoordinate.longitude
+                do {
+                    try modelContext.save()
+                } catch {
+                    errorMessage = "Failed to persist session coordinates: \(error.localizedDescription)"
+                }
 
-                if let mmmCode = MMMZoneLookup.shared.mmm(for: resolvedCoordinate) {
+                if let mmmCode = mmmZoneLookup.mmm(for: resolvedCoordinate) {
                     mmmZoneResult = "Code: \(mmmCode) for coordinates (after geocoding)"
                 } else {
                     mmmZoneResult = "No MMM zone found for coordinates (after geocoding)"
@@ -218,12 +189,12 @@ public final class TravelChargeAutomationViewModel: ObservableObject {
             return
         }
         
-        if let coordinate = await GeocodingService.shared.geocodeAddressString(addressString) {
+        if let coordinate = await geocodingService.geocodeAddressString(addressString) {
             let resolvedCoordinate = CLLocationCoordinate2D(
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude
             )
-            if let mmmCode = MMMZoneLookup.shared.mmm(for: resolvedCoordinate) {
+            if let mmmCode = mmmZoneLookup.mmm(for: resolvedCoordinate) {
                 self.mmmZoneForAddress = "Code: \(mmmCode) for coordinates (after geocoding)"
             } else {
                 self.mmmZoneForAddress = "No MMM zone found for coordinates (after geocoding)"
@@ -243,32 +214,53 @@ public final class TravelChargeAutomationViewModel: ObservableObject {
     
     // MARK: - Private Helpers
     
-    private func mapToDomain(_ entity: SessionEntity) -> Session {
-        return Session(
-            id: entity.id,
-            title: entity.title,
-            startTime: entity.startTime,
-            endTime: entity.endTime,
-            isAllDay: entity.isAllDay,
-            location: entity.location,
-            notes: entity.notes,
-            status: entity.status?.rawValue,
-            isTravel: entity.isTravel,
-            clientId: entity.client?.id,
-            clientServiceId: entity.clientService?.id,
-            groupID: entity.groupID,
-            recurrenceRuleData: entity.recurrenceRuleData
-        )
+    private func modelIDs(for sessionIDs: Set<UUID>) -> [PersistentIdentifier] {
+        guard !sessionIDs.isEmpty else { return [] }
+        var modelIDs: [PersistentIdentifier] = []
+        modelIDs.reserveCapacity(sessionIDs.count)
+        for id in sessionIDs {
+            if let session = sessionsById[id] {
+                modelIDs.append(session.persistentModelID)
+            }
+        }
+        return modelIDs
     }
 
-    private func resolveSessionEntities(for sessionIds: [UUID]) throws -> [SessionEntity] {
-        guard let swiftDataUnitOfWork = unitOfWork as? SwiftDataUnitOfWork else {
-            return []
+    private func applyBusinessAddressInfo(from business: Business?) {
+        guard let business else {
+            businessAddressInfo = nil
+            return
         }
 
-        let resolver = EntityResolutionService(context: swiftDataUnitOfWork.legacyModelContext)
-        return try sessionIds.compactMap { id in
-            try resolver.resolveSession(id: id)
-        }
+        let address = business.address
+        businessAddressInfo = BusinessAddressInfo(
+            hasBusiness: true,
+            fullFormattedAddress: address?.fullFormattedAddress ?? "",
+            fullAddressText: address?.fullAddressText ?? address?.fullFormattedAddress ?? "",
+            streetName: address?.streetName ?? "",
+            suburb: {
+                let suburb = address?.suburb.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !suburb.isEmpty { return suburb }
+                return address?.city ?? ""
+            }(),
+            state: address?.state ?? "",
+            postcode: address?.postcode ?? ""
+        )
+    }
+}
+
+private actor TravelChargeSessionExpansionWorker {
+    func expand(
+        from snapshots: [SessionSnapshot],
+        rangeStart: Date,
+        rangeEnd: Date,
+        recurrenceRuleManager: Core.RecurrenceRuleManager
+    ) async -> [Core.TravelChargeAutomationService.SessionInstance] {
+        TravelChargeAutomationSessionExpansion.buildExpandedInstances(
+            from: snapshots,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            recurrenceRuleManager: recurrenceRuleManager
+        )
     }
 }

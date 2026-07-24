@@ -1,0 +1,102 @@
+---
+description: SwiftUI gesture design, precedence, composition, and state handling
+alwaysApply: false
+---
+
+# Rule: SwiftUI Gestures
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/gestures
+
+Scope
+
+Applies to:
+
+- direct gesture recognizers (tap, long press, drag, magnify, rotate)
+- composed gesture systems (simultaneous, sequential, exclusive)
+- gesture precedence and masking
+- transient gesture state and accessibility implications
+
+Intent
+
+Implement interaction gestures that are explicit, composable, accessible,
+and consistent with platform control semantics.
+
+Core Principle
+
+Use semantic controls first; use gestures for spatial interaction where controls
+are insufficient.
+
+Implementation Rules
+
+- Prefer `Button` for action taps; do not replace controls with raw tap gestures
+  for primary actions.
+- Use dedicated gesture types (`DragGesture`, `MagnifyGesture`, `RotateGesture`)
+  by interaction intent.
+- Manage temporary interaction state with `@GestureState`.
+- Use gesture precedence APIs (`highPriorityGesture`, `simultaneousGesture`,
+  `gesture(_:including:)`) intentionally and sparingly.
+- Keep composed gesture behavior deterministic and testable.
+- Ensure gesture affordances remain accessible via alternate input paths.
+
+Canonical Patterns
+
+```swift
+@GestureState private var dragOffset: CGSize = .zero
+
+var drag: some Gesture {
+    DragGesture()
+        .updating($dragOffset) { value, state, _ in
+            state = value.translation
+        }
+}
+```
+
+Anti-Patterns
+
+- Using `onTapGesture` as a universal action mechanism.
+- Stacking multiple high-priority gestures without clear ownership semantics.
+- Putting business mutations directly inside low-level gesture callbacks.
+- Ignoring accessibility alternatives for gesture-only interactions.
+
+Checklist
+
+- Is a semantic control available and preferable to a raw gesture?
+- Is gesture state modeled separately from persistent feature state?
+- Are precedence/composition decisions explicit?
+- Does interaction remain accessible and keyboard-friendly where applicable?
+
+Architectural Implications
+
+- Gestures should encode spatial interaction semantics; controls encode action semantics.
+- Gesture precedence and composition are architectural contracts that affect nested view behavior and predictability.
+- Gesture systems must coexist with keyboard, command, and accessibility pathways.
+
+Advanced Notes
+
+- Use `GestureState` for transient interaction data and avoid leaking that into persistent model state.
+- High-priority and simultaneous gestures should be rare and intentionally documented in complex surfaces.
+- Complex composed gestures should be feature-level abstractions, not ad hoc per-row closures.
+
+Integration With Architecture
+
+- Keep gesture orchestration near feature roots for canvases/inspectors and complex interaction regions.
+- In lists/tables, avoid attaching heavy custom gestures that conflict with selection/swipe semantics.
+- Preserve alternate interaction paths for critical actions in macOS keyboard-first workflows.
+
+Enforcement Summary
+
+Always prefer:
+
+- semantic controls for primary actions
+- focused gesture usage for spatial manipulation
+- explicit precedence/composition decisions
+- accessibility-equivalent action pathways
+
+Never allow:
+
+- tap-gesture replacement of standard controls
+- hidden side-effect-heavy gesture handlers
+- precedence layering without clear ownership
+- gesture-only critical workflows

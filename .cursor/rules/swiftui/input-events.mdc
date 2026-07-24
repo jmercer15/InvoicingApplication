@@ -1,0 +1,98 @@
+---
+description: SwiftUI keyboard, hover, command, and hardware input event architecture
+alwaysApply: false
+---
+
+# Rule: SwiftUI Input Events
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/input-events
+
+Scope
+
+Applies to:
+
+- keyboard shortcuts and key press handlers
+- command event handlers and submission triggers
+- pointer/hover behavior and pointer styling
+- focus-dependent hardware input behavior
+
+Intent
+
+Provide a coherent cross-input interaction layer where keyboard, pointer,
+command, and form submission behavior reinforce one another.
+
+Core Principle
+
+Input events should augment semantic interaction models, not replace them.
+
+Implementation Rules
+
+- Use `keyboardShortcut` for high-value commands with stable intent.
+- Use `onKeyPress` only on focusable views with explicit focus ownership.
+- Use command handlers (`onMoveCommand`, `onDeleteCommand`, `onCommand`) for
+  platform-native command input.
+- Keep hover interactions additive; they should not be the only path to core actions.
+- Prefer `onSubmit` and submit scoping for form submission flows.
+- Ensure input behavior is consistent across pointer, keyboard, and command routes.
+
+Canonical Patterns
+
+```swift
+Button("Save") { save() }
+    .keyboardShortcut("s", modifiers: [.command])
+```
+
+```swift
+TextField("Search", text: $query)
+    .onSubmit { executeSearch() }
+```
+
+Anti-Patterns
+
+- Binding critical actions to hidden shortcuts with no discoverable UI path.
+- Attaching key handlers without clear focus model.
+- Making hover-only UI required for primary workflows.
+- Duplicating command routing logic in multiple leaf views.
+
+Checklist
+
+- Are keyboard shortcuts reserved for stable, high-value actions?
+- Is focus ownership clear for key-press handling?
+- Are command handlers defined at appropriate scope?
+- Do pointer/hover behaviors complement, rather than replace, core controls?
+
+Architectural Implications
+
+- Input event handling defines multi-modal interaction parity (keyboard, pointer, command system).
+- Command routing should reflect scene/workspace scope and active focus context.
+- Shortcut design must align with menu/command architecture for discoverability and consistency.
+
+Advanced Notes
+
+- Key press handlers depend on focus; without explicit focus contracts they become unreliable.
+- Hover effects should be additive and reversible, not the only state-revealing mechanism.
+- Submission handling (`onSubmit`, `submitScope`) should be part of form ownership boundaries.
+
+Integration With Architecture
+
+- Keep global command hooks near app/scene boundaries and feature command coordinators.
+- In editor/workspace views, bind key events to focused regions rather than app-global state mutation.
+- Use consistent shortcut vocabulary across command menus, toolbars, and contextual controls.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit focus-aware key handling
+- coherent shortcut + command architecture
+- additive hover/pointer effects
+- scoped submission semantics
+
+Never allow:
+
+- hidden shortcut-only critical actions
+- key handlers without focus model
+- pointer-only pathways for primary actions
+- duplicated command logic across unrelated leaf views

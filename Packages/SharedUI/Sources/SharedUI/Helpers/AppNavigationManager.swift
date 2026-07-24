@@ -1,217 +1,305 @@
 import Foundation
 import SwiftUI
-import Data
 import Core
-
-// MARK: - Navigation History Entry
-struct NavigationHistoryEntry: Identifiable, Equatable {
-    let id = UUID()
-    let tab: AppTab
-    let context: NavigationContext?
-    let timestamp: Date
-    let title: String // Human-readable description of the navigation
-    
-    init(tab: AppTab, context: NavigationContext? = nil, title: String? = nil) {
-        self.tab = tab
-        self.context = context
-        self.timestamp = Date()
-        
-        // Generate a descriptive title based on tab and context
-        if let customTitle = title {
-            self.title = customTitle
-        } else {
-            self.title = Self.generateTitle(for: tab, context: context)
-        }
-    }
-    
-    static func generateTitle(for tab: AppTab, context: NavigationContext?) -> String {
-        if let entityType = context?.targetEntityType {
-            switch entityType {
-            case .client:
-                return "\(tab.title) - Client Details"
-            case .session:
-                return "\(tab.title) - Session Details"
-            case .invoice:
-                return "\(tab.title) - Invoice Details"
-            case .payee:
-                return "\(tab.title) - Payee Details"
-            case .planManager:
-                return "\(tab.title) - Plan Manager Details"
-            case .clientService:
-                return "\(tab.title) - Service Details"
-            case .ndisItem:
-                return "\(tab.title) - NDIS Item Details"
-            }
-        } else if let targetDate = context?.targetDate {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            return "\(tab.title) - \(formatter.string(from: targetDate))"
-        } else {
-            return tab.title
-        }
-    }
-    
-    static func == (lhs: NavigationHistoryEntry, rhs: NavigationHistoryEntry) -> Bool {
-        return lhs.tab == rhs.tab &&
-               lhs.context?.targetEntity == rhs.context?.targetEntity &&
-               lhs.context?.targetEntityType == rhs.context?.targetEntityType &&
-               lhs.context?.targetDate == rhs.context?.targetDate
-    }
-}
-
-// MARK: - Navigation Context Data Models
-public struct NavigationContext {
-    public var targetEntity: UUID?
-    public var targetEntityType: EntityType?
-    public var targetDate: Date?
-    public var searchQuery: String?
-    public var additionalData: [String: Any]?
-    
-    public enum EntityType {
-        case client
-        case session
-        case invoice
-        case payee
-        case planManager
-        case clientService
-        case ndisItem
-    }
-}
+import Observation
 
 // MARK: - App Navigation Manager
+@Observable
 @MainActor
-public class AppNavigationManager: ObservableObject {
-    @MainActor public static let shared = AppNavigationManager()
-    
-    @Published var selectedTab: AppTab = .invoices
-    @Published var navigationContext: NavigationContext?
-    
+public class AppNavigationManager {
+    public var selectedTab: AppTab = .invoices
+    public var navigationContext: NavigationContext?
+    public private(set) var navigationPath: [WorkspaceRoute] = []
+    public private(set) var navigationPersistenceToken = UUID()
+    /// Workspace list/detail and deep links update this; tab coordinators mirror it for ``inspectorFallbackSelection()`` when `selection` is briefly nil (e.g. secondary window timing).
+    public var selection: AppSelection? {
+        didSet {
+            guard selection != oldValue else { return }
+            syncCoordinatorsWithInspectorFallback(selection)
+            syncNavigationPathWithSelection(selection)
+        }
+    }
+    public var inspectorIsPresented: Bool = false
+    public var columnVisibility: NavigationSplitViewVisibility = .automatic
+
+    /// Per-tab focused targets used by the standalone inspector when selection is briefly nil.
+    public let invoicesCoordinator = InvoicesWorkspaceCoordinator()
+    public let relationshipsCoordinator = RelationshipsWorkspaceCoordinator()
+    public let ndisCoordinator = NDISWorkspaceCoordinator()
+
     // MARK: - Navigation History
-    @Published private var navigationHistory: [NavigationHistoryEntry] = []
-    @Published private var currentHistoryIndex: Int = -1
-    private let maxHistorySize: Int = 50
+    private var historyStore = NavigationHistoryStore()
     private var isNavigatingInternally: Bool = false
-    
+    private var isUpdatingNavigationPath: Bool = false
+
     public init() {
         // Add initial invoices entry to history
         addToHistory(tab: .invoices, context: nil, title: "Invoices")
     }
-    
-    // MARK: - History Management
-    
-    /// Add current navigation to history
-    private func addToHistory(tab: AppTab, context: NavigationContext?, title: String? = nil) {
-        let entry = NavigationHistoryEntry(tab: tab, context: context, title: title)
-        
-        // Don't add duplicate entries
-        if let currentEntry = currentHistoryEntry,
-           currentEntry == entry {
-            return
-        }
-        
 
-        if currentHistoryIndex < navigationHistory.count - 1 {
-            navigationHistory.removeSubrange((currentHistoryIndex + 1)...)
-        }
-        
-        // Add new entry
-        navigationHistory.append(entry)
-        currentHistoryIndex = navigationHistory.count - 1
-        
-        // Maintain max history size
-        if navigationHistory.count > maxHistorySize {
-            navigationHistory.removeFirst()
-            currentHistoryIndex -= 1
+    /// Records inspector-fallback targets while central path ownership stays in explicit selection/navigation APIs.
+    private func syncCoordinatorsWithInspectorFallback(_ selection: AppSelection?) {
+        guard let selection else { return }
+        switch selection {
+        case .invoice(let id):
+            invoicesCoordinator.recordFocusedInvoice(id)
+        case .client, .payee, .planManager:
+            relationshipsCoordinator.recordFocusedRelationship(selection: selection)
+        case .ndisItem(let id):
+            ndisCoordinator.recordFocusedNDISItem(id)
         }
     }
-    
+
+    private func syncNavigationPathWithSelection(_ selection: AppSelection?) {
+        guard !isUpdatingNavigationPath else { return }
+        let route = WorkspaceRoute(selection)
+        navigationContext = route?.navigationContext
+        setNavigationPath(to: route)
+    }
+
+    public func isSelectionCompatible(with tab: AppTab, _ selection: AppSelection?) -> Bool {
+        guard let selection else { return true }
+
+        switch tab {
+        case .invoices:
+            switch selection {
+            case .invoice:
+                return true
+            default:
+                return false
+            }
+        case .relationships:
+            switch selection {
+            case .client, .payee, .planManager:
+                return true
+            default:
+                return false
+            }
+        case .ndisCatalogue:
+            switch selection {
+            case .ndisItem:
+                return true
+            default:
+                return false
+            }
+        case .calendar, .billingHub, .invoiceTemplateEditor:
+            return false
+        }
+    }
+
+    public func isSelectionCompatible(with tab: AppTab) -> Bool {
+        isSelectionCompatible(with: tab, selection)
+    }
+
+    public func isNavigationContextCompatible(with tab: AppTab, _ context: NavigationContext?) -> Bool {
+        guard let context else { return true }
+
+        switch tab {
+        case .invoices:
+            return context.targetEntityType == .invoice
+        case .relationships:
+            return context.targetEntityType == .client
+            || context.targetEntityType == .payee
+            || context.targetEntityType == .planManager
+            || context.targetEntityType == .clientService
+        case .ndisCatalogue:
+            return context.targetEntityType == .ndisItem
+        case .calendar:
+            return context.targetEntityType == .session
+            || context.targetEntityType == .client
+        case .billingHub, .invoiceTemplateEditor:
+            return false
+        }
+    }
+
+    public func isNavigationContextCompatible(with tab: AppTab) -> Bool {
+        isNavigationContextCompatible(with: tab, navigationContext)
+    }
+
+    public func applyTabSelectionRules(newTab: AppTab) {
+        if !isSelectionCompatible(with: newTab, selection) || !isNavigationContextCompatible(with: newTab, navigationContext) {
+            withNavigationPathSyncSuppressed {
+                selection = nil
+                navigationContext = nil
+            }
+            setNavigationPath(to: nil)
+            return
+        }
+    }
+
+    private func applyState(from route: WorkspaceRoute) {
+        withNavigationPathSyncSuppressed {
+            selectedTab = route.workspaceTab
+            navigationContext = route.navigationContext
+            selection = route.selection
+        }
+    }
+
+    public func updateNavigationPathFromStack(_ path: [WorkspaceRoute]) {
+        guard navigationPath != path else { return }
+        withNavigationPathSyncSuppressed {
+            navigationPath = path
+            if let route = path.last {
+                applyState(from: route)
+            } else {
+                selection = nil
+                navigationContext = nil
+            }
+        }
+        markNavigationChanged()
+    }
+
+    public func restoreNavigationPath(_ path: [WorkspaceRoute]) {
+        guard navigationPath != path else { return }
+        withNavigationPathSyncSuppressed {
+            navigationPath = path
+            if let route = path.last {
+                applyState(from: route)
+            } else {
+                selection = nil
+                navigationContext = nil
+            }
+        }
+        markNavigationChanged()
+    }
+
+    public func setNavigationPath(to route: WorkspaceRoute?) {
+        guard !isUpdatingNavigationPath else { return }
+        let nextPath = route.map { [$0] } ?? []
+        guard navigationPath != nextPath else { return }
+        navigationPath = nextPath
+        markNavigationChanged()
+    }
+
+    private func markNavigationChanged() {
+        navigationPersistenceToken = UUID()
+    }
+
+    private func withNavigationPathSyncSuppressed(_ operation: () -> Void) {
+        let previous = isUpdatingNavigationPath
+        isUpdatingNavigationPath = true
+        operation()
+        isUpdatingNavigationPath = previous
+    }
+
+    private func route(for context: NavigationContext?, in tab: AppTab) -> WorkspaceRoute? {
+        guard let route = WorkspaceRoute(context), route.workspaceTab == tab else { return nil }
+        return route
+    }
+
+    // MARK: - History Management
+
+    /// Add current navigation to history
+    private func addToHistory(tab: AppTab, context: NavigationContext?, title: String? = nil) {
+        historyStore.addToHistory(tab: tab, context: context, title: title)
+    }
+
     /// Get current history entry
-    var currentHistoryEntry: NavigationHistoryEntry? {
-        guard currentHistoryIndex >= 0 && currentHistoryIndex < navigationHistory.count else { return nil }
-        return navigationHistory[currentHistoryIndex]
+    public var currentHistoryEntry: NavigationHistoryEntry? {
+        historyStore.currentHistoryEntry
     }
     
     /// Check if we can navigate back
-    var canNavigateBack: Bool {
-        currentHistoryIndex > 0
+    public var canNavigateBack: Bool {
+        historyStore.canNavigateBack
     }
     
     /// Check if we can navigate forward
-    var canNavigateForward: Bool {
-        currentHistoryIndex < navigationHistory.count - 1
+    public var canNavigateForward: Bool {
+        historyStore.canNavigateForward
     }
     
     /// Navigate back in history
-    func navigateBack() {
-        guard canNavigateBack else { return }
-        
-        currentHistoryIndex -= 1
-        let entry = navigationHistory[currentHistoryIndex]
-        
-        // Set flag to prevent double-tracking
+    public func navigateBack() {
+        guard let entry = historyStore.navigateBack() else { return }
+
         isNavigatingInternally = true
-        
-        DispatchQueue.main.async {
-            self.navigationContext = entry.context
-            self.selectedTab = entry.tab
-            self.isNavigatingInternally = false
-        }
+        applyNavigation(to: entry.tab, context: entry.context)
+        isNavigatingInternally = false
     }
     
     /// Navigate forward in history
-    func navigateForward() {
-        guard canNavigateForward else { return }
-        
-        currentHistoryIndex += 1
-        let entry = navigationHistory[currentHistoryIndex]
-        
-        // Set flag to prevent double-tracking
+    public func navigateForward() {
+        guard let entry = historyStore.navigateForward() else { return }
+
         isNavigatingInternally = true
-        
-        DispatchQueue.main.async {
-            self.navigationContext = entry.context
-            self.selectedTab = entry.tab
-            self.isNavigatingInternally = false
-        }
+        applyNavigation(to: entry.tab, context: entry.context)
+        isNavigatingInternally = false
     }
     
     /// Get navigation history for display (most recent first)
-    var recentHistory: [NavigationHistoryEntry] {
-        Array(navigationHistory.reversed().prefix(10))
+    public var recentHistory: [NavigationHistoryEntry] {
+        historyStore.recentHistory
     }
     
     /// Get back navigation entry (previous entry)
-    var backNavigationEntry: NavigationHistoryEntry? {
-        guard canNavigateBack else { return nil }
-        return navigationHistory[currentHistoryIndex - 1]
+    public var backNavigationEntry: NavigationHistoryEntry? {
+        historyStore.backNavigationEntry
     }
     
     /// Get forward navigation entry (next entry)
-    var forwardNavigationEntry: NavigationHistoryEntry? {
-        guard canNavigateForward else { return nil }
-        return navigationHistory[currentHistoryIndex + 1]
+    public var forwardNavigationEntry: NavigationHistoryEntry? {
+        historyStore.forwardNavigationEntry
     }
     
     // MARK: - Primary Navigation Methods
     
     /// Navigate to a specific tab with optional context
-    func navigateTo(tab: AppTab, context: NavigationContext? = nil, title: String? = nil) {
-        // Add to history before navigating
+    public func navigateTo(tab: AppTab, context: NavigationContext? = nil, title: String? = nil) {
+        let nextRoute = route(for: context, in: tab)
+        let nextContext = isNavigationContextCompatible(with: tab, context) ? context : nil
+        let nextPath = tab.usesWorkspaceRouteNavigation
+            ? nextRoute.map { [$0] } ?? []
+            : []
+
+        guard selectedTab != tab
+                || navigationContext != nextContext
+                || selection != nextRoute?.selection
+                || navigationPath != nextPath
+        else {
+            return
+        }
         addToHistory(tab: tab, context: context, title: title)
-        
-        // Set flag to prevent double-tracking from onChange listener
         isNavigatingInternally = true
-        
-        DispatchQueue.main.async {
-            self.navigationContext = context
-            self.selectedTab = tab
-            // Reset flag after navigation is complete
-            self.isNavigatingInternally = false
+        applyNavigation(to: tab, context: context)
+        isNavigatingInternally = false
+    }
+
+    /// Tab switch without pushing history (sidebar, keyboard shortcuts). Replaces entry at current cursor.
+    public func selectTab(_ tab: AppTab) {
+        guard tab != selectedTab else { return }
+        isNavigatingInternally = true
+        applyNavigation(to: tab, context: navigationContext)
+        historyStore.replaceCurrentEntry(tab: selectedTab, context: navigationContext)
+        isNavigatingInternally = false
+    }
+
+    private func applyNavigation(to tab: AppTab, context: NavigationContext?) {
+        let nextRoute = route(for: context, in: tab)
+        withNavigationPathSyncSuppressed {
+            navigationContext = context
+            selectedTab = tab
+            if let nextRoute {
+                selection = nextRoute.selection
+            } else if context == nil {
+                selection = nil
+                navigationContext = nil
+            } else if !isNavigationContextCompatible(with: tab, context) {
+                selection = nil
+                navigationContext = nil
+            } else {
+                selection = nil
+            }
+        }
+        if tab.usesWorkspaceRouteNavigation {
+            setNavigationPath(to: nextRoute)
+        } else {
+            setNavigationPath(to: nil)
         }
     }
     
     /// Navigate to view a specific client in the relationships tab
-    func navigateToClient(_ clientID: UUID) {
+    public func navigateToClient(_ clientID: UUID) {
         let context = NavigationContext(
             targetEntity: clientID,
             targetEntityType: .client
@@ -220,7 +308,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific session in the calendar tab
-    func navigateToSession(_ sessionID: UUID, date: Date? = nil) {
+    public func navigateToSession(_ sessionID: UUID, date: Date? = nil) {
         let context = NavigationContext(
             targetEntity: sessionID,
             targetEntityType: .session,
@@ -230,7 +318,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific invoice in the invoices tab
-    func navigateToInvoice(_ invoiceID: UUID) {
+    public func navigateToInvoice(_ invoiceID: UUID) {
         let context = NavigationContext(
             targetEntity: invoiceID,
             targetEntityType: .invoice
@@ -239,7 +327,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific payee in the relationships tab
-    func navigateToPayee(_ payeeID: UUID) {
+    public func navigateToPayee(_ payeeID: UUID) {
         let context = NavigationContext(
             targetEntity: payeeID,
             targetEntityType: .payee
@@ -248,7 +336,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific plan manager in the relationships tab
-    func navigateToPlanManager(_ planManagerID: UUID) {
+    public func navigateToPlanManager(_ planManagerID: UUID) {
         let context = NavigationContext(
             targetEntity: planManagerID,
             targetEntityType: .planManager
@@ -257,7 +345,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific client service in the relationships tab
-    func navigateToClientService(_ clientServiceID: UUID) {
+    public func navigateToClientService(_ clientServiceID: UUID) {
         let context = NavigationContext(
             targetEntity: clientServiceID,
             targetEntityType: .clientService
@@ -266,7 +354,7 @@ public class AppNavigationManager: ObservableObject {
     }
     
     /// Navigate to view a specific NDIS item in the NDIS catalogue
-    func navigateToNDISItem(_ ndisItemID: UUID, searchQuery: String? = nil) {
+    public func navigateToNDISItem(_ ndisItemID: UUID, searchQuery: String? = nil) {
         let context = NavigationContext(
             targetEntity: ndisItemID,
             targetEntityType: .ndisItem,
@@ -275,69 +363,40 @@ public class AppNavigationManager: ObservableObject {
         navigateTo(tab: .ndisCatalogue, context: context)
     }
     
-
-    
-    // MARK: - Complex Navigation Scenarios
-    
-
-    
-    /// Navigate from invoice to related client
-    func navigateFromInvoiceToClient(clientID: UUID) {
-        navigateToClient(clientID)
-    }
-    
-    /// Navigate from client to their sessions on calendar
-    func navigateFromClientToSessions(clientID: UUID, date: Date? = nil) {
-        let context = NavigationContext(
-            targetEntity: clientID,
-            targetEntityType: .client,
-            targetDate: date,
-            additionalData: ["filterByClient": true]
-        )
-        navigateTo(tab: .calendar, context: context)
-    }
-    
-    /// Navigate from session to client details
-    func navigateFromSessionToClient(sessionID: UUID, clientID: UUID) {
-        navigateToClient(clientID)
-    }
-    
-    /// Navigate from session to invoice (if exists)
-    func navigateFromSessionToInvoice(sessionID: UUID, invoiceID: UUID?) {
-        guard let invoiceID = invoiceID else { return }
-        navigateToInvoice(invoiceID)
-    }
-    
-    // MARK: - Context Management
-    
-    /// Clear navigation context after it's been consumed
-    func clearNavigationContext() {
-        DispatchQueue.main.async {
-            self.navigationContext = nil
+    /// Applies menu-driven intents; pure routing uses navigation history. Creation intents delegate to the supplied closures because they require feature view models.
+    public func applyRoutingIntent(
+        _ intent: WorkspaceRoutingIntent,
+        onCreateInvoice: (() -> Void)? = nil,
+        onCreateSession: (() -> Void)? = nil
+    ) {
+        switch intent {
+        case .selectTab(let tab):
+            selectTab(tab)
+        case .createNewInvoice:
+            onCreateInvoice?()
+        case .createNewSession:
+            onCreateSession?()
+        case .toggleInspector:
+            inspectorIsPresented.toggle()
         }
     }
-    
-    /// Check if there's pending navigation context
-    var hasPendingNavigation: Bool {
-        navigationContext != nil
+
+    /// Aligns back/forward cursor with restored tab/path after ``SceneStorage`` restore. Replaces current slot; does not grow stack (per Apple scene state restoration).
+    public func reconcileHistoryAfterSceneRestore() {
+        isNavigatingInternally = true
+        historyStore.replaceCurrentEntry(tab: selectedTab, context: navigationContext)
+        isNavigatingInternally = false
     }
-    
-    /// Get and clear navigation context (consume it)
-    public func consumeNavigationContext() -> NavigationContext? {
-        let context = navigationContext
-        clearNavigationContext()
-        return context
-    }
-    
+
     /// Ensure current tab is properly tracked in history (safety net for external changes)
-    func ensureCurrentTabInHistory() {
+    public func ensureCurrentTabInHistory() {
         // Don't add to history if this change was initiated internally
         guard !isNavigatingInternally else { return }
         
         let currentEntry = NavigationHistoryEntry(tab: selectedTab, context: navigationContext)
         
         // Check if current state is already the latest entry
-        if let lastEntry = navigationHistory.last,
+        if let lastEntry = historyStore.latestEntry,
            lastEntry == currentEntry {
             return // Already tracked
         }
@@ -346,36 +405,3 @@ public class AppNavigationManager: ObservableObject {
         addToHistory(tab: selectedTab, context: navigationContext)
     }
 }
-
-
-
-// MARK: - SwiftUI Environment Key
-struct AppNavigationManagerKey: EnvironmentKey {
-    static let defaultValue: AppNavigationManager? = nil
-}
-
-extension EnvironmentValues {
-    var appNavigationManager: AppNavigationManager? {
-        get { self[AppNavigationManagerKey.self] }
-        set { self[AppNavigationManagerKey.self] = newValue }
-    }
-}
-
-// MARK: - View Extension for Easy Navigation
-extension View {
-    func withAppNavigation() -> some View {
-        self.environment(\.appNavigationManager, AppNavigationManager.shared)
-    }
-}
-
-// MARK: - Helper Extensions
-extension AppTab {
-    var supportsEntityNavigation: Bool {
-        switch self {
-        case .relationships, .calendar, .invoices, .billingHub, .ndisCatalogue, .invoiceTemplateEditor:
-            return true
-        case .settings:
-            return false
-        }
-    }
-} 

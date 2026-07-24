@@ -1,0 +1,34 @@
+---
+description: SwiftUI State Management & Data Flow
+alwaysApply: false
+---
+
+# Rule: SwiftUI State Management & Data Flow
+
+Sources
+
+https://developer.apple.com/tutorials/swiftui-concepts/driving-changes-in-your-ui-with-state-and-bindings
+https://developer.apple.com/tutorials/swiftui-concepts/creating-a-custom-input-control-that-binds-to-a-value
+https://developer.apple.com/tutorials/swiftui-concepts/defining-the-source-of-truth-using-a-custom-binding
+https://developer.apple.com/documentation/swiftui/model-data
+
+Core Principle
+
+Every mutable UI value must have a clear source of truth.
+
+Rules
+
+- Own state at the highest level that truly needs to own it, and no higher.
+- Prefer local state for local UI behavior.
+- Pass immutable values to children that only display data.
+- Pass bindings only to children that need write access.
+- Use custom bindings to adapt or project owned state without duplicating it.
+- Keep model-backed state separate from ephemeral UI-only state.
+- Do not create multiple competing sources of truth for the same concept.
+
+Anti-Patterns
+
+- Duplicated mutable state in parent and child.
+- Binding-everything by default.
+- Local shadow copies of model data that must stay manually synced.
+- Reusable inputs that own edited value internally instead of binding outward.

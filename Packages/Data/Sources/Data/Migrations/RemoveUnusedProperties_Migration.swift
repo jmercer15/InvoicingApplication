@@ -9,6 +9,7 @@
 //  in business logic and have been removed from the entity definitions.
 //
 
+import Core
 import Foundation
 import SwiftData
 
@@ -18,8 +19,8 @@ import SwiftData
 /// in business logic and have been removed from the entity definitions.
 /// 
 /// Properties Removed:
-/// - SessionEntity: attachmentsData, firstReminderTime, hasSecondReminder, isSystemEvent, secondReminderTime, useRichText
-/// - TravelChargeEntity: auditLogs
+/// - Session: attachmentsData, firstReminderTime, hasSecondReminder, isSystemEvent, secondReminderTime, useRichText
+/// - TravelCharge: auditLogs
 /// 
 /// Migration Details:
 /// - Type: Property Removal
@@ -32,7 +33,7 @@ public struct RemoveUnusedProperties_Migration {
     public static let version = "1.0.0"
     
     /// Migration description
-    public static let description = "Remove unused properties from SessionEntity and TravelChargeEntity"
+    public static let description = "Remove unused properties from Session and TravelCharge"
     
     /// Migration date
     public static let migrationDate = Date()
@@ -70,20 +71,20 @@ public struct RemoveUnusedProperties_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationNeeded(modelContext: ModelContext) throws {
-        // Check if any SessionEntity records exist
-        let sessionDescriptor = FetchDescriptor<SessionEntity>()
+        // Check if any Session records exist
+        let sessionDescriptor = FetchDescriptor<Session>()
         let sessions = try modelContext.fetch(sessionDescriptor)
         
-        // Check if any TravelChargeEntity records exist
-        let travelChargeDescriptor = FetchDescriptor<TravelChargeEntity>()
+        // Check if any TravelCharge records exist
+        let travelChargeDescriptor = FetchDescriptor<TravelCharge>()
         let travelCharges = try modelContext.fetch(travelChargeDescriptor)
         
         if sessions.isEmpty && travelCharges.isEmpty {
-            print("ℹ️ No SessionEntity or TravelChargeEntity records found - migration not needed")
+            print("ℹ️ No Session or TravelCharge records found - migration not needed")
             return
         }
         
-        print("📊 Found \(sessions.count) SessionEntity records and \(travelCharges.count) TravelChargeEntity records to migrate")
+        print("📊 Found \(sessions.count) Session records and \(travelCharges.count) TravelCharge records to migrate")
     }
     
     /// Perform the actual migration
@@ -113,8 +114,8 @@ public struct RemoveUnusedProperties_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if validation fails
     private static func validateMigrationSuccess(modelContext: ModelContext) throws {
-        // Fetch all SessionEntity records to verify they're accessible
-        let sessionDescriptor = FetchDescriptor<SessionEntity>()
+        // Fetch all Session records to verify they're accessible
+        let sessionDescriptor = FetchDescriptor<Session>()
         let sessions = try modelContext.fetch(sessionDescriptor)
         
         // Verify that we can access the remaining properties
@@ -138,8 +139,8 @@ public struct RemoveUnusedProperties_Migration {
             let _ = session.sessionLongitude
         }
         
-        // Fetch all TravelChargeEntity records to verify they're accessible
-        let travelChargeDescriptor = FetchDescriptor<TravelChargeEntity>()
+        // Fetch all TravelCharge records to verify they're accessible
+        let travelChargeDescriptor = FetchDescriptor<TravelCharge>()
         let travelCharges = try modelContext.fetch(travelChargeDescriptor)
         
         // Verify that we can access the remaining properties
@@ -147,8 +148,8 @@ public struct RemoveUnusedProperties_Migration {
             // This will throw an error if any removed properties are still accessible
             let _ = travelCharge.id
             let _ = travelCharge.mmmZoneName
-            let _ = travelCharge.travelDistance
-            let _ = travelCharge.travelDuration
+            let _ = travelCharge.distanceKM
+            let _ = travelCharge.durationMinutes
             let _ = travelCharge.vehicleType
             let _ = travelCharge.parkingCost
             let _ = travelCharge.tollCost
@@ -158,7 +159,7 @@ public struct RemoveUnusedProperties_Migration {
             let _ = travelCharge.travelDirection
         }
         
-        print("✅ Migration validation successful - all \(sessions.count) SessionEntity and \(travelCharges.count) TravelChargeEntity records accessible")
+        print("✅ Migration validation successful - all \(sessions.count) Session and \(travelCharges.count) TravelCharge records accessible")
     }
     
     /// Rollback the migration
@@ -169,7 +170,7 @@ public struct RemoveUnusedProperties_Migration {
     /// 
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
-    public static func rollback(modelContext: ModelContext) throws {
+    public static func rollback(modelContext _: ModelContext) throws {
         print("🔄 Attempting to rollback unused properties removal migration")
         
         // For property removal migrations, rollback is not supported
@@ -189,8 +190,8 @@ public struct UnusedPropertiesMigrationTestUtils {
     public static func testMigration(modelContext: ModelContext) throws {
         print("🧪 Testing unused properties removal migration")
         
-        // Create test SessionEntity data
-        let testSession = SessionEntity(id: UUID())
+        // Create test Session data
+        let testSession = Session(id: UUID())
         testSession.title = "Test Session"
         testSession.startTime = Date()
         testSession.endTime = Date().addingTimeInterval(3600)
@@ -209,11 +210,11 @@ public struct UnusedPropertiesMigrationTestUtils {
         
         modelContext.insert(testSession)
         
-        // Create test TravelChargeEntity data
-        let testTravelCharge = TravelChargeEntity(id: UUID())
+        // Create test TravelCharge data
+        let testTravelCharge = TravelCharge(id: UUID())
         testTravelCharge.mmmZoneName = "Test Zone"
-        testTravelCharge.travelDistance = 10.0
-        testTravelCharge.travelDuration = 30.0
+        testTravelCharge.distanceKM = 10.0
+        testTravelCharge.durationMinutes = 30.0
         testTravelCharge.vehicleType = .car
         testTravelCharge.parkingCost = 5.0
         testTravelCharge.tollCost = 2.0
@@ -229,7 +230,7 @@ public struct UnusedPropertiesMigrationTestUtils {
         try RemoveUnusedProperties_Migration.execute(modelContext: modelContext)
         
         // Verify test data
-        let sessionDescriptor = FetchDescriptor<SessionEntity>()
+        let sessionDescriptor = FetchDescriptor<Session>()
         let sessions = try modelContext.fetch(sessionDescriptor)
         
         guard let session = sessions.first else {
@@ -240,7 +241,7 @@ public struct UnusedPropertiesMigrationTestUtils {
             throw MigrationError.validationFailed("Session title not accessible")
         }
         
-        let travelChargeDescriptor = FetchDescriptor<TravelChargeEntity>()
+        let travelChargeDescriptor = FetchDescriptor<TravelCharge>()
         let travelCharges = try modelContext.fetch(travelChargeDescriptor)
         
         guard let travelCharge = travelCharges.first else {

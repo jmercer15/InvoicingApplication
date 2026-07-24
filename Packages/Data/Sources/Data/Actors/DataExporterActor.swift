@@ -1,9 +1,18 @@
+import Core
 import Foundation
 import SwiftData
 
-/// Actor responsible for handling data export operations in the background
-@ModelActor
-public actor DataExporterActor {
+/// Actor responsible for handling data export operations in the background.
+public actor DataExporterActor: ModelActor {
+    nonisolated public let modelContainer: ModelContainer
+    nonisolated public let modelExecutor: any ModelExecutor
+
+    public init(modelContainer: ModelContainer) {
+        self.modelContainer = modelContainer
+        let context = ModelContext(modelContainer)
+        context.autosaveEnabled = false
+        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
+    }
     
     /// Exports all data to a file in the specified format
     public func exportToFile(format: SwiftDataExportFormat = .json) async throws -> (Data, String) {
@@ -21,7 +30,7 @@ public actor DataExporterActor {
     
     public func exportClients() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<ClientEntity>()
+        let fetchDescriptor = FetchDescriptor<Client>()
         let clients = try context.fetch(fetchDescriptor)
 
         let clientsJSON = clients.map { client -> ExportModels.ClientJSON in
@@ -56,7 +65,7 @@ public actor DataExporterActor {
     
     public func exportPayees() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<PayeeEntity>()
+        let fetchDescriptor = FetchDescriptor<Payee>()
         let payees = try context.fetch(fetchDescriptor)
 
         let payeesJSON = payees.map { payee -> ExportModels.PayeeJSON in
@@ -83,7 +92,7 @@ public actor DataExporterActor {
     
     public func exportServices() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<ClientServiceEntity>()
+        let fetchDescriptor = FetchDescriptor<ClientService>()
         let services = try context.fetch(fetchDescriptor)
 
         let servicesJSON = services.map { service -> ExportModels.ServiceJSON in
@@ -106,22 +115,23 @@ public actor DataExporterActor {
     
     public func exportNDISItems() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<NDISItemEntity>()
+        let fetchDescriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try context.fetch(fetchDescriptor)
 
         let ndisItemsJSON = ndisItems.map { item -> ExportModels.NDISItemJSON in
             var primaryRateValue: Double = 0.0
             var primaryRateString: String = "0.00"
 
-            if !item.regionalPrices.isEmpty {
+            let regionalPrices = item.regionalPrices ?? []
+            if !regionalPrices.isEmpty {
                 var foundNational = false
-                for price in item.regionalPrices {
+                for price in regionalPrices {
                     if price.regionIdentifier == "NATIONAL" {
                         primaryRateValue = price.amount
                         foundNational = true
                     }
                 }
-                if !foundNational, let first = item.regionalPrices.first {
+                if !foundNational, let first = regionalPrices.first {
                     primaryRateValue = first.amount
                 }
             }
@@ -145,7 +155,7 @@ public actor DataExporterActor {
     
     public func exportInvoices() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<InvoiceEntity>()
+        let fetchDescriptor = FetchDescriptor<Invoice>()
         let invoices = try context.fetch(fetchDescriptor)
 
         let dateFormatter = DateFormatter()
@@ -167,8 +177,48 @@ public actor DataExporterActor {
                 dateDueString: dateDueString,
                 totalAmount: invoice.totalAmount,
                 totalAmountString: String(format: "%.2f", invoice.totalAmount),
-                status: invoice.status.rawValue,
-                clientName: invoice.clientName ?? invoice.client?.fullName
+                status: invoice.effectiveStatus.rawValue,
+                clientName: invoice.clientName ?? invoice.client?.fullName,
+                currencyCode: invoice.currencyCode,
+                taxRate: invoice.taxRate,
+                discount: invoice.discount,
+                creditApplied: invoice.creditApplied,
+                paymentTerms: invoice.paymentTerms,
+                notes: invoice.notes,
+                paidDate: invoice.paidDate,
+                sentDate: invoice.sentDate,
+                businessName: invoice.businessName,
+                businessABN: invoice.businessABN,
+                businessEmail: invoice.businessEmail,
+                businessPhone: invoice.businessPhone,
+                businessAddress: invoice.businessAddressSnapshot,
+                clientNDISNumber: invoice.clientNDISNumber,
+                clientEmail: invoice.clientEmail,
+                clientPhone: invoice.clientPhone,
+                clientAddress: invoice.clientAddressSnapshot,
+                billingAuthority: invoice.billingAuthority?.rawValue,
+                billToName: invoice.billToName,
+                billToEmail: invoice.billToEmail,
+                billToAddress: invoice.billToAddressSnapshot,
+                bankName: invoice.bankName,
+                bankAccountName: invoice.bankAccountName,
+                bankBSB: invoice.bankBSB,
+                bankAccountNumber: invoice.bankAccountNumber,
+                editorConfiguration: invoice.invoiceEditorStateData,
+                items: invoice.itemsArray.map { item in
+                    ExportModels.InvoiceItemJSON(
+                        id: item.id,
+                        position: item.position,
+                        itemDescription: item.itemDescription,
+                        serviceDate: item.serviceDate,
+                        itemCode: item.ndisItemNumber,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        unitPrice: item.rate,
+                        taxRate: item.taxRate,
+                        gstCode: item.gstCode
+                    )
+                }
             )
         }
 
@@ -179,7 +229,7 @@ public actor DataExporterActor {
     
     public func exportSessions() async throws -> Data {
         let context = modelContext
-        let fetchDescriptor = FetchDescriptor<SessionEntity>()
+        let fetchDescriptor = FetchDescriptor<Session>()
         let sessions = try context.fetch(fetchDescriptor)
 
         let dateFormatter = DateFormatter()
@@ -213,14 +263,14 @@ public actor DataExporterActor {
     
     // MARK: - Private Helpers
     
-    private func exportBankAccountNumber(from payee: PayeeEntity) -> String? {
+    private func exportBankAccountNumber(from payee: Payee) -> String? {
         reflectedStringValue(
             from: payee,
             keys: ["bankAccountNumber", "bankAccount", "accountNumber"]
         )
     }
 
-    private func exportBankBSB(from payee: PayeeEntity) -> String? {
+    private func exportBankBSB(from payee: Payee) -> String? {
         reflectedStringValue(
             from: payee,
             keys: ["bankBSB", "bsb", "bankRoutingNumber"]
@@ -246,7 +296,7 @@ public actor DataExporterActor {
         return nil
     }
 
-    private func exportAddressString(from address: AddressEntity?) -> String? {
+    private func exportAddressString(from address: Address?) -> String? {
         guard let addressEntity = address else { return nil }
         var components: [String] = []
 
@@ -283,7 +333,7 @@ public actor DataExporterActor {
         return components.isEmpty ? nil : components.joined(separator: ", ")
     }
 
-    private func exportServiceDescription(from service: ClientServiceEntity) -> String? {
+    private func exportServiceDescription(from service: ClientService) -> String? {
         if let description = service.ndisItem?.itemDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
             return description
         }

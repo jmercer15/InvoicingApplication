@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 /// Protocol for calendar synchronization operations
 public protocol SyncService: Sendable {
@@ -28,19 +27,19 @@ public protocol SyncService: Sendable {
     func setSyncEnabled(_ enabled: Bool) async
     
     /// Sync a session to calendar
-    func sync(session: Session) async throws
+    func sync(session: SessionSnapshot) async throws
     
     /// Delete session from calendar
     func delete(syncIdentifier: String) async throws
     
     /// Update session in calendar
-    func update(session: Session) async throws
+    func update(session: SessionSnapshot) async throws
     
     /// Fetch events from calendar
     func fetchEvents(start: Date, end: Date) async throws -> [CalendarEvent]
     
     /// Update session from remote event
-    func updateSessionFromRemote(session: Session, remoteEvent: CalendarEvent) async throws -> Session
+    func updateSessionFromRemote(session: SessionSnapshot, remoteEvent: CalendarEvent) async throws -> SessionSnapshot
     
     /// Handle external changes
     func handleExternalChanges() async throws
@@ -59,24 +58,6 @@ public enum SyncStatus: String, CaseIterable, Sendable {
         case .syncing: return "Syncing"
         case .error: return "Error"
         case .disabled: return "Disabled"
-        }
-    }
-    
-    public var icon: String {
-        switch self {
-        case .idle: return "checkmark.circle"
-        case .syncing: return "arrow.clockwise"
-        case .error: return "exclamationmark.triangle"
-        case .disabled: return "xmark.circle"
-        }
-    }
-    
-    public var color: Color {
-        switch self {
-        case .idle: return .green
-        case .syncing: return .blue
-        case .error: return .red
-        case .disabled: return .gray
         }
     }
     

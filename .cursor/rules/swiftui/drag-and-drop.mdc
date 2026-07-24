@@ -1,0 +1,101 @@
+---
+description: SwiftUI drag and drop architecture with Transferable-first data movement
+alwaysApply: false
+---
+
+# Rule: SwiftUI Drag & Drop
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/drag-and-drop
+
+Scope
+
+Applies to:
+
+- drag source setup and payload generation
+- destination acceptance and operation routing
+- Transferable-first data transport
+- compatibility fallbacks via item providers
+
+Intent
+
+Create predictable, validated drag-and-drop flows that preserve data integrity
+and align with platform behavior.
+
+Core Principle
+
+Model drag/drop as explicit data transfer between source and destination using
+Transferable types.
+
+Implementation Rules
+
+- Prefer `draggable`/`dropDestination` with Transferable payloads.
+- Use item-provider APIs only for compatibility scenarios.
+- Keep drag payloads minimal and deterministic (IDs/snapshots where possible).
+- Validate drop payloads before mutation and persistence.
+- Distinguish move vs copy behavior clearly in destination handling.
+- Keep destination targeting state (`isTargeted`) visual and lightweight.
+
+Canonical Patterns
+
+```swift
+InvoiceRow(invoice: invoice)
+    .draggable(InvoiceDragPayload(id: invoice.id))
+```
+
+```swift
+DropZoneView()
+    .dropDestination(for: InvoiceDragPayload.self) { items, _ in
+        reorderOrAssign(items)
+        return true
+    }
+```
+
+Anti-Patterns
+
+- Encoding heavy domain objects into drag payloads unnecessarily.
+- Accepting drops without payload validation or type constraints.
+- Conflating drag visual effects with actual model mutation completion.
+- Implementing custom drag logic that bypasses platform drag/drop semantics.
+
+Checklist
+
+- Are Transferable payload types explicit and version-safe?
+- Are source and destination responsibilities clear?
+- Is drop validation enforced before writing model changes?
+- Are move/copy semantics and UI feedback unambiguous?
+
+Architectural Implications
+
+- Drag and drop is a typed transport contract between UI regions or apps.
+- Source and destination should be independently testable with explicit payload semantics.
+- Drop handling must map to domain operations (reorder, assign, import) with deterministic outcomes.
+
+Advanced Notes
+
+- Transferable payloads should favor stable IDs and compact snapshots over large object graphs.
+- Destination validation should include type, ownership, and operation legality.
+- Visual target feedback (`isTargeted`) should reflect drop legality, not only pointer hover.
+
+Integration With Architecture
+
+- Keep drag payload builders near feature models/adapters, not in generic row rendering code.
+- Route destination actions through feature coordinators/use-cases for persistence integrity.
+- In list/table contexts, ensure drag reorder semantics remain consistent with query/sort constraints.
+
+Enforcement Summary
+
+Always prefer:
+
+- Transferable-first drag/drop APIs
+- explicit source/destination contracts
+- validated, deterministic drop mutation paths
+- clear move/copy UI semantics
+
+Never allow:
+
+- heavy raw object payloads without need
+- drop acceptance without validation
+- UI-only drag effects with unclear data commit semantics
+- bypassing platform drag/drop contract for ad hoc gestures

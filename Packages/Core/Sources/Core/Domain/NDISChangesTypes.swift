@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - NDIS Change Tracking Types
 
-public enum NDISChangeType: String, Codable {
+public enum NDISChangeType: String, Codable, Sendable {
     case newItem = "New Item"
     case removed = "Removed"
     case priceChanged = "Price Changed"
@@ -29,7 +29,7 @@ public enum NDISChangeType: String, Codable {
     case irregularSILSupportsChanged = "Irregular SIL Supports Changed"
 }
 
-public struct NDISChangesSummary {
+public struct NDISChangesSummary: Sendable {
     public let totalUniqueItems: Int
     public let totalVersions: Int
     public let currentItems: Int
@@ -50,41 +50,8 @@ public struct NDISChangesSummary {
     }
 }
 
-public struct NDISItemSnapshot: Codable, Equatable {
-    public let itemNumber: String
-    public let name: String
-    public let registrationGroup: String?
-    public let features: [String]
-    public let unit: String?
-    public let effectiveStartDate: Date?
-    public let effectiveEndDate: Date?
-    public let quoteRequired: Bool
-    public let regionalPrices: [RegionalPriceSnapshot]
 
-    public init(itemNumber: String, name: String, registrationGroup: String?, features: [String], unit: String?, effectiveStartDate: Date?, effectiveEndDate: Date?, quoteRequired: Bool, regionalPrices: [RegionalPriceSnapshot]) {
-        self.itemNumber = itemNumber
-        self.name = name
-        self.registrationGroup = registrationGroup
-        self.features = features
-        self.unit = unit
-        self.effectiveStartDate = effectiveStartDate
-        self.effectiveEndDate = effectiveEndDate
-        self.quoteRequired = quoteRequired
-        self.regionalPrices = regionalPrices
-    }
-}
-
-public struct RegionalPriceSnapshot: Codable, Equatable, Sendable {
-    public let regionIdentifier: String
-    public let amount: Double
-
-    public init(regionIdentifier: String, amount: Double) {
-        self.regionIdentifier = regionIdentifier
-        self.amount = amount
-    }
-}
-
-public struct NDISItemChange {
+public struct NDISItemChange: Sendable {
     public let itemNumber: String
     public let changeDate: Date
     public let previousVersion: NDISItemSnapshot

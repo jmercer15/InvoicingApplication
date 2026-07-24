@@ -3,29 +3,80 @@ import SwiftData // Import SwiftData
 import Data
 import Core
 import SharedUI
+import Observation
 
 struct NDISChangesSummaryView: View {
-    @ObservedObject var viewModel: NDISContainerViewModel
+    @Bindable var viewModel: NDISContainerViewModel
     @State private var isLoading = true
     @State private var selectedItemForHistory: String?
     @State private var searchText = ""
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 if isLoading {
-                    ProgressView("Analyzing NDIS changes...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
+                        ProgressView {
+                            Text("Analyzing NDIS changes...")
+                                .font(StyleGuide.Typography.itemTitle)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
+                        }
+                        .scaleEffect(1.2)
+                    }
+                    .frame(width: 320, height: 200)
+                    .background(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
+                            .fill(PanelShellTokens.panelSecondaryBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
+                            .stroke(StyleGuide.Colors.border, lineWidth: ListRowTokens.defaultStrokeWidth)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if viewModel.changesError != nil || viewModel.changesSummary == nil {
+                    VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(StyleGuide.Typography.hero)
+                            .foregroundStyle(ColorSystem.Status.error)
+                        
+                        Text("Failed to Analyze NDIS Changes")
+                            .font(StyleGuide.Typography.sectionTitle)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                        
+                        Text(viewModel.changesError?.localizedDescription ?? "No changes summary data found.")
+                            .font(StyleGuide.Typography.caption)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+                        
+                        Button(action: {
+                            loadChangesSummary()
+                        }) {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.glassProminent)
+                    }
+                    .frame(width: 360, height: 240)
+                    .background(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
+                            .fill(PanelShellTokens.panelSecondaryBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
+                            .stroke(StyleGuide.Colors.border, lineWidth: ListRowTokens.defaultStrokeWidth)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        VStack(spacing: 20) {
+                        VStack(spacing: StyleGuide.Dimensions.paddingSheetContent) {
                             summarySection
                             historicalAnalysisSection
                         }
-                        .padding()
+                        .standardContentPanelListInsets()
                     }
                 }
             }
+            .standardPanelShell(role: .singlePanel)
             .navigationTitle("NDIS Historical Changes")
             .onAppear {
                 loadChangesSummary()
@@ -40,54 +91,54 @@ struct NDISChangesSummaryView: View {
     }
     
     private var summarySection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.formGroupSpacing) {
             NDISChangesSectionHeader(icon: "chart.bar.fill", title: "NDIS Catalogue Overview")
             
             if let summary = viewModel.changesSummary {
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
-                ], spacing: 16) {
+                ], spacing: FormSectionTokens.formGroupSpacing) {
                     NDISChangesSummaryCard(
                         title: "Unique Items",
                         value: "\(summary.totalUniqueItems)",
                         subtitle: "Individual NDIS items",
-                        color: .blue
+                        color: ColorSystem.Primary.blue
                     )
                     
                     NDISChangesSummaryCard(
                         title: "Total Versions",
                         value: "\(summary.totalVersions)",
                         subtitle: "All item versions",
-                        color: .green
+                        color: ColorSystem.Secondary.green
                     )
                     
                     NDISChangesSummaryCard(
                         title: "Current Items",
                         value: "\(summary.currentItems)",
                         subtitle: "Active as of today",
-                        color: .orange
+                        color: ColorSystem.Secondary.orange
                     )
                     
                     NDISChangesSummaryCard(
                         title: "Historical Items",
                         value: "\(summary.historicalItems)",
                         subtitle: "Past versions",
-                        color: .purple
+                        color: ColorSystem.Secondary.purple
                     )
                     
                     NDISChangesSummaryCard(
                         title: "Items with Changes",
                         value: "\(summary.itemsWithChanges)",
                         subtitle: String(format: "%.1f%% of items", summary.changesPercentage),
-                        color: .red
+                        color: ColorSystem.Status.error
                     )
                     
                     NDISChangesSummaryCard(
                         title: "Avg Versions per Item",
                         value: String(format: "%.1f", Double(summary.totalVersions) / Double(max(summary.totalUniqueItems, 1))),
                         subtitle: "Version history depth",
-                        color: .indigo
+                        color: ColorSystem.Navigation.groupTint
                     )
                 }
             }
@@ -96,17 +147,17 @@ struct NDISChangesSummaryView: View {
     }
     
     private var historicalAnalysisSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.formGroupSpacing) {
             NDISChangesSectionHeader(icon: "clock.arrow.circlepath", title: "Historical Analysis")
             
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.sectionStackSpacing) {
                 Text("Search for an item to view its change history:")
-                    .font(.subheadline)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                 
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                     
                     TextField("Enter NDIS item number...", text: $searchText)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -126,19 +177,20 @@ struct NDISChangesSummaryView: View {
                 }
                 
                 Text("Example: 01_001_0103_6_1, 15_001_0101_6_1")
-                    .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(StyleGuide.Typography.caption)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
             
             if viewModel.isAnalyzingChanges {
                 ProgressView("Analyzing...")
-                    .padding(.top, 8)
+                    .padding(.top, StyleGuide.Dimensions.paddingMedium)
             }
         }
         .formSectionBackground()
     }
     
     private func loadChangesSummary() {
+        isLoading = true
         Task {
             await viewModel.fetchChangesSummary()
             await MainActor.run {
@@ -164,44 +216,47 @@ struct NDISChangesSummaryCard: View {
     let color: Color
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
             Text(title)
-                .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .font(StyleGuide.Typography.caption)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
                 .multilineTextAlignment(.leading)
             
             Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(StyleGuide.Typography.hero)
                 .foregroundColor(color)
             
             Text(subtitle)
-                .font(.caption2)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .font(StyleGuide.Typography.micro)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
                 .multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .glassEffect(.regular, in: .rect(cornerRadius: 8))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(color.opacity(0.3), lineWidth: 1)
+        .padding(StyleGuide.Dimensions.paddingLarge)
+        .background(
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                .fill(PanelShellTokens.panelSecondaryBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                        .stroke(color.opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
+                )
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): \(value). \(subtitle)")
     }
 }
 
 struct ItemHistoryDetailView: View {
     let itemNumber: String
     let itemChanges: [NDISItemChange]
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             // Header
             HStack {
                 Text("Item History: \(itemNumber)")
-                    .font(.title2.bold())
+                    .font(StyleGuide.Typography.hero)
                 
                 Spacer()
                 
@@ -210,30 +265,25 @@ struct ItemHistoryDetailView: View {
                 }
                 .buttonStyle(.glass)
             }
-            .padding(.horizontal)
+            .standardPanelContentPadding()
             
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: FormSectionTokens.formGroupSpacing) {
                     if itemChanges.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.largeTitle)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                            Text("No Changes Found")
-                                .font(.title2)
-                            Text("This item has no recorded change history, or the item number wasn't found.")
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                                .multilineTextAlignment(.center)
-                        }
+                        EmptyStateView(
+                            icon: "magnifyingglass",
+                            title: "No Changes Found",
+                            message: "This item has no recorded change history, or the item number wasn't found."
+                        )
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .standardPanelContentPadding()
                     } else {
                         ForEach(itemChanges.indices, id: \.self) { index in
                             ChangeCard(change: itemChanges[index])
                         }
                     }
                 }
-                .padding()
+                .standardContentPanelListInsets()
             }
         }
     }
@@ -243,20 +293,20 @@ struct ChangeCard: View {
     let change: NDISItemChange
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: FormSectionTokens.sectionStackSpacing) {
             HStack {
                 Text(change.changeType.rawValue)
-                    .font(.headline)
+                    .font(StyleGuide.Typography.sectionTitle)
                     .foregroundColor(colorForChangeType(change.changeType))
                 
                 Spacer()
                 
                 Text(formatDate(change.changeDate))
-                    .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(StyleGuide.Typography.caption)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
             
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                 // Use non-optional properties directly
                 if change.previousVersion.name != change.newVersion.name {
                     ChangeRow(label: "Name", oldValue: change.previousVersion.name, newValue: change.newVersion.name)
@@ -271,7 +321,11 @@ struct ChangeCard: View {
                 }
                 
                 if change.previousVersion.quoteRequired != change.newVersion.quoteRequired {
-                    ChangeRow(label: "Quote Required", oldValue: change.previousVersion.quoteRequired ? "Yes" : "No", newValue: change.newVersion.quoteRequired ? "Yes" : "No")
+                    ChangeRow(
+                        label: "Quote Required",
+                        oldValue: (change.previousVersion.quoteRequired == true) ? "Yes" : "No",
+                        newValue: (change.newVersion.quoteRequired == true) ? "Yes" : "No"
+                    )
                 }
                 
                 // Add other attribute comparisons from NDISItem
@@ -301,11 +355,11 @@ struct ChangeCard: View {
                 
                 // Note: irregularSILSupports property is not available in NDISItemSnapshot
                 
-                // Handle features changes (array comparison)
-                let oldFeatures = change.previousVersion.features
-                let newFeatures = change.newVersion.features
-                if oldFeatures.sorted() != newFeatures.sorted() {
-                    ChangeRow(label: "Features", oldValue: oldFeatures.joined(separator: ", "), newValue: newFeatures.joined(separator: ", "))
+                // Handle features changes (string comparison)
+                let oldFeatures = (change.previousVersion.features ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let newFeatures = (change.newVersion.features ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if oldFeatures != newFeatures {
+                    ChangeRow(label: "Features", oldValue: oldFeatures, newValue: newFeatures)
                 }
 
                 // Effective Date Changes
@@ -324,40 +378,43 @@ struct ChangeCard: View {
                 }
             }
         }
-        .padding()
-        .glassEffect(.regular, in: .rect(cornerRadius: 8))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(colorForChangeType(change.changeType).opacity(0.3), lineWidth: 1)
+        .padding(StyleGuide.Dimensions.paddingLarge)
+        .background(
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                .fill(StyleGuide.Colors.background)
+                .overlay(
+                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
+                        .stroke(colorForChangeType(change.changeType).opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
+                )
         )
+        .accessibilityElement(children: .combine)
     }
     
     private func colorForChangeType(_ type: NDISChangeType) -> Color {
         switch type {
-        case .nameChanged: return .blue
-        case .categoryChanged: return .orange
-        case .unitChanged: return .green
-        case .quoteRequirementChanged: return .purple
+        case .nameChanged: return ColorSystem.Primary.blue
+        case .categoryChanged: return ColorSystem.Secondary.orange
+        case .unitChanged: return ColorSystem.Secondary.green
+        case .quoteRequirementChanged: return ColorSystem.Secondary.purple
         
-        case .priceChanged: return .yellow
-        case .newItem: return .mint
-        case .discontinued: return .gray
-        case .removed: return .red
-        case .registrationChanged: return .indigo
-        case .descriptionChanged, .typeChanged, .categoryNumberChanged, .categoryNamePACEChanged, .categoryNumberPACEChanged, .registrationGroupChanged, .registrationGroupNumberChanged, .nonFaceToFaceProvisionChanged, .providerTravelChanged, .shortNoticeCancellationsChanged, .ndiaRequestedReportsChanged, .irregularSILSupportsChanged, .regionalPricesChanged, .featuresChanged, .effectiveDateRangeChanged: return .teal // Group new changes under teal
+        case .priceChanged: return ColorSystem.Status.highlight
+        case .newItem: return ColorSystem.Status.new
+        case .discontinued: return ColorSystem.Status.inactive
+        case .removed: return ColorSystem.Status.error
+        case .registrationChanged: return ColorSystem.Navigation.groupTint
+        case .descriptionChanged, .typeChanged, .categoryNumberChanged, .categoryNamePACEChanged, .categoryNumberPACEChanged, .registrationGroupChanged, .registrationGroupNumberChanged, .nonFaceToFaceProvisionChanged, .providerTravelChanged, .shortNoticeCancellationsChanged, .ndiaRequestedReportsChanged, .irregularSILSupportsChanged, .regionalPricesChanged, .featuresChanged, .effectiveDateRangeChanged: return ColorSystem.Status.groupChange
         }
     }
     
-    private func formatDate(_ date: Date) -> String {
+    private static let changeCardFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter.string(from: date)
-    }
-    
-    private func formatPrices(_ prices: [String: Double]) -> String {
-        return prices.map { key, value in "\(key): $\(String(format: "%.2f", value))" }.joined(separator: "; ")
+        return formatter
+    }()
+
+    private func formatDate(_ date: Date) -> String {
+        return Self.changeCardFormatter.string(from: date)
     }
 }
 
@@ -365,33 +422,54 @@ struct ChangeRow: View {
     let label: String
     let oldValue: String
     let newValue: String
-    let showDiff: Bool = true // Always show diff in this context
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
             Text(label)
-                .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .font(StyleGuide.Typography.caption)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
             
-            HStack {
-                Text(oldValue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color("Red70", bundle: .sharedUI).opacity(0.29))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(Text("OLD").font(.caption2).foregroundColor(Color("Red", bundle: .sharedUI)), alignment: .topTrailing)
+            HStack(spacing: StyleGuide.Dimensions.paddingMedium) {
+                HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
+                    Text("OLD")
+                        .font(StyleGuide.Typography.nano)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
+                        .background(ColorSystem.Status.error)
+                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall))
+                    
+                    Text(oldValue)
+                        .font(StyleGuide.Typography.itemSubtitle)
+                        .foregroundStyle(StyleGuide.Colors.text)
+                }
+                .padding(StyleGuide.Dimensions.paddingSmall)
+                .background(ColorSystem.Status.error.opacity(StyleGuide.Opacity.subtle))
+                .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
                 
                 Image(systemName: "arrow.right")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundColor(StyleGuide.Colors.textSecondary)
                 
-                Text(newValue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color("Green20", bundle: .sharedUI))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(Text("NEW").font(.caption2).foregroundColor(Color("Green", bundle: .sharedUI)), alignment: .topTrailing)
+                HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
+                    Text("NEW")
+                        .font(StyleGuide.Typography.nano)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
+                        .background(ColorSystem.Status.success)
+                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall))
+                    
+                    Text(newValue)
+                        .font(StyleGuide.Typography.itemSubtitle)
+                        .foregroundStyle(StyleGuide.Colors.text)
+                }
+                .padding(StyleGuide.Dimensions.paddingSmall)
+                .background(ColorSystem.Status.success.opacity(StyleGuide.Opacity.subtle))
+                .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) changed from \(oldValue) to \(newValue)")
     }
 }
 
@@ -407,24 +485,10 @@ struct NDISChangesSectionHeader: View {
     var body: some View {
         HStack {
                             Image(systemName: icon)
-                    .foregroundColor(Color("Primary", bundle: .sharedUI))
+                    .foregroundStyle(ColorSystem.Primary.blue)
             Text(title)
-                .font(.headline)
-                .fontWeight(.semibold)
+                .font(StyleGuide.Typography.sectionTitle)
         }
     }
 }
 
-extension View {
-    func formSectionBackground() -> some View {
-        self
-            .padding()
-            .glassEffect(.regular, in: .rect(cornerRadius: 8))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// #Preview {
-//     let assembly = AppAssembly(modelContainer: try! ModelContainer(for: NDISItemEntity.self))
-//     NDISChangesSummaryView(viewModel: NDISContainerViewModel(unitOfWork: assembly.unitOfWork))
-// } 

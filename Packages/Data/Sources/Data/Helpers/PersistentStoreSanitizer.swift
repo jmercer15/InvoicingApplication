@@ -1,13 +1,19 @@
+import Core
 import Foundation
 import SQLite3
 
 /// Performs idempotent in-place cleanup of legacy status values before SwiftData loads the store.
 public enum PersistentStoreSanitizer {
     public static func sanitizeLegacyStatusesIfNeeded() {
+        let defaultsKey = "hasSanitizedLegacyStatuses_v1"
+        if UserDefaults.standard.bool(forKey: defaultsKey) { return }
+
         for path in candidateStorePaths() {
             guard FileManager.default.fileExists(atPath: path) else { continue }
             sanitizeStoreIfNeeded(at: path)
         }
+        
+        UserDefaults.standard.set(true, forKey: defaultsKey)
     }
 
     private static func candidateStorePaths() -> [String] {

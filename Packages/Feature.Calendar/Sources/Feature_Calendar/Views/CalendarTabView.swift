@@ -1,9 +1,8 @@
 import SwiftUI
 import SwiftData
-import Data
 import EventKit
-import Core
 import SharedUI
+import Observation
 
 // MARK: - Enhanced TabView-based Calendar Container
 
@@ -20,84 +19,37 @@ import SharedUI
 /// The TabView automatically adapts to different screen sizes and orientations,
 /// providing an optimal user experience across all Apple platforms.
 struct CalendarTabView: View {
-    @ObservedObject var viewModel: CalendarViewModel
-    @State private var selectedTab: CalendarViewType = .week
-    
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            // Week View Tab
-            WeekView(viewModel: viewModel)
-                .tabItem {
-                    Label("Week", systemImage: "calendar")
-                }
-                .tag(CalendarViewType.week)
-                .accessibilityLabel("Week calendar view")
-                .accessibilityHint("Shows calendar events in weekly format")
-            
-            // Month View Tab
-            let weeks = CalendarDisplayDataProvider().buildMonthGridWeeks(for: viewModel.selectedDate)
-            MonthView(viewModel: viewModel, precomputedWeeks: weeks)
-                .tabItem {
-                    Label("Month", systemImage: "calendar.badge.clock")
-                }
-                .tag(CalendarViewType.month)
-                .accessibilityLabel("Month calendar view")
-                .accessibilityHint("Shows calendar events in monthly format")
-        }
-        .tabViewStyle(.automatic)
-        .onChange(of: selectedTab) { oldValue, newValue in
-            print("🔄 Calendar: TabView changed from \(oldValue) to \(newValue)")
-            // Update the view model's calendar view type with animation
-            withAnimation(.easeInOut(duration: 0.3)) {
-                viewModel.calendarViewType = newValue
-            }
-        }
-        .onChange(of: viewModel.calendarViewType) { oldValue, newValue in
-            print("🔄 Calendar: View model changed from \(oldValue) to \(newValue)")
-            // Update the selected tab when view model changes
-            if selectedTab != newValue {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    selectedTab = newValue
-                }
-            }
-        }
-        .onAppear {
-            // Initialize the selected tab based on the view model's current state
-            selectedTab = viewModel.calendarViewType
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Calendar view selector")
+    @Bindable var viewModel: CalendarViewModel
+    @State private var monthGridWeeks: [[Date?]] = []
+    private let monthGridProvider = CalendarDisplayDataProvider()
+
+    private var monthGridTaskID: Date {
+        viewModel.selectedDate.startOfMonth
     }
-}
 
-// MARK: - Calendar Tab Configuration
-
-extension CalendarTabView {
-    /// Configuration for calendar tab appearance and behavior
-    private struct TabConfiguration {
-        static let animationDuration: Double = 0.3
-        static let tabBarHeight: CGFloat = 60
-        static let tabIconSize: CGFloat = 20
+    var body: some View {
+        Group {
+            switch viewModel.calendarViewType {
+            case .week:
+                WeekView(viewModel: viewModel)
+                    .transition(.opacity)
+            case .month:
+                MonthView(viewModel: viewModel, precomputedWeeks: monthGridWeeks)
+                    .transition(.opacity)
+            }
+        }
+        .task(id: monthGridTaskID) {
+            guard viewModel.calendarViewType == .month else { return }
+            monthGridWeeks = monthGridProvider.buildMonthGridWeeks(for: viewModel.selectedDate)
+        }
+        .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: viewModel.calendarViewType)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Calendar view container")
     }
 }
 
 // MARK: - Preview
 #Preview {
-    // Note: Preview disabled - would need CalendarViewModel(sessionsRepository:clientsRepository:clientServicesRepository:eventKitService:modelContext:)
+    // Preview intentionally disabled while Calendar wiring is being modernized.
     EmptyView()
-    /*
-    let container = try! ModelContainer(for: SessionEntity.self)
-    let context = ModelContext(container)
-    let sessionsRepository = SessionsRepositorySwiftData(modelContext: context)
-    let eventKitService = EventKitSyncService.shared
-    let dataManager = CalendarDataManager(sessionsRepository: sessionsRepository, eventKitService: eventKitService)
-    CalendarTabView(
-        viewModel: CalendarViewModel(
-            sessionsRepository: sessionsRepository,
-            eventKitService: eventKitService,
-            dataManager: dataManager,
-            modelContext: context
-        )
-    )
-    */
 }

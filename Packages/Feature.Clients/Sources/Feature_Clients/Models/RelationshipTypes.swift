@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - Entity Filter Enum
-public enum EntityFilter: String, CaseIterable {
+public enum EntityFilter: String, CaseIterable, Sendable {
     case all = "all"
     case clients = "clients"
     case payees = "payees"
@@ -18,7 +18,7 @@ public enum EntityFilter: String, CaseIterable {
 }
 
 // MARK: - Status Filter Enum
-public enum StatusFilter: String, CaseIterable {
+public enum StatusFilter: String, CaseIterable, Sendable {
     case all = "all"
     case active = "Active"
     case inactive = "Inactive"

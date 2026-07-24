@@ -1,14 +1,36 @@
 import SwiftUI
+import SwiftData
 import SharedUI
+import WorkspaceUI
 import Core
 import Data
 
 struct CompanyView: View {
-// Placeholder for removal
-    @StateObject private var viewModel: CompanyViewModel
+    @Query(sort: \Business.id) private var businessEntities: [Business]
+    @State private var viewModel: CompanyViewModel
+    @State private var selectedAddress: AddressData?
+
+    private struct BusinessTaskId: Equatable {
+        let id: UUID?
+    }
     
     public init(viewModel: @autoclosure @escaping () -> CompanyViewModel) {
-        _viewModel = StateObject(wrappedValue: viewModel())
+        _viewModel = State(initialValue: viewModel())
+    }
+
+    private var businessTaskId: BusinessTaskId {
+        BusinessTaskId(id: businessEntities.first?.id)
+    }
+
+    private var isSaveErrorPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.saveErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.saveErrorMessage = nil
+                }
+            }
+        )
     }
     
     private var companyNameBinding: Binding<String> {
@@ -38,53 +60,33 @@ struct CompanyView: View {
 
     private var companyBankNameBinding: Binding<String> {
         Binding<String>(
-            get: { viewModel.business?.bankDetails?.bankName ?? "" },
+            get: { viewModel.business?.bankName ?? "" },
             set: { newValue in
-                if var business = viewModel.business {
-                    var details = business.bankDetails ?? BankDetails(accountName: "", accountNumber: "", bsb: "", bankName: "")
-                    details.bankName = newValue
-                    business.bankDetails = details
-                    viewModel.business = business
-                }
+                if viewModel.business != nil { viewModel.business!.bankName = newValue }
             }
         )
     }
     private var companyBankBSBBinding: Binding<String> {
         Binding<String>(
-            get: { viewModel.business?.bankDetails?.bsb ?? "" },
+            get: { viewModel.business?.bankBSB ?? "" },
             set: { newValue in
-                if var business = viewModel.business {
-                    var details = business.bankDetails ?? BankDetails(accountName: "", accountNumber: "", bsb: "", bankName: "")
-                    details.bsb = newValue
-                    business.bankDetails = details
-                    viewModel.business = business
-                }
+                if viewModel.business != nil { viewModel.business!.bankBSB = newValue }
             }
         )
     }
     private var companyBankAccountNameBinding: Binding<String> {
         Binding<String>(
-            get: { viewModel.business?.bankDetails?.accountName ?? "" },
+            get: { viewModel.business?.bankAccountName ?? "" },
             set: { newValue in
-                if var business = viewModel.business {
-                    var details = business.bankDetails ?? BankDetails(accountName: "", accountNumber: "", bsb: "", bankName: "")
-                    details.accountName = newValue
-                    business.bankDetails = details
-                    viewModel.business = business
-                }
+                if viewModel.business != nil { viewModel.business!.bankAccountName = newValue }
             }
         )
     }
     private var companyBankAccountNumberBinding: Binding<String> {
         Binding<String>(
-            get: { viewModel.business?.bankDetails?.accountNumber ?? "" },
+            get: { viewModel.business?.bankAccountNumber ?? "" },
             set: { newValue in
-                if var business = viewModel.business {
-                    var details = business.bankDetails ?? BankDetails(accountName: "", accountNumber: "", bsb: "", bankName: "")
-                    details.accountNumber = newValue
-                    business.bankDetails = details
-                    viewModel.business = business
-                }
+                if viewModel.business != nil { viewModel.business!.bankAccountNumber = newValue }
             }
         )
     }
@@ -117,18 +119,17 @@ struct CompanyView: View {
         )
     }
     
-    private var maxLabelWidth: CGFloat {
-        let labels = [
-            "Company Name:", "ABN:", "Phone:", "Email:", "Address:", 
-            "Accounting Method:", "Registered Provider:", "NDIA Org ID:", "Default GST Code:", "Bank Name:", "BSB:", "Account Name:",
-            "Account Number:", "Logo:"
-        ]
-        return labels.map { $0.width() }.max() ?? 120
-    }
-    
+    // Cached to avoid NSString sizing during layout (constraint update loops).
+    @State private var maxLabelWidth: CGFloat = 120
+
+    @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
+    @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: FormSectionTokens.pageStackSpacing) {
+                actionBar
+
                 SettingsSection(
                     icon: "building.2",
                     title: "Company Details",
@@ -169,18 +170,25 @@ struct CompanyView: View {
                     SettingsCard(title: "Address") {
                         SettingsRow(label: "Address:", labelWidth: maxLabelWidth) {
                             if viewModel.isEditingAddress {
-                                VStack(alignment: .trailing, spacing: 8) {
-                                    TextField("Search address", text: $viewModel.addressSearchText)
-                                        .textFieldStyle(.roundedBorder)
+                                VStack(alignment: .trailing, spacing: FormSectionTokens.fieldStackSpacing) {
+                                    NativeAddressSearchField(
+                                        searchText: $viewModel.addressSearchText,
+                                        selectedAddress: $selectedAddress,
+                                        unitNumber: $viewModel.unitNumber,
+                                        streetNumber: $viewModel.streetNumber,
+                                        streetName: $viewModel.streetName,
+                                        suburb: $viewModel.suburb,
+                                        postcode: $viewModel.postcode,
+                                        state: $viewModel.state,
+                                        country: $viewModel.country,
+                                        poBox: $viewModel.poBox
+                                    )
                                         .accessibilityLabel("Address search")
                                         .accessibilityHint("Search for an address")
-//                                    AddressSearchField(
-//                                        searchText: $viewModel.addressSearchText,
-//                                        selectedAddress: Binding<AddressData?>(
-//                                            get: { nil },
-//                                            set: { if let addr = $0 { viewModel.updateAddressFields(from: addr) } }
-//                                        )
-//                                    )
+                                        .onChange(of: selectedAddress) { _, newValue in
+                                            guard let newValue else { return }
+                                            viewModel.addressSearchText = newValue.fullAddress
+                                        }
                                     
                                     HStack {
                                         Button("Cancel") {
@@ -215,7 +223,7 @@ struct CompanyView: View {
                         SettingsRow(label: "Accounting Method:", labelWidth: maxLabelWidth) {
                             Picker("", selection: companyAccountingMethodBinding) {
                                 Text("Accrual").tag("Accrual")
-                                Text("Cash").tag("Cash")
+                                  Text("Cash").tag("Cash")
                             }
                             .pickerStyle(.menu)
                             .accessibilityLabel("Accounting method")
@@ -309,7 +317,7 @@ struct CompanyView: View {
                     if let logoImage = viewModel.companyLogo {
                         SettingsCard(title: "Current Logo") {
                             HStack {
-                                Spacer().frame(width: 120)
+                                Spacer().frame(width: StyleGuide.Dimensions.settingsFormLabelOffset)
                                 Image(nsImage: logoImage)
                                     .resizable()
                                     .scaledToFit()
@@ -321,8 +329,8 @@ struct CompanyView: View {
                     }
                 }
             }
-            .padding(.vertical, StyleGuide.Dimensions.paddingXXLarge)
-            .padding(.horizontal, StyleGuide.Dimensions.paddingXLarge)
+            .padding(.vertical, paddingXXLarge)
+            .padding(.horizontal, paddingXLarge)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
@@ -332,19 +340,62 @@ struct CompanyView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(loadingOverlay)
         .onAppear {
-            Task { await viewModel.loadBusiness() }
+            let labels = [
+                "Company Name:", "ABN:", "Phone:", "Email:", "Address:",
+                "Accounting Method:", "Registered Provider:", "NDIA Org ID:", "Default GST Code:", "Bank Name:", "BSB:", "Account Name:",
+                "Account Number:", "Logo:"
+            ]
+            maxLabelWidth = labels.map { $0.width() }.max() ?? 120
         }
         .onDisappear {
-            Task { await viewModel.saveBusiness() }
+            viewModel.prepareForViewDismiss()
+        }
+        .task(id: businessTaskId) {
+            viewModel.refreshPersistedBusiness(snapshot: businessEntities.first)
+        }
+        .alert("Unable to Save Company", isPresented: isSaveErrorPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.saveErrorMessage ?? "An unexpected error occurred.")
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: FormSectionTokens.sectionStackSpacing) {
+            if viewModel.hasUnsavedChanges {
+                Label("Unsaved changes", systemImage: "exclamationmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Discard") {
+                viewModel.discardChanges()
+            }
+            .buttonStyle(.glass)
+            .pointerStyle(.link)
+            .disabled(!viewModel.hasUnsavedChanges || viewModel.isLoading)
+
+            Button("Save Changes") {
+                Task {
+                    await viewModel.saveBusiness()
+                }
+            }
+            .buttonStyle(.glassProminent)
+            .pointerStyle(.link)
+            .disabled(!viewModel.hasUnsavedChanges || viewModel.isLoading)
         }
     }
     
     @ViewBuilder
     private var loadingOverlay: some View {
         if viewModel.isLoading {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(0.1))
+            ZStack {
+                Color.black.opacity(0.1)
+                ProgressView()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

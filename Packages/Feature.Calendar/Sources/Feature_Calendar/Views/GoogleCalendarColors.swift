@@ -31,10 +31,4 @@ struct GoogleCalendarColors {
         // Add more robust extraction if needed
         return nil
     }
-    static func extractEventColor(from event: EKEvent) -> Color? {
-        if let colorId = getGoogleEventColorId(event) {
-            return googleColorMap[colorId]
-        }
-        return nil
-    }
 } 

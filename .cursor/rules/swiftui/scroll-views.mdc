@@ -1,0 +1,107 @@
+---
+description: SwiftUI scroll view architecture, positioning, and behavior configuration
+alwaysApply: false
+---
+
+# Rule: SwiftUI Scroll Views
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/scroll-views
+https://developer.apple.com/documentation/swiftui/lists
+https://developer.apple.com/documentation/swiftui/tables
+
+Scope
+
+Applies to:
+
+- explicit `ScrollView` usage and composition
+- implicit scrolling behavior in list/table containers
+- programmatic scroll control and scroll position binding
+- scroll indicators, clipping, bounce, and edge effect behavior
+- scroll transition and scroll-geometry-driven UI behavior
+
+Intent
+
+Create predictable, performant scrolling behavior that supports large datasets,
+workspace continuity, and keyboard/pointer-friendly navigation patterns.
+
+Core Principle
+
+Use `ScrollView` for overflow content, and configure scroll behavior explicitly
+when interaction requirements demand it.
+
+Implementation Rules
+
+- Use explicit `ScrollView` only when not already using implicit scrolling
+  containers (`List`, `Table`).
+- Prefer lazy containers (`LazyVStack`, `LazyHStack`) for large scroll content.
+- Use `ScrollViewReader`/scroll position bindings for deterministic
+  programmatic navigation.
+- Configure indicator visibility, bounce, and clipping intentionally per context.
+- Keep scroll-driven effects (`scrollTransition`, geometry callbacks) lightweight
+  and purpose-driven.
+- Avoid nested same-axis scroll views unless interaction contract is explicit.
+
+Canonical Patterns
+
+```swift
+ScrollViewReader { proxy in
+    ScrollView {
+        LazyVStack {
+            ForEach(items) { item in
+                Row(item: item).id(item.id)
+            }
+        }
+    }
+}
+```
+
+Anti-Patterns
+
+- Rendering huge non-lazy stacks inside a scroll view.
+- Using scroll geometry callbacks for logic that should be state-driven elsewhere.
+- Creating nested vertical scroll hierarchies that fight for gesture ownership.
+- Forcing manual scroll math when built-in scroll position APIs are sufficient.
+
+Checklist
+
+- Is explicit `ScrollView` actually required?
+- Is large content lazy-loaded?
+- Are programmatic scroll targets stable and identifiable?
+- Are bounce/indicator/clip behaviors intentional for this feature?
+- Is scrolling smooth with realistic dataset size?
+
+Architectural Implications
+
+- Scroll behavior is part of interaction design; defaults are good but must be explicitly tuned for workspace-critical views.
+- Programmatic scrolling must reflect stable model identity and restoration expectations.
+- Scroll effects should support orientation and context, not distract from task-focused data work.
+
+Advanced Notes
+
+- Lists and tables include implicit scrolling; do not add nested redundant scroll containers.
+- Scroll geometry callbacks are potent and should be constrained to explicit, measurable needs.
+- Scroll target APIs should be used for deterministic movement contracts in dense views.
+
+Integration With Architecture
+
+- Use stable IDs for scrolling in multicolumn workspace/detail synchronization.
+- Keep scroll modifiers centralized at container boundaries in feature root views.
+- In high-volume billing/claims screens, prefer lazy stacks and minimal effect layers.
+
+Enforcement Summary
+
+Always prefer:
+
+- explicit need for `ScrollView`
+- lazy loading for large datasets
+- stable ID-based programmatic scrolling
+- restrained, purpose-driven scroll effects
+
+Never allow:
+
+- nested same-axis scroll competition by default
+- heavy scroll-geometry logic in leaf views
+- full eager rendering in large scroll containers
+- decorative transitions that degrade scroll performance

@@ -3,17 +3,43 @@ import Core
 import EventKit
 import Data
 import SharedUI
+import Observation
 
 // ─────────────────────────────────────────────────────────────
 // MARK: - Day Cell View (for Month Grid)
 // ─────────────────────────────────────────────────────────────
 
+private struct MonthDayIndicatorLayout {
+    let visible: [DisplayableCalendarItem]
+    let moreCount: Int
+}
+
 struct MonthDayCellView: View {
+    private static let dayNumberFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+
+    private static let accessibilityDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        return formatter
+    }()
+
     let date: Date
-    @ObservedObject var viewModel: CalendarViewModel
+    @Bindable var viewModel: CalendarViewModel
     let weekIndex: Int
     let dayIndex: Int
     let isLastWeek: Bool
+
+    @State private var dayItems: [DisplayableCalendarItem] = []
+    @State private var indicatorLayout = MonthDayIndicatorLayout(visible: [], moreCount: 0)
+    @State private var lastIndicatorHeight: CGFloat = -1
+
+    private var dayItemsTaskID: String {
+        viewModel.combinedItems(for: date).map(\.id).joined(separator: "\u{1F}")
+    }
 
     // --- Computed Properties --- 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
@@ -23,35 +49,51 @@ struct MonthDayCellView: View {
         return weekday == 1 || weekday == 7 // Sunday or Saturday
     }
     private var dayNumber: String {
-        let f = DateFormatter(); f.dateFormat = "d"; return f.string(from: date)
+        Self.dayNumberFormatter.string(from: date)
     }
-    private var allItemsForDay: [DisplayableCalendarItem] {
-        let timedForDay = viewModel.getTimedItems(for: date)
-        let allDayForDay = viewModel.getAllDayItems(for: date)
-        return (timedForDay + allDayForDay).sorted { ($0.startDate ?? .distantPast) < ($1.startDate ?? .distantPast) }
-    }
-    private var totalItemCount: Int { allItemsForDay.count }
-
     // --- Dynamic Colors --- 
+    private var gridBorderColor: Color {
+        isToday ? Color.accentColor.opacity(0.4) : StyleGuide.Colors.border.opacity(0.3)
+    }
+
     private var dayNumberTextColor: Color {
-        if isToday { return .accentColor }
-        if !isCurrentMonth { return Color("TextSecondary", bundle: .sharedUI).opacity(0.4) }
-        return Color("Text", bundle: .sharedUI)
+        if isToday { return .white }
+        if viewModel.isSelectedDay(date) { return .accentColor }
+        if !isCurrentMonth { return StyleGuide.Colors.textSecondary.opacity(0.4) }
+        return StyleGuide.Colors.text
     }
     private var cellTint: Color? {
-        if isToday { return Color.accentColor.opacity(0.04) }
+        if isToday { return Color.accentColor.opacity(StyleGuide.Opacity.subtle) }
+        if viewModel.isSelectedDay(date) { return Color.accentColor.opacity(StyleGuide.Opacity.faint) }
         if isCurrentMonth {
-            return isWeekend ? Color.black.opacity(0.08) : nil
+            return isWeekend ? StyleGuide.Colors.text.opacity(StyleGuide.Opacity.light) : nil
         }
-        return Color.secondary.opacity(0.05)
+        return StyleGuide.Colors.textSecondary.opacity(StyleGuide.Opacity.faint)
     }
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(alignment: .center, spacing: 2) {
-                dayNumberHeader()
-                itemIndicatorsView(geometry: geometry)
-                Spacer() // Pushes content to top
+            ZStack {
+                // Background selector button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        viewModel.selectedDate = date
+                    }
+                } label: {
+                    Rectangle()
+                        .fill(cellTint ?? .clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Select \(date, formatter: Self.accessibilityDateFormatter)")
+                
+                // Foreground Content
+                VStack(alignment: .center, spacing: 2) {
+                    dayNumberHeader()
+                    itemIndicatorsView(geometry: geometry)
+                    Spacer()
+                }
+                .allowsHitTesting(true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
@@ -63,51 +105,37 @@ struct MonthDayCellView: View {
             .overlay(
                 // Top border (only for first row)
                 weekIndex == 0 ? Rectangle()
-                    .frame(width: nil, height: 0.5)
-                    .foregroundColor(
-                        isToday
-                            ? Color.accentColor.opacity(0.4)
-                            : Color.secondary.opacity(0.3)
-                    ) : nil,
+                    .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
+                    .foregroundColor(gridBorderColor) : nil,
                 alignment: .top
             )
             .overlay(
                 // Left border (only for first column)
                 dayIndex == 0 ? Rectangle()
-                    .frame(width: 0.5, height: nil)
-                    .foregroundColor(
-                        isToday
-                            ? Color.accentColor.opacity(0.4)
-                            : Color.secondary.opacity(0.3)
-                    ) : nil,
+                    .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
+                    .foregroundColor(gridBorderColor) : nil,
                 alignment: .leading
             )
             .overlay(
                 // Right border (for all columns to complete grid)
                 Rectangle()
-                    .frame(width: 0.5, height: nil)
-                    .foregroundColor(
-                        isToday
-                            ? Color.accentColor.opacity(0.4)
-                            : Color.secondary.opacity(0.3)
-                    ),
+                    .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
+                    .foregroundColor(gridBorderColor),
                 alignment: .trailing
             )
             .overlay(
                 // Bottom border (for all rows to complete grid)
                 Rectangle()
-                    .frame(width: nil, height: 0.5)
-                    .foregroundColor(
-                        isToday
-                            ? Color.accentColor.opacity(0.4)
-                            : Color.secondary.opacity(0.3)
-                    ),
+                    .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
+                    .foregroundColor(gridBorderColor),
                 alignment: .bottom
             )
-            // Tap gesture handled by parent MonthView
+            .task(id: dayItemsTaskID) {
+                dayItems = viewModel.combinedItems(for: date)
+                lastIndicatorHeight = -1
+            }
             .contextMenu {
-                // Directly iterate over the items for the context menu
-                ForEach(viewModel.getTimedItems(for: date)) { item in
+                ForEach(dayItems.filter { $0.underlyingSession != nil }) { item in
                     if let session = item.underlyingSession {
                         Button {
                             viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
@@ -123,57 +151,171 @@ struct MonthDayCellView: View {
     // --- Subview Builders --- 
     @ViewBuilder
     private func dayNumberHeader() -> some View {
+        let isSelected = viewModel.isSelectedDay(date)
         HStack {
             Spacer()
             Text(dayNumber)
-                .font(.system(size: 16, weight: isToday ? .bold : (isCurrentMonth ? .medium : .regular)))
-                .foregroundColor(dayNumberTextColor)
-                .frame(minWidth: 24, minHeight: 24)
+                .font(StyleGuide.Typography.gridDayNumber.weight(isToday ? .bold : (isSelected ? .semibold : (isCurrentMonth ? .medium : .regular))))
+                .foregroundColor(isToday ? .white : (isSelected ? .accentColor : dayNumberTextColor))
+                .frame(width: StyleGuide.Dimensions.calendarDayCellSize, height: StyleGuide.Dimensions.calendarDayCellSize)
+                .background {
+                    if isToday {
+                        Circle()
+                            .fill(Color.accentColor)
+                    } else if isSelected {
+                        Circle()
+                            .stroke(Color.accentColor, lineWidth: 1.5)
+                            .background(Circle().fill(Color.accentColor.opacity(0.08)))
+                    }
+                }
                 .monospacedDigit()
             Spacer()
         }
-        .padding(.top, 4)
+        .padding(.top, StyleGuide.Dimensions.paddingSmall)
+    }
+
+    private func itemHeight(for item: DisplayableCalendarItem) -> CGFloat {
+        switch item {
+        case .session(let session):
+            return session.clientId != nil ? 28 : 22
+        case .recurringSessionInstance(let template, _, _, _, _, _):
+            return template.clientId != nil ? 28 : 22
+        default:
+            return 22
+        }
+    }
+
+    private func visibleItemsAndMoreCount(for items: [DisplayableCalendarItem], availableHeight: CGFloat) -> (visible: [DisplayableCalendarItem], moreCount: Int) {
+        let spacing: CGFloat = 3
+        let badgeHeight: CGFloat = 16
+        
+        // First check: can we fit all items?
+        var totalHeightOfAll: CGFloat = 0
+        for (idx, item) in items.enumerated() {
+            totalHeightOfAll += itemHeight(for: item)
+            if idx > 0 {
+                totalHeightOfAll += spacing
+            }
+        }
+        
+        if totalHeightOfAll <= availableHeight {
+            return (items, 0)
+        }
+        
+        // Not all items fit. We must show a "+X more" badge.
+        let availableHeightForItems = availableHeight - badgeHeight - spacing
+        var totalHeightWithBadge: CGFloat = 0
+        var visibleCount = 0
+        
+        for item in items {
+            let h = itemHeight(for: item)
+            let nextHeight = totalHeightWithBadge + h + (visibleCount > 0 ? spacing : 0)
+            if nextHeight <= availableHeightForItems {
+                totalHeightWithBadge = nextHeight
+                visibleCount += 1
+            } else {
+                break
+            }
+        }
+        
+        let finalVisibleCount = max(1, visibleCount)
+        return (Array(items.prefix(finalVisibleCount)), items.count - finalVisibleCount)
     }
 
     @ViewBuilder
     private func itemIndicatorsView(geometry: GeometryProxy) -> some View {
-        if !allItemsForDay.isEmpty {
-            // Wrap the item list in a vertical ScrollView
-            ScrollView(.vertical, showsIndicators: false) { 
-                LazyVStack(spacing: 3) {
-                    // Iterate over ALL items
-                    ForEach(allItemsForDay, id: \DisplayableCalendarItem.id) { item in
-                        switch item {
-                        case .session(let session):
-                            MonthSessionItemView(session: session, viewModel: viewModel)
-                                .onTapGesture { 
-                                    viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
-                                }
-                        case .event(let event):
-                            MonthEventItemView(event: event)
-                                .onTapGesture { 
-                                    viewModel.convertEventToSession(event)
-                                }
-                        case .recurringSessionInstance(let template, let instanceStartDate, let instanceEndDate, _):
-                            MonthSessionItemView(session: template, viewModel: viewModel)
-                                .onTapGesture { 
-                                    viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
-                                }
-                        case .eventSegment(let originalEvent, _, _, _):
-                            MonthEventItemView(event: originalEvent)
-                                .onTapGesture {
-                                    viewModel.convertEventToSession(originalEvent)
-                                }
-                                }
-                        }
+        let spacing: CGFloat = 3
+        let headerHeight: CGFloat = 30
+        let bottomPadding: CGFloat = 4
+        let availableHeight = max(0, geometry.size.height - headerHeight - bottomPadding)
+
+        if !dayItems.isEmpty {
+            VStack(spacing: spacing) {
+                ForEach(indicatorLayout.visible, id: \DisplayableCalendarItem.id) { item in
+                    itemView(for: item)
+                }
+
+                if indicatorLayout.moreCount > 0 {
+                    HStack {
+                        Spacer()
+                        Text("+\(indicatorLayout.moreCount) more")
+                            .font(StyleGuide.Typography.caption)
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
+                            .padding(.vertical, StyleGuide.Dimensions.calendarBadgeVerticalPadding)
+                            .background(Color.accentColor.opacity(StyleGuide.Opacity.faint))
+                            .cornerRadius(StyleGuide.Dimensions.calendarBadgeCornerRadius)
+                        Spacer()
                     }
+                    .padding(.top, StyleGuide.Dimensions.calendarBadgeTopPadding)
+                }
             }
-            .clipped() // Clip the ScrollView content
-            .padding(.horizontal, 6) // Apply padding to the ScrollView itself
+            .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+            .onAppear {
+                refreshIndicatorLayout(availableHeight: availableHeight)
+            }
+            .onChange(of: availableHeight) { _, newHeight in
+                refreshIndicatorLayout(availableHeight: newHeight)
+            }
+            .onChange(of: dayItemsTaskID) { _, _ in
+                refreshIndicatorLayout(availableHeight: availableHeight)
+            }
         }
     }
 
+    private func refreshIndicatorLayout(availableHeight: CGFloat) {
+        guard !dayItems.isEmpty else {
+            indicatorLayout = MonthDayIndicatorLayout(visible: [], moreCount: 0)
+            lastIndicatorHeight = availableHeight
+            return
+        }
+        guard lastIndicatorHeight != availableHeight else { return }
+        lastIndicatorHeight = availableHeight
+        let computed = visibleItemsAndMoreCount(for: dayItems, availableHeight: availableHeight)
+        indicatorLayout = MonthDayIndicatorLayout(visible: computed.visible, moreCount: computed.moreCount)
+    }
 
+    @ViewBuilder
+    private func itemView(for item: DisplayableCalendarItem) -> some View {
+        switch item {
+        case .session(let session):
+            Button {
+                if viewModel.isBulkSelectionMode {
+                    viewModel.toggleSelection(for: session.id)
+                } else {
+                    viewModel.selectedSessionInfo = (session: session, instanceStart: item.startDate, instanceEnd: item.endDate)
+                }
+            } label: {
+                MonthSessionItemView(session: session, viewModel: viewModel)
+            }
+            .buttonStyle(.plain)
+        case .event(let event):
+            Button {
+                viewModel.convertEventToSession(event)
+            } label: {
+                MonthEventItemView(event: event)
+            }
+            .buttonStyle(.plain)
+        case .recurringSessionInstance(let template, let instanceStartDate, let instanceEndDate, _, _, _):
+            Button {
+                if viewModel.isBulkSelectionMode {
+                    viewModel.toggleSelection(for: template.id)
+                } else {
+                    viewModel.selectedSessionInfo = (session: template, instanceStart: instanceStartDate, instanceEnd: instanceEndDate)
+                }
+            } label: {
+                MonthSessionItemView(session: template, viewModel: viewModel)
+            }
+            .buttonStyle(.plain)
+        case .eventSegment(let originalEvent, _, _, _, _, _):
+            Button {
+                viewModel.convertEventToSession(originalEvent)
+            } label: {
+                MonthEventItemView(event: originalEvent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -182,33 +324,44 @@ struct MonthDayCellView: View {
 
 struct MonthSessionItemView: View {
     let session: Session
-    @ObservedObject var viewModel: CalendarViewModel
+    @Bindable var viewModel: CalendarViewModel
     
     private var clientColor: Color {
         if let clientId = session.clientId {
             return ColorSystem.Client.color(for: clientId)
         }
-        return Color("Gray20", bundle: .sharedUI)
+        return StyleGuide.Colors.secondary
     }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(clientColor.opacity(0.42))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(clientColor.opacity(0.78), lineWidth: 0.6)
-                )
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall)
+                .fill(clientColor.opacity(0.36))
+                .overlay {
+                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall)
+                        .strokeBorder(
+                            viewModel.bulkSelectedSessionIDs.contains(session.id)
+                                ? Color.accentColor
+                                : clientColor.opacity(0.55),
+                            lineWidth: viewModel.bulkSelectedSessionIDs.contains(session.id) ? 1.5 : 0.6
+                        )
+                }
 
             HStack(spacing: 4) {
-                Rectangle()
-                     .fill(clientColor)
-                     .frame(width: 3, height: 18)
+                if viewModel.isBulkSelectionMode {
+                    Image(systemName: viewModel.bulkSelectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                        .font(StyleGuide.Typography.caption)
+                        .foregroundColor(viewModel.bulkSelectedSessionIDs.contains(session.id) ? .accentColor : StyleGuide.Colors.textSecondary)
+                } else {
+                    Rectangle()
+                         .fill(clientColor)
+                         .frame(width: StyleGuide.Dimensions.accentBarWidth, height: StyleGuide.Dimensions.fontSizeCompactTitle + StyleGuide.Dimensions.paddingXSmall)
+                }
                 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(session.title).font(.caption)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                    Text(session.title)
+                        .font(StyleGuide.Typography.gridSubtext)
+                        .foregroundColor(StyleGuide.Colors.text)
                         .lineLimit(1)
                     
                     if let clientId = session.clientId {
@@ -216,18 +369,17 @@ struct MonthSessionItemView: View {
                             clientId: clientId,
                             viewModel: viewModel
                         )
-                        .font(.system(size: 9))
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .font(StyleGuide.Typography.caption)
+                        .foregroundColor(StyleGuide.Colors.textSecondary)
                         .lineLimit(1)
                     }
                 }
                 Spacer()
             }
-            .padding(.vertical, 2)
-            .padding(.horizontal, 5)
+            .padding(.vertical, StyleGuide.Dimensions.calendarItemVerticalPadding)
+            .padding(.horizontal, StyleGuide.Dimensions.calendarItemHorizontalPadding)
         }
-        .shadow(color: Color.black.opacity(0.14), radius: 1.5, x: 0, y: 1)
-        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
         .pointerStyle(.link)
     }
 }
@@ -238,6 +390,7 @@ struct MonthSessionItemView: View {
 
 struct MonthEventItemView: View {
     let event: EKEvent
+
     private var calendarColor: Color { 
         let calendarId = event.calendar.calendarIdentifier
         if let customColor = getCustomCalendarColor(calendarId: calendarId) {
@@ -252,31 +405,30 @@ struct MonthEventItemView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(calendarColor.opacity(0.42))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(calendarColor.opacity(0.78), lineWidth: 0.6)
-                )
+            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall)
+                .fill(calendarColor.opacity(0.36))
+                .overlay {
+                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall)
+                        .strokeBorder(calendarColor.opacity(0.55), lineWidth: 0.6)
+                }
 
             HStack(spacing: 4) {
                  Rectangle()
                      .fill(calendarColor)
-                     .frame(width: 3, height: 18)
+                     .frame(width: StyleGuide.Dimensions.accentBarWidth, height: StyleGuide.Dimensions.fontSizeCompactTitle + StyleGuide.Dimensions.paddingXSmall)
 
                 Text(event.title ?? "Event")
-                    .font(.system(size: 10))
+                    .font(StyleGuide.Typography.gridSubtextRegular)
                     .italic()
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundColor(StyleGuide.Colors.text)
                     .lineLimit(1)
                 
                 Spacer()
             }
-            .padding(.vertical, 2)
-            .padding(.horizontal, 5)
+            .padding(.vertical, StyleGuide.Dimensions.calendarItemVerticalPadding)
+            .padding(.horizontal, StyleGuide.Dimensions.calendarItemHorizontalPadding)
         }
-        .shadow(color: Color.black.opacity(0.14), radius: 1.5, x: 0, y: 1)
-        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
         .pointerStyle(.link)
     }
 }

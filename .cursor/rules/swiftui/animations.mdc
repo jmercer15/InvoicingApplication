@@ -1,0 +1,127 @@
+---
+description: SwiftUI state-driven animation, transitions, and motion architecture
+alwaysApply: false
+---
+
+# Rule: SwiftUI Animations
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/animations
+
+Scope
+
+Applies to:
+
+- state-driven animation (`withAnimation`, `.animation(_:value:)`)
+- transitions for insertion/removal
+- matched geometry/navigation transitions
+- phase/keyframe animation APIs
+- transaction-based animation control
+
+Intent
+
+Use motion to communicate state change and continuity, not decoration-only effects.
+
+Core Principle
+
+Animation is derived from state mutations.
+Do not animate imperative view operations; animate state transitions.
+
+Implementation Rules
+
+- Prefer `withAnimation` around meaningful state mutations.
+- Prefer `.animation(_:value:)` for scoped value-driven animation.
+- Use `transition(_:)` only when a view enters/leaves hierarchy.
+- Use `contentTransition(_:)` for in-place content change, not hierarchy change.
+- Use `matchedGeometryEffect` or matched navigation transitions for continuity
+  between related source/destination UI.
+- Keep timing curves consistent within a feature.
+- Use `Transaction` overrides only when you need to alter inherited animation behavior.
+- Use phase/keyframe APIs for explicitly staged motion; avoid ad hoc chained delays.
+
+Canonical Patterns
+
+```swift
+withAnimation(.easeInOut(duration: 0.25)) {
+    isExpanded.toggle()
+}
+```
+
+```swift
+if showDetails {
+    DetailsPanel()
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+}
+```
+
+```swift
+Text(statusText)
+    .contentTransition(.opacity)
+```
+
+Anti-Patterns
+
+- Animating every value change by default on large container views.
+- Applying `.animation` without `value:` and unintentionally animating unrelated state.
+- Using transition APIs for views that never enter/exit hierarchy.
+- Stacking multiple mismatched animation curves in the same interaction.
+- Adding heavy animation in list/table cells causing jitter.
+
+Performance Notes
+
+- Keep animation scope local to affected subtrees.
+- Avoid expensive blur/compositing animations in large data sets.
+- Prefer lightweight opacity/scale/offset over complex shader transitions in dense views.
+
+HIGH REFRESH RATE (PROMOTION / 120HZ+) SUPPORT
+For macOS ProMotion high-refresh-rate displays:
+- SwiftUI Animations: Declarative animations (`withAnimation`, `.animation`) automatically scale to 120Hz refresh. Prefer these standard APIs.
+- Main Thread Budget: Keep the main thread free. 120Hz leaves only 8.3ms per frame; heavy logic must run on background actors to prevent frame drops to 60Hz.
+- CAAnimation Frame Rates: Hint desired frame rates via `preferredFrameRateRange` (macOS 12.0+):
+  `animation.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)`
+- Display Link: Use `CADisplayLink` (macOS 14.0+) for custom UI loops or `CAMetalDisplayLink` (macOS 14.0+) for Metal syncing. Configure `preferredFrameRateRange` on them and avoid deprecated `preferredFramesPerSecond`.
+- Hardware Capabilities: Inspect `NSScreen.maximumFramesPerSecond` to read maximum refresh rate.
+
+
+Checklist
+
+- Is animation tied to a clear state mutation?
+- Is the chosen API correct for the kind of change (state vs insertion/removal vs content)?
+- Does motion preserve continuity and reduce cognitive load?
+- Is animation scope limited to the intended subtree?
+- Is the interaction still performant in long lists/tables?
+
+Architectural Implications
+
+- Motion contracts should be part of feature architecture (state transitions and continuity), not post-hoc styling.
+- Navigation and modal flows should have stable transition semantics to reinforce mental model continuity.
+- Animation policies should be consistent across similar feature states (loading, expand/collapse, refresh, selection).
+
+Advanced Notes
+
+- `transition(_:)` concerns hierarchy membership changes; `contentTransition(_:)` concerns content change in place.
+- Transaction overrides are powerful and should be constrained to explicit boundaries to avoid accidental global animation behavior.
+- Matched geometry/navigation transitions are best for continuity between related representations of the same entity.
+
+Integration With Architecture
+
+- Keep workspace-level navigation motion subtle and stable in `App/Scenes/Workspace`.
+- Avoid expensive row-level animation in list/table heavy billing views.
+- Use explicit animation only where state change meaning benefits from visual continuity.
+
+Enforcement Summary
+
+Always prefer:
+
+- state-driven animation APIs
+- scoped animation by explicit value changes
+- clear distinction between transition and content transition
+- continuity-oriented motion for related UI states
+
+Never allow:
+
+- blanket animation modifiers on large containers
+- mismatched animation curves in one interaction pathway
+- decoration-only animation that obscures state meaning
+- heavy compositing animation in high-volume collection cells

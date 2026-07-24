@@ -1,130 +1,154 @@
 import SwiftUI
-import EventKit // Needed for EKEvent properties
+import EventKit
 import SharedUI
 import Core
-import Data
+import Observation
+import UniformTypeIdentifiers
 
 // ─────────────────────────────────────────────────────────────
 // MARK: - All Day Strip Container View
 // ─────────────────────────────────────────────────────────────
 
 struct AllDayStripView: View {
-    @ObservedObject var viewModel: CalendarViewModel
+    private static let layoutMetrics = AllDayLayoutEngine()
+
+    let viewModel: CalendarViewModel
+    var interactionHandler: CalendarInteractionHandler
     let timeColumnWidth: CGFloat
     let dayColumnWidth: CGFloat
-    private let layout = AllDayLayoutEngine()
+
+    @ScaledMetric(relativeTo: .body) private var paddingMedium: CGFloat = StyleGuide.Dimensions.paddingMedium
+    @ScaledMetric(relativeTo: .body) private var paddingSmall: CGFloat = StyleGuide.Dimensions.paddingSmall
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Time column label area for "All Day"
-            VStack {
-                Text("All Day")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                    .frame(width: timeColumnWidth, alignment: .trailing)
-                    .padding(.trailing, StyleGuide.Dimensions.paddingMedium)
-                    .padding(.top, StyleGuide.Dimensions.paddingSmall)
-                Spacer()
-            }
-            .frame(width: timeColumnWidth, height: layout.stripHeight)
+        let positionedItems = viewModel.allDayPositionedItems
+        let height = viewModel.allDayStripHeight
 
-            // Columns for each day's all-day items
-            ForEach(viewModel.currentWeekDays, id: \.self) { day in
-                AllDayItemsColumnView(day: day, items: viewModel.getAllDayItems(for: day), viewModel: viewModel)
-                    .frame(width: dayColumnWidth)
+        if height > 0 {
+            ZStack(alignment: .topLeading) {
+                // Background grid columns
+                HStack(spacing: 0) {
+                    // Time column label area for "All Day"
+                    VStack {
+                        Text("All Day")
+                            .font(StyleGuide.Typography.caption)
+                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .frame(width: timeColumnWidth, alignment: .trailing)
+                            .padding(.trailing, paddingMedium)
+                            .padding(.top, paddingSmall)
+                        Spacer()
+                    }
+                    .frame(width: timeColumnWidth, height: height)
+                    .overlay(
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(width: StyleGuide.Dimensions.hairlineWidth),
+                        alignment: .trailing
+                    )
+
+                    // Daily grid column backgrounds
+                    ForEach(viewModel.currentWeekDays, id: \.self) { day in
+                        AllDayGridColumnView(
+                            day: day,
+                            viewModel: viewModel,
+                            interactionHandler: interactionHandler
+                        )
+                            .frame(width: dayColumnWidth, height: height)
+                    }
+                }
+
+                // Horizontal banners for all-day items
+                let itemSpacing = Self.layoutMetrics.itemSpacing
+                let verticalPadding = Self.layoutMetrics.columnVerticalPadding
+                let rowHeight: CGFloat = 24
+
+                ForEach(positionedItems) { pItem in
+                    let startX = timeColumnWidth + CGFloat(pItem.startDayIndex) * dayColumnWidth
+                    let spanCount = CGFloat(pItem.endDayIndex - pItem.startDayIndex + 1)
+                    let width = max(10, spanCount * dayColumnWidth - 4)
+                    let topY = verticalPadding + CGFloat(pItem.rowIndex) * (rowHeight + itemSpacing)
+
+                    AllDayCalendarItemView(
+                        item: pItem.item,
+                        viewModel: viewModel
+                    )
+                    .frame(width: width, height: rowHeight)
+                    .offset(x: startX + 2, y: topY)
+                }
             }
+            .frame(height: height)
+            .overlay(
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: StyleGuide.Dimensions.hairlineWidth),
+                alignment: .bottom
+            )
         }
-        .frame(height: layout.stripHeight)
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-// MARK: - Individual Column for All Day Items
+// MARK: - Individual Column Background & Drop Target
 // ─────────────────────────────────────────────────────────────
 
-struct AllDayItemsColumnView: View {
+struct AllDayGridColumnView: View {
     let day: Date
-    let items: [DisplayableCalendarItem]
-    @ObservedObject var viewModel: CalendarViewModel
+    let viewModel: CalendarViewModel
+    var interactionHandler: CalendarInteractionHandler
     @State private var isTargeted = false
-    @EnvironmentObject var eventKitService: EventKitSyncService
-    private let layout = AllDayLayoutEngine()
-
-    private var allDayItems: [DisplayableCalendarItem] {
-        viewModel.getAllDayItems(for: day)
-    }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(
-                    isTargeted ? Color.accentColor.opacity(0.15) : Color("Black30", bundle: .sharedUI)
+        Rectangle()
+            .fill(
+                isTargeted ? Color.accentColor.opacity(0.15) : Color.clear
+            )
+            .overlay(
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: StyleGuide.Dimensions.hairlineWidth),
+                alignment: .trailing
+            )
+            .onDrop(
+                of: [.calendarSessionDragType],
+                delegate: AllDayDropDelegate(
+                    day: day,
+                    viewModel: viewModel,
+                    interactionHandler: interactionHandler,
+                    isTargeted: $isTargeted
                 )
-                .animation(.easeInOut(duration: 0.2), value: isTargeted)
-
-            if !items.isEmpty {
-                VStack(spacing: layout.itemSpacing) {
-                    // Limit the number of items shown
-                    ForEach(layout.visibleItems(from: items)) { item in
-                        AllDayCalendarItemView(item: item, viewModel: viewModel)
-                            .onTapGesture { handleTap(item: item) }
-
-                    }
-
-                    // Show "+N more" indicator if needed
-                    let extra = layout.moreCount(for: items)
-                    if extra > 0 {
-                        Text("+\(extra) more")
-                            .font(.system(size: 9))
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                            .padding(.horizontal, layout.moreBadgeHorizontalPadding)
-                            .padding(.vertical, layout.moreBadgeVerticalPadding)
-                            .background(Capsule().fill(Color.secondary.opacity(0.1)))
-                    }
-                }
-                .padding(.horizontal, layout.columnHorizontalPadding)
-                .padding(.vertical, layout.columnVerticalPadding)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .border(Color.secondary.opacity(0.2), width: 0.5)
-        .onDrop(of: [.text], delegate: AllDayDropDelegate(day: day, viewModel: viewModel, isTargeted: $isTargeted))
-        .onAppear {
-            // Original debug print
-            print("[AllDayItemsColumnView] for \(day.formatted(date: .numeric, time: .omitted)) got \(items.count) unified items.")
-        }
-    }
-
-    // Handle tap gestures for different item types
-    private func handleTap(item: DisplayableCalendarItem) {
-        switch item {
-        case .session(let session):
-            viewModel.selectedSessionInfo = (session: session, instanceStart: nil, instanceEnd: nil)
-        case .event(let event):
-            // Event handling
-            print("Tapped all-day event: \(event.title ?? "")")
-            // Potentially allow converting this specific event instance to a session
-            viewModel.convertEventToSession(event)
-        case .recurringSessionInstance(let template, let startDate, let endDate, _):
-            viewModel.selectedSessionInfo = (session: template, instanceStart: startDate, instanceEnd: endDate)
-        case .eventSegment(let originalEvent, _, _, _):
-            print("Tapped all-day event segment: \(originalEvent.title ?? "")")
-            viewModel.convertEventToSession(originalEvent)
-        }
+            )
     }
 }
 
 struct AllDayDropDelegate: DropDelegate {
     let day: Date
     let viewModel: CalendarViewModel
+    let interactionHandler: CalendarInteractionHandler
     @Binding var isTargeted: Bool
-    
+
     func validateDrop(info: DropInfo) -> Bool {
-        return info.hasItemsConforming(to: [.text])
+        info.hasItemsConforming(to: [.calendarSessionDragType])
     }
 
     func dropEntered(info: DropInfo) {
         isTargeted = true
+        Task { @MainActor in
+            if interactionHandler.draggingSessionInfo == nil {
+                if let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
+                    let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
+                        DispatchQueue.main.async {
+                            if case .success(let payload) = result {
+                                interactionHandler.startDragging(
+                                    sessionID: payload.sessionID,
+                                    duration: payload.duration,
+                                    originalInstanceDate: payload.originalInstanceDate
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func dropExited(info: DropInfo) {
@@ -133,23 +157,34 @@ struct AllDayDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
-        // When dropping on All Day, the time is the start of the day.
         let newStartDate = Calendar.current.startOfDay(for: day)
 
-        if let draggedItem = viewModel.interactionHandler.draggingSessionInfo,
-           let sessionID = UUID(uuidString: draggedItem.sessionID) {
-             viewModel.rescheduleSession(
-                with: sessionID,
-                originalInstanceDate: draggedItem.originalInstanceDate,
-                to: newStartDate,
-                isAllDay: true
-            )
+        guard let provider = info.itemProviders(for: [.calendarSessionDragType]).first else {
+            interactionHandler.draggingSessionInfo = nil
+            interactionHandler.dropTargetTime = nil
+            return false
         }
-        
-        // Reset dragging state
-        viewModel.interactionHandler.draggingSessionInfo = nil
-        viewModel.interactionHandler.dropTargetTime = nil
-        
+
+        let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let payload):
+                    if let sessionID = UUID(uuidString: payload.sessionID) {
+                        viewModel.rescheduleSession(
+                            with: sessionID,
+                            originalInstanceDate: payload.originalInstanceDate,
+                            to: newStartDate,
+                            isAllDay: true
+                        )
+                    }
+                case .failure(let error):
+                    print("Failed to load drag payload in AllDayDropDelegate: \(error)")
+                }
+                interactionHandler.draggingSessionInfo = nil
+                interactionHandler.dropTargetTime = nil
+            }
+        }
+
         return true
     }
 }
@@ -160,93 +195,83 @@ struct AllDayDropDelegate: DropDelegate {
 
 struct AllDayCalendarItemView: View {
     let item: DisplayableCalendarItem
-    @ObservedObject var viewModel: CalendarViewModel
-
-    @EnvironmentObject var eventKitService: EventKitSyncService
-    
-    // Define SessionStatus enum locally for context menu actions
+    let viewModel: CalendarViewModel
+    var onActivate: (() -> Void)? = nil
 
     private var statusColor: Color { item.displayColor }
-    private var isSession: Bool { item.isSession }
     private var isEvent: Bool { item.isEvent }
 
     var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 6, height: 6)
+        Button(action: handleTap) {
+            HStack(spacing: 4) {
+                if viewModel.isBulkSelectionMode, item.underlyingSession != nil {
+                    Image(systemName: viewModel.isItemSelected(item) ? "checkmark.circle.fill" : "circle")
+                        .font(StyleGuide.Typography.micro.weight(.semibold))
+                        .foregroundColor(viewModel.isItemSelected(item) ? .accentColor : StyleGuide.Colors.textSecondary)
+                } else {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6, height: 6)
+                }
 
-            Text(item.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color("Text", bundle: .sharedUI))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .italic(isEvent)
-            
-            Spacer()
+                Text(item.title)
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundColor(StyleGuide.Colors.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .italic(isEvent)
+
+                Spacer()
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact)
+                    .fill(statusColor.opacity(0.36))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact)
+                            .stroke(statusColor.opacity(0.55), lineWidth: 0.6)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact)
+                            .stroke(
+                                viewModel.isItemSelected(item) ? Color.accentColor : Color.clear,
+                                lineWidth: viewModel.isItemSelected(item) ? 1.5 : 0.0
+                            )
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact, style: .continuous))
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(statusColor.opacity(0.42))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(statusColor.opacity(0.78), lineWidth: 0.6)
-                )
-        )
-        .shadow(
-            color: Color("Black30", bundle: .sharedUI).opacity(0.33),
-            radius: 2,
-             x: 0, y: 1
-        )
+        .buttonStyle(.plain)
         .zIndex(1)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .pointerStyle(.link)
         .contextMenu {
             makeContextMenu()
         }
-        .onTapGesture {
-            handleTap()
-        }
     }
-    
+
     // MARK: - Action Handlers
 
     private func handleTap() {
-        switch item {
-        case .session(let session), .recurringSessionInstance(let session, _, _, _):
-            viewModel.selectedSessionInfo = (session: session, instanceStart: session.startTime, instanceEnd: session.endTime)
-        case .event(let event), .eventSegment(let event, _, _, _):
-            viewModel.convertEventToSession(event)
-        }
-    }
-
-    private func markSessionAs(_ status: SessionStatus, session: Session) {
-        guard isCalendarLifecycleStatus(SessionStatus(normalized: session.status ?? "")?.token) else {
+        if viewModel.isBulkSelectionMode, let session = item.underlyingSession {
+            viewModel.toggleSelection(for: session.id)
             return
         }
-        let newStatus = status.token
-        
-        // Update session status via repository
-        Task {
-            do {
-                try await viewModel.sessionsRepository.updateStatus(id: session.id, status: newStatus)
-                await MainActor.run {
-                    viewModel.updateDisplayableItems()
-                }
-            } catch {
-                print("[AllDayColumnView] Failed to update session status: \(error.localizedDescription)")
-            }
-        }
-    }
 
-    private func isCalendarLifecycleStatus(_ token: String?) -> Bool {
-        switch token {
-        case "scheduled", "completed", "cancelled", "no_show", "rescheduled":
-            return true
-        default:
-            return false
+        if let onActivate {
+            onActivate()
+            return
+        }
+
+        switch item {
+        case .session(let session):
+            viewModel.selectedSessionInfo = (session: session, instanceStart: session.startTime, instanceEnd: session.endTime)
+        case .recurringSessionInstance(let session, let start, let end, _, _, _):
+            viewModel.selectedSessionInfo = (session: session, instanceStart: start, instanceEnd: end)
+        case .event(let event):
+            viewModel.convertEventToSession(event)
+        case .eventSegment(let event, _, _, _, _, _):
+            viewModel.convertEventToSession(event)
         }
     }
 
@@ -254,88 +279,44 @@ struct AllDayCalendarItemView: View {
     @ViewBuilder
     private func makeContextMenu() -> some View {
         switch item {
-        case .session(let session), .recurringSessionInstance(let session, _, _, _):
-            Button(action: { handleTap() }) {
-                Label("View Details", systemImage: "info.circle")
-            }
-
-            Divider()
-            
-            // Navigation menu placeholder
-            Button("View Details") {
-                // Navigation logic
-            }
-
-            let statusToken = SessionStatus(normalized: session.status ?? "")?.token
-            let isCompleted = statusToken == SessionStatus.completed.token
-            let isCancelled = statusToken == SessionStatus.cancelled.token
-            let canEditCalendarStatus = isCalendarLifecycleStatus(statusToken)
-
-            if canEditCalendarStatus {
-                if !isCompleted && !isCancelled {
-                    Divider()
-                    Button(action: { markSessionAs(.completed, session: session) }) {
-                        Label("Mark as Completed", systemImage: "checkmark.circle")
-                    }
-
-                    Button(action: { markSessionAs(.cancelled, session: session) }) {
-                        Label("Mark as Cancelled", systemImage: "xmark.circle")
-                    }
-
-                }
-                
-                if isCompleted || isCancelled {
-                    Divider()
-                    Button(action: { markSessionAs(.scheduled, session: session) }) {
-                        Label("Mark as Planned", systemImage: "calendar")
-                    }
-
-                }
-            }
-
-            Divider()
-
-            Button(action: { viewModel.duplicateSession(session) }) {
-                Label("Duplicate Session", systemImage: "plus.square.on.square")
-            }
-
-
-            if !session.isTravel {
-                Button(action: {
-                    viewModel.selectedSessionForTravel = session
-                    viewModel.selectedInstanceStartDateForTravel = item.startDate ?? Date()
-                    viewModel.selectedInstanceEndDateForTravel = item.endDate ?? Date()
-                    viewModel.isShowingTravelChargeSheet = true
-                }) {
-                    Label("Add Travel Charges", systemImage: "car")
-                }
-
-            }
-            
-            // Delete via repository
-            Button(role: .destructive, action: {
-                Task {
-                    do {
-                        try await viewModel.sessionsRepository.delete(id: session.id)
-                        await MainActor.run {
-                            viewModel.updateDisplayableItems()
-                        }
-                    } catch {
-                        print("[AllDayColumnView] Failed to delete session: \(error.localizedDescription)")
-                    }
-                }
-            }) {
-                Label("Delete Session...", systemImage: "trash")
-            }
-
-
-        case .event(let event), .eventSegment(let event, _, _, _):
-            Button(action: {
-                viewModel.convertEventToSession(event)
-            }) {
-                Label("Convert to Session", systemImage: "arrow.right.circle.fill")
-            }
-
-         }
+        case .session(let session):
+            SessionWeekContextMenu.sessionMenu(
+                session: session,
+                itemStartDate: item.startDate ?? Date(),
+                itemEndDate: item.endDate ?? Date(),
+                viewModel: viewModel,
+                onViewDetails: handleTap,
+                symbols: .init(
+                    viewDetails: "info.circle",
+                    markCompleted: "checkmark.circle",
+                    markCancelled: "xmark.circle",
+                    markPlanned: "calendar",
+                    duplicate: "plus.square.on.square",
+                    travel: "car",
+                    delete: "trash"
+                )
+            )
+        case .recurringSessionInstance(let session, let start, let end, _, _, _):
+            SessionWeekContextMenu.sessionMenu(
+                session: session,
+                itemStartDate: start,
+                itemEndDate: end,
+                viewModel: viewModel,
+                onViewDetails: handleTap,
+                symbols: .init(
+                    viewDetails: "info.circle",
+                    markCompleted: "checkmark.circle",
+                    markCancelled: "xmark.circle",
+                    markPlanned: "calendar",
+                    duplicate: "plus.square.on.square",
+                    travel: "car",
+                    delete: "trash"
+                )
+            )
+        case .event(let event):
+            SessionWeekContextMenu.convertEventMenu(event: event, viewModel: viewModel)
+        case .eventSegment(let event, _, _, _, _, _):
+            SessionWeekContextMenu.convertEventMenu(event: event, viewModel: viewModel)
+        }
     }
-} 
+}

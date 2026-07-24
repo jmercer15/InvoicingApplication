@@ -11,14 +11,14 @@ struct IntrinsicContentMeasurer {
         text: String,
         font: Font = .headline,
         maxLines: Int = 2,
-        padding: CGFloat = 18
+        padding: CGFloat = StyleGuide.Dimensions.paddingCard
     ) -> CGFloat {
         // Use string-based width estimation since we can't measure SwiftUI views directly
         let estimatedWidth = estimateTextWidth(text: text, font: font, maxLines: maxLines)
         
         // Add padding and ensure minimum readable width
         let measuredWidth = estimatedWidth + (padding * 2)
-        let minReadableWidth: CGFloat = 200 // Minimum for readable text
+        let minReadableWidth: CGFloat = StyleGuide.Dimensions.inspectorWidthMin // Minimum for readable text
         
         return max(measuredWidth, minReadableWidth)
     }
@@ -60,7 +60,7 @@ struct IntrinsicContentMeasurer {
         title: String,
         subtitle: String? = nil,
         additionalContent: String? = nil,
-        padding: CGFloat = 18
+        padding: CGFloat = StyleGuide.Dimensions.paddingCard
     ) -> CGFloat {
         let titleWidth = measureTextWidth(text: title, font: .headline, maxLines: 2, padding: 0)
         let subtitleWidth = subtitle.map { measureTextWidth(text: $0, font: .subheadline, maxLines: 2, padding: 0) } ?? 0
@@ -71,21 +71,9 @@ struct IntrinsicContentMeasurer {
         
         // Add padding and ensure reasonable bounds
         let totalWidth = maxContentWidth + (padding * 2)
-        let minCardWidth: CGFloat = 240 // Minimum for readable cards
-        let maxCardWidth: CGFloat = 400 // Maximum to prevent excessive stretching
+        let minCardWidth: CGFloat = StyleGuide.Dimensions.workspaceContentColumnMin // Minimum for readable cards
+        let maxCardWidth: CGFloat = StyleGuide.Dimensions.workspaceInspectorColumnIdeal // Maximum to prevent excessive stretching
         
         return max(minCardWidth, min(totalWidth, maxCardWidth))
-    }
-    
-    /// Measures the intrinsic width needed for toolbar content
-    static func measureToolbarItemWidth(
-        title: String,
-        icon: String? = nil,
-        padding: CGFloat = 12
-    ) -> CGFloat {
-        let textWidth = measureTextWidth(text: title, font: .subheadline, maxLines: 1, padding: 0)
-        let iconWidth: CGFloat = icon != nil ? 20 : 0 // Approximate icon width
-        
-        return textWidth + iconWidth + (padding * 2)
     }
 }

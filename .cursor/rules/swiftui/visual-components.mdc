@@ -1,0 +1,141 @@
+---
+description: SwiftUI visual components for text, images, controls, shapes, graphics, and styles
+alwaysApply: false
+---
+
+# Rule: SwiftUI Visual Components
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/text-input-and-output
+https://developer.apple.com/documentation/swiftui/images
+https://developer.apple.com/documentation/swiftui/controls-and-indicators
+https://developer.apple.com/documentation/swiftui/shapes
+https://developer.apple.com/documentation/swiftui/drawing-and-graphics
+https://developer.apple.com/documentation/swiftui/view-styles
+
+Scope
+
+Applies to visual primitives and UI controls in SwiftUI:
+
+- text output and text input
+- images and SF Symbols
+- controls and indicators
+- shape and path drawing
+- graphics effects and compositing
+- style application and style propagation
+
+Intent
+
+Use native SwiftUI components and style APIs to produce accessible,
+consistent, and maintainable UI across macOS contexts.
+
+Core Principle
+
+Choose semantic components first, then style them.
+Do not build custom visuals when a native SwiftUI control or style
+already expresses the intent.
+
+Implementation Rules
+
+- Use `Text`/`Label` for read-only textual presentation.
+- Use `TextField`, `SecureField`, and `TextEditor` for text entry by purpose.
+- Use `Image` for local assets/symbols, and `AsyncImage` for remote loading.
+- Use built-in controls (`Button`, `Toggle`, `Picker`, `DatePicker`, `Slider`,
+  `ProgressView`, `Gauge`) before custom substitutes.
+- Use `Shape` and `Path` for vector drawing; use `Canvas` only when immediate-mode
+  rendering is justified (large/dynamic drawing workloads).
+- Prefer style modifiers (`buttonStyle`, `toggleStyle`, `pickerStyle`,
+  `textFieldStyle`, `labelStyle`, `listStyle`, `tableStyle`) at meaningful container boundaries.
+- Let style propagation work; avoid repeating identical style modifiers
+  on every child when one parent modifier is sufficient.
+- Prefer `foregroundStyle` and `ShapeStyle` over hard-coded colors where possible.
+- Preserve text readability with explicit `lineLimit`, `truncationMode`,
+  and dynamic type-aware sizing patterns.
+
+Canonical Patterns
+
+```swift
+VStack(alignment: .leading, spacing: 8) {
+    Label("Invoice", systemImage: "doc.text")
+    Text(invoice.title).font(.headline)
+    Text(invoice.clientName).foregroundStyle(.secondary)
+}
+```
+
+```swift
+AsyncImage(url: model.logoURL) { phase in
+    switch phase {
+    case .success(let image):
+        image.resizable().scaledToFit()
+    case .failure:
+        Image(systemName: "photo").foregroundStyle(.secondary)
+    case .empty:
+        ProgressView()
+    @unknown default:
+        ProgressView()
+    }
+}
+```
+
+```swift
+Button("Save", systemImage: "checkmark") { save() }
+    .buttonStyle(.borderedProminent)
+```
+
+Anti-Patterns
+
+- Replacing `Button` with `onTapGesture` for primary actions.
+- Using custom text-entry wrappers that bypass native text controls without need.
+- Hard-coding visual tokens per leaf view instead of applying style at container scope.
+- Using `GeometryReader`/manual layout math to emulate standard controls.
+- Overusing graphics effects (`blur`, blend modes, shaders) in data-dense screens.
+- Using `Canvas` for static UI where `Shape` or standard views are sufficient.
+
+Performance Notes
+
+- Prefer lazy loading and asynchronous image phases for remote assets.
+- Avoid expensive graphics/compositing in list/table rows.
+- Keep row visuals lightweight in high-volume collections.
+
+Checklist
+
+- Does each visual element use the correct semantic SwiftUI component?
+- Are style modifiers applied at the right scope?
+- Are text and symbol choices readable and consistent?
+- Are async image loading and fallback states defined?
+- Are custom graphics used only where built-ins cannot satisfy requirements?
+
+Architectural Implications
+
+- Feature-level visual language should be defined by component contracts, not ad hoc per-screen styling.
+- Shared visual behavior (button treatment, label density, icon rendering) belongs in reusable style boundaries.
+- High-density surfaces (lists/tables/inspectors) should prioritize semantic clarity and rendering efficiency over ornamental effects.
+
+Advanced Notes
+
+- Style modifiers propagate through hierarchy; use this to encode design intent once per container.
+- Immediate-mode rendering (`Canvas`) is a specialized tool for high-frequency drawing scenarios, not a default visual primitive.
+- Graphics/compositing effects change rendering cost characteristics; prefer deterministic and minimal effect stacks.
+
+Integration With Architecture
+
+- In `InvoicingApplication/App/Scenes/Workspace/`, keep shell visuals conservative and predictable.
+- In feature modules, standardize row/chip/badge components before introducing one-off variants.
+- In data-dense billing and compliance views, avoid expensive effects in scrolling cells.
+
+Enforcement Summary
+
+Always prefer:
+
+- semantic built-in controls and text/image primitives
+- style propagation at meaningful container boundaries
+- explicit fallback states for async visual content
+- lightweight visuals for collection-heavy UIs
+
+Never allow:
+
+- gesture-only replacement of standard actionable controls
+- custom control reinvention without platform need
+- heavy graphics pipelines in rows and repeatedly rendered components
+- per-leaf style drift that breaks visual consistency

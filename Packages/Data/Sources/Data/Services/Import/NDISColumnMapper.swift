@@ -230,11 +230,6 @@ class NDISColumnMapper {
         return mappingQuality
     }
     
-    /// Gets the mapped column name for a standard field
-    func getColumnName(for field: StandardField) -> String? {
-        return columnMapping[field]
-    }
-    
     /// Extracts value for a standard field from a row
     func getValue(for field: StandardField, from row: [String: String]) -> String? {
         guard let columnName = columnMapping[field] else { return nil }

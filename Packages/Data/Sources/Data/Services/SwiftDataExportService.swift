@@ -1,3 +1,4 @@
+import Core
 import Foundation
 import SwiftData
 #if canImport(AppKit)
@@ -10,11 +11,13 @@ import UIKit
 /// SwiftData Export Service
 /// Provides data export capabilities for the InvoicingApplication
 public struct SwiftDataExportService {
+    private static let jsonWriteOptions: JSONSerialization.WritingOptions = []
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 
     // MARK: - Export
     public static func exportAllEntitiesToJSON(context: ModelContext) throws -> Data {
         let exportDict = try collectEntityDictionaries(context: context)
-        return try JSONSerialization.data(withJSONObject: exportDict, options: [.prettyPrinted, .sortedKeys])
+        return try JSONSerialization.data(withJSONObject: exportDict, options: jsonWriteOptions)
     }
 
     public static func exportToFile(context: ModelContext, format: SwiftDataExportFormat = .json) throws -> (Data, String) {
@@ -49,14 +52,6 @@ public enum SwiftDataExportFormat {
     case excel
 }
 
-// Extension to add ISO8601 string conversion to Date
-extension Date {
-    func iso8601String() -> String {
-        let formatter = ISO8601DateFormatter()
-        return formatter.string(from: self)
-    }
-}
-
 extension DateFormatter {
     static let exportTimestamp: DateFormatter = {
         let formatter = DateFormatter()
@@ -70,12 +65,12 @@ private extension SwiftDataExportService {
     static func collectEntityDictionaries(context: ModelContext) throws -> [String: [[String: Any]]] {
         var exportDict: [String: [[String: Any]]] = [:]
 
-        let iso = ISO8601DateFormatter()
+        let iso = Self.isoFormatter
 
-        // 1. AddressEntity
-        let addressDescriptor = FetchDescriptor<AddressEntity>()
+        // 1. Address
+        let addressDescriptor = FetchDescriptor<Address>()
         let addresses = try context.fetch(addressDescriptor)
-        exportDict["AddressEntity"] = addresses.map { address -> [String: Any] in
+        exportDict["Address"] = addresses.map { address -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = address.id.uuidString
             dict["streetNumber"] = address.streetNumber
@@ -89,10 +84,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 2. BusinessEntity
-        let businessDescriptor = FetchDescriptor<BusinessEntity>()
+        // 2. Business
+        let businessDescriptor = FetchDescriptor<Business>()
         let businesses = try context.fetch(businessDescriptor)
-        exportDict["BusinessEntity"] = businesses.map { business -> [String: Any] in
+        exportDict["Business"] = businesses.map { business -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = business.id.uuidString
             dict["name"] = business.name
@@ -111,10 +106,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 3. NDISItemEntity
-        let ndisDescriptor = FetchDescriptor<NDISItemEntity>()
+        // 3. NDISItem
+        let ndisDescriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try context.fetch(ndisDescriptor)
-        exportDict["NDISItemEntity"] = ndisItems.map { item -> [String: Any] in
+        exportDict["NDISItem"] = ndisItems.map { item -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = item.id.uuidString
             dict["itemNumber"] = item.itemNumber
@@ -143,10 +138,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 4. PayeeEntity
-        let payeeDescriptor = FetchDescriptor<PayeeEntity>()
+        // 4. Payee
+        let payeeDescriptor = FetchDescriptor<Payee>()
         let payees = try context.fetch(payeeDescriptor)
-        exportDict["PayeeEntity"] = payees.map { payee -> [String: Any] in
+        exportDict["Payee"] = payees.map { payee -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = payee.id.uuidString
             dict["fullName"] = payee.fullName
@@ -158,10 +153,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 5. PlanManagerEntity
-        let planManagerDescriptor = FetchDescriptor<PlanManagerEntity>()
+        // 5. PlanManager
+        let planManagerDescriptor = FetchDescriptor<PlanManager>()
         let planManagers = try context.fetch(planManagerDescriptor)
-        exportDict["PlanManagerEntity"] = planManagers.map { planManager -> [String: Any] in
+        exportDict["PlanManager"] = planManagers.map { planManager -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = planManager.id.uuidString
             dict["businessName"] = planManager.name ?? ""
@@ -172,17 +167,17 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 6. ClientEntity
-        let clientDescriptor = FetchDescriptor<ClientEntity>()
+        // 6. Client
+        let clientDescriptor = FetchDescriptor<Client>()
         let clients = try context.fetch(clientDescriptor)
-        exportDict["ClientEntity"] = clients.map { client -> [String: Any] in
+        exportDict["Client"] = clients.map { client -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = client.id.uuidString
             dict["fullName"] = client.fullName
             dict["email"] = client.email ?? ""
             dict["phone"] = client.phone ?? ""
             dict["ndisNumber"] = client.ndisNumber
-            dict["status"] = client.status.rawValue
+            dict["status"] = client.effectiveStatus.rawValue
             dict["notes"] = client.notes ?? ""
             dict["creditAmount"] = client.creditAmount
             dict["isMinor"] = client.isMinor
@@ -195,10 +190,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 7. ClientServiceEntity
-        let clientServiceDescriptor = FetchDescriptor<ClientServiceEntity>()
+        // 7. ClientService
+        let clientServiceDescriptor = FetchDescriptor<ClientService>()
         let clientServices = try context.fetch(clientServiceDescriptor)
-        exportDict["ClientServiceEntity"] = clientServices.map { clientService -> [String: Any] in
+        exportDict["ClientService"] = clientServices.map { clientService -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = clientService.id.uuidString
             dict["clientId"] = clientService.client?.id.uuidString ?? ""
@@ -214,10 +209,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 8. InvoiceEntity
-        let invoiceDescriptor = FetchDescriptor<InvoiceEntity>()
+        // 8. Invoice
+        let invoiceDescriptor = FetchDescriptor<Invoice>()
         let invoices = try context.fetch(invoiceDescriptor)
-        exportDict["InvoiceEntity"] = invoices.map { invoice -> [String: Any] in
+        exportDict["Invoice"] = invoices.map { invoice -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = invoice.id.uuidString
             dict["invoiceNumber"] = invoice.invoiceNumber
@@ -225,35 +220,66 @@ private extension SwiftDataExportService {
             dict["issueDate"] = iso.string(from: invoice.issueDate)
             dict["dueDate"] = invoice.dueDate.map { iso.string(from: $0) } ?? ""
             dict["totalAmount"] = invoice.totalAmount
-            dict["status"] = invoice.status.rawValue
+            dict["taxRate"] = invoice.taxRate
+            dict["discount"] = invoice.discount
+            dict["creditApplied"] = invoice.creditApplied
+            dict["currencyCode"] = invoice.currencyCode
+            dict["paymentTerms"] = invoice.paymentTerms
+            dict["notes"] = invoice.notes
+            dict["status"] = invoice.effectiveStatus.rawValue
+            dict["paidDate"] = invoice.paidDate.map { iso.string(from: $0) }
+            dict["sentDate"] = invoice.sentDate.map { iso.string(from: $0) }
+            dict["businessName"] = invoice.businessName
+            dict["businessABN"] = invoice.businessABN
+            dict["businessEmail"] = invoice.businessEmail
+            dict["businessPhone"] = invoice.businessPhone
+            dict["clientName"] = invoice.clientName
+            dict["clientNDISNumber"] = invoice.clientNDISNumber
+            dict["clientEmail"] = invoice.clientEmail
+            dict["clientPhone"] = invoice.clientPhone
+            dict["billingAuthority"] = invoice.billingAuthority?.rawValue
+            dict["billToName"] = invoice.billToName
+            dict["billToEmail"] = invoice.billToEmail
+            dict["bankName"] = invoice.bankName
+            dict["bankAccountName"] = invoice.bankAccountName
+            dict["bankBSB"] = invoice.bankBSB
+            dict["bankAccountNumber"] = invoice.bankAccountNumber
+            dict["businessAddressSnapshot"] = encodedBase64(invoice.businessAddressSnapshot)
+            dict["clientAddressSnapshot"] = encodedBase64(invoice.clientAddressSnapshot)
+            dict["billToAddressSnapshot"] = encodedBase64(invoice.billToAddressSnapshot)
+            dict["editorConfiguration"] = invoice.invoiceEditorStateData?.base64EncodedString()
             dict["clientId"] = invoice.client?.id.uuidString ?? ""
             dict["payeeId"] = invoice.payee?.id.uuidString
             dict["businessId"] = invoice.business?.id.uuidString
             return dict
         }
-        
-        // 9. InvoiceItemEntity
-        let invoiceItemDescriptor = FetchDescriptor<InvoiceItemEntity>()
+
+        // 9. InvoiceItem
+        let invoiceItemDescriptor = FetchDescriptor<InvoiceItem>()
         let invoiceItems = try context.fetch(invoiceItemDescriptor)
-        exportDict["InvoiceItemEntity"] = invoiceItems.map { item -> [String: Any] in
+        exportDict["InvoiceItem"] = invoiceItems.map { item -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = item.id.uuidString
             dict["invoiceId"] = item.invoice?.id.uuidString
             dict["description"] = item.itemDescription
+            dict["position"] = item.position
             dict["quantity"] = item.quantity
+            dict["unit"] = item.unit
             dict["unitPrice"] = item.rate
+            dict["taxRate"] = item.taxRate
+            dict["itemCode"] = item.ndisItemNumber
             dict["totalPrice"] = item.lineTotal
-            dict["gstAmount"] = item.lineTaxAmount
+            dict["gstAmount"] = item.lineTotal * (item.taxRate / 100.0)
             dict["gstCode"] = item.gstCode
             dict["clientServiceId"] = item.clientService?.id.uuidString
             dict["date"] = iso.string(from: item.serviceDate)
             return dict
         }
 
-        // 10. SessionEntity
-        let sessionDescriptor = FetchDescriptor<SessionEntity>()
+        // 10. Session
+        let sessionDescriptor = FetchDescriptor<Session>()
         let sessions = try context.fetch(sessionDescriptor)
-        exportDict["SessionEntity"] = sessions.map { session -> [String: Any] in
+        exportDict["Session"] = sessions.map { session -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = session.id.uuidString
             dict["title"] = session.title
@@ -268,11 +294,11 @@ private extension SwiftDataExportService {
             dict["addressId"] = session.address?.id.uuidString
             return dict
         }
-        
-        // 11. ServiceAgreementEntity
-        let serviceAgreementDescriptor = FetchDescriptor<ServiceAgreementEntity>()
+
+        // 11. ServiceAgreement
+        let serviceAgreementDescriptor = FetchDescriptor<ServiceAgreement>()
         let serviceAgreements = try context.fetch(serviceAgreementDescriptor)
-        exportDict["ServiceAgreementEntity"] = serviceAgreements.map { agreement -> [String: Any] in
+        exportDict["ServiceAgreement"] = serviceAgreements.map { agreement -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = agreement.id.uuidString
             dict["clientId"] = agreement.client?.id.uuidString
@@ -292,10 +318,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 12. SupportLogEntity
-        let supportLogDescriptor = FetchDescriptor<SupportLogEntity>()
+        // 12. SupportLog
+        let supportLogDescriptor = FetchDescriptor<SupportLog>()
         let supportLogs = try context.fetch(supportLogDescriptor)
-        exportDict["SupportLogEntity"] = supportLogs.map { log -> [String: Any] in
+        exportDict["SupportLog"] = supportLogs.map { log -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = log.id.uuidString
             dict["clientId"] = log.client?.id.uuidString
@@ -319,10 +345,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 13. BulkClaimBatchEntity
-        let bulkBatchDescriptor = FetchDescriptor<BulkClaimBatchEntity>()
+        // 13. BulkClaimBatch
+        let bulkBatchDescriptor = FetchDescriptor<BulkClaimBatch>()
         let bulkBatches = try context.fetch(bulkBatchDescriptor)
-        exportDict["BulkClaimBatchEntity"] = bulkBatches.map { batch -> [String: Any] in
+        exportDict["BulkClaimBatch"] = bulkBatches.map { batch -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = batch.id.uuidString
             dict["createdAt"] = iso.string(from: batch.createdAt)
@@ -341,10 +367,10 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 14. BulkClaimLineEntity
-        let bulkLineDescriptor = FetchDescriptor<BulkClaimLineEntity>()
+        // 14. BulkClaimLine
+        let bulkLineDescriptor = FetchDescriptor<BulkClaimLine>()
         let bulkLines = try context.fetch(bulkLineDescriptor)
-        exportDict["BulkClaimLineEntity"] = bulkLines.map { line -> [String: Any] in
+        exportDict["BulkClaimLine"] = bulkLines.map { line -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = line.id.uuidString
             dict["batchId"] = line.batch?.id.uuidString
@@ -375,16 +401,16 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        // 15. TravelChargeEntity
-        let travelChargeDescriptor = FetchDescriptor<TravelChargeEntity>()
+        // 15. TravelCharge
+        let travelChargeDescriptor = FetchDescriptor<TravelCharge>()
         let travelCharges = try context.fetch(travelChargeDescriptor)
-        exportDict["TravelChargeEntity"] = travelCharges.map { charge -> [String: Any] in
+        exportDict["TravelCharge"] = travelCharges.map { charge -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = charge.id.uuidString
             dict["clientId"] = charge.client?.id.uuidString
             dict["date"] = charge.startTime.map { iso.string(from: $0) }
-            dict["distance"] = charge.travelDistance
-            dict["duration"] = charge.travelDuration
+            dict["distance"] = charge.distanceKM
+            dict["duration"] = charge.durationMinutes
             dict["parkingCost"] = charge.parkingCost
             dict["tollCost"] = charge.tollCost
             dict["notes"] = charge.notes
@@ -392,21 +418,21 @@ private extension SwiftDataExportService {
             dict["serviceId"] = charge.service?.id.uuidString
             return dict
         }
-        
+
         // 16. TravelChargeReviewItem
-        let reviewItemDescriptor = FetchDescriptor<TravelChargeReviewItemEntity>()
+        let reviewItemDescriptor = FetchDescriptor<TravelChargeReviewItem>()
         let reviewItems = try context.fetch(reviewItemDescriptor)
         exportDict["TravelChargeReviewItem"] = reviewItems.map { item -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = item.id.uuidString
             dict["sessionId"] = item.session?.id.uuidString
-            dict["isApproved"] = item.isResolved // Mapping isResolved to isApproved for export compatibility if needed, or just export status
+            dict["isApproved"] = item.status != "pending"
             dict["status"] = item.status
             dict["reason"] = item.reason
             dict["timestamp"] = item.timestamp.map { iso.string(from: $0) }
             return dict
         }
-        
+
         // 17. TravelChargeAuditLog
         let auditLogDescriptor = FetchDescriptor<TravelChargeAuditLog>()
         let auditLogs = try context.fetch(auditLogDescriptor)
@@ -419,24 +445,23 @@ private extension SwiftDataExportService {
             dict["details"] = log.details
             return dict
         }
-        
-        // 18. RegionalPriceEntity
-        let regionalPriceDescriptor = FetchDescriptor<RegionalPriceEntity>()
+
+        // 18. RegionalPrice
+        let regionalPriceDescriptor = FetchDescriptor<RegionalPrice>()
         let regionalPrices = try context.fetch(regionalPriceDescriptor)
-        exportDict["RegionalPriceEntity"] = regionalPrices.map { price -> [String: Any] in
+        exportDict["RegionalPrice"] = regionalPrices.map { price -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = price.id.uuidString
             dict["ndisItemId"] = price.ndisItem?.id.uuidString
             dict["region"] = price.regionIdentifier
             dict["price"] = price.amount
-            // dict["effectiveDate"] = iso.string(from: price.effectiveDate) // Not available in RegionalPriceEntity
             return dict
         }
-        
-        // 19. CreditHistoryEntryEntity
-        let creditHistoryDescriptor = FetchDescriptor<CreditHistoryEntryEntity>()
+
+        // 19. CreditHistoryEntry
+        let creditHistoryDescriptor = FetchDescriptor<CreditHistoryEntry>()
         let creditHistory = try context.fetch(creditHistoryDescriptor)
-        exportDict["CreditHistoryEntryEntity"] = creditHistory.map { entry -> [String: Any] in
+        exportDict["CreditHistoryEntry"] = creditHistory.map { entry -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = entry.id.uuidString
             dict["clientId"] = entry.client?.id.uuidString
@@ -448,6 +473,11 @@ private extension SwiftDataExportService {
         }
 
         return exportDict
+    }
+
+    static func encodedBase64<T: Encodable>(_ value: T?) -> String? {
+        guard let value, let data = try? JSONEncoder().encode(value) else { return nil }
+        return data.base64EncodedString()
     }
 
     static func buildCSV(from exportDict: [String: [[String: Any]]]) -> String {
@@ -505,11 +535,11 @@ private extension SwiftDataExportService {
         }
 
         let workbook = """
-<?xml version=\"1.0\"?>
-<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\"
-          xmlns:o=\"urn:schemas-microsoft-com:office:office\"
-          xmlns:x=\"urn:schemas-microsoft-com:office:excel\"
-          xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">
+<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
 \(worksheets.joined(separator: "\n"))
 </Workbook>
 """
@@ -531,7 +561,7 @@ private extension SwiftDataExportService {
     static func stringify(_ value: Any) -> String {
         switch value {
         case let date as Date:
-            return ISO8601DateFormatter().string(from: date)
+            return isoFormatter.string(from: date)
         case let number as NSNumber:
             return number.stringValue
         case let bool as Bool:

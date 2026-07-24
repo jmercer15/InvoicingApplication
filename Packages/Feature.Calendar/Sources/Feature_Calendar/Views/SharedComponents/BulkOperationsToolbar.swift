@@ -2,14 +2,14 @@ import SwiftUI
 import SwiftData
 import Data
 import SharedUI
+import Observation
 
 struct CalendarBulkOperationsToolbar: View {
-    @ObservedObject var viewModel: CalendarViewModel
-    @State private var showStatusMenu = false
+    @Bindable var viewModel: CalendarViewModel
     @State private var showDeleteAlert = false
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
             selectionInfoView
             
             Divider()
@@ -21,9 +21,15 @@ struct CalendarBulkOperationsToolbar: View {
             
             doneButton
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
-        .background(Color.gray.opacity(0.1))
+        .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+        .padding(.vertical, StyleGuide.Dimensions.paddingMediumLarge)
+        .glassEffect(.regular, in: .rect(cornerRadius: 0))
+        .overlay(
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: StyleGuide.Dimensions.hairlineWidth),
+            alignment: .bottom
+        )
         .alert("Delete Sessions", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -37,8 +43,8 @@ struct CalendarBulkOperationsToolbar: View {
     private var selectionInfoView: some View {
         HStack {
             Text("\(viewModel.selectedItemIDs.count) selected")
-                .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundColor(StyleGuide.Colors.textSecondary)
             
             // Select All / Deselect All
             Button(viewModel.selectedItemIDs.count == viewModel.displayableItems.count ? "Deselect All" : "Select All") {
@@ -78,7 +84,7 @@ struct CalendarBulkOperationsToolbar: View {
                 showDeleteAlert = true
             }
             .buttonStyle(.glassProminent)
-            .tint(Color.red.opacity(0.7))
+            .tint(ColorSystem.Status.error.opacity(0.7))
             .disabled(viewModel.selectedSessions.isEmpty)
         }
     }
@@ -92,6 +98,6 @@ struct CalendarBulkOperationsToolbar: View {
 }
 
 #Preview {
-    // Note: Preview disabled - would need CalendarViewModel(sessionsRepository:clientsRepository:clientServicesRepository:eventKitService:modelContext:)
+    // Preview intentionally minimal; full toolbar behavior depends on live calendar container state.
     EmptyView()
 }  

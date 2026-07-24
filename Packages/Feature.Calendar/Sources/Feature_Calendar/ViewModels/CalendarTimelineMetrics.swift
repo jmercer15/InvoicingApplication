@@ -22,11 +22,6 @@ struct CalendarTimelineMetrics {
         self.contentWidthSubtract = contentWidthSubtract
     }
 
-    // Total timeline height for given number of whole hours
-    func totalHeight(hoursCount: Int = 24) -> CGFloat {
-        CGFloat(hoursCount) * hourHeight
-    }
-
     // Y offset for a specific date within the day (uses hour + minute)
     func yOffset(for date: Date, calendar: Calendar = .current) -> CGFloat {
         let hour = CGFloat(calendar.component(.hour, from: date))
@@ -52,11 +47,4 @@ struct CalendarTimelineMetrics {
 
     // Horizontal center used by positioned blocks
     var centerX: CGFloat { leftPadding + (contentWidth / 2) }
-
-    // Computes center Y and height for a block given a start date and duration
-    func blockCenterYAndHeight(startDate: Date, duration: TimeInterval, isEvent: Bool, calendar: Calendar = .current) -> (centerY: CGFloat, height: CGFloat) {
-        let topOffset = yOffset(for: startDate, calendar: calendar) + (isEvent ? 1 : 0)
-        let height = height(forDuration: duration)
-        return (topOffset + height / 2, height)
-    }
 }

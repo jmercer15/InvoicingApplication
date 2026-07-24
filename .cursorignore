@@ -1,9 +1,31 @@
-# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
-InvoicingApplication.xcodeproj
-.vscode
-.fleet
+# OS files
+.DS_Store
+
+# Xcode User Data & Cache
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Swift / Xcode Build Caches & Artifacts
+.build/
+build_cache_periphery/
+DerivedData/
+build/
+*.moved-aside
+
+# Analysis Reports
+periphery_report.json
+periphery_scan_output.txt
+PERIPHERY_DEAD_CODE.md
+
+# Legacy/Documentation Caches
+.vscode/
+.fleet/
 Application_Infrastructure_pagebreaks_fixed.docx
 Application_Infrastructure_pagebreaks_fixed.txt
 NDIS_Codebase_Analysis.txt
 NDIS_Service_Management_Code_Summary.txt
-Codebase Visualizations
+Codebase Visualizations/

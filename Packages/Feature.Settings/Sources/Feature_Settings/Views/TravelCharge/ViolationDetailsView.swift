@@ -7,15 +7,26 @@ struct ViolationDetailsView: View {
     let detailedReview: DetailedReviewItem
     let onOverride: ((DetailedReviewItem, String, String?) -> Void)? = nil
     let onSkip: ((DetailedReviewItem, String?) -> Void)? = nil
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     @State private var selectedOverride: String = ""
     @State private var overrideReason: String = ""
+
+    private static let dateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        return df
+    }()
+    
+    @ScaledMetric(relativeTo: .body) private var paddingSmall = StyleGuide.Dimensions.paddingSmall
+    @ScaledMetric(relativeTo: .body) private var paddingMedium = StyleGuide.Dimensions.paddingMedium
+    @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall = StyleGuide.Dimensions.cornerRadiusSmall
     
     var body: some View {
         ScrollView {
-        VStack(spacing: 16) {
+        VStack(spacing: FormSectionTokens.formGroupSpacing) {
             // Header
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                 Text("Compliance Violations")
                     .font(.title2.bold())
                 Text("Review and resolve compliance violations for this travel charge")
@@ -25,14 +36,14 @@ struct ViolationDetailsView: View {
             
             // Session Information
             GroupBox("Session Details") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Session: \(detailedReview.session.title)")
+                VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
+                    Text("Session: \(detailedReview.sessionTitle)")
                         .font(.headline)
                     if let clientName = detailedReview.clientName {
                         Text("Client: \(clientName)")
                             .font(.body)
                     }
-                    Text("Date: \(detailedReview.timestamp, formatter: DateFormatter())")
+                    Text("Date: \(detailedReview.timestamp, formatter: Self.dateFormatter)")
                         .font(.caption)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
@@ -40,9 +51,9 @@ struct ViolationDetailsView: View {
             
             // Violations List
             GroupBox("Violations") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     ForEach(detailedReview.violations, id: \.rule) { violation in
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             HStack {
                                 Image(systemName: violation.severity == .warning ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
                                     .foregroundColor(violation.severity == .warning ? .orange : .red)
@@ -70,24 +81,24 @@ struct ViolationDetailsView: View {
                             if violation.rule == "Distance Adjustment" {
                                 HStack {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
+                                        .foregroundColor(ColorSystem.Status.success)
                                         .font(.caption)
                                     Text("This automatic adjustment prevents overcharging and ensures compliance with business rules.")
                                         .font(.caption)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(ColorSystem.Status.success)
                                         .italic()
                                 }
                                 .padding(.top, 4)
                             }
                         }
-                        .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
-                        .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
+                        .padding(.vertical, paddingSmall)
+                        .padding(.horizontal, paddingMedium)
                         .background(
                             violation.rule == "Distance Adjustment" ? Color.green.opacity(0.1) :
                             violation.severity == .warning ? Color.orange.opacity(0.1) : 
                             Color.red.opacity(0.1)
                         )
-                        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+                        .cornerRadius(cornerRadiusSmall)
                     }
                 }
             }
@@ -95,7 +106,7 @@ struct ViolationDetailsView: View {
             // Override Options
             if !detailedReview.overrideOptions.isEmpty {
                 GroupBox("Override Options") {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                         Text("Select an override option if you want to proceed despite violations:")
                             .font(.caption)
                             .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
@@ -128,11 +139,11 @@ struct ViolationDetailsView: View {
             // Suggested Actions
             if !detailedReview.suggestedActions.isEmpty {
                 GroupBox("Suggested Actions") {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         ForEach(detailedReview.suggestedActions, id: \.self) { action in
                             HStack {
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(ColorSystem.Status.info)
                                 Text(action)
                                     .font(.body)
                                 Spacer()
@@ -145,7 +156,7 @@ struct ViolationDetailsView: View {
             Spacer(minLength: 0)
             
             // Action Buttons
-            HStack(spacing: 16) {
+            HStack(spacing: FormSectionTokens.formGroupSpacing) {
                 Button("Cancel") {
                     dismiss()
                 }
@@ -171,7 +182,7 @@ struct ViolationDetailsView: View {
         }
         .padding()
         }
-        .frame(minWidth: 500, minHeight: 600)
+        .frame(minWidth: StyleGuide.Dimensions.settingsSheetStandardMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetReviewMinHeight)
     }
     
     private func handleOverrideAction() {
@@ -179,7 +190,7 @@ struct ViolationDetailsView: View {
         Override Details:
         - Selected Override: \(selectedOverride)
         - Reason: \(overrideReason.isEmpty ? "No reason provided" : overrideReason)
-        - Session: \(detailedReview.session.title)
+        - Session: \(detailedReview.sessionTitle)
         - Violations: \(detailedReview.violations.map { $0.rule }.joined(separator: ", "))
         """
         
@@ -198,7 +209,7 @@ struct ViolationDetailsView: View {
     private func handleSkipAction() {
         let skipDetails = """
         Skipped Travel Charge:
-        - Session: \(detailedReview.session.title)
+        - Session: \(detailedReview.sessionTitle)
         - Reason: User chose to skip due to violations
         - Violations: \(detailedReview.violations.map { $0.rule }.joined(separator: ", "))
         """

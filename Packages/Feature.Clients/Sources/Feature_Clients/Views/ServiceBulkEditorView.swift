@@ -2,12 +2,6 @@ import SwiftUI
 import Core
 import SharedUI
 
-
-// Notification name for reopening service assignment sheet
-extension Notification.Name {
-    static let reopenServiceAssignmentSheet = Notification.Name("reopenServiceAssignmentSheet")
-}
-
 // An enum to represent the two pricing modes.
 enum BulkPriceMode: String, CaseIterable, Identifiable {
     case ndis = "NDIS Rate"
@@ -39,11 +33,12 @@ struct ClientServiceTemplate: Identifiable {
         self.unit = ndisItem.unit ?? "hour"
 
         // Process regional prices from the NDIS item
-        if !ndisItem.regionalPrices.isEmpty {
+        if let regionalPrices = ndisItem.regionalPrices, !regionalPrices.isEmpty {
             self.priceMode = .ndis
             var priceDict: [String: Double] = [:]
-            for price in ndisItem.regionalPrices {
-                priceDict[price.regionIdentifier] = price.amount
+            for price in regionalPrices {
+                guard let key = price.regionIdentifier, !key.isEmpty else { continue }
+                priceDict[key] = price.amount
             }
             self.availableNdisPrices = priceDict
             self.selectedNdisPriceKey = priceDict.keys.sorted().first
@@ -63,53 +58,58 @@ struct ClientServiceTemplate: Identifiable {
 }
 
 struct ServiceBulkEditorView: View {
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     
     @Binding var templates: [ClientServiceTemplate]
     let onSave: ([ClientServiceTemplate]) -> Void
+    let onBackToServiceSelection: () -> Void
     
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
                 Text("Configure New Services")
-                    .font(.largeTitle.bold())
+                    .font(StyleGuide.Typography.hero)
                 Text("Review and edit the details for the \(templates.count) services you are about to assign.")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundColor(StyleGuide.Colors.textSecondary)
             }
-            .padding()
+            .padding(StyleGuide.Dimensions.paddingMedium)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: .rect())
+            .background(StyleGuide.Colors.background)
 
             // Form
-            ScrollView {
-                VStack(spacing: 16) {
-                    ForEach(templates.indices, id: \.self) { index in
-                        HStack(alignment: .center, spacing: 16) {
-                            Text("\(index + 1)")
-                                .font(.title2.bold())
-                                .frame(width: 36, height: 36)
-                                .background(Circle().fill(Color.blue.opacity(0.7)))
-                                .foregroundColor(Color("Text", bundle: .sharedUI))
+            if templates.isEmpty {
+                EmptyStateView(
+                    icon: "doc.text.magnifyingglass",
+                    title: "No Service Templates",
+                    message: "All service templates have been removed. Go back to service selection to add some."
+                )
+                .frame(maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: StyleGuide.Dimensions.paddingLarge) {
+                        ForEach(templates.indices, id: \.self) { index in
+                            HStack(alignment: .center, spacing: StyleGuide.Dimensions.paddingLarge) {
+                                Text("\(index + 1)")
+                                    .font(StyleGuide.Typography.sectionTitle)
+                                    .frame(
+                                        width: StyleGuide.Dimensions.indexBadgeSize,
+                                        height: StyleGuide.Dimensions.indexBadgeSize
+                                    )
+                                    .background(Circle().fill(ColorSystem.Primary.blue.opacity(0.7)))
+                                    .foregroundColor(StyleGuide.Colors.text)
+                                    .accessibilityLabel("Template number \(index + 1)")
 
-                            ServiceTemplateRow(template: $templates[index])
+                                ServiceTemplateRow(template: $templates[index])
 
-                            Button(action: {
-                                removeTemplate(at: index)
-                            }) {
-                                Image(systemName: "xmark")
-                                    .font(.title2.bold())
-                                    .frame(width: 36, height: 36)
-                                    .background(Circle().fill(Color.red.opacity(0.7)))
-                                    .foregroundColor(Color("Text", bundle: .sharedUI))
-                                    .contentShape(Circle())
+                                ServiceTemplateDeleteButton(action: {
+                                    removeTemplate(at: index)
+                                })
                             }
-                            .buttonStyle(.plain)
-                            .pointerStyle(.link)
                         }
                     }
+                    .padding(StyleGuide.Dimensions.paddingMedium)
                 }
-                .padding()
             }
             
             // Footer
@@ -117,10 +117,8 @@ struct ServiceBulkEditorView: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                 
                 Button("Back to Service Selection") {
+                    onBackToServiceSelection()
                     dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        NotificationCenter.default.post(name: .reopenServiceAssignmentSheet, object: nil)
-                    }
                 }
                 
                 Spacer()
@@ -132,10 +130,10 @@ struct ServiceBulkEditorView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(templates.isEmpty)
             }
-            .padding()
+            .padding(StyleGuide.Dimensions.paddingMedium)
             .background(.bar)
         }
-        .glassEffect(.regular, in: .rect())
+        .background(StyleGuide.Colors.background)
     }
 
     private func removeTemplate(at index: Int) {
@@ -150,7 +148,6 @@ struct ServiceBulkEditorView: View {
 struct ServiceTemplateRow: View {
     @Binding var template: ClientServiceTemplate
     
-    private let unitOptions = ["hour", "session", "day", "week", "month", "item"]
     @State private var rateString: String = ""
 
     private var ndisPriceLabels: [String: String] {
@@ -167,17 +164,22 @@ struct ServiceTemplateRow: View {
                 TextField("Service Name", text: $template.serviceName)
                     .textFieldStyle(.roundedBorder)
             }
-            .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            .padding(EdgeInsets(
+                top: StyleGuide.Dimensions.paddingMediumLarge,
+                leading: StyleGuide.Dimensions.paddingLarge,
+                bottom: StyleGuide.Dimensions.paddingMediumLarge,
+                trailing: StyleGuide.Dimensions.paddingLarge
+            ))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: .rect())
+            .background(StyleGuide.Colors.background)
             .overlay(
                 Rectangle()
                     .frame(height: 1)
-                    .foregroundColor(Color.white.opacity(0.1)),
+                    .foregroundColor(StyleGuide.Colors.border),
                 alignment: .bottom
             )
 
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: StyleGuide.Dimensions.paddingLarge) {
                 FormField("NDIS Code") {
                     TextField("NDIS Code", text: $template.ndisCode)
                         .textFieldStyle(.roundedBorder)
@@ -222,8 +224,8 @@ struct ServiceTemplateRow: View {
                         }
                     } else {
                         Text("No NDIS price available.")
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                            .font(.caption)
+                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .font(StyleGuide.Typography.caption)
                             .frame(maxHeight: .infinity, alignment: .center)
                     }
                 }
@@ -232,13 +234,9 @@ struct ServiceTemplateRow: View {
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            .padding(16)
+            .padding(StyleGuide.Dimensions.paddingLarge)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 8))
-        .overlay(
-             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .standardCardStyle()
         .onAppear {
             rateString = String(format: "%.2f", template.rate)
         }
@@ -250,4 +248,26 @@ struct ServiceTemplateRow: View {
             rateString = String(format: "%.2f", template.rate)
         }
     }
-} 
+}
+
+struct ServiceTemplateDeleteButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(StyleGuide.Typography.sectionTitle)
+                .frame(
+                    width: StyleGuide.Dimensions.indexBadgeSize,
+                    height: StyleGuide.Dimensions.indexBadgeSize
+                )
+                .background(Circle().fill(ColorSystem.Status.error.opacity(0.7)))
+                .foregroundColor(StyleGuide.Colors.text)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .accessibilityLabel("Remove service template")
+        .accessibilityHint("Removes this service template from the bulk creation queue")
+    }
+}

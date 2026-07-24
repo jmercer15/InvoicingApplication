@@ -1,0 +1,29 @@
+---
+description: SwiftUI Persistent Storage
+alwaysApply: false
+---
+
+# Rule: SwiftUI Persistent Storage
+
+Sources
+
+https://developer.apple.com/documentation/swiftui/persistent-storage
+
+Core Principle
+
+SwiftUI persistent storage is for lightweight persisted state.
+
+Rules
+
+- Use `AppStorage` for app-level preferences and small settings-like values.
+- Use `SceneStorage` for per-scene restoration of lightweight UI state.
+- Persist the minimum information needed to restore useful UI continuity.
+- Keep persisted UI state separate from persistent model/domain data.
+- Store stable identifiers or compact preference values, not full models.
+- Use unique keys for distinct persisted values.
+
+Must Not
+
+- Do not use `AppStorage`/`SceneStorage` as model persistence.
+- Do not store large payloads or domain record blobs in user defaults wrappers.
+- Do not duplicate model truth in storage keys when an identifier is enough.

@@ -4,17 +4,16 @@ import Core
 @testable import Data
 
 @MainActor
-final class BulkClaimBuilderServiceTests: XCTestCase {
+final class BulkClaimBuilderActorTests: XCTestCase {
+    private typealias PersistenceBillingAuthority = BillingAuthority
+    private typealias PersistenceNDISClaimType = NDISClaimType
+    private typealias PersistenceInvoiceStatus = InvoiceStatus
+    private typealias PersistenceSessionStatus = SessionStatus
+
     private var modelContainer: ModelContainer!
     private var modelContext: ModelContext!
 
-    private var invoicesRepository: InvoicesRepositorySwiftData!
-    private var sessionsRepository: SessionsRepositorySwiftData!
-    private var businessRepository: BusinessRepositorySwiftData!
-    private var clientsRepository: ClientsRepositorySwiftData!
-    private var serviceAgreementRepository: ServiceAgreementRepositorySwiftData!
-    private var supportLogRepository: SupportLogRepositorySwiftData!
-    private var builder: BulkClaimBuilderService!
+    private var builder: BulkClaimBuilderActor!
 
     override func setUp() async throws {
         try await super.setUp()
@@ -23,31 +22,11 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         modelContainer = container
         modelContext = context
 
-        invoicesRepository = InvoicesRepositorySwiftData(modelContext: modelContext)
-        sessionsRepository = SessionsRepositorySwiftData(modelContext: modelContext)
-        businessRepository = BusinessRepositorySwiftData(modelContext: modelContext)
-        clientsRepository = ClientsRepositorySwiftData(modelContext: modelContext)
-        serviceAgreementRepository = ServiceAgreementRepositorySwiftData(modelContext: modelContext)
-        supportLogRepository = SupportLogRepositorySwiftData(modelContext: modelContext)
-
-        builder = BulkClaimBuilderService(
-            invoicesRepository: invoicesRepository,
-            sessionsRepository: sessionsRepository,
-            businessRepository: businessRepository,
-            clientsRepository: clientsRepository,
-            serviceAgreementRepository: serviceAgreementRepository,
-            supportLogRepository: supportLogRepository
-        )
+        builder = BulkClaimBuilderActor(modelContainer: modelContainer)
     }
 
     override func tearDown() async throws {
         builder = nil
-        supportLogRepository = nil
-        serviceAgreementRepository = nil
-        clientsRepository = nil
-        businessRepository = nil
-        sessionsRepository = nil
-        invoicesRepository = nil
 
         modelContext = nil
         modelContainer = nil
@@ -82,16 +61,9 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
             supportNumber: "04_590_0125_6_1"
         )
 
-        let batchNoTravel = BulkClaimBatch(
-            id: UUID(),
-            fromDate: Date().addingTimeInterval(-86_400),
-            toDate: Date().addingTimeInterval(86_400),
-            includeTravel: false,
-            includeCancellations: true,
-            claimReferenceStrategy: "invoice_number"
-        )
+        let batchNoTravel = makeBatch(includeTravel: false)
 
-        let withoutTravel = try await builder.buildLines(for: batchNoTravel)
+        let withoutTravel = try await builder.buildLines(for: batchNoTravel.snapshot())
         XCTAssertEqual(withoutTravel.count, 1)
         XCTAssertEqual(withoutTravel[0].claimTypeCode, BPRClaimTypeCode.thlt.rawValue)
         XCTAssertEqual(withoutTravel[0].hours, "001:30")
@@ -99,16 +71,9 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         XCTAssertEqual(withoutTravel[0].gstCode, "P2")
         XCTAssertEqual(withoutTravel[0].registrationNumber, "12345")
 
-        let batchWithTravel = BulkClaimBatch(
-            id: UUID(),
-            fromDate: Date().addingTimeInterval(-86_400),
-            toDate: Date().addingTimeInterval(86_400),
-            includeTravel: true,
-            includeCancellations: true,
-            claimReferenceStrategy: "invoice_number"
-        )
+        let batchWithTravel = makeBatch(includeTravel: true)
 
-        let withTravel = try await builder.buildLines(for: batchWithTravel)
+        let withTravel = try await builder.buildLines(for: batchWithTravel.snapshot())
         XCTAssertEqual(withTravel.count, 2)
         XCTAssertTrue(withTravel.contains(where: { $0.claimTypeCode == BPRClaimTypeCode.tran.rawValue }))
     }
@@ -134,13 +99,9 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
             supportNumber: "01_001_0107_1_1"
         )
 
-        let batch = BulkClaimBatch(
-            id: UUID(),
-            fromDate: Date().addingTimeInterval(-86_400),
-            toDate: Date().addingTimeInterval(86_400)
-        )
+        let batch = makeBatch()
 
-        let lines = try await builder.buildLines(for: batch)
+        let lines = try await builder.buildLines(for: batch.snapshot())
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(lines.first?.abnOfSupportProvider, "12345678901")
     }
@@ -166,19 +127,109 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
             supportNumber: "01_001_0107_1_1"
         )
 
-        let batch = BulkClaimBatch(
-            id: UUID(),
-            fromDate: Date().addingTimeInterval(-86_400),
-            toDate: Date().addingTimeInterval(86_400)
-        )
+        let batch = makeBatch()
 
-        let lines = try await builder.buildLines(for: batch)
+        let lines = try await builder.buildLines(for: batch.snapshot())
         XCTAssertEqual(lines.count, 1)
         XCTAssertNil(lines.first?.abnOfSupportProvider)
     }
 
-    private func insertBusiness(defaultGST: String, ndiaOrgID: String, abn: String = "12345678901") throws -> BusinessEntity {
-        let business = BusinessEntity(id: UUID(), abn: abn)
+    func testBuildLinesByBatchIDLoadsPersistedBatch() async throws {
+        let client = try insertClient(name: "Batch ID Client")
+        let session = try insertSession(client: client)
+        let invoice = try insertInvoice(client: client, session: session)
+
+        _ = try insertBusiness(defaultGST: "P2", ndiaOrgID: "12345")
+        _ = try insertSupportLog(client: client, session: session)
+        _ = try insertInvoiceItem(
+            invoice: invoice,
+            session: session,
+            claimType: .direct,
+            quantity: 1.0,
+            unit: nil,
+            gstCode: "P2",
+            supportNumber: "01_001_0107_1_1"
+        )
+
+        let batch = makeBatch()
+        modelContext.insert(batch)
+        try modelContext.save()
+
+        let lines = try await builder.buildLines(batchID: batch.id)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.first?.batchId, batch.id)
+    }
+
+    func testBuildLinesByBatchModelIDLoadsPersistedBatch() async throws {
+        let client = try insertClient(name: "Batch Model ID Client")
+        let session = try insertSession(client: client)
+        let invoice = try insertInvoice(client: client, session: session)
+
+        _ = try insertBusiness(defaultGST: "P2", ndiaOrgID: "12345")
+        _ = try insertSupportLog(client: client, session: session)
+        _ = try insertInvoiceItem(
+            invoice: invoice,
+            session: session,
+            claimType: .direct,
+            quantity: 1.0,
+            unit: nil,
+            gstCode: "P2",
+            supportNumber: "01_001_0107_1_1"
+        )
+
+        let batch = makeBatch()
+        modelContext.insert(batch)
+        try modelContext.save()
+
+        let lines = try await builder.buildLines(batchModelID: batch.persistentModelID)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.first?.batchId, batch.id)
+    }
+
+    func testBuildLinesByDeletedBatchModelIDThrowsTypedNotFoundError() async throws {
+        let batch = makeBatch()
+        modelContext.insert(batch)
+        try modelContext.save()
+        let deletedModelID = batch.persistentModelID
+        modelContext.delete(batch)
+        try modelContext.save()
+
+        do {
+            _ = try await builder.buildLines(batchModelID: deletedModelID)
+            XCTFail("Expected deleted batch model identifier to throw.")
+        } catch let error as BulkClaimBuilderActorError {
+            XCTAssertEqual(error, .batchModelNotFound)
+        }
+    }
+
+    func testBuildLinesByBatchIDThrowsWhenBatchMissing() async throws {
+        let missingBatchID = UUID()
+        do {
+            _ = try await builder.buildLines(batchID: missingBatchID)
+            XCTFail("Expected missing batch to throw.")
+        } catch let error as BulkClaimBuilderActorError {
+            XCTAssertEqual(error, .batchNotFound(missingBatchID))
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    private func makeBatch(
+        includeTravel: Bool = true,
+        includeCancellations: Bool = true,
+        claimReferenceStrategy: String = "invoice_number"
+    ) -> BulkClaimBatch {
+        let batch = BulkClaimBatch(id: UUID())
+        batch.fromDate = Date().addingTimeInterval(-86_400)
+        batch.toDate = Date().addingTimeInterval(86_400)
+        batch.includeTravel = includeTravel
+        batch.includeCancellations = includeCancellations
+        batch.claimReferenceStrategy = claimReferenceStrategy
+        return batch
+    }
+
+    private func insertBusiness(defaultGST: String, ndiaOrgID: String, abn: String = "12345678901") throws -> Business {
+        let business = Business(id: UUID(), abn: abn)
         business.name = "Claim Builder Business"
         business.defaultGstCode = defaultGST
         business.ndiaOrganisationID = ndiaOrgID
@@ -191,9 +242,9 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
     private func insertClient(
         name: String,
         planManagementType: String? = nil,
-        billingAuthority: BillingAuthority = .client
-    ) throws -> ClientEntity {
-        let client = ClientEntity(
+        billingAuthority: PersistenceBillingAuthority = .client
+    ) throws -> Client {
+        let client = Client(
             id: UUID(),
             ndisNumber: "4300000000",
             fullName: name,
@@ -207,29 +258,29 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         return client
     }
 
-    private func insertSession(client: ClientEntity) throws -> SessionEntity {
-        let session = SessionEntity(id: UUID())
+    private func insertSession(client: Client) throws -> Session {
+        let session = Session(id: UUID())
         session.title = "Session"
         session.client = client
         session.startTime = Date()
         session.endTime = Date().addingTimeInterval(3600)
-        session.status = .readyToSend
+        session.status = PersistenceSessionStatus.readyToSend
         modelContext.insert(session)
         try modelContext.save()
         return session
     }
 
     private func insertInvoice(
-        client: ClientEntity,
-        session: SessionEntity,
-        billingAuthority: BillingAuthority = .client
-    ) throws -> InvoiceEntity {
-        let invoice = InvoiceEntity(id: UUID(), invoiceNumber: "INV-CLAIM-001")
+        client: Client,
+        session: Session,
+        billingAuthority: PersistenceBillingAuthority = .client
+    ) throws -> Invoice {
+        let invoice = Invoice(id: UUID(), invoiceNumber: "INV-CLAIM-001")
         invoice.client = client
         invoice.clientName = client.fullName
         invoice.clientNDISNumber = client.ndisNumber
         invoice.billingAuthority = billingAuthority
-        invoice.status = .readyToSend
+        invoice.status = PersistenceInvoiceStatus.readyToSend
         invoice.issueDate = Date()
         invoice.date = Date()
         invoice.dueDate = Date().addingTimeInterval(86_400 * 14)
@@ -241,15 +292,15 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
     }
 
     private func insertInvoiceItem(
-        invoice: InvoiceEntity,
-        session: SessionEntity,
-        claimType: NDISClaimType,
+        invoice: Invoice,
+        session: Session,
+        claimType: PersistenceNDISClaimType,
         quantity: Double,
         unit: String?,
         gstCode: String?,
         supportNumber: String
-    ) throws -> InvoiceItemEntity {
-        let item = InvoiceItemEntity(id: UUID(), itemDescription: "Support")
+    ) throws -> InvoiceItem {
+        let item = InvoiceItem(id: UUID(), itemDescription: "Support")
         item.invoice = invoice
         item.session = session
         item.claimType = claimType
@@ -264,8 +315,8 @@ final class BulkClaimBuilderServiceTests: XCTestCase {
         return item
     }
 
-    private func insertSupportLog(client: ClientEntity, session: SessionEntity) throws -> SupportLogEntity {
-        let log = SupportLogEntity(id: UUID())
+    private func insertSupportLog(client: Client, session: Session) throws -> SupportLog {
+        let log = SupportLog(id: UUID())
         log.client = client
         log.session = session
         log.participantName = client.fullName

@@ -1,0 +1,342 @@
+---
+description: SwiftUI Application Architecture
+globs: InvoicingApplication/App/**/*.swift,InvoicingApplication/App/Scenes/**/*.swift,InvoicingApplication/App/Composition/**/*.swift
+alwaysApply: false
+---
+
+# Rule: SwiftUI Application Architecture
+
+Sources
+
+https://developer.apple.com/tutorials/swiftui-concepts/exploring-the-structure-of-a-swiftui-app
+https://developer.apple.com/tutorials/swiftui-concepts/specifying-the-view-hierarchy-of-a-scene
+https://developer.apple.com/documentation/swiftui/app-organization
+https://developer.apple.com/documentation/swiftui/scenes
+https://developer.apple.com/documentation/swiftui/windows
+https://developer.apple.com/documentation/swiftui/documents
+https://developer.apple.com/documentation/swiftui/documentgroup
+https://developer.apple.com/documentation/swiftui/building-a-document-based-app-using-swiftdata
+
+Scope
+
+Defines how SwiftUI applications are structured at the top level:
+App -> Scenes -> Windows -> Root Views -> View Hierarchy
+
+Intent
+
+Ensure SwiftUI applications follow Apple's architectural model where:
+
+The `App` type defines the application entry point
+Scenes define major UI containers
+Windows host view hierarchies
+Root views initiate navigation and layout
+
+This structure must remain predictable, modular, and scalable.
+
+Core Architectural Principle
+
+A SwiftUI app is defined as a hierarchy:
+
+App
+└─ Scene
+└─ Window
+└─ Root View
+└─ View Hierarchy
+
+Each level has a clearly defined responsibility.
+
+The `App` coordinates application configuration.
+`Scenes` represent independent UI environments.
+`Windows` host root views.
+Root views build the UI tree.
+
+---
+
+## APP ENTRY POINT
+
+The application must define a single type conforming to `App`.
+
+Responsibilities of the App:
+
+define the root scene structure
+configure global environment dependencies
+configure persistence containers
+register commands and menus
+manage lifecycle events
+
+Example
+
+@main
+struct InvoiceApp: App {
+
+    var sharedModelContainer: ModelContainer = {
+        try! ModelContainer(for: Client.self, Invoice.self)
+    }()
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+        }
+        .modelContainer(sharedModelContainer)
+    }
+
+}
+Rules
+
+- Only one @main App type should exist
+- App must not contain UI logic
+- App should configure shared dependencies
+- App should define scene topology
+
+SCENE ARCHITECTURE
+Scenes represent independent UI environments.
+Common SwiftUI scenes:
+
+WindowGroup
+Window
+DocumentGroup
+MenuBarExtra
+Settings
+
+Scene Responsibilities
+
+provide a window environment
+host root views
+define lifecycle scope
+manage scene-specific state
+
+Example
+
+var body: some Scene {
+
+    WindowGroup("Invoices") {
+        InvoiceWorkspaceView()
+    }
+
+    Settings {
+        SettingsView()
+    }
+
+}
+Rules
+
+- Scenes must represent logical app workspaces
+- Root views must be attached directly to scenes
+- Scenes should not contain business logic
+- Scene configuration must remain lightweight
+
+WINDOW MANAGEMENT
+Windows host SwiftUI view hierarchies.
+Types of window containers:
+
+WindowGroup
+Window
+DocumentGroup
+
+WindowGroup
+
+Creates multiple windows of the same content type.
+
+Example
+
+WindowGroup {
+DashboardView()
+}
+Window
+Creates a single uniquely identified window.
+
+Example
+
+Window("Inspector", id: "inspector") {
+InspectorView()
+}
+Rules
+
+- Use WindowGroup for primary workspace views
+- Use Window for singleton tool windows
+- Avoid complex logic inside window definitions
+- Window content should be a root view
+
+DOCUMENT-BASED APPLICATIONS
+Document-based apps use DocumentGroup.
+Responsibilities
+
+manage file opening
+manage file saving
+integrate with system document browser
+
+Example
+
+DocumentGroup(newDocument: InvoiceDocument()) { file in
+InvoiceEditor(document: file.$document)
+}
+Rules
+
+- Document models must conform to FileDocument
+- DocumentGroup must be defined in the App scene tree
+- Document UI must be isolated to document editors
+
+ROOT VIEW DESIGN
+Each scene must host a single root view.
+Root views typically:
+
+establish navigation structure
+provide environment objects
+configure layout containers
+
+Example
+
+struct RootView: View {
+
+    var body: some View {
+        NavigationSplitView {
+            SidebarView()
+        } detail: {
+            ContentView()
+        }
+    }
+
+}
+Rules
+
+- Root views should define navigation containers
+- Root views should not perform heavy data loading
+- Root views should inject environment dependencies
+- Root views must remain lightweight orchestration layers
+
+ENVIRONMENT INJECTION
+Global dependencies must be injected at the scene level.
+Typical dependencies:
+
+ModelContainer
+services
+actors
+configuration objects
+
+Example
+
+WindowGroup {
+RootView()
+}
+.modelContainer(sharedContainer)
+.workspaceStandardServicesEnvironment(…)
+// Workspace-scene `EnvironmentValues` keys (`\.geocodingService`, `\.swiftDataGeocodingService`, EventKit stores, NDIS hooks, template PDF protocols) and `workspaceStandardServicesEnvironment` live in the **WorkspaceUI** package (composition bridge: Core + Data + SharedUI). **SharedUI** does not import Data.
+
+Rules
+
+- Avoid global singletons
+- Inject dependencies via environment
+- Inject persistence containers at scene level
+
+LIFECYCLE EVENTS
+SwiftUI applications observe lifecycle changes via environment values.
+Example
+
+@Environment(\.scenePhase) var scenePhase
+
+.onChange(of: scenePhase) { phase in
+if phase == .background {
+saveChanges()
+}
+}
+Rules
+
+- lifecycle logic belongs in App or Scene layers
+- avoid scattering lifecycle handling throughout views
+
+ARCHITECTURAL LAYERING
+A well-structured SwiftUI application should follow this layering:
+Application Layer
+(App, Scenes)
+
+UI Composition Layer
+(Root views, navigation, layout)
+
+Feature Layer
+(feature view modules)
+
+Domain Layer
+(models, services)
+
+Persistence Layer
+(SwiftData, services, actors)
+
+Example structure
+
+App/
+InvoiceApp.swift
+
+Scenes/
+MainWindowScene.swift
+
+Features/
+Clients/
+Invoices/
+Sessions/
+
+Views/
+Shared/
+
+Models/
+SwiftDataModels/
+
+Services/
+
+Persistence/
+Rules
+
+- UI views must not directly access persistence infrastructure
+- domain logic must not exist inside views
+- services should mediate between UI and persistence
+
+ANTI-PATTERNS
+Avoid the following architectural mistakes.
+UI Logic in App
+
+@main
+struct App: App {
+var body: some Scene {
+WindowGroup {
+if loggedIn {
+Dashboard()
+}
+}
+}
+}
+Correct approach
+Use a root coordinator view.
+
+Heavy Scene Configuration
+
+Scenes performing data queries
+
+Scenes must remain configuration layers only.
+
+Multiple Root Views
+
+WindowGroup {
+SidebarView()
+DetailView()
+}
+Correct
+WindowGroup {
+RootView()
+}
+CHECKLIST
+Before implementing a SwiftUI application structure:
+
+- Is there exactly one App entry point?
+- Are scenes clearly defined and minimal?
+- Does each scene host a single root view?
+- Are global dependencies injected via environment?
+- Is navigation defined in root views?
+- Is UI separated from persistence logic?
+
+EXPECTED ARCHITECTURE
+Correct high-level architecture:
+App
+└─ Scene
+└─ Window
+└─ RootView
+└─ Navigation Container
+└─ Feature Views
