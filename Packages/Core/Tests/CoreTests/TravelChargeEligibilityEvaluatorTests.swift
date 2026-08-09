@@ -1,17 +1,16 @@
-import XCTest
+import Testing
 @testable import Core
 
-final class TravelChargeEligibilityEvaluatorTests: XCTestCase {
-    func testPrimarySupportEligible() {
-        XCTAssertTrue(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: true))
-        XCTAssertFalse(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: false))
-        XCTAssertFalse(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: nil))
+@Suite struct TravelChargeEligibilityEvaluatorTests {
+    @Test func PrimarySupportEligible() {
+        #expect(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: true))
+        #expect(!(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: false)))
+        #expect(!(TravelChargeEligibilityEvaluator.isPrimarySupportEligibleForTravel(ndisItemProviderTravel: nil)))
     }
 
-    func testAutomationEligibility() {
+    @Test func AutomationEligibility() {
         let nonBillable: Set<String> = ["cancelled", "non-billable"]
-        XCTAssertTrue(
-            TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
+        #expect(TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
                 isTravel: false,
                 hasClient: true,
                 hasService: true,
@@ -19,10 +18,8 @@ final class TravelChargeEligibilityEvaluatorTests: XCTestCase {
                 statusRawValue: "Active",
                 nonBillableStatuses: nonBillable,
                 ndisItemProviderTravel: true
-            )
-        )
-        XCTAssertFalse(
-            TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
+            ))
+        #expect(!(TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
                 isTravel: true,
                 hasClient: true,
                 hasService: true,
@@ -30,10 +27,8 @@ final class TravelChargeEligibilityEvaluatorTests: XCTestCase {
                 statusRawValue: "Active",
                 nonBillableStatuses: nonBillable,
                 ndisItemProviderTravel: true
-            )
-        )
-        XCTAssertFalse(
-            TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
+            )))
+        #expect(!(TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
                 isTravel: false,
                 hasClient: true,
                 hasService: true,
@@ -41,10 +36,8 @@ final class TravelChargeEligibilityEvaluatorTests: XCTestCase {
                 statusRawValue: "Cancelled",
                 nonBillableStatuses: nonBillable,
                 ndisItemProviderTravel: true
-            )
-        )
-        XCTAssertFalse(
-            TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
+            )))
+        #expect(!(TravelChargeEligibilityEvaluator.isEligibleForTravelChargeAutomation(
                 isTravel: false,
                 hasClient: true,
                 hasService: true,
@@ -52,7 +45,6 @@ final class TravelChargeEligibilityEvaluatorTests: XCTestCase {
                 statusRawValue: "Active",
                 nonBillableStatuses: nonBillable,
                 ndisItemProviderTravel: false
-            )
-        )
+            )))
     }
 }

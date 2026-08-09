@@ -1,9 +1,11 @@
-import XCTest
+import Foundation
+import PersistenceModels
+import Testing
 import Core
 @testable import Feature_Clients
 
-final class ClientDetailProjectionTests: XCTestCase {
-    func testRefreshTaskIDTracksQuerySnapshotCounts() {
+@Suite struct ClientDetailProjectionTests {
+    @Test func RefreshTaskIDTracksQuerySnapshotCounts() {
         let clientId = UUID()
         let invoice = Invoice(invoiceNumber: "INV-1")
         invoice.issueDate = Date()
@@ -16,14 +18,11 @@ final class ClientDetailProjectionTests: XCTestCase {
             serviceAgreements: []
         )
 
-        XCTAssertEqual(
-            projection.refreshTaskID,
-            ClientDetailProjectionRefreshID(
+        #expect(projection.refreshTaskID == ClientDetailProjectionRefreshID(
                 clientId: clientId,
                 clientServices: [clientService],
                 relatedInvoices: [invoice],
                 serviceAgreements: []
-            )
-        )
+            ))
     }
 }

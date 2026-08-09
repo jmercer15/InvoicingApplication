@@ -30,7 +30,6 @@ struct BillingHubTheme {
 
         static let cardBase = boardBase
         static let cardStroke = StyleGuide.Colors.border.opacity(0.55)
-        static let cardHoverStrokeOpacity = ListRowTokens.hoverStrokeOpacity
         static let cardDefaultStrokeOpacity = ListRowTokens.defaultStrokeOpacity
         static let cardSelectedStrokeWidth = ListRowTokens.selectedStrokeWidth
         static let cardDefaultStrokeWidth = ListRowTokens.defaultStrokeWidth
@@ -61,9 +60,6 @@ struct BillingHubTheme {
         static let bulkFeedbackIcon = Font.system(size: StyleGuide.Dimensions.fontSizeXSmall, weight: .bold)
         static let bulkFeedbackText = Font.system(size: StyleGuide.Dimensions.fontSizeXSmall, weight: .medium)
         static let bulkFeedbackDismiss = Font.system(size: StyleGuide.Dimensions.fontSizeNano, weight: .bold)
-        static let infoChipIcon = StyleGuide.Typography.itemSubtitle
-        static let infoChipLabel = StyleGuide.Typography.infoChipLabel
-        static let infoChipValue = StyleGuide.Typography.infoChipValue
     }
 
     struct Dimensions {

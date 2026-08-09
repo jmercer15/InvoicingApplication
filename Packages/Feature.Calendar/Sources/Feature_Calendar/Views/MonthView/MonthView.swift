@@ -98,7 +98,7 @@ struct MonthView: View {
             
             Text(numStr)
                 .font(StyleGuide.Typography.gridDayNumber)
-                .foregroundColor(StyleGuide.Colors.textSecondary.opacity(0.3))
+                .foregroundStyle(StyleGuide.Colors.textSecondary.opacity(0.3))
                 .padding(.top, StyleGuide.Dimensions.paddingSmall)
                 .padding(.trailing, StyleGuide.Dimensions.paddingMedium)
         }
@@ -108,28 +108,28 @@ struct MonthView: View {
             // Top border (for all rows to maintain grid structure)
             Rectangle()
                 .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
-                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+                .foregroundStyle(StyleGuide.Colors.border.opacity(0.2)),
             alignment: .top
         )
         .overlay(
             // Left border (only for first column)
             dayIndex == 0 ? Rectangle()
                 .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
-                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)) : nil,
+                .foregroundStyle(StyleGuide.Colors.border.opacity(0.2)) : nil,
             alignment: .leading
         )
         .overlay(
             // Right border (only for last column to complete grid outline)
             dayIndex == 6 ? Rectangle()
                 .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
-                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)) : nil,
+                .foregroundStyle(StyleGuide.Colors.border.opacity(0.2)) : nil,
             alignment: .trailing
         )
         .overlay(
             // Bottom border (for all rows to maintain grid structure)
             Rectangle()
                 .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
-                .foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+                .foregroundStyle(StyleGuide.Colors.border.opacity(0.2)),
             alignment: .bottom
         )
     }
@@ -147,52 +147,7 @@ struct MonthView: View {
         return calendar.date(byAdding: .day, value: offsetDays, to: gridStartDate) ?? gridStartDate
     }
 
-    private static let dayNumberFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d"
-        return f
-    }()
-
     private func dayNumber(for date: Date) -> String {
-        return Self.dayNumberFormatter.string(from: date)
+        DateFormatting.dayNumber(date)
     }
-}
-
-// MARK: - RoundedCorner Shape
-struct RoundedCorner: Shape {
-    var radius: CGFloat = .infinity
-    var corners: Corner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        
-        let topLeft = corners.contains(.topLeft) ? radius : 0
-        let topRight = corners.contains(.topRight) ? radius : 0
-        let bottomLeft = corners.contains(.bottomLeft) ? radius : 0
-        let bottomRight = corners.contains(.bottomRight) ? radius : 0
-        
-        path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
-        path.addArc(center: CGPoint(x: rect.maxX - topRight, y: rect.minY + topRight), radius: topRight, startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRight))
-        path.addArc(center: CGPoint(x: rect.maxX - bottomRight, y: rect.maxY - bottomRight), radius: bottomRight, startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 90), clockwise: false)
-        path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
-        path.addArc(center: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY - bottomLeft), radius: bottomLeft, startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 180), clockwise: false)
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
-        path.addArc(center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft), radius: topLeft, startAngle: Angle(degrees: 180), endAngle: Angle(degrees: 270), clockwise: false)
-        path.closeSubpath()
-        
-        return path
-    }
-}
-
-// MARK: - Corner OptionSet
-struct Corner: OptionSet {
-    let rawValue: Int
-    
-    static let topLeft = Corner(rawValue: 1 << 0)
-    static let topRight = Corner(rawValue: 1 << 1)
-    static let bottomLeft = Corner(rawValue: 1 << 2)
-    static let bottomRight = Corner(rawValue: 1 << 3)
-    static let allCorners: Corner = [.topLeft, .topRight, .bottomLeft, .bottomRight]
 }

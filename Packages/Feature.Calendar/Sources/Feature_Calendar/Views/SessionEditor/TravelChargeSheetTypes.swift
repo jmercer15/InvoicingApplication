@@ -1,3 +1,4 @@
+import Core
 import Foundation
 
 enum TravelChargeSheetChargeType: String, CaseIterable, Identifiable {
@@ -26,8 +27,8 @@ enum TravelChargeSheetVehicleType: String, CaseIterable, Identifiable {
 
     var rate: Double {
         switch self {
-        case .standard: return 0.99
-        case .modified: return 2.76
+        case .standard: return Core.NDISTravelChargeCalculator.vehicleRatePerKilometre
+        case .modified: return Core.NDISTravelChargeCalculator.modifiedVehicleRatePerKilometre
         }
     }
 }

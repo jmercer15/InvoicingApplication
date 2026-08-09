@@ -36,6 +36,18 @@ public struct BillingHubBoardProjection: Sendable {
         guard let id else { return nil }
         return cardLookup[id]
     }
+
+    /// Lightweight identity for kanban presentation caching (card counts + grouped batch count).
+    var contentFingerprint: Int {
+        var hasher = Hasher()
+        for column in KanbanCardData.BillingColumnType.allCases {
+            hasher.combine(sessionsByStatus[column]?.count ?? 0)
+            hasher.combine(invoicesByStatus[column]?.count ?? 0)
+        }
+        hasher.combine(groupedSessions.count)
+        hasher.combine(clientSummaries.count)
+        return hasher.finalize()
+    }
 }
 
 private extension BillingHubBoardProjection {

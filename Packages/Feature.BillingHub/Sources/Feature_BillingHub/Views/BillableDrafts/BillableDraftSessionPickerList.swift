@@ -1,4 +1,4 @@
-import Core
+import PersistenceModels
 import SwiftData
 import SwiftUI
 
@@ -24,13 +24,10 @@ struct BillableDraftSessionPickerList: View {
         self.onSessionsUpdated = onSessionsUpdated
 
         _sessions = Query(
-            filter: #Predicate<Session> { session in
-                session.startTime != nil
-                    && session.startTime! >= rangeFrom
-                    && session.startTime! <= rangeTo
-                    && session.client != nil
-                    && session.clientService != nil
-            },
+            filter: EntityPredicateBuilders.sessionsInBillableWindow(
+                rangeFrom: rangeFrom,
+                rangeTo: rangeTo
+            ),
             sort: \.startTime
         )
         _draftsInRange = Query(

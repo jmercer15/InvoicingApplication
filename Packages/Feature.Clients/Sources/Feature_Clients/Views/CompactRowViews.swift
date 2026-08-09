@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
-import Data
 import Core
+import PersistenceModels
 import SharedUI
 
 // MARK: - Compact Row Views
@@ -15,9 +15,14 @@ struct CompactServiceRowView: View {
                 Text(service.serviceName)
                     .font(StyleGuide.Typography.compactRowTitle)
                     .foregroundColor(StyleGuide.Colors.text)
-                Text("\(service.unit) • $\(service.rate, specifier: "%.2f")")
+                Text("\(service.unit) • \(CurrencyFormatting.display(service.rate))")
                     .font(StyleGuide.Typography.caption)
                     .foregroundColor(StyleGuide.Colors.textSecondary)
+                if let months = service.consecutiveMonths {
+                    Text("Establishment fee: \(months) consecutive month\(months == 1 ? "" : "s")")
+                        .font(StyleGuide.Typography.caption)
+                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                }
             }
             
             Spacer()
@@ -39,7 +44,7 @@ struct CompactInvoiceRowView: View {
                 Text(invoice.invoiceNumber)
                     .font(StyleGuide.Typography.compactRowTitle)
                     .foregroundColor(StyleGuide.Colors.text)
-                Text("$\(invoice.totalAmount, specifier: "%.2f") • \(invoice.issueDate.formatted(date: .abbreviated, time: .omitted))")
+                Text("\(CurrencyFormatting.display(invoice.totalAmount)) • \(DateFormatting.mediumDate(invoice.issueDate))")
                     .font(StyleGuide.Typography.caption)
                     .foregroundColor(StyleGuide.Colors.textSecondary)
             }

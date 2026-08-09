@@ -1,9 +1,11 @@
-import XCTest
+import Foundation
+import Testing
 import Core
+import PersistenceModels
 @testable import Data
 
-final class BPRCSVWriterTests: XCTestCase {
-    func testHeaderAndColumnOrderAreExact() {
+@Suite struct BPRCSVWriterTests {
+    @Test func HeaderAndColumnOrderAreExact() {
         let writer = BPRCSVWriter()
         let line = BulkClaimLine(id: UUID())
         line.registrationNumber = "12345"
@@ -12,9 +14,9 @@ final class BPRCSVWriterTests: XCTestCase {
         line.supportsDeliveredTo = Date(timeIntervalSince1970: 1_700_003_600)
         line.supportNumber = "01_001_0107_1_1"
         line.claimReference = "INV-1"
-        line.quantity = 1
+        line.quantity = Decimal(1)
         line.hours = nil
-        line.unitPrice = 100
+        line.unitPrice = Decimal(100)
         line.gstCode = "P2"
         line.authorisedBy = "Worker"
         line.participantApproved = "Y"
@@ -25,18 +27,15 @@ final class BPRCSVWriterTests: XCTestCase {
 
         let csv = writer.csvString(lines: [line])
         let rows = csv.split(separator: "\n", omittingEmptySubsequences: true)
-        XCTAssertEqual(rows.count, 2)
+        #expect(rows.count == 2)
 
-        XCTAssertEqual(
-            String(rows[0]),
-            "Registration Number,NDIS Number,Supports Delivered From,Supports Delivered To,Support Number,Claim Reference,Quantity,Hours,Unit Price,GST Code,Authorised By,Participant Approved,In Kind Funding Program,Claim Type,Cancellation Reason,ABN Of Support Provider"
-        )
+        #expect(String(rows[0]) == "Registration Number,NDIS Number,Supports Delivered From,Supports Delivered To,Support Number,Claim Reference,Quantity,Hours,Unit Price,GST Code,Authorised By,Participant Approved,In Kind Funding Program,Claim Type,Cancellation Reason,ABN Of Support Provider")
 
         let values = String(rows[1]).split(separator: ",", omittingEmptySubsequences: false)
-        XCTAssertEqual(values.count, 16)
+        #expect(values.count == 16)
     }
 
-    func testCSVEscapingAndChecksumAreDeterministic() {
+    @Test func CSVEscapingAndChecksumAreDeterministic() {
         let writer = BPRCSVWriter()
         let line = BulkClaimLine(id: UUID())
         line.registrationNumber = "12345"
@@ -59,16 +58,16 @@ final class BPRCSVWriterTests: XCTestCase {
         let dataA = writer.csvData(lines: [line])
         let dataB = writer.csvData(lines: [line])
 
-        XCTAssertEqual(dataA, dataB)
+        #expect(dataA == dataB)
 
         let checksumA = writer.sha256Hex(for: dataA)
         let checksumB = writer.sha256Hex(for: dataB)
-        XCTAssertEqual(checksumA, checksumB)
+        #expect(checksumA == checksumB)
 
         guard let csv = String(data: dataA, encoding: .utf8) else {
-            XCTFail("Expected valid UTF-8 CSV")
+            Issue.record("Expected valid UTF-8 CSV")
             return
         }
-        XCTAssertTrue(csv.contains("\"INV,\"\"Q\"\"\""))
+        #expect(csv.contains("\"INV,\"\"Q\"\"\""))
     }
 }

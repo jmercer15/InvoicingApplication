@@ -1,6 +1,7 @@
 import SwiftUI
-import Data
+import DataInterfaces
 import Core
+import PersistenceModels
 import SharedUI
 import MapKit
 import Observation
@@ -15,7 +16,7 @@ public final class TravelChargeAutomationViewModel {
     private var sessionsById: [UUID: Session] = [:]
     /// Cancels stale background expansion when session query updates rapidly.
     private var expansionTask: Task<Void, Never>?
-    private let automationActor: TravelChargeAutomationActor
+    private let automationActor: any TravelChargeAutomating
     private let geocodingService: any Core.GeocodingServiceProtocol
     private let mmmZoneLookup: any Core.MMMZoneLookupProtocol
     private let recurrenceRuleManager: Core.RecurrenceRuleManager
@@ -23,7 +24,7 @@ public final class TravelChargeAutomationViewModel {
 
     // MARK: - Published Properties
     var selectedSessionInstances: Set<String> = []
-    var cachedExpandedSessions: [Core.TravelChargeAutomationService.SessionInstance] = []
+    var cachedExpandedSessions: [TravelChargeSessionInstance] = []
     
     var isRunning: Bool = false
     var errorMessage: String? = nil
@@ -58,7 +59,7 @@ public final class TravelChargeAutomationViewModel {
     // MARK: - Initialization
     public init(
         modelContext: ModelContext,
-        automationActor: TravelChargeAutomationActor,
+        automationActor: any TravelChargeAutomating,
         geocodingService: any Core.GeocodingServiceProtocol,
         mmmZoneLookup: any Core.MMMZoneLookupProtocol,
         recurrenceRuleManager: Core.RecurrenceRuleManager
@@ -106,6 +107,32 @@ public final class TravelChargeAutomationViewModel {
 
     func updateBusiness(_ business: Business?) {
         applyBusinessAddressInfo(from: business)
+    }
+
+    public func loadBootstrapData(using fetcher: any ReferenceDataFetching) async {
+        do {
+            let bootstrap = try await fetcher.fetchTravelChargeBootstrapData()
+            let sessionIDs = bootstrap.sessions.map(\.id)
+            if sessionIDs.isEmpty {
+                updateSessions([])
+            } else {
+                let predicate = #Predicate<Session> { sessionIDs.contains($0.id) }
+                let sessions = try modelContext.fetch(FetchDescriptor<Session>(predicate: predicate))
+                updateSessions(sessions)
+            }
+
+            if let businessID = bootstrap.primaryBusiness?.id {
+                let businessPredicate = #Predicate<Business> { $0.id == businessID }
+                let business = try modelContext.fetch(
+                    FetchDescriptor<Business>(predicate: businessPredicate)
+                ).first
+                updateBusiness(business)
+            } else {
+                updateBusiness(nil)
+            }
+        } catch {
+            print("Failed to load travel charge bootstrap data: \(error)")
+        }
     }
     
     func runAutomation() async {
@@ -255,7 +282,7 @@ private actor TravelChargeSessionExpansionWorker {
         rangeStart: Date,
         rangeEnd: Date,
         recurrenceRuleManager: Core.RecurrenceRuleManager
-    ) async -> [Core.TravelChargeAutomationService.SessionInstance] {
+    ) async -> [TravelChargeSessionInstance] {
         TravelChargeAutomationSessionExpansion.buildExpandedInstances(
             from: snapshots,
             rangeStart: rangeStart,

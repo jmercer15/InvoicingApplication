@@ -1,6 +1,6 @@
 import SwiftUI
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 struct ClientDetailServicesCard: View {
@@ -18,7 +18,15 @@ struct ClientDetailServicesCard: View {
                     maxHeight: DetailSectionTokens.listMinHeight
                 ) {
                     ForEach(sortedServices) { service in
-                        CompactServiceRowView(service: service)
+                        Button {
+                            viewModel.prepareToEditClientService(service)
+                        } label: {
+                            CompactServiceRowView(service: service)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .pointerStyle(.link)
+                        .accessibilityHint("Opens service editor")
                     }
                 }
 

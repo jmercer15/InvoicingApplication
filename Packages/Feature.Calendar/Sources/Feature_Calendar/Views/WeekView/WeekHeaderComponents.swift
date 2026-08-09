@@ -27,9 +27,8 @@ struct WeekHeaderView: View {
                 )
 
             // Day headers
-            ForEach(viewModel.currentWeekDays.indices, id: \.self) { index in
-                let day = viewModel.currentWeekDays[index]
-                DayHeaderItemView(day: day)
+            ForEach(viewModel.currentWeekDayIdentities) { identity in
+                DayHeaderItemView(day: identity.resolvedDate())
                     .frame(width: dayColumnWidth)
                     .overlay(
                         Rectangle()
@@ -65,34 +64,23 @@ struct DayHeaderItemView: View {
     @ScaledMetric(relativeTo: .body) private var headerHeight: CGFloat = 42
 
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
-    private static let dayOfWeekFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        return f
-    }()
-    
-    private static let dayNumberFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d"
-        return f
-    }()
 
     private var dayOfWeekString: String {
-        Self.dayOfWeekFormatter.string(from: day)
+        DateFormatting.weekdayAbbreviation(day)
     }
     private var dayNumberString: String {
-        Self.dayNumberFormatter.string(from: day)
+        DateFormatting.dayNumber(day)
     }
 
     var body: some View {
         HStack(spacing: 6) {
             Text(dayOfWeekString)
                 .font(CalendarTypography.headerWeekday(size: textFontSizeOfWeek, isToday: isToday))
-                .foregroundColor(isToday ? .accentColor : StyleGuide.Colors.text)
+                .foregroundStyle(isToday ? Color.accentColor : StyleGuide.Colors.text)
 
             Text(dayNumberString)
                 .font(CalendarTypography.headerDayNumber(size: textFontSizeOfNumber, isToday: isToday))
-                .foregroundColor(isToday ? .white : StyleGuide.Colors.textSecondary)
+                .foregroundStyle(isToday ? Color.white : StyleGuide.Colors.textSecondary)
                 .frame(width: numberCircleSize, height: numberCircleSize)
                 .background {
                     if isToday {

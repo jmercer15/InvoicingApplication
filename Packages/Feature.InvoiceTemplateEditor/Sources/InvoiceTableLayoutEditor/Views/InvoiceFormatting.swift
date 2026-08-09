@@ -32,14 +32,6 @@ struct InvoiceThemePalette: Equatable {
     accent.opacity(0.72)
   }
 
-  var accentSubtle: Color {
-    accent.opacity(0.10)
-  }
-
-  var accentTint: Color {
-    accent.opacity(0.06)
-  }
-
   var accentEmphasisTint: Color {
     accent.opacity(0.09)
   }
@@ -110,14 +102,6 @@ struct InvoiceThemePalette: Equatable {
 
   var emphasisFill: Color {
     accentEmphasisTint
-  }
-
-  var headerBorderColor: Color {
-    accent.opacity(0.32)
-  }
-
-  var emphasisBorderColor: Color {
-    accent.opacity(0.35)
   }
 
   var detailsGridLineColor: Color {
@@ -294,12 +278,6 @@ enum InvoiceDocumentDesign {
 
   /// Restrained brand accent — deep teal, print-safe on white.
   static let accent = Color(red: 0.13, green: 0.36, blue: 0.40)
-  static let accentMuted = accent.opacity(0.72)
-  static let accentSubtle = accent.opacity(0.10)
-  static let accentTint = accent.opacity(0.06)
-  static let accentEmphasisTint = accent.opacity(0.09)
-  /// Line-items column-header band — stronger than body tint so headers read as a distinct row.
-  static let tableHeaderFill = accent.opacity(0.12)
 
   static let ink = Color.primary
   /// Supporting text on the always-light printable page. At 55% primary over white,
@@ -311,10 +289,7 @@ enum InvoiceDocumentDesign {
   static let stroke = Color.primary.opacity(0.1)
   static let strokeStrong = Color.primary.opacity(0.18)
   static let panelFill = Color.primary.opacity(0.02)
-  static let headerFill = tableHeaderFill
-  static let emphasisFill = accentEmphasisTint
   static let pageNumberBackground = Color.primary.opacity(0.04)
-  static let footerTermsFill = Color.primary.opacity(0.018)
 
   // MARK: - Banded card
 
@@ -327,22 +302,10 @@ enum InvoiceDocumentDesign {
   /// Rule dividing a party card's header band from its body.
   static let partyBandRule = accent.opacity(0.22)
 
-  /// Stronger header band tint for the payment footer cards.
-  static let paymentBandFill = accent.opacity(0.11)
   /// Near-white body surface so the payment footer reads as crisp ruled tables.
   static let paymentBodyFill = Color.primary.opacity(0.02)
-  /// Crisper outline so the payment footer reads as a distinct, framed table block.
-  static let paymentCardOutline = accent.opacity(0.42)
-  /// Header-band / outer rule tone for the payment footer.
-  static let paymentBandRule = accent.opacity(0.42)
-  /// Faint internal row rules inside the payment details table.
-  static let paymentRowRule = accent.opacity(0.14)
-
-  /// Solid accent fill for the full-width document header banner.
-  static let bannerFill = accent
   // MARK: - Layout
 
-  static let panelPadding: CGFloat = 7
   /// Horizontal inset for a banded card's header label.
   static let bandPaddingHorizontal: CGFloat = 10
   /// Vertical inset for a banded card's header label.
@@ -355,7 +318,6 @@ enum InvoiceDocumentDesign {
   static let bannerPaddingHorizontal: CGFloat = 14
   /// Vertical inset for the document header banner content (zero — banner hugs content).
   static let bannerPaddingVertical: CGFloat = 0
-  static let metadataLabelWidth: CGFloat = 60
   static let inlineLabelWidth: CGFloat = 56
   /// Label/value pair grids (invoice details, party contact, payment details):
   /// labels sit trailing toward the values; values sit leading in their column.
@@ -365,8 +327,6 @@ enum InvoiceDocumentDesign {
   static let labelValueLabelColumnAlignment: HorizontalAlignment = .trailing
   static let labelValueValueColumnAlignment: HorizontalAlignment = .leading
   static let cardBorderWidth: CGFloat = 0.5
-  static let accentStripeWidth: CGFloat = 3
-  static let accentTopBorderWidth: CGFloat = 2
   static let titleUnderlineHeight: CGFloat = 2.5
   static let titleUnderlineWidth: CGFloat = 48
 
@@ -392,19 +352,6 @@ enum InvoiceDocumentDesign {
 
   static func documentTitleFont(
     wide: Bool,
-    density: InvoiceTypographyDensity = .default,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(
-      size: wide
-        ? InvoiceLineItemsTypography.titleSizeWide(for: density)
-        : InvoiceLineItemsTypography.titleSizeNarrow(for: density),
-      weight: .bold
-    )
-  }
-
-  static func documentTitleFont(
-    wide: Bool,
     scale: CGFloat,
     family: InvoiceFontFamilyPreset = .default
   ) -> Font {
@@ -425,35 +372,9 @@ enum InvoiceDocumentDesign {
     headingFont
   }
 
-  static var bodyFont: Font {
-    .system(size: InvoiceLineItemsTypography.bodyFontSize)
-  }
-
-  static var bodyEmphasisFont: Font {
-    .system(size: InvoiceLineItemsTypography.bodyFontSize, weight: .semibold)
-  }
-
-  static var bodyStrongFont: Font {
-    .system(size: InvoiceLineItemsTypography.bodyFontSize, weight: .bold)
-  }
-
-  /// Line-items column headers — bold body size for clear hierarchy over cell text.
-  static var tableHeaderFont: Font {
-    bodyStrongFont
-  }
-
-  /// Secondary content — contact values, item codes, validation messages.
-  static var metaFont: Font {
-    .system(size: InvoiceLineItemsTypography.metaFontSize)
-  }
-
   /// Inline field labels in ruled tables (details, totals, contact grid).
   static var metaLabelFont: Font {
     .system(size: InvoiceLineItemsTypography.metaFontSize, weight: .medium)
-  }
-
-  static var fieldLabelFont: Font {
-    metaLabelFont
   }
 
   /// Page chrome outside the printable area (page count, paper size label).
@@ -461,90 +382,24 @@ enum InvoiceDocumentDesign {
     metaLabelFont
   }
 
-  static var captionFont: Font {
-    metaFont
-  }
-
-  static var invoiceNumberFont: Font {
-    bodyEmphasisFont.monospacedDigit()
-  }
-
-  /// Invoice number in the header details table — bold body, not a larger size.
-  static var invoiceNumberEmphasisFont: Font {
-    bodyStrongFont.monospacedDigit()
-  }
-
-  static func headingFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.headingFontSize(for: density), weight: .semibold)
-  }
-
-  static func headingFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
-    family.font(size: InvoiceLineItemsTypography.headingFontSize(scale: scale), weight: .semibold)
-  }
-
-  static func bodyFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.bodyFontSize(for: density))
-  }
-
   static func bodyFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
     family.font(size: InvoiceLineItemsTypography.bodyFontSize(scale: scale))
-  }
-
-  static func bodyEmphasisFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.bodyFontSize(for: density), weight: .semibold)
   }
 
   static func bodyEmphasisFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
     family.font(size: InvoiceLineItemsTypography.bodyFontSize(scale: scale), weight: .semibold)
   }
 
-  static func bodyStrongFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.bodyFontSize(for: density), weight: .bold)
-  }
-
   static func bodyStrongFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
     family.font(size: InvoiceLineItemsTypography.bodyFontSize(scale: scale), weight: .bold)
-  }
-
-  static func tableHeaderFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    bodyStrongFont(for: density, family: family)
   }
 
   static func tableHeaderFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
     bodyStrongFont(scale: scale, family: family)
   }
 
-  static func metaFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.metaFontSize(for: density))
-  }
-
   static func metaFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
     family.font(size: InvoiceLineItemsTypography.metaFontSize(scale: scale))
-  }
-
-  static func metaLabelFont(
-    for density: InvoiceTypographyDensity,
-    family: InvoiceFontFamilyPreset = .default
-  ) -> Font {
-    family.font(size: InvoiceLineItemsTypography.metaFontSize(for: density), weight: .medium)
   }
 
   static func metaLabelFont(scale: CGFloat, family: InvoiceFontFamilyPreset = .default) -> Font {
@@ -675,37 +530,6 @@ enum InvoiceDecimalFormatter {
   }
 }
 
-enum InvoiceDecimalParser {
-  static func parse(_ rawValue: String, locale: Locale = .current) -> Decimal? {
-    var normalized =
-      rawValue
-      .replacingOccurrences(of: "$", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalized.isEmpty else { return nil }
-
-    if let groupingSeparator = locale.groupingSeparator, !groupingSeparator.isEmpty {
-      normalized = normalized.replacingOccurrences(of: groupingSeparator, with: "")
-    }
-
-    let decimalSeparator = locale.decimalSeparator ?? "."
-    if decimalSeparator != "." {
-      normalized = normalized.replacingOccurrences(of: decimalSeparator, with: ".")
-    }
-
-    let characters = Array(normalized)
-    let decimalPointCount = characters.lazy.filter { $0 == "." }.count
-    guard
-      characters.enumerated().allSatisfy({ index, character in
-        character.isNumber
-          || (character == "." && decimalPointCount == 1)
-          || ((character == "-" || character == "+") && index == 0)
-      })
-    else { return nil }
-
-    return Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
-  }
-}
-
 /// Fixed typography for invoice line-items table content in the document preview.
 ///
 /// Type scale: Display (40/48) · Heading 10 · Body 11 · Meta 9.
@@ -728,20 +552,12 @@ enum InvoiceLineItemsTypography {
     max(10, (base * scale).rounded(.toNearestOrAwayFromZero))
   }
 
-  static func headingFontSize(for density: InvoiceTypographyDensity) -> CGFloat {
-    scaledSize(headingFontSize, density: density)
-  }
-
   static func bodyFontSize(for density: InvoiceTypographyDensity) -> CGFloat {
     scaledSize(bodyFontSize, density: density)
   }
 
   static func bodyFontSize(scale: CGFloat) -> CGFloat {
     scaledSize(bodyFontSize, scale: scale)
-  }
-
-  static func headingFontSize(scale: CGFloat) -> CGFloat {
-    scaledSize(headingFontSize, scale: scale)
   }
 
   static func metaFontSize(scale: CGFloat) -> CGFloat {
@@ -752,18 +568,6 @@ enum InvoiceLineItemsTypography {
     scaledSize(metaFontSize, density: density)
   }
 
-  static func captionFontSize(for density: InvoiceTypographyDensity) -> CGFloat {
-    metaFontSize(for: density)
-  }
-
-  static func titleSizeWide(for density: InvoiceTypographyDensity) -> CGFloat {
-    scaledSize(InvoiceDocumentDesign.titleSizeWide, density: density)
-  }
-
-  static func titleSizeNarrow(for density: InvoiceTypographyDensity) -> CGFloat {
-    scaledSize(InvoiceDocumentDesign.titleSizeNarrow, density: density)
-  }
-
   static func titleSizeWide(scale: CGFloat) -> CGFloat {
     scaledSize(InvoiceDocumentDesign.titleSizeWide, scale: scale)
   }
@@ -771,9 +575,6 @@ enum InvoiceLineItemsTypography {
   static func titleSizeNarrow(scale: CGFloat) -> CGFloat {
     scaledSize(InvoiceDocumentDesign.titleSizeNarrow, scale: scale)
   }
-
-  /// Alias kept for the editable inspector table (same size as meta).
-  static let captionFontSize: CGFloat = metaFontSize
 
   /// A4 portrait content width (page width minus standard margins).
   static var referenceContentWidth: CGFloat {
@@ -806,7 +607,6 @@ enum InvoiceLineItemsTableStyle {
     InvoiceDocumentDesign.accent.opacity(0.35)
   }
 
-  static let borderWidth: CGFloat = 0.5
   static let cellHorizontalPadding: CGFloat = 10
   static let cellVerticalPadding: CGFloat = 3
   /// Extra vertical inset for the column-header row only (body cells stay at `cellVerticalPadding`).
@@ -961,6 +761,7 @@ extension View {
         padded
           .frame(width: width, alignment: alignment)
           .frame(maxHeight: .infinity, alignment: alignment)
+          .clipped()
       } else {
         padded
           .frame(
@@ -1009,14 +810,6 @@ struct DocumentBandedCardStyle {
       bandRule: theme.partyBandRule
     )
   }
-
-  /// Crisper, ruled-table card for the Payment Details / Terms footer.
-  static let payment = DocumentBandedCardStyle(
-    bandFill: InvoiceDocumentDesign.paymentBandFill,
-    bodyFill: InvoiceDocumentDesign.paymentBodyFill,
-    outline: InvoiceDocumentDesign.paymentCardOutline,
-    bandRule: InvoiceDocumentDesign.paymentBandRule
-  )
 
   static func payment(theme: InvoiceThemePalette) -> DocumentBandedCardStyle {
     DocumentBandedCardStyle(
@@ -1243,10 +1036,6 @@ enum InvoiceDateFormatter {
     return formatter
   }()
 
-  static func string(for date: Date, style: InvoiceDateFormatStyle = .medium) -> String {
-    documentString(for: date, style: style)
-  }
-
   /// Display string for document metadata and line-item date columns.
   static func documentString(for date: Date, style: InvoiceDateFormatStyle) -> String {
     switch style {
@@ -1256,10 +1045,6 @@ enum InvoiceDateFormatter {
     }
   }
 
-  /// Legacy alias for width measurement helpers.
-  static func compactString(for date: Date) -> String {
-    documentString(for: date, style: .short)
-  }
 }
 
 private struct InvoiceTableStyleKey: EnvironmentKey {

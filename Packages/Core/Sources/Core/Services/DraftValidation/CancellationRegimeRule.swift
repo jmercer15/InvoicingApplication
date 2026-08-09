@@ -4,11 +4,11 @@ import Foundation
 public struct CancellationRegimeRule: Sendable {
     public init() {}
 
-    public func evaluate(context: DraftValidationContext) -> [DraftIssue] {
-        var issues: [DraftIssue] = []
+    public func evaluate(context: DraftValidationContext) -> [DraftIssueSnapshot] {
+        var issues: [DraftIssueSnapshot] = []
         guard context.billingContext.isShortNoticeCancellation else { return issues }
 
-        issues.append(DraftIssue(
+        issues.append(DraftIssueSnapshot(
             id: UUID(),
             draftId: context.draftId,
             severity: .warning,

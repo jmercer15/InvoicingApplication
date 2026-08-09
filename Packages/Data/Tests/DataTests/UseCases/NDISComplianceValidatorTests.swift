@@ -1,34 +1,26 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class NDISComplianceValidatorTests: XCTestCase {
+@Suite struct NDISComplianceValidatorTests {
     private typealias PersistenceNDISClaimType = NDISClaimType
 
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
-    private var validator: NDISComplianceValidator!
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+    private let validator: NDISComplianceValidator
 
-    override func setUp() async throws {
-        try await super.setUp()
-
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
-
-        validator = NDISComplianceValidator(modelContainer: modelContainer)
+        self.modelContainer = container
+        self.modelContext = context
+        self.validator = NDISComplianceValidator(modelContainer: container)
     }
 
-    override func tearDown() async throws {
-        validator = nil
-        modelContext = nil
-        modelContainer = nil
-        try await super.tearDown()
-    }
-
-    func testMissingBusinessBlocksInvoiceTransition() async throws {
+    @Test func MissingBusinessBlocksInvoiceTransition() async throws {
         let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
 
         let result = try await validator.validateInvoiceTransition(
@@ -37,10 +29,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "business.missing" })
+        #expect(result.blockers.contains { $0.id == "business.missing" })
     }
 
-    func testInvalidABNBlocksInvoiceTransition() async throws {
+    @Test func InvalidABNBlocksInvoiceTransition() async throws {
         _ = try insertBusiness(abn: "123", isRegisteredProvider: true)
         let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
 
@@ -50,10 +42,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "business.abn.invalid" })
+        #expect(result.blockers.contains { $0.id == "business.abn.invalid" })
     }
 
-    func testNonRegisteredProviderProducesWarning() async throws {
+    @Test func NonRegisteredProviderProducesWarning() async throws {
         _ = try insertBusiness(abn: "53004085616", isRegisteredProvider: false)
         let invoice = try insertInvoice(session: nil, claimType: nil, gstCode: nil)
 
@@ -63,11 +55,11 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.warnings.contains { $0.id == "business.ndis_provider.not_registered" })
-        XCTAssertTrue(result.blockers.contains { $0.id == "invoice.items.empty" })
+        #expect(result.warnings.contains { $0.id == "business.ndis_provider.not_registered" })
+        #expect(result.blockers.contains { $0.id == "invoice.items.empty" })
     }
 
-    func testMissingServiceAgreementBlocksWhenSessionLinked() async throws {
+    @Test func MissingServiceAgreementBlocksWhenSessionLinked() async throws {
         _ = try insertBusiness()
         let client = try insertClient()
         let session = try insertSession(client: client)
@@ -79,10 +71,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "agreement.missing" })
+        #expect(result.blockers.contains { $0.id == "agreement.missing" })
     }
 
-    func testTelehealthDisallowedByAgreementBlocks() async throws {
+    @Test func TelehealthDisallowedByAgreementBlocks() async throws {
         _ = try insertBusiness()
         let client = try insertClient()
         _ = try insertServiceAgreement(client: client, allowsTelehealth: false)
@@ -95,10 +87,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "agreement.telehealth.disallowed" })
+        #expect(result.blockers.contains { $0.id == "agreement.telehealth.disallowed" })
     }
 
-    func testMissingSupportLogProducesWarningForSessionValidation() async throws {
+    @Test func MissingSupportLogProducesWarningForSessionValidation() async throws {
         _ = try insertBusiness()
         let client = try insertClient()
         _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
@@ -106,11 +98,11 @@ final class NDISComplianceValidatorTests: XCTestCase {
 
         let result = try await validator.validateSessionForInvoicing(sessionId: session.id)
 
-        XCTAssertTrue(result.warnings.contains { $0.id == "support_log.missing" })
-        XCTAssertTrue(result.blockers.isEmpty)
+        #expect(result.warnings.contains { $0.id == "support_log.missing" })
+        #expect(result.blockers.isEmpty)
     }
 
-    func testInvalidInvoiceItemGSTProducesWarningOnly() async throws {
+    @Test func InvalidInvoiceItemGSTProducesWarningOnly() async throws {
         _ = try insertBusiness()
         let client = try insertClient()
         _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
@@ -124,10 +116,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             targetStatus: nil
         )
 
-        XCTAssertTrue(result.warnings.contains { $0.id == "invoice_item.gst.invalid" })
+        #expect(result.warnings.contains { $0.id == "invoice_item.gst.invalid" })
     }
 
-    func testBulkValidationReturnsPerInvoiceResults() async throws {
+    @Test func BulkValidationReturnsPerInvoiceResults() async throws {
         _ = try insertBusiness()
         let client = try insertClient()
         _ = try insertServiceAgreement(client: client, allowsTelehealth: true)
@@ -142,9 +134,9 @@ final class NDISComplianceValidatorTests: XCTestCase {
             action: .bulkSendReady
         )
 
-        XCTAssertEqual(results.count, 2)
-        XCTAssertFalse(results[good.id]?.isBlocked ?? true)
-        XCTAssertTrue(results[empty.id]?.blockers.contains { $0.id == "invoice.items.empty" } ?? false)
+        #expect(results.count == 2)
+        #expect(!(results[good.id]?.isBlocked ?? true))
+        #expect(results[empty.id]?.blockers.contains { $0.id == "invoice.items.empty" } ?? false)
     }
 
     // MARK: - Fixtures
@@ -265,7 +257,7 @@ final class NDISComplianceValidatorTests: XCTestCase {
         return invoice
     }
 
-    func testExportValidation_blocksMissingSupportItemCode() async throws {
+    @Test func ExportValidation_blocksMissingSupportItemCode() async throws {
         let business = try insertBusiness(abn: "53004085616", isRegisteredProvider: true)
         business.bankAccountName = "Provider Account"
         business.bankBSB = "123456"
@@ -285,7 +277,7 @@ final class NDISComplianceValidatorTests: XCTestCase {
         }
         try modelContext.save()
 
-        let snapshot = try XCTUnwrap(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let snapshot = try try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
         let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
 
         let result = validator.validateInvoiceForExport(
@@ -295,10 +287,10 @@ final class NDISComplianceValidatorTests: XCTestCase {
             strict: true
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "invoice_item.support_item_code.missing" })
+        #expect(result.blockers.contains { $0.id == "invoice_item.support_item_code.missing" })
     }
 
-    func testExportValidation_blocksPAPLRateExceeded() async throws {
+    @Test func ExportValidation_blocksPAPLRateExceeded() async throws {
         let business = try insertBusiness(abn: "53004085616", isRegisteredProvider: true)
         business.bankAccountName = "Provider Account"
         business.bankBSB = "123456"
@@ -320,7 +312,7 @@ final class NDISComplianceValidatorTests: XCTestCase {
         }
         try modelContext.save()
 
-        let snapshot = try XCTUnwrap(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let snapshot = try try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
         let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
 
         let result = validator.validateInvoiceForExport(
@@ -330,6 +322,6 @@ final class NDISComplianceValidatorTests: XCTestCase {
             strict: true
         )
 
-        XCTAssertTrue(result.blockers.contains { $0.id == "invoice_item.papl_rate_exceeded" })
+        #expect(result.blockers.contains { $0.id == "invoice_item.papl_rate_exceeded" })
     }
 }

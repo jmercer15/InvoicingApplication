@@ -2,7 +2,6 @@ import SwiftData
 import Core
 import Data
 import DataInterfaces
-import Feature_Settings
 
 /// App-wide dependency graph injected from the scene root.
 ///
@@ -28,6 +27,8 @@ public final class WorkspaceDependencies {
     public let geocodingService: any GeocodingServiceProtocol
     public let swiftDataGeocodingService: any SwiftDataGeocodingServiceProtocol
     public let invoiceDigesting: any InvoiceDigesting
+    public let referenceDataFetching: any ReferenceDataFetching
+    public let ndisCatalogueFetching: any NDISCatalogueFetching
     public let eventKitSyncService: EventKitSyncService
     public let calendarPreferencesStore: CalendarPreferencesStore
     public let mmmZoneLookup: any MMMZoneLookupProtocol
@@ -40,6 +41,8 @@ public final class WorkspaceDependencies {
         self.geocodingService = runtime.services.geocodingService
         self.swiftDataGeocodingService = runtime.services.swiftDataGeocodingService
         self.invoiceDigesting = runtime.services.invoiceDigesting
+        self.referenceDataFetching = runtime.services.referenceDataFetching
+        self.ndisCatalogueFetching = runtime.services.ndisCatalogueFetching
         self.eventKitSyncService = runtime.services.eventKitSyncService
         self.calendarPreferencesStore = runtime.services.calendarPreferencesStore
         self.mmmZoneLookup = runtime.services.mmmZoneLookup
@@ -61,6 +64,12 @@ public final class SettingsDependencies {
     public let mmmZoneLookup: any MMMZoneLookupProtocol
     public let recurrenceRuleManager: RecurrenceRuleManager
 
+    public let referenceDataFetching: any ReferenceDataFetching
+    public let claimBatchPersisting: any ClaimBatchPersisting
+    public let businessPersisting: any BusinessPersisting
+    public let travelChargeReviewFetching: any TravelChargeReviewFetching
+    public let databaseHealthChecking: any DatabaseHealthChecking
+
     init(runtime: AppRuntime) {
         self.modelContext = runtime.settingsContext
         self.settingsServices = runtime.settingsServices
@@ -69,5 +78,10 @@ public final class SettingsDependencies {
         self.calendarPreferencesStore = runtime.services.calendarPreferencesStore
         self.mmmZoneLookup = runtime.services.mmmZoneLookup
         self.recurrenceRuleManager = runtime.services.recurrenceRuleManager
+        self.referenceDataFetching = runtime.services.referenceDataFetching
+        self.claimBatchPersisting = runtime.settingsPersistence.claimBatchPersisting
+        self.businessPersisting = runtime.settingsPersistence.businessPersisting
+        self.travelChargeReviewFetching = runtime.settingsPersistence.travelChargeReviewFetching
+        self.databaseHealthChecking = runtime.settingsPersistence.databaseHealthChecking
     }
 }

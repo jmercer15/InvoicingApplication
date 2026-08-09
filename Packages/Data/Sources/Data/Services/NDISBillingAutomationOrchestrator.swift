@@ -3,6 +3,7 @@ import SwiftData
 import MapKit
 import CoreLocation
 import Core
+import PersistenceModels
 
 /// Orchestrates the NDIS billing automation flow with proper async execution
 /// Provides comprehensive error handling, validation, and status tracking

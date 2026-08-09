@@ -1,26 +1,28 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 @testable import Data
 import Core
+import PersistenceModels
 
 @MainActor
-final class AllDataComplianceRoundTripTests: XCTestCase {
-    func testAllDataExportAndImportRoundTripsComplianceEntitiesAndLinks() throws {
+@Suite struct AllDataComplianceRoundTripTests {
+    @Test func AllDataExportAndImportRoundTripsComplianceEntitiesAndLinks() throws {
         let sourceContext = try makeInMemoryContext()
         try insertComplianceFixture(into: sourceContext)
 
         let exportedData = try SwiftDataExportService.exportAllEntitiesToJSON(context: sourceContext)
-        let exportedJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: exportedData) as? [String: Any])
+        let exportedJSON = try try #require(JSONSerialization.jsonObject(with: exportedData) as? [String: Any])
 
-        XCTAssertEqual((exportedJSON["ServiceAgreement"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["SupportLog"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["BulkClaimBatch"] as? [[String: Any]])?.count, 1)
-        XCTAssertEqual((exportedJSON["BulkClaimLine"] as? [[String: Any]])?.count, 1)
+        #expect((exportedJSON["ServiceAgreement"] as? [[String: Any]])?.count == 1)
+        #expect((exportedJSON["SupportLog"] as? [[String: Any]])?.count == 1)
+        #expect((exportedJSON["BulkClaimBatch"] as? [[String: Any]])?.count == 1)
+        #expect((exportedJSON["BulkClaimLine"] as? [[String: Any]])?.count == 1)
 
         let destinationContext = try makeInMemoryContext()
         let importResults = try AllDataImportService.importAllData(from: exportedData, context: destinationContext)
         let totalFailed = importResults.reduce(0) { $0 + $1.failed }
-        XCTAssertEqual(totalFailed, 0)
+        #expect(totalFailed == 0)
 
         let importedAgreements = try destinationContext.fetch(FetchDescriptor<ServiceAgreement>())
         let importedLogs = try destinationContext.fetch(FetchDescriptor<SupportLog>())
@@ -29,34 +31,34 @@ final class AllDataComplianceRoundTripTests: XCTestCase {
         let importedInvoices = try destinationContext.fetch(FetchDescriptor<Invoice>())
         let importedInvoiceItems = try destinationContext.fetch(FetchDescriptor<InvoiceItem>())
 
-        XCTAssertEqual(importedAgreements.count, 1)
-        XCTAssertEqual(importedLogs.count, 1)
-        XCTAssertEqual(importedBatches.count, 1)
-        XCTAssertEqual(importedLines.count, 1)
+        #expect(importedAgreements.count == 1)
+        #expect(importedLogs.count == 1)
+        #expect(importedBatches.count == 1)
+        #expect(importedLines.count == 1)
 
-        XCTAssertNotNil(importedAgreements.first?.client)
-        XCTAssertNotNil(importedLogs.first?.client)
-        XCTAssertNotNil(importedLogs.first?.session)
-        XCTAssertNotNil(importedLines.first?.batch)
-        XCTAssertNotNil(importedLines.first?.invoice)
-        XCTAssertNotNil(importedLines.first?.invoiceItem)
-        XCTAssertEqual(importedLines.first?.submissionStatus, BulkClaimSubmissionStatus.reconciled.rawValue)
-        XCTAssertEqual(importedLines.first?.submissionRef, "SUB-ROUNDTRIP-001")
-        XCTAssertEqual(importedLines.first?.reconciliationNotes, "Portal reconciliation matched.")
-        XCTAssertNotNil(importedLines.first?.reconciledAt)
-        let importedInvoice = try XCTUnwrap(importedInvoices.first)
-        XCTAssertEqual(importedInvoice.currencyCode, "AUD")
-        XCTAssertEqual(importedInvoice.taxRate, 10)
-        XCTAssertEqual(importedInvoice.discount, 5)
-        XCTAssertEqual(importedInvoice.creditApplied, 3)
-        XCTAssertEqual(importedInvoice.businessPhone, "07 3000 0000")
-        XCTAssertEqual(importedInvoice.clientPhone, "0400 000 000")
-        XCTAssertEqual(importedInvoice.bankBSB, "123-456")
-        XCTAssertEqual(importedInvoice.invoiceEditorStateData, Data("layout-v2".utf8))
-        let importedItem = try XCTUnwrap(importedInvoiceItems.first)
-        XCTAssertEqual(importedItem.position, 2)
-        XCTAssertEqual(importedItem.unit, "hour")
-        XCTAssertEqual(importedItem.taxRate, 10)
+        #expect(importedAgreements.first?.client != nil)
+        #expect(importedLogs.first?.client != nil)
+        #expect(importedLogs.first?.session != nil)
+        #expect(importedLines.first?.batch != nil)
+        #expect(importedLines.first?.invoice != nil)
+        #expect(importedLines.first?.invoiceItem != nil)
+        #expect(importedLines.first?.submissionStatus == BulkClaimSubmissionStatus.reconciled.rawValue)
+        #expect(importedLines.first?.submissionRef == "SUB-ROUNDTRIP-001")
+        #expect(importedLines.first?.reconciliationNotes == "Portal reconciliation matched.")
+        #expect(importedLines.first?.reconciledAt != nil)
+        let importedInvoice = try try #require(importedInvoices.first)
+        #expect(importedInvoice.currencyCode == "AUD")
+        #expect(importedInvoice.taxRate == 10)
+        #expect(importedInvoice.discount == 5)
+        #expect(importedInvoice.creditApplied == 3)
+        #expect(importedInvoice.businessPhone == "07 3000 0000")
+        #expect(importedInvoice.clientPhone == "0400 000 000")
+        #expect(importedInvoice.bankBSB == "123-456")
+        #expect(importedInvoice.invoiceEditorStateData == Data("layout-v2".utf8))
+        let importedItem = try try #require(importedInvoiceItems.first)
+        #expect(importedItem.position == 2)
+        #expect(importedItem.unit == "hour")
+        #expect(importedItem.taxRate == 10)
     }
 
     private func makeInMemoryContext() throws -> ModelContext {

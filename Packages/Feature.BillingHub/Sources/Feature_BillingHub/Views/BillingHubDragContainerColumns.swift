@@ -2,7 +2,7 @@ import SwiftUI
 import SharedUI
 
 struct BillingHubReorderableColumn: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let cards: [KanbanCardData]
     @Binding var selectedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -11,6 +11,7 @@ struct BillingHubReorderableColumn: View {
     let onReorderBetween: (UUID, UUID?, UUID?) -> Bool
     let onOpenCard: (UUID) -> Void
     let searchText: String
+    let emptyStateMessage: String
 
     @State private var targetedCardID: UUID?
     @State private var isTopTargeted = false
@@ -50,7 +51,7 @@ struct BillingHubReorderableColumn: View {
 
                 ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                     BillingHubCardItemWrapper(
-                        viewModel: viewModel,
+                        cardActions: cardActions,
                         card: card,
                         targetedCardID: $targetedCardID,
                         interactionState: interactionState,
@@ -71,7 +72,7 @@ struct BillingHubReorderableColumn: View {
                     isTargeted: canAcceptBottomDrop && targetedCardID == nil && isBottomTargeted,
                     isEmpty: cards.isEmpty,
                     isVisible: isListDropActive || cards.isEmpty,
-                    emptyLabel: "Drop items here",
+                    emptyLabel: emptyStateMessage,
                     targetedLabel: "Move to end"
                 )
                 .billingHubDropHandler(
@@ -161,7 +162,7 @@ struct BillingHubReorderableColumn: View {
 }
 
 struct BillingHubGroupedReorderableColumn: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let groups: [SessionGroup]
     @Binding var selectedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -177,6 +178,7 @@ struct BillingHubGroupedReorderableColumn: View {
     let canAddSessionToGroup: (UUID, UUID) -> Bool
     let onOpenCard: (UUID) -> Void
     let searchText: String
+    let emptyStateMessage: String
 
     @State private var targetedGroupID: UUID?
     @State private var isTopTargeted = false
@@ -217,7 +219,7 @@ struct BillingHubGroupedReorderableColumn: View {
                 ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                     VStack(spacing: 0) {
                         BillingHubGroupItemWrapper(
-                            viewModel: viewModel,
+                            cardActions: cardActions,
                             group: group,
                             targetedGroupID: $targetedGroupID,
                             interactionState: interactionState,
@@ -251,7 +253,7 @@ struct BillingHubGroupedReorderableColumn: View {
                     isTargeted: canAcceptBottomDrop && targetedGroupID == nil && isBottomTargeted,
                     isEmpty: groups.isEmpty,
                     isVisible: isListDropActive || groups.isEmpty,
-                    emptyLabel: "Drop sessions here",
+                    emptyLabel: emptyStateMessage,
                     targetedLabel: "Move to end"
                 )
                 .billingHubDropHandler(

@@ -1,6 +1,7 @@
 import SwiftData
 import Core
-import Data
+import DataInterfaces
+import InvoiceTableLayoutEditor
 
 @MainActor
 public enum BillingHubWorkspaceFactory {
@@ -8,21 +9,24 @@ public enum BillingHubWorkspaceFactory {
         public let modelContext: ModelContext
         public let modelContainer: ModelContainer
         public let ndisBillingIntegrationService: any NDISBillingIntegrationServiceProtocol
-        public let complianceValidator: NDISComplianceValidator
-        public let storeChangeMonitor: SwiftDataStoreChangeMonitor?
+        public let complianceValidator: any ComplianceValidating
+        public let storeChangeMonitor: (any StoreChangeMonitoring)?
+        public let invoiceEditorSession: InvoiceEditorSession?
 
         public init(
             modelContext: ModelContext,
             modelContainer: ModelContainer,
             ndisBillingIntegrationService: any NDISBillingIntegrationServiceProtocol,
-            complianceValidator: NDISComplianceValidator,
-            storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+            complianceValidator: any ComplianceValidating,
+            storeChangeMonitor: (any StoreChangeMonitoring)? = nil,
+            invoiceEditorSession: InvoiceEditorSession? = nil
         ) {
             self.modelContext = modelContext
             self.modelContainer = modelContainer
             self.ndisBillingIntegrationService = ndisBillingIntegrationService
             self.complianceValidator = complianceValidator
             self.storeChangeMonitor = storeChangeMonitor
+            self.invoiceEditorSession = invoiceEditorSession
         }
     }
 
@@ -34,7 +38,8 @@ public enum BillingHubWorkspaceFactory {
             modelContainer: dependencies.modelContainer,
             ndisBillingIntegrationService: dependencies.ndisBillingIntegrationService,
             complianceValidator: dependencies.complianceValidator,
-            storeChangeMonitor: dependencies.storeChangeMonitor
+            storeChangeMonitor: dependencies.storeChangeMonitor,
+            invoiceEditorSession: dependencies.invoiceEditorSession
         )
     }
 }

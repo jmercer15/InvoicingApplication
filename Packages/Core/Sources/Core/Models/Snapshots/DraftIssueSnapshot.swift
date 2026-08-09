@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - DraftIssueSnapshot
 
@@ -20,15 +19,24 @@ public struct DraftIssueSnapshot: Sendable, Equatable, Hashable {
     public let resolutionData: Data?
     public let createdAt: Date
 
-    public init(_ issue: DraftIssue) {
-        self.id = issue.id
-        self.draftId = issue.draftId
-        self.severity = issue.severity
-        self.code = issue.code
-        self.message = issue.message
-        self.resolutionKind = issue.resolutionKind
-        self.resolutionData = issue.resolutionData
-        self.createdAt = issue.createdAt
+    public init(
+        id: UUID,
+        draftId: UUID,
+        severity: DraftIssueSeverity,
+        code: String,
+        message: String,
+        resolutionKind: DraftIssueResolutionKind,
+        resolutionData: Data? = nil,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.draftId = draftId
+        self.severity = severity
+        self.code = code
+        self.message = message
+        self.resolutionKind = resolutionKind
+        self.resolutionData = resolutionData
+        self.createdAt = createdAt
     }
 }
 

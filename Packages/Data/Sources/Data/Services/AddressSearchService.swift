@@ -4,7 +4,7 @@ import Observation
 
 @Observable
 @MainActor
-public final class AddressSearchService: NSObject, @preconcurrency MKLocalSearchCompleterDelegate {
+public final class AddressSearchService: NSObject, @MainActor MKLocalSearchCompleterDelegate {
     public var searchResults: [MKLocalSearchCompletion] = []
     public var isSearching: Bool = false
     public var errorMessage: String?
@@ -41,7 +41,13 @@ public final class AddressSearchService: NSObject, @preconcurrency MKLocalSearch
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.completer.queryFragment = trimmed
-                try? await Task.sleep(for: .seconds(3))
+                do {
+                    try await Task.sleep(for: .seconds(3))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return
+                }
                 guard self.searchGeneration == activeGeneration else { return }
                 if self.searchResults.isEmpty && self.isSearching {
                     self.isSearching = false

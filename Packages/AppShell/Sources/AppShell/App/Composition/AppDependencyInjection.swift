@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import DataInterfaces
 import SharedUI
 import WorkspaceUI
 
@@ -14,6 +15,7 @@ public extension View {
             .environment(deps)
             .environment(deps.workspace)
             .environment(deps.runtime.storeChangeMonitor)
+            .environment(\.referenceDataFetching, deps.workspace.referenceDataFetching)
             .bridgeWorkspaceDependencies(deps.workspace)
 
         if includeCloudKitSyncMonitor {
@@ -33,6 +35,11 @@ public extension View {
             .environment(deps.settings)
             .environment(\.modelContext, deps.settings.modelContext)
             .environment(\.settingsServices, deps.settings.settingsServices)
+            .environment(\.referenceDataFetching, deps.settings.referenceDataFetching)
+            .environment(\.claimBatchPersisting, deps.settings.claimBatchPersisting)
+            .environment(\.businessPersisting, deps.settings.businessPersisting)
+            .environment(\.travelChargeReviewFetching, deps.settings.travelChargeReviewFetching)
+            .environment(\.databaseHealthChecking, deps.settings.databaseHealthChecking)
             .workspaceStandardServicesEnvironment(settingsStandardServicesDependencies(deps.workspace))
     }
 

@@ -233,7 +233,7 @@ public enum NDISCatalogueQuery {
         return value
     }
 
-    private static func primaryPrice(for item: NDISItemSnapshot) -> Double? {
+    private static func primaryPrice(for item: NDISItemSnapshot) -> Decimal? {
         if let nationalPrice = item.regionalPrices.first(where: { ($0.regionIdentifier ?? "").caseInsensitiveCompare("NATIONAL") == .orderedSame })?.amount {
             return nationalPrice
         }

@@ -6,7 +6,7 @@
 //
 import Foundation
 import EventKit
-import Core
+import PersistenceModels
 import Observation
 
 /// Responsible for fetching raw data from SwiftData queries and EventKit.

@@ -2,7 +2,7 @@ import SwiftUI
 import SharedUI
 
 struct BillingHubCardItemWrapper: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let card: KanbanCardData
     @Binding var targetedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -30,7 +30,7 @@ struct BillingHubCardItemWrapper: View {
     var body: some View {
         VStack(spacing: 0) {
             DragContainerCardRow(
-                viewModel: viewModel,
+                cardActions: cardActions,
                 card: card,
                 isSelected: selectedCardID == card.id,
                 isDropTargeted: acceptsCurrentDrop && isItemTargeted && !isRejectedForThisCard,
@@ -76,7 +76,7 @@ struct BillingHubCardItemWrapper: View {
                 targetedCardID = nil
             }
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard await Task.waitUnlessCancelled(nanoseconds: 300_000_000) else { return }
                 if isRejected {
                     withAnimation(BillingHubBoardMotion.quick) {
                         isRejected = false
@@ -125,7 +125,11 @@ struct BillingHubBottomDropZone: View {
                         if isEmpty {
                             VStack(spacing: 6) {
                                 Image(systemName: "tray.and.arrow.down").font(.title3)
-                                Text(emptyLabel).font(.subheadline.weight(.semibold))
+                                Text(emptyLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                             }
                             .foregroundStyle(isTargeted ? Color.accentColor : BillingHubTheme.Palette.textSecondary)
                         } else if isTargeted {
@@ -135,7 +139,8 @@ struct BillingHubBottomDropZone: View {
                         }
                     }
                 }
-                .frame(height: isEmpty ? 84 : 32)
+                .frame(minHeight: isEmpty ? 96 : 32)
+                .fixedSize(horizontal: false, vertical: isEmpty)
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 Color.clear.frame(height: 16)
@@ -172,7 +177,7 @@ struct BillingHubCardInsertionSeparator: View {
 }
 
 struct DragContainerCardRow: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let card: KanbanCardData
     let isSelected: Bool
     let isDropTargeted: Bool
@@ -217,9 +222,9 @@ struct DragContainerCardRow: View {
 
     var body: some View {
         KanbanCardView(
-            viewModel: viewModel,
+            cardActions: cardActions,
             card: card,
-            isSelected: .constant(isSelected),
+            isSelected: isSelected,
             onTap: onSelect,
             onOpen: onOpen,
             searchText: searchText
@@ -263,7 +268,7 @@ struct DragContainerCardRow: View {
                 isRejected = true
             }
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard await Task.waitUnlessCancelled(nanoseconds: 300_000_000) else { return }
                 withAnimation(BillingHubBoardMotion.quick) {
                     isRejected = false
                 }

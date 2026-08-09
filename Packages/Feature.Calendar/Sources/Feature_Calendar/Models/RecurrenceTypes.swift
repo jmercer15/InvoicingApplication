@@ -3,7 +3,7 @@ import EventKit
 
 // MARK: - Recurrence Types
 
-enum RecurrenceFrequency: String, CaseIterable, Identifiable {
+enum RecurrenceFrequency: String, CaseIterable, Identifiable, Sendable {
     case none = "None"
     case daily = "Daily"
     case weekly = "Weekly"
@@ -12,7 +12,7 @@ enum RecurrenceFrequency: String, CaseIterable, Identifiable {
     var id: String { self.rawValue }
 }
 
-enum RecurrenceEndType: String, CaseIterable, Identifiable {
+enum RecurrenceEndType: String, CaseIterable, Identifiable, Sendable {
     case never = "Never"
     case afterCount = "After"
     case onDate = "On Date"
@@ -21,7 +21,7 @@ enum RecurrenceEndType: String, CaseIterable, Identifiable {
 }
 
 // Enum for Monthly/Yearly Recurrence Pattern Type
-enum PositionalRecurrenceType: String, CaseIterable, Identifiable {
+enum PositionalRecurrenceType: String, CaseIterable, Identifiable, Sendable {
     case onSpecificDays = "On specific day(s)"
     case onTheOrdinalDayOfWeek = "On the..."
     var id: String { self.rawValue }
@@ -29,7 +29,7 @@ enum PositionalRecurrenceType: String, CaseIterable, Identifiable {
 }
 
 // Helper Enum for Weekday Selection
-enum SelectableWeekday: Int, CaseIterable, Identifiable {
+enum SelectableWeekday: Int, CaseIterable, Identifiable, Sendable {
     case monday = 2, tuesday, wednesday, thursday, friday, saturday, sunday = 1
 
     var id: Int { self.rawValue }
@@ -52,7 +52,7 @@ enum SelectableWeekday: Int, CaseIterable, Identifiable {
 }
 
 // Helper for "Day of Week" options in more complex recurrences (e.g. "First Monday")
-enum DayOfWeekOption: Int, CaseIterable, Identifiable {
+enum DayOfWeekOption: Int, CaseIterable, Identifiable, Sendable {
     case day = 0 // Represents any day
     case weekday = 1 // Represents a weekday
     case weekendDay = 2 // Represents a weekend day
@@ -110,7 +110,7 @@ enum DayOfWeekOption: Int, CaseIterable, Identifiable {
 }
 
 // Helper Enum for Month Selection
-enum SelectableMonth: Int, CaseIterable, Identifiable {
+enum SelectableMonth: Int, CaseIterable, Identifiable, Sendable {
     case january = 1, february, march, april, may, june, july, august, september, october, november, december
 
     var id: Int { self.rawValue }

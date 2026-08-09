@@ -53,13 +53,13 @@ extension AppTab {
         case .billingHub:
             return SplitViewWidthProfile(
                 sidebar: Self.defaultSidebarWidth,
-                content: nil,
+                content: Self.collapsedContentWidth,
                 detail: SplitViewColumnWidthProfile(min: 560, ideal: 1180, max: nil)
             )
         case .invoiceTemplateEditor:
             return SplitViewWidthProfile(
                 sidebar: Self.defaultSidebarWidth,
-                content: nil,
+                content: Self.collapsedContentWidth,
                 detail: SplitViewColumnWidthProfile(min: 600, ideal: 1200, max: nil)
             )
         case .ndisCatalogue:
@@ -77,7 +77,7 @@ extension AppTab {
         case .calendar:
             return SplitViewWidthProfile(
                 sidebar: Self.defaultSidebarWidth,
-                content: nil,
+                content: Self.collapsedContentWidth,
                 detail: Self.defaultDetailWidthTwoColumn
             )
         }
@@ -86,7 +86,13 @@ extension AppTab {
     private static let defaultSidebarWidth = SplitViewColumnWidthProfile(
         min: 200,
         ideal: 260,
-        max: nil
+        max: 280
+    )
+    /// Zero-width content column for tabs that render sidebar + detail only.
+    private static let collapsedContentWidth = SplitViewColumnWidthProfile(
+        min: 0,
+        ideal: 0,
+        max: 0
     )
     private static let defaultContentWidth = SplitViewColumnWidthProfile(
         min: 260,

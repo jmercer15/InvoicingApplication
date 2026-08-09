@@ -1,4 +1,6 @@
+import Core
 import Foundation
+
 final class InvoiceLineItem {
     var id: UUID
     var sortOrder: Int
@@ -10,6 +12,9 @@ final class InvoiceLineItem {
     var unitPrice: Decimal
     var taxRate: Decimal
     var gstCode: String = ""
+    var claimType: NDISClaimType?
+    var sessionID: UUID?
+    var clientServiceID: UUID?
 
     var invoice: InvoiceDocument?
 
@@ -23,7 +28,10 @@ final class InvoiceLineItem {
         unit: String = "",
         unitPrice: Decimal = 0,
         taxRate: Decimal = 0,
-        gstCode: String = ""
+        gstCode: String = "",
+        claimType: NDISClaimType? = nil,
+        sessionID: UUID? = nil,
+        clientServiceID: UUID? = nil
     ) {
         self.id = id
         self.sortOrder = sortOrder
@@ -35,6 +43,9 @@ final class InvoiceLineItem {
         self.unitPrice = unitPrice
         self.taxRate = taxRate
         self.gstCode = gstCode
+        self.claimType = claimType
+        self.sessionID = sessionID
+        self.clientServiceID = clientServiceID
     }
 
     var lineSubtotal: Decimal {

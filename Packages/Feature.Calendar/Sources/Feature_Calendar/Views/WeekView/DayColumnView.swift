@@ -63,8 +63,8 @@ struct DayColumnView: View {
                             .padding(.horizontal, paddingSmall)
                             .padding(.vertical, paddingXSmall)
                             .background(Color.accentColor)
-                            .foregroundColor(StyleGuide.Colors.text)
-                            .cornerRadius(cornerRadiusSmall)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadiusSmall))
                             .offset(x: 5, y: yOffset - 12)
                             .zIndex(21)
                             .allowsHitTesting(false)
@@ -97,7 +97,7 @@ struct DayColumnView: View {
     // Pre-calculated relative placements from the view model
     private var relativePlacements: [String: CalendarItemOverlapGeometry.RelativePlacement] {
         let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
-        return viewModel.relativePlacementsByDay[components] ?? [:]
+        return viewModel.display.relativePlacementsByDay[components] ?? [:]
     }
 
     private func slotWidth(for id: String) -> CGFloat {
@@ -133,6 +133,13 @@ struct DayColumnView: View {
                 ForEach(culledItems) { item in
                     let isBeingDragged = interactionHandler.draggingSessionInfo?.sessionID == (item.underlyingSession?.id.uuidString ?? item.id)
                     CalendarItemBlockView(
+                        equatableState: CalendarItemBlockEquatableState.make(
+                            item: item,
+                            viewModel: viewModel,
+                            interactionHandler: interactionHandler,
+                            hourHeight: effectiveHourHeight,
+                            slotWidth: slotWidth(for: item.id)
+                        ),
                         item: item,
                         viewModel: viewModel,
                         interactionHandler: interactionHandler,
@@ -184,14 +191,6 @@ struct DayColumnView: View {
     }
 }
 
-// MARK: - Placeholder Structs and Views for Dragging
-
-private struct PlaceholderCalendarItem: Identifiable {
-    var id: String
-    var startDate: Date
-    var duration: TimeInterval
-}
-
 private struct DropPlaceholderView: View {
     var height: CGFloat
     var time: String
@@ -203,7 +202,7 @@ private struct DropPlaceholderView: View {
         HStack(spacing: 6) {
             Text(time)
                 .font(StyleGuide.Typography.caption.weight(.semibold))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .padding(.leading, 8)
             
             Spacer()
@@ -212,7 +211,7 @@ private struct DropPlaceholderView: View {
         .background(
             RoundedRectangle(cornerRadius: cornerRadiusSmall)
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                .background(Color.accentColor.opacity(StyleGuide.Opacity.light).cornerRadius(cornerRadiusSmall))
+                .background(Color.accentColor.opacity(StyleGuide.Opacity.light), in: RoundedRectangle(cornerRadius: cornerRadiusSmall))
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, paddingXSmall)
@@ -239,17 +238,7 @@ struct DayColumnDropDelegate: DropDelegate {
         }
         if interactionHandler.draggingSessionInfo == nil,
            let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
-            let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
-                DispatchQueue.main.async {
-                    if case .success(let payload) = result {
-                        interactionHandler.startDragging(
-                            sessionID: payload.sessionID,
-                            duration: payload.duration,
-                            originalInstanceDate: payload.originalInstanceDate
-                        )
-                    }
-                }
-            }
+            CalendarSessionDragLoading.loadPayload(from: provider, interactionHandler: interactionHandler)
         }
         return DropProposal(operation: .move)
     }
@@ -257,20 +246,9 @@ struct DayColumnDropDelegate: DropDelegate {
     func dropEntered(info: DropInfo) {
         isTargeted = true
         Task { @MainActor in
-            if interactionHandler.draggingSessionInfo == nil {
-                if let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
-                    let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
-                        DispatchQueue.main.async {
-                            if case .success(let payload) = result {
-                                interactionHandler.startDragging(
-                                    sessionID: payload.sessionID,
-                                    duration: payload.duration,
-                                    originalInstanceDate: payload.originalInstanceDate
-                                )
-                            }
-                        }
-                    }
-                }
+            if interactionHandler.draggingSessionInfo == nil,
+               let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
+                CalendarSessionDragLoading.loadPayload(from: provider, interactionHandler: interactionHandler)
             }
         }
     }
@@ -291,23 +269,26 @@ struct DayColumnDropDelegate: DropDelegate {
             return false
         }
         
-        let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let payload):
-                    if let sessionID = UUID(uuidString: payload.sessionID) {
-                        viewModel.rescheduleSession(
-                            with: sessionID,
-                            originalInstanceDate: payload.originalInstanceDate,
-                            to: newStartDate,
-                            isAllDay: false
-                        )
-                    }
-                case .failure(let error):
-                    print("Failed to load drag payload: \(error)")
+        provider.loadTransferable(type: SessionDragPayload.self) { result in
+            Task { @MainActor in
+                defer {
+                    interactionHandler.draggingSessionInfo = nil
+                    interactionHandler.dropTargetTime = nil
                 }
-                interactionHandler.draggingSessionInfo = nil
-                interactionHandler.dropTargetTime = nil
+                guard case .success(let payload) = result else {
+                    if case .failure(let error) = result {
+                        print("Failed to load drag payload: \(error)")
+                    }
+                    return
+                }
+                if let sessionID = UUID(uuidString: payload.sessionID) {
+                    viewModel.rescheduleSession(
+                        with: sessionID,
+                        originalInstanceDate: payload.originalInstanceDate,
+                        to: newStartDate,
+                        isAllDay: false
+                    )
+                }
             }
         }
         
@@ -329,4 +310,4 @@ struct DayColumnDropDelegate: DropDelegate {
 
         return calendar.date(from: components) ?? day
     }
-} 
+}

@@ -1,6 +1,7 @@
 import SwiftUI
 import EventKit
 import Core
+import PersistenceModels
 
 @MainActor
 enum SessionWeekContextMenu {
@@ -8,7 +9,7 @@ enum SessionWeekContextMenu {
         var viewDetails: String = "info.circle"
         var markCompleted: String = "checkmark.circle.fill"
         var markCancelled: String = "xmark.circle.fill"
-        var markPlanned: String = "calendar"
+        var markScheduled: String = "calendar"
         var duplicate: String = "plus.square.on.square.fill"
         var travel: String = "car.fill"
         var delete: String = "trash.fill"
@@ -61,7 +62,7 @@ enum SessionWeekContextMenu {
                 Button {
                     markSession(session, as: .scheduled, viewModel: viewModel)
                 } label: {
-                    Label("Mark as Planned", systemImage: symbols.markPlanned)
+                    Label("Mark as Scheduled", systemImage: symbols.markScheduled)
                 }
             }
         }
@@ -85,10 +86,11 @@ enum SessionWeekContextMenu {
 
         if !session.isTravel {
             Button {
-                viewModel.selectedSessionForTravel = session
-                viewModel.selectedInstanceStartDateForTravel = itemStartDate ?? Date()
-                viewModel.selectedInstanceEndDateForTravel = itemEndDate ?? Date()
-                viewModel.isShowingTravelChargeSheet = true
+                viewModel.presentTravelCharge(
+                    for: session,
+                    instanceStart: itemStartDate ?? Date(),
+                    instanceEnd: itemEndDate ?? Date()
+                )
             } label: {
                 Label("Add Travel Charges", systemImage: symbols.travel)
             }

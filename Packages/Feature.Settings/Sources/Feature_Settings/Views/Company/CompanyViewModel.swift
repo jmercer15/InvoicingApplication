@@ -1,6 +1,7 @@
 import SwiftUI
-import Data
+import DataInterfaces
 import Core
+import PersistenceModels
 import AppKit
 import SharedUI
 import Observation
@@ -11,7 +12,7 @@ import SwiftData
 @MainActor
 public final class CompanyViewModel {
     // MARK: - Dependencies
-    private let modelContext: ModelContext
+    private let businessPersisting: any BusinessPersisting
     private let geocodingService: any Core.GeocodingServiceProtocol
     @ObservationIgnored private var persistedBusiness: Business?
     @ObservationIgnored private var isDismissing = false
@@ -35,8 +36,8 @@ public final class CompanyViewModel {
     var isEditingAddress: Bool = false
     
     // MARK: - Initialization
-    public init(modelContext: ModelContext, geocodingService: any Core.GeocodingServiceProtocol) {
-        self.modelContext = modelContext
+    public init(businessPersisting: any BusinessPersisting, geocodingService: any Core.GeocodingServiceProtocol) {
+        self.businessPersisting = businessPersisting
         self.geocodingService = geocodingService
     }
 
@@ -90,19 +91,14 @@ public final class CompanyViewModel {
         do {
             if let persistedBusiness {
                 applyDraftFields(from: currentBusiness, to: persistedBusiness)
-                if let address = persistedBusiness.address, address.modelContext == nil {
-                    modelContext.insert(address)
-                }
-            } else {
-                if let address = currentBusiness.address, address.modelContext == nil {
-                    modelContext.insert(address)
-                }
-                modelContext.insert(currentBusiness)
-                persistedBusiness = currentBusiness
             }
+            let saved = try businessPersisting.saveBusiness(
+                draft: currentBusiness,
+                persisted: persistedBusiness
+            )
+            persistedBusiness = saved
             await Task.yield()
-            try modelContext.save()
-            applyDraftState(from: persistedBusiness ?? currentBusiness)
+            applyDraftState(from: saved)
             return true
         } catch {
             saveErrorMessage = "The company settings could not be saved. \(error.localizedDescription)"
@@ -121,7 +117,7 @@ public final class CompanyViewModel {
         openPanel.begin { response in
             if response == .OK, let url = openPanel.url {
                 Task {
-                    if let image = await Task.detached(priority: .userInitiated, operation: {
+                    if let image = await Task(priority: .userInitiated, operation: {
                         NSImage(contentsOf: url)
                     }).value {
                         self.companyLogo = image

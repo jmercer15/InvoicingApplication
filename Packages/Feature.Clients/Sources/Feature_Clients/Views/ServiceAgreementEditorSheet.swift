@@ -1,7 +1,7 @@
 import SwiftUI
 import Observation
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 struct ServiceAgreementEditorSheet: View {

@@ -1,11 +1,11 @@
 import Foundation
-import XCTest
+import Testing
 @testable import Core
 
-final class InvoiceCreationDefaultsTests: XCTestCase {
-    func testLoadsSharedPreferenceKeysAndClampsInvalidValues() throws {
+@Suite struct InvoiceCreationDefaultsTests {
+    @Test func LoadsSharedPreferenceKeysAndClampsInvalidValues() throws {
         let suiteName = "InvoiceCreationDefaultsTests.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let preferences = try try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
 
         preferences.set(-5, forKey: InvoicePreferenceKey.paymentTermsDays)
@@ -17,23 +17,20 @@ final class InvoiceCreationDefaultsTests: XCTestCase {
 
         let defaults = InvoiceCreationDefaults.load(from: preferences)
 
-        XCTAssertEqual(defaults.paymentTermsDays, 0)
-        XCTAssertEqual(defaults.taxRate, 100)
-        XCTAssertFalse(defaults.showsTaxSummary)
-        XCTAssertFalse(defaults.editorConfiguration.showsTaxSummary)
-        XCTAssertFalse(defaults.autoGeneratesInvoiceNumbers)
-        XCTAssertEqual(defaults.notes, "Thanks")
-        XCTAssertEqual(defaults.paymentTermsText, "Due on receipt")
+        #expect(defaults.paymentTermsDays == 0)
+        #expect(defaults.taxRate == 100)
+        #expect(!(defaults.showsTaxSummary))
+        #expect(!(defaults.editorConfiguration.showsTaxSummary))
+        #expect(!(defaults.autoGeneratesInvoiceNumbers))
+        #expect(defaults.notes == "Thanks")
+        #expect(defaults.paymentTermsText == "Due on receipt")
     }
 
-    func testMissingPreferencesUseProductDefaults() throws {
+    @Test func MissingPreferencesUseProductDefaults() throws {
         let suiteName = "InvoiceCreationDefaultsTests.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let preferences = try try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertEqual(
-            InvoiceCreationDefaults.load(from: preferences),
-            InvoiceCreationDefaults.standard
-        )
+        #expect(InvoiceCreationDefaults.load(from: preferences) == InvoiceCreationDefaults.standard)
     }
 }

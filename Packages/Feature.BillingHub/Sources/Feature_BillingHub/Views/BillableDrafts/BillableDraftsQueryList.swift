@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import SharedUI
 import SwiftData
 import SwiftUI
@@ -23,18 +24,27 @@ struct BillableDraftsQueryList: View {
         let rangeUpper = filterSpec.dateRange?.upperBound
         let clientId = filterSpec.clientId
 
-        if let statusRaw, let rangeLower, let rangeUpper, let clientId {
+        let planTypeRaw = filterSpec.planType.flatMap { $0.isEmpty ? nil : $0 }
+
+        if let statusRaw, let rangeLower, let rangeUpper, let clientId, let planTypeRaw {
             _drafts = Query(
-                filter: #Predicate<BillableDraft> { draft in
-                    draft.draftStatus == statusRaw
-                        && draft.computedAt >= rangeLower
-                        && draft.computedAt <= rangeUpper
-                        && draft.clientId == clientId
-                },
+                filter: EntityPredicateBuilders.billableDrafts(
+                    statusRaw: statusRaw,
+                    rangeLower: rangeLower,
+                    rangeUpper: rangeUpper,
+                    clientId: clientId,
+                    planType: planTypeRaw
+                ),
                 sort: \.computedAt,
                 order: .reverse
             )
-        } else if let statusRaw, let rangeLower, let rangeUpper {
+        } else if let planTypeRaw {
+            _drafts = Query(
+                filter: EntityPredicateBuilders.billableDrafts(planType: planTypeRaw),
+                sort: \.computedAt,
+                order: .reverse
+            )
+        } else if let statusRaw, let rangeLower, let rangeUpper, let clientId {
             _drafts = Query(
                 filter: #Predicate<BillableDraft> { draft in
                     draft.draftStatus == statusRaw
@@ -92,12 +102,7 @@ struct BillableDraftsQueryList: View {
     }
 
     private var visibleDrafts: [BillableDraft] {
-        guard let planType = filterSpec.planType, !planType.isEmpty else {
-            return drafts
-        }
-        return drafts.filter { draft in
-            draft.client?.planManagementType == planType
-        }
+        drafts
     }
 
     private var statusSections: [(title: String, drafts: [BillableDraft])] {

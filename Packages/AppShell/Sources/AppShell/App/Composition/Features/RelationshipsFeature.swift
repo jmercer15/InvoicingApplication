@@ -5,15 +5,22 @@ import Feature_Clients
 @MainActor
 final class RelationshipsFeature {
     private struct Dependencies {
-        let context: ModelContext
+        let relationshipDeleter: any ClientRelationshipDeleting
         let storeChangeMonitor: SwiftDataStoreChangeMonitor
     }
 
     private let dependencies: Dependencies
     private var storage: RelationshipsContainerViewModel?
 
-    init(context: ModelContext, storeChangeMonitor: SwiftDataStoreChangeMonitor) {
-        self.dependencies = Dependencies(context: context, storeChangeMonitor: storeChangeMonitor)
+    init(
+        context: ModelContext,
+        relationshipDeleter: any ClientRelationshipDeleting,
+        storeChangeMonitor: SwiftDataStoreChangeMonitor
+    ) {
+        self.dependencies = Dependencies(
+            relationshipDeleter: relationshipDeleter,
+            storeChangeMonitor: storeChangeMonitor
+        )
     }
 
     func viewModel() -> RelationshipsContainerViewModel {
@@ -23,11 +30,16 @@ final class RelationshipsFeature {
 
         let viewModel = RelationshipsWorkspaceFactory.makeViewModel(
             .init(
-                modelContext: dependencies.context,
+                relationshipDeleter: dependencies.relationshipDeleter,
                 storeChangeMonitor: dependencies.storeChangeMonitor
             )
         )
+        dependencies.storeChangeMonitor.onRevisionChange { _ in
+            AppShortcutParameterRefresh.refreshClientParameters()
+        }
         storage = viewModel
         return viewModel
     }
 }
+
+import DataInterfaces

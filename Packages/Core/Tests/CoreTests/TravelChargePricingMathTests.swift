@@ -1,8 +1,8 @@
-import XCTest
+import Testing
 import Core
 
-final class TravelChargePricingMathTests: XCTestCase {
-    func testCalculatedAmountMappingByChargeType() {
+@Suite struct TravelChargePricingMathTests {
+    @Test func CalculatedAmountMappingByChargeType() {
         let breakdown = NDISTravelChargeBreakdown(
             providerType: .dsw,
             requestedMinutes: 30,
@@ -18,9 +18,9 @@ final class TravelChargePricingMathTests: XCTestCase {
             participantCount: 1
         )
 
-        XCTAssertEqual(TravelChargePricingMath.calculatedAmount(for: "labour", breakdown: breakdown), 22)
-        XCTAssertEqual(TravelChargePricingMath.calculatedAmount(for: "non-labour", breakdown: breakdown), 9.5)
-        XCTAssertEqual(TravelChargePricingMath.calculatedAmount(for: "activity-based", breakdown: breakdown), 31.5)
-        XCTAssertEqual(TravelChargePricingMath.calculatedAmount(for: "unexpected", breakdown: breakdown), 31.5)
+        #expect(TravelChargePricingMath.calculatedAmount(for: "labour", breakdown: breakdown) == 22)
+        #expect(TravelChargePricingMath.calculatedAmount(for: "non-labour", breakdown: breakdown) == 9.5)
+        #expect(TravelChargePricingMath.calculatedAmount(for: "activity-based", breakdown: breakdown) == 31.5)
+        #expect(TravelChargePricingMath.calculatedAmount(for: "unexpected", breakdown: breakdown) == 31.5)
     }
 }

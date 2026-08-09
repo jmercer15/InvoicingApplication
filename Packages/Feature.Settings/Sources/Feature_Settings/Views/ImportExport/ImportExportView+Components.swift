@@ -1,6 +1,4 @@
 import SwiftUI
-import Data
-import Core
 import SharedUI
 
 extension ImportExportView {

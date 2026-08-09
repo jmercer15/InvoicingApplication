@@ -1,10 +1,12 @@
 import Core
-import XCTest
+import Foundation
+import PersistenceModels
+import Testing
 @testable import Feature_NDIS
 
 @MainActor
-final class NDISCatalogueQueryTests: XCTestCase {
-    func testFiltersCombineCategorySearchAndQuote() {
+@Suite struct NDISCatalogueQueryTests {
+    @Test func FiltersCombineCategorySearchAndQuote() {
         let items = [
             sampleItem(
                 id: id(1),
@@ -41,7 +43,7 @@ final class NDISCatalogueQueryTests: XCTestCase {
             selectedUnits: [],
             itemVersionFilter: .all
         )
-        XCTAssertEqual(narrowed.map(\.itemNumber), ["15_001"])
+        #expect(narrowed.map(\.itemNumber) == ["15_001"])
 
         let quoteOnly = NDISCatalogueQuery.filteredAndSortedItems(
             from: snapshots,
@@ -54,10 +56,10 @@ final class NDISCatalogueQueryTests: XCTestCase {
             selectedUnits: [],
             itemVersionFilter: .all
         )
-        XCTAssertEqual(quoteOnly.map(\.itemNumber), ["15_001"])
+        #expect(quoteOnly.map(\.itemNumber) == ["15_001"])
     }
 
-    func testVersionFilterCurrentOnlyKeepsNewerDuplicateByStartDate() {
+    @Test func VersionFilterCurrentOnlyKeepsNewerDuplicateByStartDate() {
         let cal = Calendar.current
         let olderStart = cal.date(from: DateComponents(year: 2020, month: 1, day: 1))!
         let newerStart = cal.date(from: DateComponents(year: 2023, month: 6, day: 1))!
@@ -102,11 +104,11 @@ final class NDISCatalogueQueryTests: XCTestCase {
             itemVersionFilter: .currentOnly
         )
 
-        XCTAssertEqual(filtered.count, 1)
-        XCTAssertEqual(filtered.first?.id, id(11))
+        #expect(filtered.count == 1)
+        #expect(filtered.first?.id == id(11))
     }
 
-    func testFeatureAndUnitFiltersConjoin() {
+    @Test func FeatureAndUnitFiltersConjoin() {
         let a = sampleItem(
             id: id(3),
             number: "X1",
@@ -140,7 +142,7 @@ final class NDISCatalogueQueryTests: XCTestCase {
             selectedUnits: [],
             itemVersionFilter: .all
         )
-        XCTAssertEqual(bothTags.map(\.itemNumber), ["X1"])
+        #expect(bothTags.map(\.itemNumber) == ["X1"])
 
         let unitHour = NDISCatalogueQuery.filteredAndSortedItems(
             from: snapshots,
@@ -153,7 +155,7 @@ final class NDISCatalogueQueryTests: XCTestCase {
             selectedUnits: ["hour"],
             itemVersionFilter: .all
         )
-        XCTAssertEqual(unitHour.map(\.itemNumber), ["X1"])
+        #expect(unitHour.map(\.itemNumber) == ["X1"])
     }
 
     private func id(_ n: Int) -> UUID {

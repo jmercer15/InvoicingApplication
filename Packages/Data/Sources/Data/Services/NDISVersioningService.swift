@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 /// Service for managing NDIS item versioning and historical tracking
 public class NDISVersioningService {
@@ -103,8 +104,9 @@ public class NDISVersioningService {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        // Create a hash of the item name to keep the identifier manageable
-        let nameHash = String(itemName.hash.magnitude)
+        // Swift's `hashValue` is randomized per process. Persisted identifiers need a stable
+        // value so a later import resolves the same version after an app relaunch.
+        let nameHash = String(stableNameHash(itemName), radix: 16)
         
         let startString = dateFormatter.string(from: startDate) // Use non-optional startDate
         if let end = endDate {
@@ -112,6 +114,12 @@ public class NDISVersioningService {
             return "\(itemNumber)_\(nameHash)_\(startString)_\(endString)"
         } else {
             return "\(itemNumber)_\(nameHash)_\(startString)_ongoing"
+        }
+    }
+
+    private static func stableNameHash(_ value: String) -> UInt64 {
+        value.utf8.reduce(1_469_598_103_934_665_603) { hash, byte in
+            (hash ^ UInt64(byte)) &* 1_099_511_628_211
         }
     }
     

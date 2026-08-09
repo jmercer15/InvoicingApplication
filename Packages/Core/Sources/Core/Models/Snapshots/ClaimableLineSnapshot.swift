@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - ClaimableLineSnapshot
 
@@ -16,9 +15,9 @@ public struct ClaimableLineSnapshot: Sendable, Equatable, Hashable {
     public let supportItemNumber: String
     public let serviceFrom: Date
     public let serviceTo: Date
-    public let quantityDecimal: Double?
+    public let quantity: Decimal?
     public let hoursHHHMM: String?
-    public let unitPrice: Double
+    public let unitPrice: Decimal
     public let gstCode: String
     public let cancellationReason: String?
     public let travelKM: Double?
@@ -34,9 +33,9 @@ public struct ClaimableLineSnapshot: Sendable, Equatable, Hashable {
         supportItemNumber: String,
         serviceFrom: Date,
         serviceTo: Date,
-        quantityDecimal: Double? = nil,
+        quantity: Decimal? = nil,
         hoursHHHMM: String? = nil,
-        unitPrice: Double,
+        unitPrice: Decimal,
         gstCode: String,
         cancellationReason: String? = nil,
         travelKM: Double? = nil,
@@ -51,7 +50,7 @@ public struct ClaimableLineSnapshot: Sendable, Equatable, Hashable {
         self.supportItemNumber = supportItemNumber
         self.serviceFrom = serviceFrom
         self.serviceTo = serviceTo
-        self.quantityDecimal = quantityDecimal
+        self.quantity = quantity
         self.hoursHHHMM = hoursHHHMM
         self.unitPrice = unitPrice
         self.gstCode = gstCode
@@ -64,23 +63,4 @@ public struct ClaimableLineSnapshot: Sendable, Equatable, Hashable {
         self.bulkClaimLineId = bulkClaimLineId
     }
 
-    public init(_ line: ClaimableLine) {
-        self.id = line.id
-        self.claimType = line.claimType
-        self.supportItemNumber = line.supportItemNumber
-        self.serviceFrom = line.serviceFrom
-        self.serviceTo = line.serviceTo
-        self.quantityDecimal = line.quantityDecimal
-        self.hoursHHHMM = line.hoursHHHMM
-        self.unitPrice = line.unitPrice
-        self.gstCode = line.gstCode
-        self.cancellationReason = line.cancellationReason
-        self.travelKM = line.travelKM
-        self.travelMinutes = line.travelMinutes
-        self.metadata = line.metadata
-        self.claimReference = line.claimReference
-        self.draftId = line.draftId
-        self.bulkClaimLineId = line.bulkClaimLine?.id
-    }
 }
-

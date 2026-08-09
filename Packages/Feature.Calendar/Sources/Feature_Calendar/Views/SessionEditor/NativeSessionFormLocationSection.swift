@@ -1,5 +1,5 @@
+import PersistenceModels
 import SwiftUI
-import Data
 import SharedUI
 
 struct NativeSessionFormLocationSection: View {
@@ -55,7 +55,7 @@ struct NativeSessionFormLocationSection: View {
         HStack {
             Text(formatAddressForDisplay())
                 .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundColor(StyleGuide.Colors.text)
+                .foregroundStyle(StyleGuide.Colors.text)
                 .multilineTextAlignment(.leading)
 
             Spacer()

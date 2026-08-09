@@ -1,21 +1,23 @@
 import Core
+import Foundation
 import SwiftData
-import XCTest
+import Testing
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class InvoiceEditorTransferRoundTripTests: XCTestCase {
-    func testExpandedExportModelStillDecodesLegacyInvoicePayload() throws {
+@Suite struct InvoiceEditorTransferRoundTripTests {
+    @Test func ExpandedExportModelStillDecodesLegacyInvoicePayload() throws {
         let data = Data(#"{"invoiceNumber":"INV-LEGACY","totalAmount":42}"#.utf8)
         let invoice = try JSONDecoder().decode(ExportModels.InvoiceJSON.self, from: data)
 
-        XCTAssertEqual(invoice.invoiceNumber, "INV-LEGACY")
-        XCTAssertEqual(invoice.totalAmount, 42)
-        XCTAssertEqual(invoice.currencyCode, "AUD")
-        XCTAssertTrue(invoice.items.isEmpty)
+        #expect(invoice.invoiceNumber == "INV-LEGACY")
+        #expect(invoice.totalAmount == 42)
+        #expect(invoice.currencyCode == "AUD")
+        #expect(invoice.items.isEmpty)
     }
 
-    func testInvoiceExportImportPreservesEditorDomainAndLineItems() async throws {
+    @Test func InvoiceExportImportPreservesEditorDomainAndLineItems() async throws {
         let sourceContainer = try ModelContainerFactory.makeInMemoryContainer()
         let sourceContext = ModelContext(sourceContainer)
         let source = Invoice(invoiceNumber: "INV-TRANSFER-001")
@@ -62,39 +64,39 @@ final class InvoiceEditorTransferRoundTripTests: XCTestCase {
             fileName: "invoice.json",
             context: destinationContext
         )
-        XCTAssertEqual(firstResult.failed, 0)
+        #expect(firstResult.failed == 0)
         try destinationContext.save()
 
-        var imported = try XCTUnwrap(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
-        XCTAssertEqual(imported.invoiceEditorRevision, 0)
-        XCTAssertEqual(imported.currencyCode, "AUD")
-        XCTAssertEqual(imported.taxRate, 10)
-        XCTAssertEqual(imported.discount, 5)
-        XCTAssertEqual(imported.creditApplied, 2)
-        XCTAssertEqual(imported.businessPhone, "07 3000 0000")
-        XCTAssertEqual(imported.clientPhone, "0400 000 000")
-        XCTAssertEqual(imported.bankBSB, "123-456")
-        XCTAssertEqual(imported.invoiceEditorStateData, source.invoiceEditorStateData)
-        XCTAssertEqual(imported.invoiceEditorConfiguration.title, "Support Invoice")
-        XCTAssertFalse(imported.invoiceEditorConfiguration.billParticipantDirectly)
-        XCTAssertEqual(imported.invoiceEditorConfiguration.billToPhone, "07 3111 1111")
-        XCTAssertEqual(imported.invoiceEditorConfiguration.discountAmount, 12)
-        XCTAssertFalse(imported.invoiceEditorConfiguration.showsTaxSummary)
-        XCTAssertEqual(imported.itemsArray.count, 1)
-        XCTAssertEqual(imported.itemsArray[0].position, 3)
-        XCTAssertEqual(imported.itemsArray[0].taxRate, 10)
-        XCTAssertEqual(imported.itemsArray[0].unit, "hour")
+        var imported = try try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
+        #expect(imported.invoiceEditorRevision == 0)
+        #expect(imported.currencyCode == "AUD")
+        #expect(imported.taxRate == 10)
+        #expect(imported.discount == 5)
+        #expect(imported.creditApplied == 2)
+        #expect(imported.businessPhone == "07 3000 0000")
+        #expect(imported.clientPhone == "0400 000 000")
+        #expect(imported.bankBSB == "123-456")
+        #expect(imported.invoiceEditorStateData == source.invoiceEditorStateData)
+        #expect(imported.invoiceEditorConfiguration.title == "Support Invoice")
+        #expect(!(imported.invoiceEditorConfiguration.billParticipantDirectly))
+        #expect(imported.invoiceEditorConfiguration.billToPhone == "07 3111 1111")
+        #expect(imported.invoiceEditorConfiguration.discountAmount == 12)
+        #expect(!(imported.invoiceEditorConfiguration.showsTaxSummary))
+        #expect(imported.itemsArray.count == 1)
+        #expect(imported.itemsArray[0].position == 3)
+        #expect(imported.itemsArray[0].taxRate == 10)
+        #expect(imported.itemsArray[0].unit == "hour")
 
         let secondResult = try InvoiceImport.importInvoices(
             data: data,
             fileName: "invoice.json",
             context: destinationContext
         )
-        XCTAssertEqual(secondResult.failed, 0)
+        #expect(secondResult.failed == 0)
         try destinationContext.save()
 
-        imported = try XCTUnwrap(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
-        XCTAssertEqual(imported.invoiceEditorRevision, 1)
-        XCTAssertEqual(imported.itemsArray.count, 1)
+        imported = try try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
+        #expect(imported.invoiceEditorRevision == 1)
+        #expect(imported.itemsArray.count == 1)
     }
 }

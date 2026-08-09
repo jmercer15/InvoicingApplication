@@ -1,21 +1,17 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
 import SharedUI
 import Observation
 
 public struct BillingHubView: View {
-    @Bindable private var viewModel: BillingHubViewModel
+    @Bindable var viewModel: BillingHubViewModel
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
-
-    @State private var selectedCardID: UUID?
-    @State private var presentedCardID: UUID?
-    
     let openInvoice: (UUID) -> Void
     let openSession: (UUID) -> Void
 
-    private var projectionTaskID: BillingHubProjectionTaskID {
+    var projectionTaskID: BillingHubProjectionTaskID {
         BillingHubProjectionTaskID(
             revision: viewModel.dataRevision,
             searchText: viewModel.searchText,
@@ -24,16 +20,28 @@ public struct BillingHubView: View {
         )
     }
 
-    private var readyToSendCount: Int {
+    var completedSessionCount: Int {
+        viewModel.boardProjection.sessionsByStatus[.completed]?.count ?? 0
+    }
+
+    var readyToSendCount: Int {
         viewModel.boardProjection.invoicesByStatus[.readyToSend]?.count ?? 0
     }
 
-    private var pendingPaymentCount: Int {
+    var pendingPaymentCount: Int {
         viewModel.boardProjection.invoicesByStatus[.pending]?.count ?? 0
     }
 
-    private var groupedDraftBatchCount: Int {
+    var groupedDraftBatchCount: Int {
         viewModel.boardProjection.groupedSessions.count
+    }
+
+    var focusTaskID: String {
+        let ids = viewModel.pendingFocusCardIDs.map(\.uuidString).joined(separator: ",")
+        let projectionToken = viewModel.boardProjection.isEmpty ? "empty" : "ready"
+        // Re-run when refresh finishes so a miss is reported only after projection is idle.
+        let loadingToken = viewModel.isLoading ? "loading" : "idle"
+        return "\(ids)|\(projectionToken)|\(viewModel.dataRevision)|\(loadingToken)"
     }
 
     public init(
@@ -49,28 +57,74 @@ public struct BillingHubView: View {
     public var body: some View {
         ZStack {
             boardContent(projection: viewModel.boardProjection)
-                .opacity(viewModel.isLoading ? 0.6 : 1.0)
             
             if viewModel.isLoading {
-                ProgressView("Refreshing Board...")
+                ProgressView(viewModel.bulkProgress.bulkActionProgressMessage ?? "Refreshing Board…")
                     .padding()
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
+            } else if let loadError = viewModel.projectionLoadError,
+                      viewModel.boardProjection.isEmpty {
+                boardLoadErrorState(loadError)
             } else if viewModel.boardProjection.isEmpty {
-                ContentUnavailableView(
-                    "No Billing Data Available",
-                    systemImage: "tray.fill",
-                    description: Text("Try adjusting client filters or check your date ranges.")
-                )
+                ContentUnavailableView {
+                    Label(
+                        viewModel.hasActiveFilters ? "No Matching Billing Work" : "No Billing Work Yet",
+                        systemImage: viewModel.hasActiveFilters ? "line.3.horizontal.decrease.circle" : "tray.fill"
+                    )
+                } description: {
+                    Text(
+                        viewModel.hasActiveFilters
+                            ? "This filter has no matching sessions or invoices. Clear it to see all billing work."
+                            : "Completed sessions and draft invoices will appear here when they are ready to process."
+                    )
+                } actions: {
+                    if viewModel.hasActiveFilters {
+                        Button("Clear Filters", systemImage: "xmark.circle") {
+                            viewModel.clearFilters()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+
+            if let loadError = viewModel.projectionLoadError,
+               !viewModel.isLoading,
+               !viewModel.boardProjection.isEmpty {
+                VStack {
+                    Spacer()
+                    boardLoadErrorBanner(loadError)
+                }
+                .padding(BillingHubTheme.Dimensions.boardPadding)
             }
         }
         .task(id: projectionTaskID) {
-            try? await Task.sleep(for: .milliseconds(150))
-            await viewModel.refreshProjection()
+            // Debounce: on cancel during sleep, return without refreshProjection.
+            await BillingHubProjectionDebounce.run {
+                await viewModel.refreshProjection()
+            }
+        }
+        .task(id: focusTaskID) {
+            applyPendingFocusIfPossible()
         }
         .toolbar {
             toolbarContent
         }
         .navigationTitle("Billing Hub")
+        .task(id: viewModel.bulkActionFeedback) {
+            guard let feedback = viewModel.bulkActionFeedback else { return }
+            if voiceOverEnabled {
+                AppAccessibilityAnnouncement.post(feedback)
+                return
+            }
+            guard await Task.waitUnlessCancelled(for: .seconds(10)) else { return }
+            if viewModel.bulkActionFeedback == feedback {
+                viewModel.clearBulkActionFeedback()
+            }
+        }
+        .task(id: viewModel.projectionLoadError) {
+            guard voiceOverEnabled, let error = viewModel.projectionLoadError else { return }
+            AppAccessibilityAnnouncement.post(error)
+        }
         .sheet(item: presentedCardBinding) { card in
             EditingPanel(
                 card: card,
@@ -79,202 +133,39 @@ public struct BillingHubView: View {
                 openSession: openSession
             )
         }
-    }
-}
-
-private extension BillingHubView {
-    func boardContent(projection: BillingHubBoardProjection) -> some View {
-        KanbanBoardView(
-            viewModel: viewModel,
-            projection: projection,
-            selectedCardID: $selectedCardID,
-            onOpenCard: { presentedCardID = $0 }
-        )
-    }
-
-    var presentedCardBinding: Binding<KanbanCardData?> {
-        Binding(
-            get: { viewModel.boardProjection.card(for: presentedCardID) },
-            set: { presentedCardID = $0?.id }
-        )
-    }
-}
-
-/// Lightweight identity for board projection rebuilds — avoids recomputing the Kanban graph on every layout pass.
-private struct BillingHubProjectionTaskID: Equatable {
-    let revision: Int
-    let searchText: String
-    let selectedClientID: UUID?
-    let sortOptions: [KanbanCardData.BillingColumnType: ColumnSortOption]
-}
-
-private extension BillingHubView {
-    @ToolbarContentBuilder
-    var toolbarContent: some ToolbarContent {
-        AppToolbarUtilityGroup {
-            clientFilter
-
-            if viewModel.hasActiveFilters {
-                clearFiltersButton
-            }
-        }
-
-        AppToolbarStatusGroup {
-            if let feedback = viewModel.bulkActionFeedback {
-                bulkFeedbackPill(text: feedback)
-            }
-
-            if viewModel.canUndoLastBulkAction {
-                undoBulkButton
-            }
-        }
-
-        if groupedDraftBatchCount > 0 || readyToSendCount > 0 || pendingPaymentCount > 0 {
-            ToolbarItem(placement: .primaryAction) {
-                bulkActionsMenu
-            }
-        }
-    }
-
-    @ViewBuilder
-    var bulkActionsMenu: some View {
-        if groupedDraftBatchCount > 0 || readyToSendCount > 0 || pendingPaymentCount > 0 {
-            AppToolbarActionsMenu(
-                title: "Bulk Actions",
-                systemImage: "tray.2.fill",
-                help: "Batch invoice workflow actions"
-            ) {
-                if groupedDraftBatchCount > 0 {
-                    Button {
-                        Task {
-                            await viewModel.createDraftInvoicesForGroupedSessions(from: viewModel.boardProjection)
-                        }
-                    } label: {
-                        Label("Create Drafts (\(groupedDraftBatchCount))", systemImage: "doc.badge.plus")
+        .confirmationDialog(
+            activeConfirmation?.title ?? "",
+            isPresented: activeConfirmationIsPresented,
+            presenting: activeConfirmation,
+            actions: { confirmation in
+                switch confirmation {
+                case .invoicedSession(let action):
+                    Button(action.confirmTitle) {
+                        viewModel.confirmPendingInvoicedSessionAction()
                     }
-                }
-
-                if readyToSendCount > 0 {
-                    Button {
-                        Task {
-                            await viewModel.sendAllReadyToSendInvoices(from: viewModel.boardProjection)
-                        }
-                    } label: {
-                        Label("Send Ready (\(readyToSendCount))", systemImage: "paperplane")
+                    Button("Cancel", role: .cancel) {
+                        viewModel.cancelPendingInvoicedSessionAction()
                     }
-                }
-
-                if pendingPaymentCount > 0 {
-                    Button {
+                case .bulkPaymentReceived(let count):
+                    Button(BillingHubConfirmationCopy.bulkPaymentButtonTitle(count: count)) {
                         Task {
                             await viewModel.completeAllPendingInvoices(from: viewModel.boardProjection)
                         }
-                    } label: {
-                        Label("Complete Pending (\(pendingPaymentCount))", systemImage: "checkmark.seal")
+                    }
+                    Button("Cancel", role: .cancel) {
+                        viewModel.cancelBulkMarkPaymentReceived()
                     }
                 }
-            }
-        }
-    }
-
-    var clientFilter: some View {
-        let summaries = viewModel.boardProjection.clientSummaries
-        return Menu {
-            Button {
-                viewModel.selectClient(withID: nil)
-            } label: {
-                if viewModel.selectedClientID == nil {
-                    Label("All Clients", systemImage: "checkmark")
-                } else {
-                    Text("All Clients")
+            },
+            message: { confirmation in
+                switch confirmation {
+                case .invoicedSession(let action):
+                    Text(action.message)
+                case .bulkPaymentReceived(let count):
+                    Text(BillingHubConfirmationCopy.bulkPaymentMessage(count: count))
                 }
             }
-
-            if !summaries.isEmpty {
-                Divider()
-            }
-
-            ForEach(summaries) { summary in
-                Button {
-                    viewModel.selectClient(withID: summary.id)
-                } label: {
-                    HStack {
-                        clientBadge(clientId: summary.id)
-                        Text(summary.name)
-                        if viewModel.selectedClientID == summary.id {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(StyleGuide.Colors.primary)
-                        }
-                    }
-                }
-            }
-        } label: {
-            Label {
-                Text(
-                    summaries.first(where: { $0.id == viewModel.selectedClientID })?.name
-                    ?? "Client"
-                )
-            } icon: {
-                Image(systemName: viewModel.selectedClientID == nil ? "person.2" : "person.2.fill")
-            }
-        }
-        .appToolbarLinkStyle(help: "Filter by client")
-    }
-
-    func clientBadge(clientId: UUID) -> some View {
-        Circle()
-            .fill(ColorSystem.Client.color(for: clientId).opacity(0.85))
-            .frame(width: BillingHubTheme.Dimensions.clientBadgeSize, height: BillingHubTheme.Dimensions.clientBadgeSize)
-    }
-
-    var clearFiltersButton: some View {
-        Button {
-            withAnimation(BillingHubTheme.Animations.hover) {
-                viewModel.clearFilters()
-            }
-        } label: {
-            Label("Clear", systemImage: "line.3.horizontal.decrease.circle")
-        }
-        .appToolbarLinkStyle(help: "Clear all filters")
-    }
-
-    var undoBulkButton: some View {
-        Button {
-            Task {
-                await viewModel.undoLastBulkAction()
-            }
-        } label: {
-            Label("Undo Bulk", systemImage: "arrow.uturn.backward.circle")
-        }
-        .appToolbarLinkStyle(help: "Undo last bulk action")
-    }
-
-    func bulkFeedbackPill(text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(BillingHubTheme.Typography.bulkFeedbackIcon)
-                .foregroundColor(BillingHubTheme.Columns.payment)
-            Text(text)
-                .font(BillingHubTheme.Typography.bulkFeedbackText)
-                .foregroundColor(BillingHubTheme.Palette.textSecondary)
-            Button {
-                viewModel.clearBulkActionFeedback()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(BillingHubTheme.Typography.bulkFeedbackDismiss)
-                    .foregroundColor(BillingHubTheme.Palette.textMuted)
-            }
-            .buttonStyle(.plain)
-            .billingHubPointerStyle(.link)
-        }
-    }
-}
-
-extension BillingHubBoardProjection {
-    public var isEmpty: Bool {
-        sessionsByStatus.values.allSatisfy(\.isEmpty) &&
-        invoicesByStatus.values.allSatisfy(\.isEmpty) &&
-        groupedSessions.isEmpty
+        )
+        .appRespectsReduceMotion()
     }
 }

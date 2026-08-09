@@ -1,5 +1,5 @@
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import SwiftData
 import SwiftUI
@@ -25,7 +25,13 @@ public struct BillableDraftsHomeView: View {
     @State private var selectedSessionIds: Set<UUID> = []
     @State private var isGenerating = false
     @State private var generatedCount: Int?
-    @State private var showGenerateDrafts = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case generateDrafts
+
+        var id: Self { self }
+    }
     @State private var sessionWindowFrom: Date?
     @State private var sessionWindowTo: Date?
 
@@ -47,7 +53,7 @@ public struct BillableDraftsHomeView: View {
                 if let errorMsg = viewModel.errorMessage {
                     Text(errorMsg)
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(ColorSystem.Status.error)
+                        .foregroundStyle(ColorSystem.Status.error)
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .center)
                         .background(ColorSystem.Status.error.opacity(0.1))
@@ -63,7 +69,7 @@ public struct BillableDraftsHomeView: View {
                         systemImage: "sparkles.rectangle.stack",
                         help: "Generate billable drafts from sessions"
                     ) {
-                        showGenerateDrafts = true
+                        activeSheet = .generateDrafts
                     }
                 }
             }
@@ -75,8 +81,11 @@ public struct BillableDraftsHomeView: View {
                     onCreateInvoice: onCreateInvoice
                 )
             }
-            .sheet(isPresented: $showGenerateDrafts) {
-                generateDraftsSheet
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .generateDrafts:
+                    generateDraftsSheet
+                }
             }
         }
     }
@@ -130,7 +139,7 @@ public struct BillableDraftsHomeView: View {
                 .font(StyleGuide.Typography.sectionTitle)
             Text("Select a date range and sessions that don't have a draft yet.")
                 .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundColor(StyleGuide.Colors.textSecondary)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
             HStack(spacing: 16) {
                 DatePicker("From", selection: $generateFrom, displayedComponents: .date)
                 DatePicker("To", selection: $generateTo, displayedComponents: .date)
@@ -154,15 +163,15 @@ public struct BillableDraftsHomeView: View {
             if let msg = viewModel.errorMessage {
                 Text(msg)
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(ColorSystem.Status.error)
+                    .foregroundStyle(ColorSystem.Status.error)
             }
             if generatedCount != nil {
                 Text("Created \(generatedCount!) draft(s).")
-                    .foregroundColor(ColorSystem.Status.success)
+                    .foregroundStyle(ColorSystem.Status.success)
             }
             HStack {
                 if generatedCount != nil {
-                    Button("Done") { showGenerateDrafts = false }
+                    Button("Done") { activeSheet = nil }
                         .buttonStyle(.borderedProminent)
                 } else {
                     Button("Generate selected") {
@@ -172,7 +181,7 @@ public struct BillableDraftsHomeView: View {
                     .disabled(selectedSessionIds.isEmpty || isGenerating)
                 }
                 Spacer(minLength: 0)
-                Button("Cancel") { showGenerateDrafts = false }
+                Button("Cancel") { activeSheet = nil }
             }
         }
         .padding()
@@ -184,8 +193,7 @@ public struct BillableDraftsHomeView: View {
         viewModel.errorMessage = nil
         defer { isGenerating = false }
         do {
-            let sessions = viewModel.sessionsWithoutDraft.filter { selectedSessionIds.contains($0.id) }
-            let count = try await viewModel.generateDrafts(for: sessions)
+            let count = try await viewModel.generateDrafts(forSessionIDs: Array(selectedSessionIds))
             generatedCount = count
             selectedSessionIds.removeAll()
         } catch {

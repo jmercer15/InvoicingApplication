@@ -1,11 +1,13 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import SwiftUI
 import Combine
 import SwiftData
 import CoreLocation
 import Core
+import PersistenceModels
 import Observation
+import os
 
 // MARK: - EventKitSyncService
 /// EventKitSyncService manages all EventKit operations and state.
@@ -52,6 +54,7 @@ public final class EventKitSyncService {
     }()
 
     static let legacySyncTagFormatter: DateFormatter = {
+        // Parses legacy EventKit sync tags written as `ExportMachineFormatting.eventKitLegacySyncTag`.
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -76,7 +79,13 @@ public final class EventKitSyncService {
     }
     public var syncEnabled: Bool {
         get { preferencesStore.syncEnabled }
-        set { preferencesStore.syncEnabled = newValue }
+        set {
+            let wasEnabled = preferencesStore.syncEnabled
+            preferencesStore.syncEnabled = newValue
+            if wasEnabled && !newValue {
+                cancelActiveSyncTasks()
+            }
+        }
     }
     public var syncDirection: CalendarPreferences.SyncDirection {
         get { preferencesStore.syncDirection }
@@ -156,6 +165,25 @@ public final class EventKitSyncService {
 
     var cancellables = Set<AnyCancellable>()
 
+    @ObservationIgnored var activeOutboundSyncTask: Task<Void, Never>?
+    @ObservationIgnored var activeRecurringMergeTask: Task<Void, Never>?
+    @ObservationIgnored var activeDeleteTask: Task<Void, Never>?
+
+    func cancelActiveSyncTasks() {
+        activeOutboundSyncTask?.cancel()
+        activeOutboundSyncTask = nil
+        activeRecurringMergeTask?.cancel()
+        activeRecurringMergeTask = nil
+        activeDeleteTask?.cancel()
+        activeDeleteTask = nil
+    }
+
+    deinit {
+        activeOutboundSyncTask?.cancel()
+        activeRecurringMergeTask?.cancel()
+        activeDeleteTask?.cancel()
+    }
+
     public var accessGrantedPublisher: AnyPublisher<Bool, Never> {
         accessGrantedSubject.eraseToAnyPublisher()
     }
@@ -166,26 +194,46 @@ public final class EventKitSyncService {
 
     public init(
         preferencesStore: any CalendarPreferencesStoreProtocol,
-        recurrenceRuleManager: Core.RecurrenceRuleManager
+        recurrenceRuleManager: Core.RecurrenceRuleManager,
+        startsLiveObservation: Bool = true
     ) {
         self.preferencesStore = preferencesStore
         self.recurrenceRuleManager = recurrenceRuleManager
-        print("[EventKitSyncService] Initializing EventKitSyncService...")
+        guard startsLiveObservation else {
+            syncStatus = .idle
+            return
+        }
+        Logger.data.debug("EventKitSyncService initializing")
         NotificationCenter.default
             .publisher(for: .EKEventStoreChanged, object: eventStore)
-            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 Task { @MainActor in
-                    print("[SyncService] Event store changed; refreshing calendar list.")
+                    Logger.data.debug("Event store changed; refreshing calendar list")
                     self.checkInitialAccessAndFetchCalendars()
                 }
             }
             .store(in: &cancellables)
         checkInitialAccessAndFetchCalendars()
-        print("[EventKitSyncService] EventKitSyncService initialization complete")
+        Logger.data.debug("EventKitSyncService initialization complete")
 
         syncStatus = accessGranted ? .idle : .error
+        observeSyncEnabledPreference()
+    }
+
+    private func observeSyncEnabledPreference() {
+        withObservationTracking { [preferencesStore] in
+            _ = preferencesStore.syncEnabled
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if !self.preferencesStore.syncEnabled {
+                    self.cancelActiveSyncTasks()
+                }
+                self.observeSyncEnabledPreference()
+            }
+        }
     }
 
     func encodeSyncTag(_ date: Date?) -> String? {
@@ -224,7 +272,12 @@ public final class EventKitSyncService {
     public func updateSessionFromRemote(snapshot: SessionSnapshot, remoteEvent: EKEvent, modelContext: ModelContext) async -> SessionSnapshot {
         let resolver = EntityResolutionService(context: modelContext)
         guard let sessionModel = try? resolver.resolveSession(id: snapshot.id) else { return snapshot }
-        await applyRemoteEventToSession(remoteEvent: remoteEvent, session: sessionModel, includeCoreFields: true)
+        let includeCoreFields = EventKitSyncPolicy.shouldIncludeCoreFieldsOnPull(for: sessionModel)
+        await applyRemoteEventToSession(
+            remoteEvent: remoteEvent,
+            session: sessionModel,
+            includeCoreFields: includeCoreFields
+        )
         return SessionSnapshot(sessionModel)
     }
 

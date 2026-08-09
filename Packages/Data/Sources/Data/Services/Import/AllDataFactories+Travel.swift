@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 extension AllDataFactories {
 
@@ -15,8 +16,8 @@ extension AllDataFactories {
         tc.distanceKM        = dict["travelDistance"]    as? Double
         tc.durationMinutes   = dict["travelDuration"]    as? Double
         tc.vehicleType       = VehicleType(rawValue: dict["vehicleType"] as? String ?? "car")
-        tc.parkingCost       = dict["parkingCost"]       as? Double
-        tc.tollCost          = dict["tollCost"]          as? Double
+        tc.parkingCost       = MoneyDecimalImport.decimal(from: dict["parkingCost"] as? Double)
+        tc.tollCost          = MoneyDecimalImport.decimal(from: dict["tollCost"] as? Double)
         tc.participantCount  = dict["participantCount"]  as? Int16
         tc.splitCosts        = dict["splitCosts"]        as? Bool
         tc.chargeType        = TravelChargeType(rawValue: dict["chargeType"] as? String ?? "standard")

@@ -1,4 +1,6 @@
 import Foundation
+import Core
+import PersistenceModels
 
 // Pure decision helpers and small value types for EventKit sync.
 
@@ -87,5 +89,33 @@ enum EventKitSyncPolicy {
 
     static func orderedOccurrenceDates(_ dates: [Date]) -> [Date] {
         dates.sorted()
+    }
+
+    /// Billing-basis protection: when a session is invoiced or already in a Hub billing
+    /// status, EventKit pull must not overwrite times/title/RRULE/notes.
+    /// Callers must also skip lat/lon updates and must not overwrite `lastModifiedDate`
+    /// from remote when this returns `false`.
+    static func shouldIncludeCoreFieldsOnPull(
+        hasInvoice: Bool,
+        statusToken: String?
+    ) -> Bool {
+        if hasInvoice { return false }
+        guard let statusToken,
+              let status = SessionStatus(normalized: statusToken) else {
+            return true
+        }
+        switch status {
+        case .completed, .grouped, .needsTravel, .reviewDraft:
+            return false
+        default:
+            return true
+        }
+    }
+
+    static func shouldIncludeCoreFieldsOnPull(for session: Session) -> Bool {
+        shouldIncludeCoreFieldsOnPull(
+            hasInvoice: session.invoice != nil,
+            statusToken: session.status?.token ?? session.statusToken
+        )
     }
 }

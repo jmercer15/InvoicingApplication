@@ -1,53 +1,38 @@
 @testable import SharedUI
-import XCTest
-
-final class FoldPaperKeyboardNavigationTests: XCTestCase {
-    func testKeyboardNavigationStartsAtDirectionalEdge() {
+import Testing
+@Suite struct FoldPaperKeyboardNavigationTests {
+    @Test func KeyboardNavigationStartsAtDirectionalEdge() {
         let ids = ["first", "middle", "last"]
 
-        XCTAssertEqual(
-            FoldPaperKeyboardNavigation.adjacentItemID(
+        #expect(FoldPaperKeyboardNavigation.adjacentItemID(
                 currentID: nil,
                 itemIDs: ids,
                 move: .next
-            ),
-            "first"
-        )
-        XCTAssertEqual(
-            FoldPaperKeyboardNavigation.adjacentItemID(
+            ) == "first")
+        #expect(FoldPaperKeyboardNavigation.adjacentItemID(
                 currentID: nil,
                 itemIDs: ids,
                 move: .previous
-            ),
-            "last"
-        )
+            ) == "last")
     }
 
-    func testKeyboardNavigationMovesAndClampsWithinVisibleRows() {
+    @Test func KeyboardNavigationMovesAndClampsWithinVisibleRows() {
         let ids = ["first", "middle", "last"]
 
-        XCTAssertEqual(
-            FoldPaperKeyboardNavigation.adjacentItemID(
+        #expect(FoldPaperKeyboardNavigation.adjacentItemID(
                 currentID: "middle",
                 itemIDs: ids,
                 move: .next
-            ),
-            "last"
-        )
-        XCTAssertEqual(
-            FoldPaperKeyboardNavigation.adjacentItemID(
+            ) == "last")
+        #expect(FoldPaperKeyboardNavigation.adjacentItemID(
                 currentID: "first",
                 itemIDs: ids,
                 move: .previous
-            ),
-            "first"
-        )
-        XCTAssertNil(
-            FoldPaperKeyboardNavigation.adjacentItemID(
+            ) == "first")
+        #expect(FoldPaperKeyboardNavigation.adjacentItemID(
                 currentID: nil,
                 itemIDs: [],
                 move: .next
-            )
-        )
+            ) == nil)
     }
 }

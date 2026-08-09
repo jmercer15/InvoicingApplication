@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 extension NDISItemImport {
     

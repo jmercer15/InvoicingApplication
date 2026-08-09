@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 extension NDISBillingService {
 
@@ -13,6 +14,40 @@ extension NDISBillingService {
             unitPrice: context.agreement.agreedPrice,
             claimType: "Direct"
         )
+    }
+
+    /// Self-managed plans still show travel on the invoice PDF; claimType kept for line identity.
+    func selfManagedTravelLines(_ context: NDISBillingInputVector) async throws -> [NDISClaimableLineItem] {
+        guard context.context.isActivityTransport || context.context.isProviderTravel else { return [] }
+
+        if context.context.isActivityTransport {
+            if let supportItem = try await lookupSupportItem(context.service.supportItemNumber),
+               !isEligibleForActivityTransport(supportItem),
+               hasTravelMoney(context) {
+                throw NDISBillingError.travelNotEligible(NDISBillingService.activityTravelNotEligibleReason)
+            }
+            if let transportClaim = try calculateActivityTransport(context) {
+                return [transportClaim]
+            }
+            return []
+        }
+
+        guard let supportItem = try await lookupSupportItem(context.service.supportItemNumber) else {
+            if hasTravelMoney(context) {
+                throw NDISBillingError.travelNotEligible(NDISBillingService.providerTravelNotEligibleReason)
+            }
+            return []
+        }
+        guard isEligibleForProviderTravel(supportItem) else {
+            if hasTravelMoney(context) {
+                throw NDISBillingError.travelNotEligible(NDISBillingService.providerTravelNotEligibleReason)
+            }
+            return []
+        }
+        let primaryRate = context.agreement.agreedPrice > 0
+            ? context.agreement.agreedPrice
+            : (try? getBaseRate(supportItem)) ?? 0
+        return try calculateProviderTravel(context, primaryRate, supportItem)
     }
 
     func createQuotableClaim(_ context: NDISBillingInputVector) throws -> NDISClaimableLineItem {
@@ -126,7 +161,7 @@ extension NDISBillingService {
         let price = fallbackRegionalPrice ?? 0
         return NDISServiceBooking(
             isStatedItemInPlan: entity.quoteRequired == true || entity.status?.lowercased() != "deactivated",
-            price: price
+            price: NSDecimalNumber(decimal: price).doubleValue
         )
     }
 }

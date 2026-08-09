@@ -20,4 +20,11 @@ public struct NDISLocation: Sendable {
         self.latitude = latitude
         self.longitude = longitude
     }
+
+    /// True when any address/postcode field is present (even without coordinates).
+    public var hasAddressOrPostcode: Bool {
+        !postcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !(suburb?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            || !(state?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
 }

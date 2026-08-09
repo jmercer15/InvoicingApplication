@@ -1,6 +1,6 @@
 import Core
-import Data
 import Foundation
+import SharedUI
 import SwiftData
 
 extension BillingHubViewModel {
@@ -14,7 +14,7 @@ extension BillingHubViewModel {
             }
             return sum
         }
-        return NumberFormatter.currency.string(from: total as NSDecimalNumber)
+        return CurrencyFormatting.display(total)
     }
 
     public func reorderInvoices(
@@ -53,8 +53,15 @@ extension BillingHubViewModel {
         }
     }
 
-    public func canAddSessionToGroup(sourceID _: UUID, groupID _: UUID) -> Bool {
-        return true
+    public func canAddSessionToGroup(sourceID: UUID, groupID: UUID) -> Bool {
+        guard case .session(let sourceCard) = boardProjection.card(for: sourceID) else { return false }
+        guard let targetGroup = boardProjection.groupedSessions.first(where: { $0.groupID == groupID }) else { return false }
+
+        if targetGroup.sessions.contains(where: { $0.id == sourceID }) { return true }
+
+        guard let firstMember = targetGroup.sessions.first, case .session(let firstCard) = firstMember else { return true }
+        guard let sourceClientID = sourceCard.clientID, let targetClientID = firstCard.clientID else { return false }
+        return sourceClientID == targetClientID
     }
 
     public func reorderInCompleted(sourceID: UUID, beforeTargetID _: UUID?) {
@@ -73,11 +80,12 @@ extension BillingHubViewModel {
 
     public func reorderGroupInGroupedColumn(sourceGroupID _: UUID, beforeTargetID _: UUID?) {}
     
+    /// Forward "next step" only — must be a legal `BillingTransitionRules` transition.
+    /// Grouped does not jump to Add Travel; draft creation is a separate action.
     public func nextColumn(for card: KanbanCardData) -> KanbanCardData.BillingColumnType? {
         switch card.columnType {
         case .completed: return .grouped
-        case .grouped: return .addTravel
-        case .addTravel: return .reviewDrafts
+        case .grouped, .addTravel: return nil
         case .reviewDrafts: return .readyToSend
         case .readyToSend: return .pending
         case .pending: return .received
@@ -85,14 +93,17 @@ extension BillingHubViewModel {
         }
     }
 
+    /// - Returns: `true` only when the move succeeded. Failures set `bulkActionFeedback`.
+    @discardableResult
     public func advanceCard(_ card: KanbanCardData) async -> Bool {
         guard let target = nextColumn(for: card) else { return false }
         switch card {
         case .session(let data):
-            await moveSession(data.sessionId, to: target)
+            let result = await moveSession(data.sessionId, to: target)
+            return result?.isSuccess == true
         case .invoice(let data):
-            await moveInvoice(data.invoiceId, to: target)
+            let result = await moveInvoice(data.invoiceId, to: target)
+            return result?.isSuccess == true
         }
-        return true
     }
 }

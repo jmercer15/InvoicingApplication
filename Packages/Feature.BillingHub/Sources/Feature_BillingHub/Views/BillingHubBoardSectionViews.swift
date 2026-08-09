@@ -1,8 +1,97 @@
 import SwiftUI
 import SharedUI
 
+struct BillingHubBoardOverviewBar: View {
+    let sections: [BillingHubBoardSectionPresentation]
+    let selectedSectionID: BillingHubBoardSectionID?
+    let onSelect: (BillingHubBoardSectionID) -> Void
+
+    var body: some View {
+        HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
+            Label("Pipeline", systemImage: "arrow.right.circle")
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundStyle(BillingHubTheme.Palette.textSecondary)
+                .fixedSize()
+                .accessibilityHidden(true)
+
+            ForEach(sections) { section in
+                Button {
+                    onSelect(section.id)
+                } label: {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
+                            Image(systemName: section.icon)
+                            Text(section.title)
+                                .lineLimit(1)
+                            Spacer(minLength: StyleGuide.Dimensions.paddingTiny)
+                            countBadge(section.count, tint: section.tint)
+                        }
+
+                        HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
+                            Image(systemName: section.icon)
+                            countBadge(section.count, tint: section.tint)
+                        }
+                    }
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundStyle(
+                        selectedSectionID == section.id
+                            ? section.tint
+                            : BillingHubTheme.Palette.textSecondary
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+                    .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
+                    .background {
+                        RoundedRectangle(
+                            cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall,
+                            style: .continuous
+                        )
+                        .fill(
+                            section.tint.opacity(
+                                selectedSectionID == section.id ? 0.14 : 0.05
+                            )
+                        )
+                    }
+                    .overlay {
+                        RoundedRectangle(
+                            cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall,
+                            style: .continuous
+                        )
+                        .strokeBorder(
+                            section.tint.opacity(
+                                selectedSectionID == section.id ? 0.34 : 0.10
+                            )
+                        )
+                    }
+                }
+                .buttonStyle(.plain)
+                .billingHubPointerStyle(.link)
+                .help("Show \(section.title): \(section.summary)")
+                .accessibilityLabel(
+                    "\(section.title), \(section.itemCountLabel)"
+                )
+                .accessibilityHint("Scrolls to this billing stage and expands it.")
+            }
+        }
+        .padding(.horizontal, BillingHubTheme.Dimensions.boardPadding)
+        .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
+        .background(BillingHubTheme.Surfaces.panelBase.opacity(0.72))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func countBadge(_ count: Int, tint: Color) -> some View {
+        Text("\(count)")
+            .font(BillingHubTheme.Typography.cardMetadata.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.10), in: Capsule())
+    }
+}
+
 struct BillingHubDemoSectionContainer: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let section: BillingHubBoardSectionPresentation
     @Binding var isCollapsed: Bool
     @Binding var selectedCardID: UUID?
@@ -16,23 +105,24 @@ struct BillingHubDemoSectionContainer: View {
                     title: section.title,
                     icon: section.icon,
                     color: section.tint,
-                    count: "\(section.count)",
+                    count: section.count,
                     isCollapsed: $isCollapsed
                 )
             } else {
                 VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingMedium) {
                     BillingHubDemoSectionHeader(
                         title: section.title,
+                        summary: section.summary,
                         icon: section.icon,
                         color: section.tint,
-                        count: "\(section.count)",
+                        count: section.count,
                         isCollapsed: $isCollapsed
                     )
 
                     HStack(alignment: .top, spacing: BillingHubTheme.Dimensions.laneSpacing) {
                         ForEach(section.lanes) { lane in
                             BillingHubDemoLaneColumn(
-                                viewModel: viewModel,
+                                cardActions: cardActions,
                                 lane: lane,
                                 selectedCardID: $selectedCardID,
                                 interactionState: interactionState,
@@ -49,9 +139,10 @@ struct BillingHubDemoSectionContainer: View {
 
 private struct BillingHubDemoSectionHeader: View {
     let title: String
+    let summary: String
     let icon: String
     let color: Color
-    let count: String
+    let count: Int
     @Binding var isCollapsed: Bool
 
     var body: some View {
@@ -68,9 +159,13 @@ private struct BillingHubDemoSectionHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(BillingHubTheme.Typography.sectionTitle)
-                Text("\(count) items")
+                Text(summary)
                     .font(BillingHubTheme.Typography.sectionCount)
                     .foregroundStyle(BillingHubTheme.Palette.textSecondary)
+                    .lineLimit(2)
+                Text(BillingHubBoardCopy.itemCount(count))
+                    .font(BillingHubTheme.Typography.cardMetadata)
+                    .foregroundStyle(color)
             }
 
             Spacer(minLength: 12)
@@ -91,6 +186,8 @@ private struct BillingHubDemoSectionHeader: View {
             }
             .buttonStyle(.plain)
             .billingHubPointerStyle(.link)
+            .accessibilityLabel("Collapse \(title) section")
+            .accessibilityHint("Hides this section’s billing lanes.")
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
     }
@@ -100,12 +197,10 @@ private struct BillingHubDemoCollapsedSectionBar: View {
     let title: String
     let icon: String
     let color: Color
-    let count: String
+    let count: Int
     @Binding var isCollapsed: Bool
 
     var body: some View {
-        let characters = Array(title.reversed()).map(String.init)
-
         Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
                 isCollapsed = false
@@ -116,18 +211,15 @@ private struct BillingHubDemoCollapsedSectionBar: View {
                     .font(BillingHubTheme.Typography.collapsedBarIcon)
                     .foregroundStyle(color)
 
-                VStack(spacing: -4) {
-                    ForEach(Array(characters.enumerated()), id: \.offset) { _, character in
-                        Text(character)
-                            .rotationEffect(.degrees(-90))
-                    }
-                }
+                Text(title)
                 .font(BillingHubTheme.Typography.sectionTitle)
                 .foregroundStyle(BillingHubTheme.Palette.textPrimary.opacity(0.85))
-                .fixedSize(horizontal: true, vertical: true)
+                .lineLimit(1)
+                .fixedSize()
+                .rotationEffect(.degrees(-90))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text(count)
+                Text("\(count)")
                     .font(BillingHubTheme.Typography.collapsedBarCount)
                     .foregroundStyle(color)
 
@@ -143,6 +235,8 @@ private struct BillingHubDemoCollapsedSectionBar: View {
         .buttonStyle(.plain)
         .clipShape(RoundedRectangle(cornerRadius: BillingHubTheme.Dimensions.collapsedBarCornerRadius, style: .continuous))
         .billingHubPointerStyle(.link)
+        .accessibilityLabel("Expand \(title) section, \(BillingHubBoardCopy.itemCount(count))")
+        .accessibilityHint("Shows this section’s billing lanes.")
     }
 
     private var background: some View {
@@ -157,7 +251,7 @@ private struct BillingHubDemoCollapsedSectionBar: View {
 }
 
 private struct BillingHubDemoLaneColumn: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let lane: BillingHubLanePresentation
     @Binding var selectedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -174,6 +268,7 @@ private struct BillingHubDemoLaneColumn: View {
         .frame(width: BillingHubTheme.Dimensions.laneWidth, alignment: .top)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(laneBackground)
+        .focusSection()
     }
 
     @ViewBuilder
@@ -181,7 +276,7 @@ private struct BillingHubDemoLaneColumn: View {
         switch lane.content {
         case let .cards(cards, dropPolicy, canAcceptDrop, onReorderBetween):
             BillingHubReorderableColumn(
-                viewModel: viewModel,
+                cardActions: cardActions,
                 cards: cards,
                 selectedCardID: $selectedCardID,
                 interactionState: interactionState,
@@ -189,7 +284,8 @@ private struct BillingHubDemoLaneColumn: View {
                 canAcceptDrop: canAcceptDrop,
                 onReorderBetween: onReorderBetween,
                 onOpenCard: onOpenCard,
-                searchText: lane.searchText
+                searchText: lane.searchText,
+                emptyStateMessage: lane.emptyStateMessage
             )
         case let .grouped(
             groups,
@@ -205,7 +301,7 @@ private struct BillingHubDemoLaneColumn: View {
             canAddSessionToGroup
         ):
             BillingHubGroupedReorderableColumn(
-                viewModel: viewModel,
+                cardActions: cardActions,
                 groups: groups,
                 selectedCardID: $selectedCardID,
                 interactionState: interactionState,
@@ -220,7 +316,8 @@ private struct BillingHubDemoLaneColumn: View {
                 onAddSessionToGroup: onAddSessionToGroup,
                 canAddSessionToGroup: canAddSessionToGroup,
                 onOpenCard: onOpenCard,
-                searchText: lane.searchText
+                searchText: lane.searchText,
+                emptyStateMessage: lane.emptyStateMessage
             )
         }
     }
@@ -249,9 +346,24 @@ private struct BillingHubDemoLaneHeader: View {
                         .foregroundStyle(lane.tint)
                 }
 
-            Text(lane.title)
-                .font(BillingHubTheme.Typography.sectionTitle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(lane.title)
+                    .font(BillingHubTheme.Typography.sectionTitle)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 5) {
+                    Text(lane.itemCountLabel)
+                        .font(BillingHubTheme.Typography.cardMetadata.weight(.bold))
+                    if let total = lane.total {
+                        Text(total)
+                            .font(BillingHubTheme.Typography.cardMetadata)
+                            .lineLimit(1)
+                    }
+                }
+                .foregroundStyle(BillingHubTheme.Palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let sortOption = lane.sortOption, let onSortChange = lane.onSortChange {
                 BillingHubLaneSortMenu(
@@ -299,7 +411,9 @@ private struct BillingHubLaneSortMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Sort lane")
+        .help("Sort lane. Current: \(sortOption.displayName)")
+        .accessibilityLabel("Sort lane")
+        .accessibilityValue(sortOption.displayName)
     }
 
     private func isOptionVisible(_ option: ColumnSortOption) -> Bool {

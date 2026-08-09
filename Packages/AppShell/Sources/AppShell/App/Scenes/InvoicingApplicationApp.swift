@@ -29,10 +29,11 @@ public struct InvoicingApplicationSceneTree: Scene {
             SessionPhaseRoot(
                 phase: session.phase,
                 retry: { await session.bootstrap() },
+                startFresh: { await session.startFresh() },
                 loading: { WorkspaceStartupLoadingView() },
                 ready: { runtime in
                     WorkspaceWindowRoot(runtime: runtime)
-                        .modelContainer(runtime.modelContainer)
+                        .manualSaveModelContext(container: runtime.modelContainer)
                 }
             )
             .environment(workspaceContext)
@@ -58,10 +59,11 @@ public struct InvoicingApplicationSceneTree: Scene {
             SessionPhaseRoot(
                 phase: session.phase,
                 retry: { await session.bootstrap() },
+                startFresh: { await session.startFresh() },
                 loading: { SettingsStartupLoadingView() },
                 ready: { runtime in
                     SettingsSceneRoot(runtime: runtime)
-                        .modelContainer(runtime.modelContainer)
+                        .manualSaveModelContext(container: runtime.modelContainer)
                 }
             )
             .environment(workspaceContext)
@@ -75,10 +77,11 @@ public struct InvoicingApplicationSceneTree: Scene {
             SessionPhaseRoot(
                 phase: session.phase,
                 retry: { await session.bootstrap() },
+                startFresh: { await session.startFresh() },
                 loading: { ActivityPlaceholderLoadingView() },
                 ready: { runtime in
                     InspectorSceneRoot(runtime: runtime)
-                        .modelContainer(runtime.modelContainer)
+                        .manualSaveModelContext(container: runtime.modelContainer)
                 }
             )
             .environment(workspaceContext)
@@ -95,10 +98,11 @@ public struct InvoicingApplicationSceneTree: Scene {
             SessionPhaseRoot(
                 phase: session.phase,
                 retry: { await session.bootstrap() },
+                startFresh: { await session.startFresh() },
                 loading: { ActivityPlaceholderLoadingView() },
                 ready: { runtime in
                     ActivitySceneRoot(runtime: runtime)
-                        .modelContainer(runtime.modelContainer)
+                        .manualSaveModelContext(container: runtime.modelContainer)
                 }
             )
             .environment(workspaceContext)

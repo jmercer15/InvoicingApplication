@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import SharedUI
 import WorkspaceUI
 

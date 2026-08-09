@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 #if canImport(AppKit)
@@ -12,33 +13,39 @@ import UIKit
 /// Provides data export capabilities for the InvoicingApplication
 public struct SwiftDataExportService {
     private static let jsonWriteOptions: JSONSerialization.WritingOptions = []
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
 
     // MARK: - Export
-    public static func exportAllEntitiesToJSON(context: ModelContext) throws -> Data {
-        let exportDict = try collectEntityDictionaries(context: context)
+    public static func exportAllEntitiesToJSON(
+        context: ModelContext,
+        redaction: ExportRedactionPreset = .none
+    ) throws -> Data {
+        let exportDict = try collectEntityDictionaries(context: context, redaction: redaction)
         return try JSONSerialization.data(withJSONObject: exportDict, options: jsonWriteOptions)
     }
 
-    public static func exportToFile(context: ModelContext, format: SwiftDataExportFormat = .json) throws -> (Data, String) {
+    public static func exportToFile(
+        context: ModelContext,
+        format: SwiftDataExportFormat = .json,
+        redaction: ExportRedactionPreset = .none
+    ) throws -> (Data, String) {
         switch format {
         case .json:
-            let data = try exportAllEntitiesToJSON(context: context)
-            let timestamp = DateFormatter.exportTimestamp.string(from: Date())
+            let data = try exportAllEntitiesToJSON(context: context, redaction: redaction)
+            let timestamp = ExportMachineFormatting.exportTimestamp()
             let filename = "InvoicingApp-Export-\(timestamp).json"
             return (data, filename)
 
         case .csv:
-            let exportDict = try collectEntityDictionaries(context: context)
+            let exportDict = try collectEntityDictionaries(context: context, redaction: redaction)
             let csvString = buildCSV(from: exportDict)
-            let timestamp = DateFormatter.exportTimestamp.string(from: Date())
+            let timestamp = ExportMachineFormatting.exportTimestamp()
             let filename = "InvoicingApp-Export-\(timestamp).csv"
             return (Data(csvString.utf8), filename)
 
         case .excel:
-            let exportDict = try collectEntityDictionaries(context: context)
+            let exportDict = try collectEntityDictionaries(context: context, redaction: redaction)
             let workbookXML = buildSpreadsheetML(from: exportDict)
-            let timestamp = DateFormatter.exportTimestamp.string(from: Date())
+            let timestamp = ExportMachineFormatting.exportTimestamp()
             let filename = "InvoicingApp-Export-\(timestamp).xml"
             return (Data(workbookXML.utf8), filename)
         }
@@ -52,20 +59,15 @@ public enum SwiftDataExportFormat {
     case excel
 }
 
-extension DateFormatter {
-    static let exportTimestamp: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        return formatter
-    }()
-}
-
 // MARK: - Private Helpers
 private extension SwiftDataExportService {
-    static func collectEntityDictionaries(context: ModelContext) throws -> [String: [[String: Any]]] {
+    static func collectEntityDictionaries(
+        context: ModelContext,
+        redaction: ExportRedactionPreset = .none
+    ) throws -> [String: [[String: Any]]] {
         var exportDict: [String: [[String: Any]]] = [:]
 
-        let iso = Self.isoFormatter
+        let iso = ISO8601DateFormatter()
 
         // 1. Address
         let addressDescriptor = FetchDescriptor<Address>()
@@ -472,7 +474,7 @@ private extension SwiftDataExportService {
             return dict
         }
 
-        return exportDict
+        return ExportFieldRedactor.redactExportPayload(exportDict, preset: redaction)
     }
 
     static func encodedBase64<T: Encodable>(_ value: T?) -> String? {
@@ -561,7 +563,7 @@ private extension SwiftDataExportService {
     static func stringify(_ value: Any) -> String {
         switch value {
         case let date as Date:
-            return isoFormatter.string(from: date)
+            return ISO8601DateFormatter().string(from: date)
         case let number as NSNumber:
             return number.stringValue
         case let bool as Bool:

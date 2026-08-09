@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - ClientSnapshot
 
@@ -22,7 +21,7 @@ public struct ClientSnapshot: Sendable, Equatable, Hashable {
     public let supportStartDate: Date?
     public let latitude: Double
     public let longitude: Double
-    public let creditAmount: Double
+    public let creditAmount: Decimal
     public let isMinor: Bool
     public let hasNdisPlan: Bool
     public let planManagementType: String?
@@ -32,27 +31,49 @@ public struct ClientSnapshot: Sendable, Equatable, Hashable {
     public let sendInvoicesToPayee: Bool?
     public let sendInvoicesToPlanManager: Bool?
 
-    public init(_ client: Client) {
-        self.id = client.id
-        self.ndisNumber = client.ndisNumber
-        self.fullName = client.fullName
-        self.effectiveStatus = client.effectiveStatus
-        self.email = client.email
-        self.notes = client.notes
-        self.phoneNumber = client.phoneNumber
-        self.dateOfBirth = client.dateOfBirth
-        self.supportStartDate = client.supportStartDate
-        self.latitude = client.latitude
-        self.longitude = client.longitude
-        self.creditAmount = client.creditAmount
-        self.isMinor = client.isMinor
-        self.hasNdisPlan = client.hasNdisPlan
-        self.planManagementType = client.planManagementType
-        self.billingAuthority = client.billingAuthority
-        self.address = client.address.map(AddressSnapshot.init)
-        self.sendInvoicesToClient = client.sendInvoicesToClient
-        self.sendInvoicesToPayee = client.sendInvoicesToPayee
-        self.sendInvoicesToPlanManager = client.sendInvoicesToPlanManager
-    }
-}
 
+    public init(
+        id: UUID,
+        ndisNumber: String,
+        fullName: String,
+        effectiveStatus: ClientStatus,
+        email: String?,
+        notes: String?,
+        phoneNumber: String?,
+        dateOfBirth: Date?,
+        supportStartDate: Date?,
+        latitude: Double,
+        longitude: Double,
+        creditAmount: Decimal,
+        isMinor: Bool,
+        hasNdisPlan: Bool,
+        planManagementType: String?,
+        billingAuthority: BillingAuthority?,
+        address: AddressSnapshot?,
+        sendInvoicesToClient: Bool?,
+        sendInvoicesToPayee: Bool?,
+        sendInvoicesToPlanManager: Bool?
+    ) {
+        self.id = id
+        self.ndisNumber = ndisNumber
+        self.fullName = fullName
+        self.effectiveStatus = effectiveStatus
+        self.email = email
+        self.notes = notes
+        self.phoneNumber = phoneNumber
+        self.dateOfBirth = dateOfBirth
+        self.supportStartDate = supportStartDate
+        self.latitude = latitude
+        self.longitude = longitude
+        self.creditAmount = creditAmount
+        self.isMinor = isMinor
+        self.hasNdisPlan = hasNdisPlan
+        self.planManagementType = planManagementType
+        self.billingAuthority = billingAuthority
+        self.address = address
+        self.sendInvoicesToClient = sendInvoicesToClient
+        self.sendInvoicesToPayee = sendInvoicesToPayee
+        self.sendInvoicesToPlanManager = sendInvoicesToPlanManager
+    }
+
+}

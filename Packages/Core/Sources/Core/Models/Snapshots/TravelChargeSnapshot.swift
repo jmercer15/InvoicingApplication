@@ -6,14 +6,13 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - TravelChargeSnapshot
 
 public struct TravelChargeSnapshot: Sendable, Equatable, Hashable {
     public let id: UUID
     public let mmmZoneName: String?
-    public let chargeAmount: Double?
+    public let chargeAmount: Decimal?
     public let distanceKM: Double?
     public let durationMinutes: Double?
     public let location: String?
@@ -33,15 +32,15 @@ public struct TravelChargeSnapshot: Sendable, Equatable, Hashable {
     public let vehicleType: VehicleType?
     public let participantCount: Int16?
     public let splitCosts: Bool?
-    public let parkingCost: Double?
-    public let tollCost: Double?
+    public let parkingCost: Decimal?
+    public let tollCost: Decimal?
     public let sessionId: UUID?
     public let clientId: UUID?
     public let serviceId: UUID?
 
     public init(
         id: UUID,
-        chargeAmount: Double? = nil,
+        chargeAmount: Decimal? = nil,
         distanceKM: Double? = nil,
         durationMinutes: Double? = nil,
         location: String? = nil,
@@ -51,8 +50,8 @@ public struct TravelChargeSnapshot: Sendable, Equatable, Hashable {
         vehicleType: VehicleType? = nil,
         participantCount: Int16? = 1,
         splitCosts: Bool? = false,
-        parkingCost: Double? = nil,
-        tollCost: Double? = nil,
+        parkingCost: Decimal? = nil,
+        tollCost: Decimal? = nil,
         notes: String? = nil,
         startTime: Date? = nil,
         endTime: Date? = nil,
@@ -97,36 +96,5 @@ public struct TravelChargeSnapshot: Sendable, Equatable, Hashable {
         self.serviceId = serviceId
     }
 
-    public init(_ charge: TravelCharge) {
-        self.init(
-            id: charge.id,
-            chargeAmount: charge.chargeAmount,
-            distanceKM: charge.distanceKM,
-            durationMinutes: charge.durationMinutes,
-            location: charge.location,
-            effectiveStatus: charge.effectiveStatus,
-            travelType: charge.travelType,
-            travelDirection: charge.travelDirection,
-            vehicleType: charge.vehicleType,
-            participantCount: charge.participantCount,
-            splitCosts: charge.splitCosts,
-            parkingCost: charge.parkingCost,
-            tollCost: charge.tollCost,
-            notes: charge.notes,
-            startTime: charge.startTime,
-            endTime: charge.endTime,
-            title: charge.title,
-            ekEventID: charge.ekEventID,
-            ekCalendarID: charge.ekCalendarID,
-            ekCreationDate: charge.ekCreationDate,
-            ekLastModifiedDate: charge.ekLastModifiedDate,
-            latitude: charge.latitude,
-            longitude: charge.longitude,
-            mmmZoneName: charge.mmmZoneName,
-            sessionId: charge.linkedSession?.id,
-            clientId: charge.client?.id,
-            serviceId: charge.service?.id
-        )
-    }
 }
 

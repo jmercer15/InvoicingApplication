@@ -1,11 +1,14 @@
 import Core
-import XCTest
+import DataInterfaces
+import Foundation
+import PersistenceModels
+import Testing
 import SwiftData
 @testable import Feature_NDIS
 
 @MainActor
-final class NDISContainerViewModelTests: XCTestCase {
-    func testUpdateSourceItemsBuildsProjectionOnce() async {
+@Suite struct NDISContainerViewModelTests {
+    @Test func UpdateSourceItemsBuildsProjectionOnce() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
@@ -13,15 +16,15 @@ final class NDISContainerViewModelTests: XCTestCase {
 
         await viewModel.refreshItems(sourceItems.map { $0.snapshot() })
 
-        XCTAssertEqual(viewModel.catalogueProjection.totalItemCount, 3)
-        XCTAssertEqual(viewModel.catalogueProjection.filteredItems.count, 3)
-        XCTAssertEqual(viewModel.catalogueProjection.categories, ["Capacity Building", "Core"])
+        #expect(viewModel.catalogueProjection.totalItemCount == 3)
+        #expect(viewModel.catalogueProjection.filteredItems.count == 3)
+        #expect(viewModel.catalogueProjection.categories == ["Capacity Building", "Core"])
 
         await viewModel.refreshItems(sourceItems.map { $0.snapshot() })
-        XCTAssertEqual(viewModel.catalogueProjection.totalItemCount, 3)
+        #expect(viewModel.catalogueProjection.totalItemCount == 3)
     }
 
-    func testSearchAndCategoryFiltersReuseCachedItems() async {
+    @Test func SearchAndCategoryFiltersReuseCachedItems() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
@@ -43,7 +46,7 @@ final class NDISContainerViewModelTests: XCTestCase {
         }
     }
 
-    func testSelectionResolvesImmediatelyAgainstCachedItems() async {
+    @Test func SelectionResolvesImmediatelyAgainstCachedItems() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
@@ -53,33 +56,33 @@ final class NDISContainerViewModelTests: XCTestCase {
 
         viewModel.selectedItemID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")
 
-        XCTAssertEqual(viewModel.resolvedSelectedItem?.itemNumber, "15_001")
-        XCTAssertEqual(viewModel.resolvedSelectedItem?.name, "Plan Management Setup")
+        #expect(viewModel.resolvedSelectedItem?.itemNumber == "15_001")
+        #expect(viewModel.resolvedSelectedItem?.name == "Plan Management Setup")
     }
 
-    func testLoadCatalogueStateChanges() async {
+    @Test func LoadCatalogueStateChanges() async {
         let context = try! makeInMemoryContext()
         let viewModel = makeViewModel(modelContext: context)
 
-        XCTAssertFalse(viewModel.hasLoadedCatalogue)
-        XCTAssertNil(viewModel.loadError)
+        #expect(!(viewModel.hasLoadedCatalogue))
+        #expect(viewModel.loadError == nil)
 
         viewModel.loadCatalogue(force: true)
         
         await assertEventually("hasLoadedCatalogue becomes true") {
             viewModel.hasLoadedCatalogue == true
         }
-        XCTAssertNil(viewModel.loadError)
+        #expect(viewModel.loadError == nil)
     }
 
-    func testRegionIdentifierMappingAndPreferredRegion() async {
+    @Test func RegionIdentifierMappingAndPreferredRegion() async {
         let context = try! makeInMemoryContext()
         let viewModel = makeViewModel(modelContext: context)
         
         // Test nil business
         viewModel.refreshPreferredRegion(using: nil)
-        XCTAssertTrue(viewModel.hasResolvedPreferredRegion)
-        XCTAssertNil(viewModel.preferredRegionIdentifier)
+        #expect(viewModel.hasResolvedPreferredRegion)
+        #expect(viewModel.preferredRegionIdentifier == nil)
         
         // Test unknown state
         let address1 = Address()
@@ -87,7 +90,7 @@ final class NDISContainerViewModelTests: XCTestCase {
         let business1 = Business(abn: "123")
         business1.address = address1
         viewModel.refreshPreferredRegion(using: business1)
-        XCTAssertNil(viewModel.preferredRegionIdentifier)
+        #expect(viewModel.preferredRegionIdentifier == nil)
         
         // Test various representations of NSW
         for state in ["NSW", "New South Wales", "N.S.W.", "nsw", "  N.S.W.  "] {
@@ -96,7 +99,7 @@ final class NDISContainerViewModelTests: XCTestCase {
             let business = Business(abn: "123")
             business.address = address
             viewModel.refreshPreferredRegion(using: business)
-            XCTAssertEqual(viewModel.preferredRegionIdentifier, "NSW", "Should resolve \(state) to NSW")
+            #expect(viewModel.preferredRegionIdentifier == "NSW", "Should resolve \(state) to NSW")
         }
         
         // Test abbreviation matching fallback
@@ -105,10 +108,10 @@ final class NDISContainerViewModelTests: XCTestCase {
         let businessACT = Business(abn: "123")
         businessACT.address = addressACT
         viewModel.refreshPreferredRegion(using: businessACT)
-        XCTAssertEqual(viewModel.preferredRegionIdentifier, "ACT")
+        #expect(viewModel.preferredRegionIdentifier == "ACT")
     }
 
-    func testLoadCatalogueConcurrentlyDoesNotCrash() async {
+    @Test func LoadCatalogueConcurrentlyDoesNotCrash() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
@@ -121,37 +124,66 @@ final class NDISContainerViewModelTests: XCTestCase {
             viewModel.hasLoadedCatalogue == true
         }
 
-        XCTAssertNil(viewModel.loadError)
-        XCTAssertEqual(viewModel.catalogueProjection.totalItemCount, 3)
+        await assertEventually("catalogue projection loads three items") {
+            viewModel.catalogueProjection.totalItemCount == 3
+        }
     }
 
-    func testFetchChangesSummarySuccess() async {
+    @Test func LoadCatalogueIgnoresStaleCompletion() async {
+        let fetcher = SequencedCatalogueFetcher()
+        let viewModel = NDISContainerViewModel(catalogueFetching: fetcher)
+        let oldItem = makeSnapshot(id: 1, itemNumber: "01_OLD", name: "Old Catalogue")
+        let newItem = makeSnapshot(id: 2, itemNumber: "01_NEW", name: "New Catalogue")
+
+        viewModel.loadCatalogue(force: true)
+        await assertEventually("first load is pending") {
+            fetcher.pendingCallCount == 1
+        }
+
+        viewModel.loadCatalogue(force: true)
+        await assertEventually("second load is pending") {
+            fetcher.pendingCallCount == 2
+        }
+
+        fetcher.completeCall(at: 1, with: [newItem])
+        await assertEventually("newer load wins") {
+            viewModel.catalogueProjection.filteredItems.map(\.itemNumber) == ["01_NEW"]
+        }
+
+        fetcher.completeCall(at: 0, with: [oldItem])
+        _ = await Task.waitUnlessCancelled(for: .milliseconds(100))
+
+        #expect(viewModel.catalogueProjection.filteredItems.map(\.itemNumber) == ["01_NEW"])
+        #expect(viewModel.loadError == nil)
+    }
+
+    @Test func FetchChangesSummarySuccess() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
 
         await viewModel.fetchChangesSummary()
-        XCTAssertFalse(viewModel.isAnalyzingChanges)
-        XCTAssertNotNil(viewModel.changesSummary)
-        XCTAssertNil(viewModel.changesError)
-        XCTAssertEqual(viewModel.changesSummary?.totalUniqueItems, 3)
+        #expect(!(viewModel.isAnalyzingChanges))
+        #expect(viewModel.changesSummary != nil)
+        #expect(viewModel.changesError == nil)
+        #expect(viewModel.changesSummary?.totalUniqueItems == 3)
     }
 
-    func testLoadItemHistoryDoesNotCrashWithAtLeastOneVersion() async {
+    @Test func LoadItemHistoryDoesNotCrashWithAtLeastOneVersion() async {
         let context = try! makeInMemoryContext()
         insertSampleItems(into: context)
         let viewModel = makeViewModel(modelContext: context)
 
-        XCTAssertFalse(viewModel.isAnalyzingChanges)
-        XCTAssertTrue(viewModel.itemChanges.isEmpty)
+        #expect(!(viewModel.isAnalyzingChanges))
+        #expect(viewModel.itemChanges.isEmpty)
 
         await viewModel.loadItemHistory(for: "15_001")
 
-        XCTAssertFalse(viewModel.isAnalyzingChanges)
-        XCTAssertTrue(viewModel.itemChanges.isEmpty)
+        #expect(!(viewModel.isAnalyzingChanges))
+        #expect(viewModel.itemChanges.isEmpty)
     }
 
-    func testClearAllFiltersResetsState() async {
+    @Test func ClearAllFiltersResetsState() async {
         let context = try! makeInMemoryContext()
         let viewModel = makeViewModel(modelContext: context)
 
@@ -165,17 +197,17 @@ final class NDISContainerViewModelTests: XCTestCase {
 
         viewModel.clearAllFilters()
 
-        XCTAssertEqual(viewModel.quoteFilter, .all)
-        XCTAssertTrue(viewModel.currentSelectedFeatures.isEmpty)
-        XCTAssertTrue(viewModel.currentSelectedUnits.isEmpty)
-        XCTAssertNil(viewModel.selectedCategoryId)
-        XCTAssertNil(viewModel.selectedRegistrationGroup)
-        XCTAssertEqual(viewModel.searchText, "")
-        XCTAssertEqual(viewModel.itemVersionFilter, .currentOnly)
+        #expect(viewModel.quoteFilter == .all)
+        #expect(viewModel.currentSelectedFeatures.isEmpty)
+        #expect(viewModel.currentSelectedUnits.isEmpty)
+        #expect(viewModel.selectedCategoryId == nil)
+        #expect(viewModel.selectedRegistrationGroup == nil)
+        #expect(viewModel.searchText == "")
+        #expect(viewModel.itemVersionFilter == .currentOnly)
     }
 
     private func makeViewModel(modelContext: ModelContext) -> NDISContainerViewModel {
-        NDISContainerViewModel(modelContext: modelContext)
+        NDISContainerViewModel(catalogueFetching: TestCatalogueFetcher(context: modelContext))
     }
 
     private func makeInMemoryContext() throws -> ModelContext {
@@ -247,6 +279,35 @@ final class NDISContainerViewModelTests: XCTestCase {
         try? context.save()
     }
 
+    private func makeSnapshot(id: Int, itemNumber: String, name: String) -> NDISItemSnapshot {
+        NDISItemSnapshot(
+            id: UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", id))")!,
+            itemNumber: itemNumber,
+            name: name,
+            versionIdentifier: "v1",
+            isCurrent: true,
+            category: "Core",
+            effectiveStartDate: nil,
+            effectiveEndDate: nil,
+            features: nil,
+            itemDescription: nil,
+            ndiaRequestedReports: false,
+            nonFaceToFaceProvision: false,
+            providerTravel: false,
+            quoteRequired: false,
+            registrationGroup: nil,
+            registrationGroupNumber: nil,
+            shortNoticeCancellations: false,
+            irregularSILSupports: false,
+            status: "Active",
+            type: "Standard",
+            unit: "Hour",
+            regionalPrices: [],
+            price: nil,
+            effectiveDateRange: ""
+        )
+    }
+
     private func assertEventually(
         _ description: String,
         pollInterval: Duration = .milliseconds(25),
@@ -257,9 +318,69 @@ final class NDISContainerViewModelTests: XCTestCase {
             if condition() {
                 return
             }
-            try? await Task.sleep(for: pollInterval)
+            guard await Task.waitUnlessCancelled(for: pollInterval) else { return }
         }
 
-        XCTFail(description)
+        Issue.record("\(description)")
     }
+}
+
+@MainActor
+private final class TestCatalogueFetcher: NDISCatalogueFetching {
+    private let context: ModelContext
+
+    init(context: ModelContext) {
+        self.context = context
+    }
+
+    func fetchNDISItemSnapshots() async throws -> [NDISItemSnapshot] {
+        try await MainActor.run {
+            try context.fetch(FetchDescriptor<NDISItem>()).map { $0.snapshot() }
+        }
+    }
+
+    func getChangesSummary() async throws -> NDISChangesSummary {
+        try await MainActor.run {
+            let items = try context.fetch(FetchDescriptor<NDISItem>())
+            let unique = Set(items.map(\.itemNumber)).count
+            return NDISChangesSummary(
+                totalUniqueItems: unique,
+                totalVersions: items.count,
+                currentItems: items.filter(\.isCurrent).count,
+                historicalItems: items.filter { !$0.isCurrent }.count,
+                itemsWithChanges: 0
+            )
+        }
+    }
+
+    func analyzeItemChanges(itemNumber: String) async throws -> [NDISItemChange] { [] }
+}
+
+@MainActor
+private final class SequencedCatalogueFetcher: NDISCatalogueFetching {
+    private var continuations: [CheckedContinuation<[NDISItemSnapshot], any Error>] = []
+
+    var pendingCallCount: Int { continuations.count }
+
+    func fetchNDISItemSnapshots() async throws -> [NDISItemSnapshot] {
+        try await withCheckedThrowingContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func completeCall(at index: Int, with snapshots: [NDISItemSnapshot]) {
+        continuations[index].resume(returning: snapshots)
+    }
+
+    func getChangesSummary() async throws -> NDISChangesSummary {
+        NDISChangesSummary(
+            totalUniqueItems: 0,
+            totalVersions: 0,
+            currentItems: 0,
+            historicalItems: 0,
+            itemsWithChanges: 0
+        )
+    }
+
+    func analyzeItemChanges(itemNumber: String) async throws -> [NDISItemChange] { [] }
 }

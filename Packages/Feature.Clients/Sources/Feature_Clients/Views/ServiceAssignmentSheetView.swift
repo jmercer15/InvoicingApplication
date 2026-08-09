@@ -1,20 +1,17 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 
 struct ServiceAssignmentSheetView: View {
-    let client: Client
+    @Bindable private var viewModel: ServiceAssignmentViewModel
     let onProceed: ([NDISItem]) -> Void
     let alreadySelectedItems: [NDISItem]
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
 
-    @State private var availableNDISItems: [NDISItem] = []
-    @State private var isLoadingItems: Bool = false
     @State private var selectedItemIDs: Set<UUID> = []
     @State private var filteredItems: [NDISItem] = []
     @State private var searchText: String = ""
@@ -26,11 +23,11 @@ struct ServiceAssignmentSheetView: View {
     @State private var selectedSortOption: ServiceAssignmentSortOption = .defaultOrder
 
     init(
-        client: Client,
+        viewModel: ServiceAssignmentViewModel,
         alreadySelectedItems: [NDISItem],
         onProceed: @escaping ([NDISItem]) -> Void
     ) {
-        self.client = client
+        self._viewModel = Bindable(viewModel)
         self.onProceed = onProceed
         self.alreadySelectedItems = alreadySelectedItems
     }
@@ -40,7 +37,7 @@ struct ServiceAssignmentSheetView: View {
             // Re-using the header from NDISCatalogueView
             header
 
-            if isLoadingItems {
+            if viewModel.isLoadingItems {
                 LoadingView("Loading catalog...")
                     .frame(maxHeight: .infinity)
             } else if filteredItems.isEmpty {
@@ -57,24 +54,11 @@ struct ServiceAssignmentSheetView: View {
                 selectedItemIDs.insert(item.id)
             }
         }
-        .task { @MainActor in
-            isLoadingItems = true
-            let actor = ReferenceDataWorkflowActor(modelContainer: modelContext.container)
-            do {
-                let ids = try await actor.fetchAllNDISItemIDs()
-                let descriptor = FetchDescriptor<NDISItem>(
-                    predicate: #Predicate { ids.contains($0.persistentModelID) }
-                )
-                let items = (try? modelContext.fetch(descriptor)) ?? []
-                self.availableNDISItems = items
-                self.updateFilteredItems()
-                self.isLoadingItems = false
-            } catch {
-                print("Failed to fetch NDIS items: \(error)")
-                self.isLoadingItems = false
-            }
+        .task {
+            await viewModel.loadCatalogue()
+            updateFilteredItems()
         }
-        .onChange(of: availableNDISItems) { _, _ in
+        .onChange(of: viewModel.availableNDISItems) { _, _ in
             updateFilteredItems()
         }
         .toolbar {
@@ -85,7 +69,7 @@ struct ServiceAssignmentSheetView: View {
                 onConfirm: { assignSelectedServices() }
             )
         }
-        .navigationTitle("Assign Services to \(client.fullName)")
+        .navigationTitle("Assign Services to \(viewModel.client.fullName)")
         .frame(
             minWidth: StyleGuide.Dimensions.sheetMinWidth,
             idealWidth: StyleGuide.Dimensions.sheetIdealWidth,
@@ -96,7 +80,7 @@ struct ServiceAssignmentSheetView: View {
     }
     
     private func assignSelectedServices() {
-        let selectedEntities = availableNDISItems.filter { entity in
+        let selectedEntities = viewModel.availableNDISItems.filter { entity in
             selectedItemIDs.contains(entity.id)
         }
         onProceed(selectedEntities)
@@ -106,14 +90,14 @@ struct ServiceAssignmentSheetView: View {
     private func updateFilteredItems() {
         let spec = catalogueQuerySpec
         let filteredSnapshots = NDISCatalogueQuery.filteredAndSortedItems(
-            from: availableNDISItems.map { $0.snapshot() },
+            from: viewModel.availableNDISItems.map { $0.snapshot() },
             spec: spec
         )
         var items = filteredSnapshots.compactMap { snapshot in
-            availableNDISItems.first { $0.id == snapshot.id }
+            viewModel.availableNDISItems.first { $0.id == snapshot.id }
         }
         if selectedSortOption == .defaultOrder {
-            let indexes = Dictionary(uniqueKeysWithValues: availableNDISItems.enumerated().map { ($1.id, $0) })
+            let indexes = Dictionary(uniqueKeysWithValues: viewModel.availableNDISItems.enumerated().map { ($1.id, $0) })
             items.sort { (indexes[$0.id] ?? .max) < (indexes[$1.id] ?? .max) }
         }
         filteredItems = items
@@ -221,20 +205,24 @@ struct ServiceAssignmentSheetView: View {
 
             VStack(alignment: .trailing, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 if minPrice == maxPrice {
-                    Text(String(format: "$%.2f", minPrice)).fontWeight(.medium)
+                    Text(CurrencyFormatting.display(minPrice))
+                        .font(StyleGuide.Typography.bodyMedium)
                 } else {
-                    Text(String(format: "$%.2f - $%.2f", minPrice, maxPrice)).fontWeight(.medium)
+                    Text("\(CurrencyFormatting.display(minPrice)) - \(CurrencyFormatting.display(maxPrice))")
+                        .font(StyleGuide.Typography.bodyMedium)
                 }
                 Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
             }
         } else if let price = item.price, price > 0 {
             VStack(alignment: .trailing, spacing: StyleGuide.Dimensions.paddingXXSmall) {
-                Text(String(format: "$%.2f", price)).fontWeight(.medium)
+                Text(CurrencyFormatting.display(price))
+                    .font(StyleGuide.Typography.bodyMedium)
                 Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
             }
         } else {
             VStack(alignment: .trailing, spacing: StyleGuide.Dimensions.paddingXXSmall) {
-                Text("No Price").font(StyleGuide.Typography.caption).fontWeight(.medium)
+                Text("No Price")
+                    .font(StyleGuide.Typography.caption)
                 Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
             }
         }
@@ -247,19 +235,19 @@ private extension ServiceAssignmentSheetView {
     }
     
     var categoryOptions: [String] {
-        sortedUnique(availableNDISItems.compactMap { normalizedText($0.category) })
+        sortedUnique(viewModel.availableNDISItems.compactMap { normalizedText($0.category) })
     }
     
     var registrationGroupOptions: [String] {
-        sortedUnique(availableNDISItems.compactMap { normalizedText($0.registrationGroup) })
+        sortedUnique(viewModel.availableNDISItems.compactMap { normalizedText($0.registrationGroup) })
     }
     
     var unitOptions: [String] {
-        sortedUnique(availableNDISItems.compactMap { normalizedText($0.unit) })
+        sortedUnique(viewModel.availableNDISItems.compactMap { normalizedText($0.unit) })
     }
     
     var featureOptions: [String] {
-        sortedUnique(availableNDISItems.flatMap(parsedFeatures(from:)))
+        sortedUnique(viewModel.availableNDISItems.flatMap(parsedFeatures(from:)))
     }
     
     var activeFilterChips: [ServiceAssignmentFilterChip] {
@@ -341,13 +329,6 @@ private extension ServiceAssignmentSheetView {
         }
     }
 
-    func effectivePrice(for item: NDISItem) -> Double {
-        if let regionalPrices = item.regionalPrices, !regionalPrices.isEmpty {
-            return regionalPrices.map(\.amount).min() ?? item.price ?? .greatestFiniteMagnitude
-        }
-        return item.price ?? .greatestFiniteMagnitude
-    }
-    
     func parsedFeatures(from item: NDISItem) -> [String] {
         guard let features = item.features, !features.isEmpty else { return [] }
         return features
@@ -378,49 +359,49 @@ private struct ServiceAssignmentRowView: View {
 
 
     var body: some View {
-        HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(StyleGuide.Typography.sectionTitle)
-                .foregroundColor(isSelected ? .accentColor : StyleGuide.Colors.textSecondary.opacity(0.6))
-                .frame(width: StyleGuide.Dimensions.selectionCheckmarkWidth)
+        Button(action: onToggle) {
+            HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(StyleGuide.Typography.sectionTitle)
+                    .foregroundStyle(isSelected ? Color.accentColor : StyleGuide.Colors.textSecondary.opacity(0.6))
+                    .frame(width: StyleGuide.Dimensions.selectionCheckmarkWidth)
 
-            VStack(alignment: .leading) {
-                Text(item.name)
-                    .font(StyleGuide.Typography.itemTitle)
-                    .fontWeight(.medium)
-                    .foregroundColor(StyleGuide.Colors.text)
-                Text(item.itemNumber)
-                    .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                VStack(alignment: .leading) {
+                    Text(item.name)
+                        .font(StyleGuide.Typography.itemTitle)
+                        .foregroundStyle(StyleGuide.Colors.text)
+                    Text(item.itemNumber)
+                        .font(StyleGuide.Typography.itemSubtitle)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                AnyView(priceRangeDisplay)
             }
-
-            Spacer()
-
-            AnyView(priceRangeDisplay)
+            .padding(.vertical, StyleGuide.Dimensions.paddingMediumLarge)
+            .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+            .background(
+                RoundedRectangle(cornerRadius: PanelShellTokens.panelCornerRadius)
+                    .fill(isSelected
+                          ? Color.accentColor.opacity(StyleGuide.Opacity.faint)
+                          : StyleGuide.Colors.background)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: PanelShellTokens.panelCornerRadius)
+                            .stroke(isSelected
+                                    ? Color.accentColor.opacity(StyleGuide.Opacity.strong + 0.1)
+                                    : StyleGuide.Colors.border,
+                                    lineWidth: 0.6)
+                    )
+            )
+            .contentShape(.rect(cornerRadius: PanelShellTokens.panelCornerRadius))
         }
-        .padding(.vertical, StyleGuide.Dimensions.paddingMediumLarge)
-        .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
-        .background(
-            RoundedRectangle(cornerRadius: PanelShellTokens.panelCornerRadius)
-                .fill(isSelected
-                      ? Color.accentColor.opacity(StyleGuide.Opacity.faint)
-                      : StyleGuide.Colors.background)
-                .overlay(
-                    RoundedRectangle(cornerRadius: PanelShellTokens.panelCornerRadius)
-                        .stroke(isSelected
-                                ? Color.accentColor.opacity(StyleGuide.Opacity.strong + 0.1)
-                                : StyleGuide.Colors.border,
-                                lineWidth: 0.6)
-                )
-        )
+        .buttonStyle(.plain)
         .animation(.spring(response: StyleGuide.Animations.springResponse, dampingFraction: StyleGuide.Animations.springDamping), value: isSelected)
-        .contentShape(.rect(cornerRadius: PanelShellTokens.panelCornerRadius))
-        .onTapGesture {
-            onToggle()
-        }
         .pointerStyle(.link)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.name), NDIS Code \(item.itemNumber), \(isSelected ? "Selected" : "Not selected")")
         .accessibilityHint("Double tap to toggle selection of this NDIS item")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

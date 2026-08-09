@@ -19,7 +19,7 @@ struct MonthHeaderView: View {
                     // Add left border to all but the first day header
                     .overlay(
                         index > 0 ?
-                        Rectangle().frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil).foregroundColor(StyleGuide.Colors.border.opacity(0.3))
+                        Rectangle().frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil).foregroundStyle(StyleGuide.Colors.border.opacity(0.3))
                         : nil // No border for the first item
                         , alignment: .leading
                     )
@@ -34,7 +34,7 @@ struct MonthHeaderView: View {
         }
         // Add bottom border only to the day headers section
         .overlay(
-            Rectangle().frame(width: nil, height: 1).foregroundColor(StyleGuide.Colors.border.opacity(0.2)),
+            Rectangle().frame(width: nil, height: 1).foregroundStyle(StyleGuide.Colors.border.opacity(0.2)),
             alignment: .bottom
         )
     }
@@ -53,21 +53,15 @@ struct MonthDayHeaderItemView: View {
         let dayWeekday = calendar.component(.weekday, from: day)
         return todayWeekday == dayWeekday
     }
-    private static let dayOfWeekFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        return f
-    }()
-
     private var dayOfWeekString: String {
-        Self.dayOfWeekFormatter.string(from: day)
+        DateFormatting.weekdayAbbreviation(day)
     }
 
     var body: some View {
         HStack(spacing: 6) {
             Text(dayOfWeekString)
                 .font(StyleGuide.Typography.gridWeekday.weight(isTodayWeekday ? .bold : .semibold))
-                .foregroundColor(isTodayWeekday ? .accentColor : StyleGuide.Colors.text)
+                .foregroundStyle(isTodayWeekday ? Color.accentColor : StyleGuide.Colors.text)
         }
         .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
         .frame(maxWidth: .infinity)

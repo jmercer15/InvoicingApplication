@@ -1,6 +1,7 @@
 import Foundation
 
 /// Protocol for calendar synchronization operations
+@MainActor
 public protocol SyncService: Sendable {
     /// Check if access is granted
     var accessGranted: Bool { get }

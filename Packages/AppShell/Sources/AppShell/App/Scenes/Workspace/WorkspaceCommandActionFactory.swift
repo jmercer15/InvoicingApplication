@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Feature_Invoices
 import Foundation
 import InvoiceTableLayoutEditor
@@ -36,7 +37,7 @@ enum WorkspaceCommandActionFactory {
                     do {
                         try await WorkspaceInvoiceCreationHandoff.perform(
                             createInvoice: features.invoices.createInvoice,
-                            openInvoice: nav.navigateToInvoice
+                            openInvoice: { nav.navigateToInvoice($0) }
                         )
                     } catch {
                         let detail = InvoiceOperationErrorPresentation.detail(

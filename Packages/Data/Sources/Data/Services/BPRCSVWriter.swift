@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Core
+import PersistenceModels
 
 public final class BPRCSVWriter: Sendable {
     public static let columns: [String] = [
@@ -22,15 +23,7 @@ public final class BPRCSVWriter: Sendable {
         "ABN Of Support Provider"
     ]
 
-    private let dateFormatter: DateFormatter
-
-    public init() {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        self.dateFormatter = formatter
-    }
+    public init() {}
 
     public func csvString(lines: [BulkClaimLine]) -> String {
         var rows: [String] = []
@@ -40,8 +33,8 @@ public final class BPRCSVWriter: Sendable {
             let values: [String] = [
                 line.registrationNumber,
                 line.ndisNumber,
-                dateFormatter.string(from: line.supportsDeliveredFrom),
-                dateFormatter.string(from: line.supportsDeliveredTo),
+                ExportMachineFormatting.exportDate(line.supportsDeliveredFrom),
+                ExportMachineFormatting.exportDate(line.supportsDeliveredTo),
                 line.supportNumber,
                 line.claimReference ?? "",
                 line.quantity.map(formatQuantity) ?? "",
@@ -73,8 +66,8 @@ public final class BPRCSVWriter: Sendable {
             let values: [String] = [
                 line.registrationNumber,
                 line.ndisNumber,
-                dateFormatter.string(from: line.supportsDeliveredFrom),
-                dateFormatter.string(from: line.supportsDeliveredTo),
+                ExportMachineFormatting.exportDate(line.supportsDeliveredFrom),
+                ExportMachineFormatting.exportDate(line.supportsDeliveredTo),
                 line.supportNumber,
                 line.claimReference ?? "",
                 line.quantity.map(formatQuantity) ?? "",
@@ -99,24 +92,15 @@ public final class BPRCSVWriter: Sendable {
     }
 
     public func sha256Hex(for data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
+        ExportMachineFormatting.sha256Hex(digest: SHA256.hash(data: data))
     }
 
-    private func formatQuantity(_ value: Double) -> String {
-        let rounded = (value * 1000).rounded() / 1000
-        var text = String(format: "%.3f", rounded)
-        while text.contains(".") && text.last == "0" {
-            text.removeLast()
-        }
-        if text.last == "." {
-            text.removeLast()
-        }
-        return text
+    private func formatQuantity(_ value: Decimal) -> String {
+        ExportMachineFormatting.exportDecimal3(value)
     }
 
-    private func formatUnitPrice(_ value: Double) -> String {
-        String(format: "%.2f", value)
+    private func formatUnitPrice(_ value: Decimal) -> String {
+        ExportMachineFormatting.exportDecimal2(value)
     }
 
     private func escapeCSV(_ value: String) -> String {

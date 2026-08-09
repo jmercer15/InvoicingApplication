@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 extension ClientDetailViewModel {
@@ -14,7 +14,12 @@ extension ClientDetailViewModel {
     }
 
     /// Fetches all relationship data for the client asynchronously to prevent UI blocks.
-    func refreshProjectedData(using workflowActor: ReferenceDataWorkflowActor) async {
+    func refreshProjectedData() async {
+        // Drop stale live refs before fetch — CloudKit HistoryExpired invalidates them.
+        clientServices = []
+        relatedInvoices = []
+        serviceAgreements = []
+
         let clientID = client.id
         let services = (try? modelContext.fetch(FetchDescriptor<ClientService>(
             predicate: #Predicate { $0.client?.id == clientID }
@@ -33,7 +38,7 @@ extension ClientDetailViewModel {
         )
     }
 
-    func loadReferencePickers(using workflowActor: ReferenceDataWorkflowActor) async {
+    func loadReferencePickers() async {
         // Resolve on main context
         let payees = (try? modelContext.fetch(FetchDescriptor<Payee>())) ?? []
         let planManagers = (try? modelContext.fetch(FetchDescriptor<PlanManager>())) ?? []
@@ -67,7 +72,7 @@ extension ClientDetailViewModel {
         editableIsMinor              = client.isMinor
         editableHasNdisPlan          = client.hasNdisPlan
         editablePlanManagementType   = client.planManagementType
-        editableCreditAmountString   = String(format: "%.2f", client.creditAmount)
+        editableCreditAmountString   = CurrencyFormatting.editableAmount(client.creditAmount)
         if let authority = client.billingAuthority { editableBillingAuthority = authority }
         editableNotes                = client.notes ?? ""
         phoneFormatter.phoneNumber   = client.phone ?? ""

@@ -1,21 +1,14 @@
 import SwiftUI
 import SwiftData
-import Data
 import Core
+import DataInterfaces
 import SharedUI
 import Observation
 
 struct TravelChargeReviewView: View {
     @State private var viewModel: TravelChargeReviewViewModel
 
-    private static let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
-
-    @State private var selectedReviewItem: Core.TravelChargeReviewItem?
+    @State private var selectedReviewItem: TravelChargeReviewRow?
     @State private var showingViolationDetails = false
     @State private var showingReviewSheet = false
 
@@ -23,11 +16,11 @@ struct TravelChargeReviewView: View {
         _viewModel = State(initialValue: viewModel())
     }
 
-    private var pendingReviewItems: [Core.TravelChargeReviewItem] {
+    private var pendingReviewItems: [TravelChargeReviewRow] {
         viewModel.reviewItemEntities.filter { $0.status == "pending" }
     }
 
-    private var filteredReviewItems: [Core.TravelChargeReviewItem] {
+    private var filteredReviewItems: [TravelChargeReviewRow] {
         switch viewModel.filterStatus {
         case .all:
             return viewModel.reviewItemEntities
@@ -129,7 +122,7 @@ struct TravelChargeReviewView: View {
 }
 
 struct ReviewItemCard: View {
-    let reviewItem: Core.TravelChargeReviewItem
+    let reviewItem: TravelChargeReviewRow
     let onTap: () -> Void
     
     var body: some View {
@@ -182,44 +175,14 @@ struct ReviewItemCard: View {
         .buttonStyle(.plain)
     }
     
-    private var backgroundColor: Color {
-        switch reviewItem.status {
-        case "pending":
-            return Color.orange.opacity(0.1)
-        case "overridden":
-            return Color.blue.opacity(0.1)
-        case "skipped":
-            return Color.gray.opacity(0.1)
-        case "resolved":
-            return Color.green.opacity(0.1)
-        default:
-            return Color.secondary.opacity(0.1)
-        }
-    }
-    
-    private var borderColor: Color {
-        switch reviewItem.status {
-        case "pending":
-            return Color.orange.opacity(0.3)
-        case "overridden":
-            return Color.blue.opacity(0.3)
-        case "skipped":
-            return Color.gray.opacity(0.3)
-        case "resolved":
-            return Color.green.opacity(0.3)
-        default:
-            return Color.secondary.opacity(0.3)
-        }
-    }
 }
 
 // Note: StatusBadge is already defined in ViewStyles.swift
 
 struct TravelChargeViolationDetailsView: View {
     @Bindable var viewModel: TravelChargeReviewViewModel
-    let reviewItem: Core.TravelChargeReviewItem
+    let reviewItem: TravelChargeReviewRow
     @Environment(\.dismiss) var dismiss
-    @Environment(\.modelContext) var viewContext
     
     @State private var selectedOverride: String = ""
     @State private var overrideReason: String = ""
@@ -396,7 +359,7 @@ struct TravelChargeViolationDetailsView: View {
 }
 
 struct TravelChargeReviewSheetView: View {
-    let pendingReviews: [Core.TravelChargeReviewItem]
+    let pendingReviews: [TravelChargeReviewRow]
     @Environment(\.dismiss) var dismiss
 
     var body: some View {

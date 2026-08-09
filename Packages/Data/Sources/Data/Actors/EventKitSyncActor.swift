@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import CoreLocation
 import Foundation
 import SwiftData
@@ -9,6 +10,7 @@ public actor EventKitSyncActor: ModelActor {
     nonisolated public let modelExecutor: any ModelExecutor
 
     private var reverseGeocodeCache: [String: EventKitLocationParser.ParsedLocation] = [:]
+    private var inFlightReverseGeocodes: [String: Task<EventKitLocationParser.ParsedLocation?, Error>] = [:]
 
     public init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -148,7 +150,12 @@ public actor EventKitSyncActor: ModelActor {
     ) async throws -> SessionSnapshot {
         let resolver = EntityResolutionService(context: modelContext)
         guard let sessionModel = try? resolver.resolveSession(id: snapshot.id) else { return snapshot }
-        await applyRemoteEventSnapshotToSession(remoteEvent: remoteEvent, session: sessionModel, includeCoreFields: true)
+        let includeCoreFields = EventKitSyncPolicy.shouldIncludeCoreFieldsOnPull(for: sessionModel)
+        await applyRemoteEventSnapshotToSession(
+            remoteEvent: remoteEvent,
+            session: sessionModel,
+            includeCoreFields: includeCoreFields
+        )
         if modelContext.hasChanges {
             try modelContext.save()
         }
@@ -190,7 +197,9 @@ public actor EventKitSyncActor: ModelActor {
         session.eventExternalIdentifier = remoteEvent.calendarItemExternalIdentifier
         session.calendarIdentifier = remoteEvent.calendarIdentifier
         session.calendarSourceIdentifier = remoteEvent.calendarSourceIdentifier
-        session.lastModifiedDate = remoteEvent.lastModifiedDate
+        if includeCoreFields {
+            session.lastModifiedDate = remoteEvent.lastModifiedDate
+        }
         session.lastSyncTag = encodeSyncTag(remoteEvent.lastModifiedDate ?? Date())
         session.ekCreationDate = remoteEvent.creationDate
         session.ekEventAvailabilityRaw = Int16(remoteEvent.availabilityRawValue)
@@ -205,23 +214,24 @@ public actor EventKitSyncActor: ModelActor {
         session.hasEKAlarms = remoteEvent.alarmsData != nil
         session.alarmsData = remoteEvent.alarmsData
 
-        if let ruleData = remoteEvent.recurrenceRuleData {
-            session.recurrenceRuleData = ruleData
-            session.ekRecurrenceRuleDescription = remoteEvent.recurrenceRuleDescription
-        } else {
-            session.recurrenceRuleData = nil
-            session.ekRecurrenceRuleDescription = nil
-        }
-
-        if resolvedLocation.hasCoordinates {
-            session.sessionLatitude = resolvedLocation.latitude
-            session.sessionLongitude = resolvedLocation.longitude
-        } else if includeCoreFields {
-            session.sessionLatitude = 0
-            session.sessionLongitude = 0
+        if includeCoreFields {
+            if let ruleData = remoteEvent.recurrenceRuleData {
+                session.recurrenceRuleData = ruleData
+                session.ekRecurrenceRuleDescription = remoteEvent.recurrenceRuleDescription
+            } else {
+                session.recurrenceRuleData = nil
+                session.ekRecurrenceRuleDescription = nil
+            }
         }
 
         if includeCoreFields {
+            if resolvedLocation.hasCoordinates {
+                session.sessionLatitude = resolvedLocation.latitude
+                session.sessionLongitude = resolvedLocation.longitude
+            } else {
+                session.sessionLatitude = 0
+                session.sessionLongitude = 0
+            }
             applyParsedAddressToSession(resolvedLocation, session: session)
         }
     }
@@ -256,8 +266,20 @@ public actor EventKitSyncActor: ModelActor {
             )
         }
 
+        let geocodeTask: Task<EventKitLocationParser.ParsedLocation?, Error>
+        if let existing = inFlightReverseGeocodes[cacheKey] {
+            geocodeTask = existing
+        } else {
+            geocodeTask = Task {
+                try await MapKitAddressResolver.parseAddress(from: coordinate)
+            }
+            inFlightReverseGeocodes[cacheKey] = geocodeTask
+        }
+
         do {
-            guard let reverseGeocoded = try await MapKitAddressResolver.parseAddress(from: coordinate) else {
+            let reverseGeocoded = try await geocodeTask.value
+            inFlightReverseGeocodes[cacheKey] = nil
+            guard let reverseGeocoded else {
                 return baseParsedLocation
             }
             reverseGeocodeCache[cacheKey] = reverseGeocoded
@@ -267,6 +289,7 @@ public actor EventKitSyncActor: ModelActor {
                 preferredLocationOverride: preferredLocationOverride
             )
         } catch {
+            inFlightReverseGeocodes[cacheKey] = nil
             print("[EventKitSyncActor] Reverse geocode failed for snapshot \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
             return baseParsedLocation
         }

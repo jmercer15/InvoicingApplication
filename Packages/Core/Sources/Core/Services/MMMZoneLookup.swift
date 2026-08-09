@@ -2,6 +2,7 @@ import CoreLocation
 import Foundation
 import MapKit
 import os
+import Synchronization
 
 // MARK: - ZonePoly and Helpers
 
@@ -114,20 +115,15 @@ private struct MMMZoneSpatialIndex: Sendable {
 
 // MARK: - Thread-safe storage
 
-private final class IndexedZoneStore: @unchecked Sendable {
-    private let lock = NSLock()
-    private var indexed: IndexedZones?
+private final class IndexedZoneStore: Sendable {
+    private let indexed = Mutex<IndexedZones?>(nil)
 
     func setZones(_ zones: IndexedZones?) {
-        lock.lock()
-        indexed = zones
-        lock.unlock()
+        indexed.withLock { $0 = zones }
     }
 
     func snapshot() -> IndexedZones? {
-        lock.lock()
-        defer { lock.unlock() }
-        return indexed
+        indexed.withLock { $0 }
     }
 }
 
@@ -136,42 +132,48 @@ private struct IndexedZones: Sendable {
     let spatialIndex: MMMZoneSpatialIndex?
 }
 
-private final class LoadGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var ready = false
-    private var waiters: [() -> Void] = []
+private struct LoadGateState: Sendable {
+    var ready = false
+    var waiters: [CheckedContinuation<Void, Never>] = []
+}
+
+private final class LoadGate: Sendable {
+    private let state = Mutex(LoadGateState())
 
     func notifyReady() {
-        lock.lock()
-        ready = true
-        let callbacks = waiters
-        waiters.removeAll()
-        lock.unlock()
-        callbacks.forEach { $0() }
+        let waiters = state.withLock { state in
+            state.ready = true
+            let waiters = state.waiters
+            state.waiters.removeAll()
+            return waiters
+        }
+        waiters.forEach { $0.resume() }
     }
 
-    func enqueueOrRunIfReady(_ body: @escaping () -> Void) {
-        lock.lock()
-        if ready {
-            lock.unlock()
-            body()
-        } else {
-            waiters.append(body)
-            lock.unlock()
+    func waitUntilReady() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = state.withLock { state in
+                if state.ready {
+                    return true
+                }
+                state.waiters.append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
         }
     }
 
     func isReadyFlag() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return ready
+        state.withLock(\.ready)
     }
 }
 
 // MARK: - MMMZoneLookup
 
 /// Loads SA1 polygons off the caller thread by default (see ``prepareLookupData()``).
-public final class MMMZoneLookup: MMMZoneLookupProtocol, @unchecked Sendable {
+public final class MMMZoneLookup: MMMZoneLookupProtocol, Sendable {
     public static let shared = MMMZoneLookup()
     private static let resourceOverrideEnvironmentKey = "INVOICING_MMM_GEOJSON_PATH"
 
@@ -196,7 +198,7 @@ public final class MMMZoneLookup: MMMZoneLookupProtocol, @unchecked Sendable {
         }
         let zoneStore = store
         let gate = loadGate
-        Task.detached(priority: .utility) {
+        Task(priority: .utility) {
             let polys = (try? Self.loadPolygons(from: url)) ?? []
             let indexed = Self.buildIndexedZones(polygons: polys)
             zoneStore.setZones(indexed)
@@ -207,11 +209,7 @@ public final class MMMZoneLookup: MMMZoneLookupProtocol, @unchecked Sendable {
 
     /// Await polygon data before performing billing / automation work that depends on MMM zones.
     public func prepareLookupData() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            loadGate.enqueueOrRunIfReady {
-                continuation.resume()
-            }
-        }
+        await loadGate.waitUntilReady()
     }
 
     /// Whether bundled polygons finished loading (or failed and fell back to empty).

@@ -1,4 +1,5 @@
 import SwiftUI
+import SharedUI
 
 enum InvoiceTemplatePersistenceIntent {
     case createInvoice
@@ -35,9 +36,11 @@ struct InvoiceRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let externalSelection: Binding<UUID?>?
+    private let externalDocumentRefreshRevision: Int
     private let onCreateInvoice: (@MainActor () async throws -> Void)?
     private let onOpenInvoices: (@MainActor () -> Void)?
     private let onOpenTemplateEditor: (@MainActor () -> Void)?
+    private let onBackToBillingHub: (@MainActor () -> Void)?
     private let mode: InvoiceEditorWorkspaceMode
     private let featureInvoiceCreationIsActive: Bool
 
@@ -54,9 +57,11 @@ struct InvoiceRootView: View {
             InvoiceEditorWorkspaceMode.template.inspectorSceneStorageKey
         )
         externalSelection = nil
+        externalDocumentRefreshRevision = 0
         self.onCreateInvoice = onCreateInvoice
         self.onOpenInvoices = onOpenInvoices
         onOpenTemplateEditor = nil
+        onBackToBillingHub = nil
         mode = .template
         self.featureInvoiceCreationIsActive = featureInvoiceCreationIsActive
     }
@@ -64,9 +69,11 @@ struct InvoiceRootView: View {
     init(
         viewModel: InvoiceEditorViewModel,
         externalSelection: Binding<UUID?>,
+        externalDocumentRefreshRevision: Int = 0,
         numericInputDrafts: InvoiceNumericInputDraftStore,
         onCreateInvoice: (@MainActor () async throws -> Void)? = nil,
         onOpenTemplateEditor: (@MainActor () -> Void)? = nil,
+        onBackToBillingHub: (@MainActor () -> Void)? = nil,
         featureInvoiceCreationIsActive: Bool = false
     ) {
         _viewModel = State(initialValue: viewModel)
@@ -78,9 +85,11 @@ struct InvoiceRootView: View {
             InvoiceEditorWorkspaceMode.invoice.inspectorSceneStorageKey
         )
         self.externalSelection = externalSelection
+        self.externalDocumentRefreshRevision = externalDocumentRefreshRevision
         self.onCreateInvoice = onCreateInvoice
         onOpenInvoices = nil
         self.onOpenTemplateEditor = onOpenTemplateEditor
+        self.onBackToBillingHub = onBackToBillingHub
         mode = .invoice
         self.featureInvoiceCreationIsActive = featureInvoiceCreationIsActive
     }
@@ -102,6 +111,17 @@ struct InvoiceRootView: View {
                     isPreparingWorkspaceHandoff: isPreparingWorkspaceHandoff,
                     templateInputValidityChange: updateTemplateInputValidity
                 )
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if onBackToBillingHub != nil {
+                        BillingPipelineProgressView(currentStage: pipelineStage)
+                            .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+                            .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
+                            .background(.bar)
+                            .overlay(alignment: .bottom) {
+                                Divider()
+                            }
+                    }
+                }
             } else if !hasPreparedWorkspace || viewModel.isLoading {
                 ProgressView(mode == .template ? "Preparing mock invoice…" : "Opening invoice…")
             } else if mode == .invoice, let openingErrorMessage {
@@ -115,6 +135,14 @@ struct InvoiceRootView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(failedOpeningInvoiceID == nil || viewModel.isLoading)
+
+                    if onBackToBillingHub != nil {
+                        Button("Back to Billing Hub", systemImage: "chevron.left") {
+                            requestBackToBillingHub()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isPreparingWorkspaceHandoff)
+                    }
                 }
             } else if mode == .invoice {
                 ContentUnavailableView {
@@ -144,11 +172,42 @@ struct InvoiceRootView: View {
                         .buttonStyle(.bordered)
                         .help("Open Template Editor without creating or changing an invoice")
                     }
+                    if onBackToBillingHub != nil {
+                        Button("Back to Billing Hub", systemImage: "chevron.left") {
+                            requestBackToBillingHub()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isPreparingWorkspaceHandoff)
+                    }
                 }
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .toolbar {
+            if onBackToBillingHub != nil {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        requestBackToBillingHub()
+                    } label: {
+                        if isPreparingWorkspaceHandoff {
+                            Label {
+                                Text("Saving Before Returning…")
+                            } icon: {
+                                ProgressView().controlSize(.small)
+                            }
+                        } else {
+                            Label("Back to Billing Hub", systemImage: "chevron.left")
+                        }
+                    }
+                    .disabled(isPreparingWorkspaceHandoff || viewModel.isBusy)
+                    .help("Return to Billing Hub and restore this invoice card")
+                    .accessibilityHint(
+                        "Saves valid edits, then switches to Billing Hub and focuses this invoice."
+                    )
+                }
+            }
+        }
         .task {
             configureCommandActions()
             switch mode {
@@ -196,6 +255,9 @@ struct InvoiceRootView: View {
                 }
                 reconcileInvoiceOpenRequest(requestedID: requestedID)
             }
+        }
+        .task(id: externalDocumentRefreshTaskID) {
+            await reloadOpenInvoiceAfterExternalRefresh()
         }
         .task(id: templatePersistenceDefaults) {
             guard let defaults = templatePersistenceDefaults else { return }
@@ -288,6 +350,21 @@ struct InvoiceRootView: View {
         .focusedSceneValue(\.invoiceEditorCommandActions, commandActions)
     }
 
+    private var pipelineStage: BillingPipelineStage {
+        switch viewModel.status {
+        case .draft:
+            return .review
+        case .readyToSend:
+            return .send
+        case .sent, .overdue:
+            return .payment
+        case .paid:
+            return .paid
+        case .cancelled, .voided:
+            return .review
+        }
+    }
+
     private func publishSelection(_ selectedID: UUID?) {
         guard mode == .invoice,
               let externalSelection,
@@ -328,6 +405,36 @@ struct InvoiceRootView: View {
     private func retryOpeningInvoice() async {
         guard let failedOpeningInvoiceID else { return }
         await prepareInvoiceWorkspace(requestedID: failedOpeningInvoiceID)
+        refreshCommandCapabilities()
+    }
+
+    private var externalDocumentRefreshTaskID: InvoiceExternalDocumentRefreshTaskID {
+        InvoiceExternalDocumentRefreshTaskID(
+            selectedID: externalSelection?.wrappedValue,
+            revision: externalDocumentRefreshRevision
+        )
+    }
+
+    private func reloadOpenInvoiceAfterExternalRefresh() async {
+        guard mode == .invoice,
+              hasPreparedWorkspace,
+              let selectedID = externalSelection?.wrappedValue,
+              viewModel.selectedInvoiceID == selectedID,
+              viewModel.currentInvoice?.id == selectedID,
+              !viewModel.hasUnsavedChanges,
+              !viewModel.isBusy
+        else { return }
+
+        do {
+            try await viewModel.loadInvoice(id: selectedID)
+            await viewModel.loadClientOptionsIfNeeded()
+        } catch {
+            let detail = InvoiceOperationErrorPresentation.detail(
+                for: error,
+                fallback: "Invoice data could not be refreshed. Try again."
+            )
+            viewModel.statusMessage = "Failed to refresh invoice: \(detail)"
+        }
         refreshCommandCapabilities()
     }
 
@@ -519,6 +626,23 @@ struct InvoiceRootView: View {
         }
     }
 
+    private func requestBackToBillingHub() {
+        guard mode == .invoice,
+              !isPreparingWorkspaceHandoff,
+              let onBackToBillingHub
+        else { return }
+
+        isPreparingWorkspaceHandoff = true
+        Task { @MainActor in
+            defer { isPreparingWorkspaceHandoff = false }
+            guard await viewModel.prepareForWorkspaceHandoff() else {
+                revealEditorInspector()
+                return
+            }
+            onBackToBillingHub()
+        }
+    }
+
     private var invoiceCreationIsActive: Bool {
         InvoiceEditorCreationActivityPolicy.isActive(
             localRequest: creationRequestState.isActive,
@@ -611,6 +735,11 @@ struct InvoiceRootView: View {
         ) else { return }
         editorInspectorPresented = replacement
     }
+}
+
+private struct InvoiceExternalDocumentRefreshTaskID: Equatable {
+    let selectedID: UUID?
+    let revision: Int
 }
 
 private struct InvoiceTemplateInvalidValuesBanner: View {

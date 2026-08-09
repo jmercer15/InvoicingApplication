@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - SupportLogSnapshot
 
@@ -31,26 +30,46 @@ public struct SupportLogSnapshot: Sendable, Equatable, Hashable {
     public let clientId: UUID?
     public let sessionId: UUID?
 
-    public init(_ log: SupportLog) {
-        self.id = log.id
-        self.participantName = log.participantName
-        self.participantNdisNumber = log.participantNdisNumber
-        self.supportItemNumber = log.supportItemNumber
-        self.serviceDescription = log.serviceDescription
-        self.location = log.location
-        self.deliveredFrom = log.deliveredFrom
-        self.deliveredTo = log.deliveredTo
-        self.quantityHours = log.quantityHours
-        self.deliveredBy = log.deliveredBy
-        self.attestedBy = log.attestedBy
-        self.attestedAt = log.attestedAt
-        self.signatureMethod = log.signatureMethod
-        self.signedBy = log.signedBy
-        self.signedAt = log.signedAt
-        self.cancellationReasonCode = log.cancellationReasonCode
-        self.notes = log.notes
-        self.clientId = log.client?.id
-        self.sessionId = log.session?.id
+
+    public init(
+        id: UUID,
+        participantName: String,
+        participantNdisNumber: String,
+        supportItemNumber: String,
+        serviceDescription: String,
+        location: String,
+        deliveredFrom: Date,
+        deliveredTo: Date,
+        quantityHours: Double,
+        deliveredBy: String,
+        attestedBy: String,
+        attestedAt: Date,
+        signatureMethod: String?,
+        signedBy: String?,
+        signedAt: Date?,
+        cancellationReasonCode: String?,
+        notes: String?,
+        clientId: UUID?,
+        sessionId: UUID?
+    ) {
+        self.id = id
+        self.participantName = participantName
+        self.participantNdisNumber = participantNdisNumber
+        self.supportItemNumber = supportItemNumber
+        self.serviceDescription = serviceDescription
+        self.location = location
+        self.deliveredFrom = deliveredFrom
+        self.deliveredTo = deliveredTo
+        self.quantityHours = quantityHours
+        self.deliveredBy = deliveredBy
+        self.attestedBy = attestedBy
+        self.attestedAt = attestedAt
+        self.signatureMethod = signatureMethod
+        self.signedBy = signedBy
+        self.signedAt = signedAt
+        self.cancellationReasonCode = cancellationReasonCode
+        self.notes = notes
+        self.clientId = clientId
+        self.sessionId = sessionId
     }
 }
-

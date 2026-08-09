@@ -12,8 +12,10 @@ public struct TableLayoutInvoiceEditorView: View {
         case invoice(
             selection: Binding<UUID?>,
             session: InvoiceEditorSession,
+            documentRefreshRevision: Int,
             onCreateInvoice: (@MainActor () async throws -> Void)?,
             onOpenTemplateEditor: (@MainActor () -> Void)?,
+            onBackToBillingHub: (@MainActor () -> Void)?,
             isCreatingInvoice: Bool
         )
     }
@@ -37,15 +39,19 @@ public struct TableLayoutInvoiceEditorView: View {
     public init(
         selection: Binding<UUID?>,
         session: InvoiceEditorSession,
+        documentRefreshRevision: Int = 0,
         onCreateInvoice: (@MainActor () async throws -> Void)? = nil,
         onOpenTemplateEditor: (@MainActor () -> Void)? = nil,
+        onBackToBillingHub: (@MainActor () -> Void)? = nil,
         isCreatingInvoice: Bool = false
     ) {
         workspace = .invoice(
             selection: selection,
             session: session,
+            documentRefreshRevision: documentRefreshRevision,
             onCreateInvoice: onCreateInvoice,
             onOpenTemplateEditor: onOpenTemplateEditor,
+            onBackToBillingHub: onBackToBillingHub,
             isCreatingInvoice: isCreatingInvoice
         )
     }
@@ -62,16 +68,20 @@ public struct TableLayoutInvoiceEditorView: View {
         case .invoice(
             let selection,
             let session,
+            let documentRefreshRevision,
             let onCreateInvoice,
             let onOpenTemplateEditor,
+            let onBackToBillingHub,
             let isCreatingInvoice
         ):
             InvoiceRootView(
                 viewModel: session.viewModel,
                 externalSelection: selection,
+                externalDocumentRefreshRevision: documentRefreshRevision,
                 numericInputDrafts: session.numericInputDrafts,
                 onCreateInvoice: onCreateInvoice,
                 onOpenTemplateEditor: onOpenTemplateEditor,
+                onBackToBillingHub: onBackToBillingHub,
                 featureInvoiceCreationIsActive: isCreatingInvoice
             )
         }

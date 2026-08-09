@@ -4,6 +4,14 @@ public enum GSTCode: String, Codable, CaseIterable, Sendable {
     case p1 = "P1"
     case p2 = "P2"
     case p5 = "P5"
+
+    /// NDIS catalogue P2/P5 supplies are GST-free; P1 is taxable.
+    public var isGSTFree: Bool {
+        switch self {
+        case .p2, .p5: return true
+        case .p1: return false
+        }
+    }
 }
 
 public enum CancellationPolicyType: String, Codable, CaseIterable, Sendable {

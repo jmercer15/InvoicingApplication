@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import SharedUI
 
 @ModelActor
@@ -17,8 +18,12 @@ public actor RelationshipsProjectionActor {
         var items: [TreeItem] = []
 
         if currentFilter == .all || currentFilter == .clients {
-            let clientDescriptor = FetchDescriptor<Client>()
-            // Optional: apply status/search predicates directly in SwiftData to improve speed
+            let clientDescriptor = FetchDescriptor<Client>(
+                sortBy: [
+                    SortDescriptor(\.fullName),
+                    SortDescriptor(\.id)
+                ]
+            )
             let clients = try modelContext.fetch(clientDescriptor)
             let filtered = clients.filter { client in
                 let matchesSearch = currentSearch.isEmpty || client.fullName.localizedCaseInsensitiveContains(currentSearch)
@@ -47,7 +52,7 @@ public actor RelationshipsProjectionActor {
         }
 
         if currentFilter == .all || currentFilter == .payees {
-            let payees = try modelContext.fetch(FetchDescriptor<Payee>())
+            let payees = try modelContext.fetch(payeeDescriptor(searchText: currentSearch, selectedStatus: currentStatus))
             let filtered = payees.filter { payee in
                 let matchesSearch = currentSearch.isEmpty || payee.fullName.localizedCaseInsensitiveContains(currentSearch)
                 let matchesStatus = currentStatus == .all || payee.status == currentStatus.rawValue
@@ -75,7 +80,7 @@ public actor RelationshipsProjectionActor {
         }
 
         if currentFilter == .all || currentFilter == .planManagers {
-            let planManagers = try modelContext.fetch(FetchDescriptor<PlanManager>())
+            let planManagers = try modelContext.fetch(planManagerDescriptor())
             let filtered = planManagers.filter { manager in
                 currentSearch.isEmpty || (manager.name ?? "").localizedCaseInsensitiveContains(currentSearch)
             }
@@ -116,5 +121,46 @@ public actor RelationshipsProjectionActor {
         }
 
         return RelationshipsProjection(tree: items, counts: counts)
+    }
+
+    private func payeeDescriptor(
+        searchText: String,
+        selectedStatus: StatusFilter
+    ) -> FetchDescriptor<Payee> {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let status = selectedStatus.rawValue
+        let sortBy = [
+            SortDescriptor(\Payee.fullName),
+            SortDescriptor(\Payee.id)
+        ]
+
+        if !trimmedSearch.isEmpty, selectedStatus != .all {
+            return FetchDescriptor<Payee>(
+                predicate: #Predicate { $0.fullName.localizedStandardContains(trimmedSearch) && $0.status == status },
+                sortBy: sortBy
+            )
+        } else if !trimmedSearch.isEmpty {
+            return FetchDescriptor<Payee>(
+                predicate: #Predicate { $0.fullName.localizedStandardContains(trimmedSearch) },
+                sortBy: sortBy
+            )
+        } else if selectedStatus != .all {
+            return FetchDescriptor<Payee>(
+                predicate: #Predicate { $0.status == status },
+                sortBy: sortBy
+            )
+        } else {
+            return FetchDescriptor<Payee>(sortBy: sortBy)
+        }
+    }
+
+    private func planManagerDescriptor() -> FetchDescriptor<PlanManager> {
+        let sortBy = [
+            SortDescriptor(\PlanManager.name),
+            SortDescriptor(\PlanManager.id)
+        ]
+        // SwiftData's SQLite translator cannot lower optional-name coalescing plus
+        // localized containment. Search remains bounded to actor-owned results above.
+        return FetchDescriptor<PlanManager>(sortBy: sortBy)
     }
 }

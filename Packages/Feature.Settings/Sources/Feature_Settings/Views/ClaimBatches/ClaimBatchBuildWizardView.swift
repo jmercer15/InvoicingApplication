@@ -1,14 +1,12 @@
 import AppKit
 import Core
-import Data
-import SwiftData
+import PersistenceModels
 import SwiftUI
 import SharedUI
 import UniformTypeIdentifiers
 import Observation
 
 public struct ClaimBatchBuildWizardView: View {
-    @Environment(\.modelContext) private var modelContext
     @Bindable var viewModel: ClaimBatchesViewModel
     @Environment(\.dismiss) var dismiss
 
@@ -31,18 +29,23 @@ public struct ClaimBatchBuildWizardView: View {
         )
     }
 
-    private func filteredDrafts(from draftEntities: [BillableDraft], clientEntities: [Client]) -> [BillableDraft] {
-        var list: [BillableDraft] = draftEntities
+    private func filteredDrafts(
+        from draftEntities: [BillableDraftSnapshot],
+        clientEntities: [ClientSnapshot]
+    ) -> [BillableDraftSnapshot] {
+        var list = draftEntities
         let range = fromDate ... toDate
-        list = list.filter({ range.contains($0.computedAt) })
+        list = list.filter { range.contains($0.computedAt) }
         if let cid = clientId {
-            list = list.filter({ $0.clientId == cid })
+            list = list.filter { $0.clientId == cid }
         }
         if let planType = planManagementType, !planType.isEmpty {
             let allowedClientIds = Set(clientEntities.filter { $0.planManagementType == planType }.map(\.id))
-            list = list.filter({ allowedClientIds.contains($0.clientId) })
+            list = list.filter { allowedClientIds.contains($0.clientId) }
         }
-        return list.filter({ $0.draftStatus == DraftStatus.ready.rawValue || $0.draftStatus == DraftStatus.locked.rawValue })
+        return list.filter {
+            $0.draftStatus == DraftStatus.ready.rawValue || $0.draftStatus == DraftStatus.locked.rawValue
+        }
     }
 
     @State private var step: WizardStep = .configure
@@ -50,9 +53,9 @@ public struct ClaimBatchBuildWizardView: View {
     @State private var toDate = Date()
     @State private var planManagementType: String?
     @State private var clientId: UUID?
-    @State private var drafts: [BillableDraft] = []
-    @State private var allClients: [Client] = []
-    @State private var allUnbilledDrafts: [BillableDraft] = []
+    @State private var drafts: [BillableDraftSnapshot] = []
+    @State private var allClients: [ClientSnapshot] = []
+    @State private var allUnbilledDrafts: [BillableDraftSnapshot] = []
     @State private var selectedDraftIds: Set<UUID> = []
     @State private var createdBatch: BulkClaimBatch?
     @State private var isBuilding = false
@@ -97,26 +100,11 @@ public struct ClaimBatchBuildWizardView: View {
         .navigationTitle("New Claim Batch")
         .task {
             do {
-                // Yield to ensure UI layout finishes before database work
-                try? await Task.sleep(for: .milliseconds(50))
-                
-                var clientDescriptor = FetchDescriptor<Client>(sortBy: [SortDescriptor(\.fullName)])
-                clientDescriptor.propertiesToFetch = [\.fullName]
-                allClients = try modelContext.fetch(clientDescriptor)
-                
-                let readyStatus = "ready"
-                let lockedStatus = "locked"
-                let predicate = #Predicate<BillableDraft> {
-                    $0.draftStatus == readyStatus || $0.draftStatus == lockedStatus
-                }
-                var draftDescriptor = FetchDescriptor<BillableDraft>(
-                    predicate: predicate,
-                    sortBy: [SortDescriptor(\.computedAt, order: .reverse)]
-                )
-                // Minimally fetch properties needed for wizard filtering
-                draftDescriptor.propertiesToFetch = [\.draftStatus]
-                allUnbilledDrafts = try modelContext.fetch(draftDescriptor)
-                
+                guard await Task.waitUnlessCancelled(for: .milliseconds(50)) else { return }
+                let referenceData = try viewModel.fetchWizardReferenceData()
+                allClients = referenceData.clients
+                allUnbilledDrafts = referenceData.unbilledDrafts
+
                 if let ids = initialDraftIds, !ids.isEmpty {
                     await applyInitialDrafts(ids: ids)
                 }
@@ -167,7 +155,7 @@ public struct ClaimBatchBuildWizardView: View {
                     .foregroundColor(isActive ? Color(NSColor.controlAccentColor) : (isPast ? Color(NSColor.secondaryLabelColor) : Color(NSColor.tertiaryLabelColor)))
                 if index < WizardStep.allCases.count - 1 {
                     Image(systemName: "chevron.right")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
                 }
             }
@@ -210,7 +198,7 @@ public struct ClaimBatchBuildWizardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(drafts) { draft in
+                    ForEach(drafts, id: \.id) { draft in
                         Toggle(isOn: Binding(
                             get: { selectedDraftIds.contains(draft.id) },
                             set: { if $0 { selectedDraftIds.insert(draft.id) } else { selectedDraftIds.remove(draft.id) } }
@@ -314,10 +302,10 @@ public struct ClaimBatchBuildWizardView: View {
     private func runBuild() {
         guard createdBatch == nil else { return }
         isBuilding = true
-        let selected = drafts.filter { selectedDraftIds.contains($0.id) }
+        let selectedIDs = Array(selectedDraftIds)
         Task {
             do {
-                let batch = try await viewModel.createBatch(from: selected, fromDate: fromDate, toDate: toDate)
+                let batch = try await viewModel.createBatch(fromDraftIDs: selectedIDs, fromDate: fromDate, toDate: toDate)
                 await MainActor.run {
                     createdBatch = batch
                     isBuilding = false
@@ -343,7 +331,7 @@ public struct ClaimBatchBuildWizardView: View {
             }
             Task {
                 do {
-                    try await Task.detached(priority: .userInitiated) {
+                    try await Task(priority: .userInitiated) {
                         try data.write(to: url)
                     }.value
                     completion(url.lastPathComponent)

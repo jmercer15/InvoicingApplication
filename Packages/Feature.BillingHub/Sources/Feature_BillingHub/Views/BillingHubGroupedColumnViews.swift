@@ -2,7 +2,7 @@ import SwiftUI
 import SharedUI
 
 struct BillingHubGroupItemWrapper: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let group: SessionGroup
     @Binding var targetedGroupID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -30,7 +30,7 @@ struct BillingHubGroupItemWrapper: View {
 
     var body: some View {
         BillingHubGroupView(
-            viewModel: viewModel,
+            cardActions: cardActions,
             group: group,
             selectedCardID: $selectedCardID,
             isDropTargeted: isListDropActive && isItemTargeted,
@@ -156,7 +156,7 @@ struct BillingHubGroupedColumnInsertionLane: View {
 }
 
 struct BillingHubGroupView: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let group: SessionGroup
     @Binding var selectedCardID: UUID?
     let isDropTargeted: Bool
@@ -189,7 +189,7 @@ struct BillingHubGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             BillingHubGroupSessionSection(
-                viewModel: viewModel,
+                cardActions: cardActions,
                 group: group,
                 selectedCardID: $selectedCardID,
                 interactionState: interactionState,
@@ -247,7 +247,7 @@ struct BillingHubGroupView: View {
 }
 
 struct BillingHubGroupSessionSection: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let group: SessionGroup
     @Binding var selectedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -310,7 +310,7 @@ struct BillingHubGroupSessionSection: View {
 
             ForEach(Array(group.sessions.enumerated()), id: \.element.id) { index, session in
                 BillingHubGroupedSessionItemRow(
-                    viewModel: viewModel,
+                    cardActions: cardActions,
                     session: session,
                     selectedCardID: $selectedCardID,
                     interactionState: interactionState,

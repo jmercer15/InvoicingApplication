@@ -64,6 +64,12 @@ public struct AppMeshBackdrop: View {
                     )
                 }
                 .blur(radius: 80)
+                .background {
+                    Color.clear.preference(
+                        key: AppMeshBackdropMetricsPreferenceKey.self,
+                        value: AppMeshBackdropMetrics(size: geometry.size)
+                    )
+                }
             }
         }
         .ignoresSafeArea()
@@ -104,5 +110,21 @@ public struct AppMeshBackdrop: View {
             Color(.sRGB, red: 0.05, green: 0.12, blue: 0.36, opacity: 0.34),
             Color(.sRGB, red: 0.04, green: 0.09, blue: 0.28, opacity: 0.3)
         ]
+    }
+}
+
+public struct AppMeshBackdropMetrics: Equatable, Sendable {
+    public var size: CGSize
+
+    public init(size: CGSize = .zero) {
+        self.size = size
+    }
+}
+
+public struct AppMeshBackdropMetricsPreferenceKey: PreferenceKey {
+    public static var defaultValue: AppMeshBackdropMetrics { AppMeshBackdropMetrics() }
+
+    public static func reduce(value: inout AppMeshBackdropMetrics, nextValue: () -> AppMeshBackdropMetrics) {
+        value = nextValue()
     }
 }

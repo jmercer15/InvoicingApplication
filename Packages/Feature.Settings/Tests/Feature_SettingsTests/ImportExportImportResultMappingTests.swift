@@ -2,10 +2,9 @@ import Core
 import Data
 import struct Data.ImportResult
 @testable import Feature_Settings
-import XCTest
-
-final class ImportExportImportResultMappingTests: XCTestCase {
-    func testMapsDataImportResultToCoreResult() {
+import Testing
+@Suite struct ImportExportImportResultMappingTests {
+    @Test func MapsDataImportResultToCoreResult() {
         let dataResult = ImportResult(
             source: .ndisItems,
             successful: 7,
@@ -17,29 +16,29 @@ final class ImportExportImportResultMappingTests: XCTestCase {
         
         let coreResult = ImportExportImportResultMapping.make(dataResult)
         
-        XCTAssertEqual(coreResult.source, .ndisItems)
-        XCTAssertFalse(coreResult.success)
-        XCTAssertEqual(coreResult.successful, 7)
-        XCTAssertEqual(coreResult.failed, 2)
-        XCTAssertEqual(coreResult.importedCounts["NDISItem"], 7)
-        XCTAssertEqual(coreResult.fileName, "ndis-items.csv")
+        #expect(coreResult.source == .ndisItems)
+        #expect(!(coreResult.success))
+        #expect(coreResult.successful == 7)
+        #expect(coreResult.failed == 2)
+        #expect(coreResult.importedCounts["NDISItem"] == 7)
+        #expect(coreResult.fileName == "ndis-items.csv")
     }
     
-    func testMapsPartialFailureToFailureResult() {
+    @Test func MapsPartialFailureToFailureResult() {
         let failure = ImportExportImportResultMapping.makeFailure(
             source: .clients,
             fileName: "clients.json",
             message: "Clients import failed"
         )
         
-        XCTAssertFalse(failure.success)
-        XCTAssertEqual(failure.successful, 0)
-        XCTAssertEqual(failure.failed, 1)
-        XCTAssertEqual(failure.messages, ["Clients import failed"])
-        XCTAssertEqual(failure.source, .clients)
+        #expect(!(failure.success))
+        #expect(failure.successful == 0)
+        #expect(failure.failed == 1)
+        #expect(failure.messages == ["Clients import failed"])
+        #expect(failure.source == .clients)
     }
     
-    func testMapsUnsupportedCombination() {
+    @Test func MapsUnsupportedCombination() {
         let failure = ImportExportImportResultMapping.makeUnsupportedCombination(
             source: .allData,
             fileName: "data.xls",
@@ -47,8 +46,8 @@ final class ImportExportImportResultMappingTests: XCTestCase {
             supportedExtensions: ["json"]
         )
         
-        XCTAssertFalse(failure.success)
-        XCTAssertEqual(failure.failed, 1)
-        XCTAssertTrue(failure.messages.first?.contains("Unsupported file type for All Data") ?? false)
+        #expect(!(failure.success))
+        #expect(failure.failed == 1)
+        #expect(failure.messages.first?.contains("Unsupported file type for All Data") ?? false)
     }
 }

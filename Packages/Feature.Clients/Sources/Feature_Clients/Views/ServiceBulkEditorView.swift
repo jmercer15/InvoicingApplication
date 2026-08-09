@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import SharedUI
 
 // An enum to represent the two pricing modes.
@@ -17,12 +18,14 @@ struct ClientServiceTemplate: Identifiable {
     // Editable properties
     var serviceName: String
     var ndisCode: String
-    var rate: Double
+    var rate: Decimal
     var unit: String
+    /// `nil` = no establishment fee. When set, live NDIS billing may emit one.
+    var consecutiveMonths: Int?
 
     // Price selection logic
     var priceMode: BulkPriceMode
-    var availableNdisPrices: [String: Double] = [:]
+    var availableNdisPrices: [String: Decimal] = [:]
     var selectedNdisPriceKey: String? // e.g., "Remote"
 
     // Initializer to create a template from an NDIS item
@@ -31,23 +34,24 @@ struct ClientServiceTemplate: Identifiable {
         self.serviceName = ndisItem.name
         self.ndisCode = ndisItem.itemNumber
         self.unit = ndisItem.unit ?? "hour"
+        self.consecutiveMonths = nil
 
         // Process regional prices from the NDIS item
         if let regionalPrices = ndisItem.regionalPrices, !regionalPrices.isEmpty {
             self.priceMode = .ndis
-            var priceDict: [String: Double] = [:]
+            var priceDict: [String: Decimal] = [:]
             for price in regionalPrices {
                 guard let key = price.regionIdentifier, !key.isEmpty else { continue }
                 priceDict[key] = price.amount
             }
             self.availableNdisPrices = priceDict
             self.selectedNdisPriceKey = priceDict.keys.sorted().first
-            self.rate = self.selectedNdisPriceKey.flatMap { priceDict[$0] } ?? 0.0
+            self.rate = self.selectedNdisPriceKey.flatMap { priceDict[$0] } ?? 0
         } else {
             // No regional prices available - use custom mode with fallback
             self.priceMode = .custom
             // Use the price from the domain model if available, otherwise 0.0
-            self.rate = ndisItem.price ?? 0.0
+            self.rate = ndisItem.price ?? 0
         }
         
         // Ensure ndisCode is properly set from itemNumber
@@ -88,7 +92,7 @@ struct ServiceBulkEditorView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: StyleGuide.Dimensions.paddingLarge) {
-                        ForEach(templates.indices, id: \.self) { index in
+                        ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
                             HStack(alignment: .center, spacing: StyleGuide.Dimensions.paddingLarge) {
                                 Text("\(index + 1)")
                                     .font(StyleGuide.Typography.sectionTitle)
@@ -100,10 +104,10 @@ struct ServiceBulkEditorView: View {
                                     .foregroundColor(StyleGuide.Colors.text)
                                     .accessibilityLabel("Template number \(index + 1)")
 
-                                ServiceTemplateRow(template: $templates[index])
+                                ServiceTemplateRow(template: binding(for: template))
 
                                 ServiceTemplateDeleteButton(action: {
-                                    removeTemplate(at: index)
+                                    removeTemplate(template)
                                 })
                             }
                         }
@@ -136,10 +140,19 @@ struct ServiceBulkEditorView: View {
         .background(StyleGuide.Colors.background)
     }
 
-    private func removeTemplate(at index: Int) {
-        // Apply animation when removing templates
+    private func binding(for template: ClientServiceTemplate) -> Binding<ClientServiceTemplate> {
+        Binding(
+            get: { templates.first(where: { $0.id == template.id }) ?? template },
+            set: { updated in
+                guard let index = templates.firstIndex(where: { $0.id == template.id }) else { return }
+                templates[index] = updated
+            }
+        )
+    }
+
+    private func removeTemplate(_ template: ClientServiceTemplate) {
         _ = withAnimation(.easeInOut) {
-            templates.remove(at: index)
+            templates.removeAll { $0.id == template.id }
         }
     }
 }
@@ -153,7 +166,7 @@ struct ServiceTemplateRow: View {
     private var ndisPriceLabels: [String: String] {
         Dictionary(uniqueKeysWithValues: template.availableNdisPrices.keys.sorted().map { key in
             let price = template.availableNdisPrices[key] ?? 0.0
-            let formattedPrice = String(format: "$%.2f", price)
+            let formattedPrice = CurrencyFormatting.display(price)
             return (key, "\(key) (\(formattedPrice))")
         })
     }
@@ -203,7 +216,7 @@ struct ServiceTemplateRow: View {
                     }
                     .onChange(of: rateString) {
                         if let value = Double(rateString.filter("0123456789.".contains)) {
-                            template.rate = value
+                            template.rate = Decimal(value)
                         }
                     }
                 } else {
@@ -218,8 +231,8 @@ struct ServiceTemplateRow: View {
                         }
                         .onChange(of: template.selectedNdisPriceKey) {
                             if let key = template.selectedNdisPriceKey {
-                                template.rate = template.availableNdisPrices[key] ?? 0.0
-                                rateString = String(format: "%.2f", template.rate)
+                                template.rate = template.availableNdisPrices[key] ?? 0
+                                rateString = CurrencyFormatting.editableAmount(template.rate)
                             }
                         }
                     } else {
@@ -235,17 +248,21 @@ struct ServiceTemplateRow: View {
                 }
             }
             .padding(StyleGuide.Dimensions.paddingLarge)
+
+            ConsecutiveMonthsStepperField(consecutiveMonths: $template.consecutiveMonths)
+                .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+                .padding(.bottom, StyleGuide.Dimensions.paddingLarge)
         }
         .standardCardStyle()
         .onAppear {
-            rateString = String(format: "%.2f", template.rate)
+            rateString = CurrencyFormatting.editableAmount(template.rate)
         }
         .onChange(of: template.priceMode) {
             // When price mode changes, update the rate and rateString
             if template.priceMode == .ndis, let key = template.selectedNdisPriceKey {
                 template.rate = template.availableNdisPrices[key] ?? 0.0
             }
-            rateString = String(format: "%.2f", template.rate)
+            rateString = CurrencyFormatting.editableAmount(template.rate)
         }
     }
 }

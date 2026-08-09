@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - BulkClaimLineSnapshot
 
@@ -18,9 +17,9 @@ public struct BulkClaimLineSnapshot: Sendable, Equatable, Hashable {
     public let supportsDeliveredTo: Date
     public let supportNumber: String
     public let claimReference: String?
-    public let quantity: Double?
+    public let quantity: Decimal?
     public let hours: String?
-    public let unitPrice: Double
+    public let unitPrice: Decimal
     public let gstCode: String
     public let authorisedBy: String?
     public let participantApproved: String?
@@ -35,7 +34,7 @@ public struct BulkClaimLineSnapshot: Sendable, Equatable, Hashable {
     public let submissionRef: String?
     public let reconciliationNotes: String?
     public let reconciledAt: Date?
-    public let ndiaPaidAmount: Double?
+    public let ndiaPaidAmount: Decimal?
     public let ndiaErrorCode: String?
     public let ndiaErrorMessage: String?
     public let batchId: UUID?
@@ -50,9 +49,9 @@ public struct BulkClaimLineSnapshot: Sendable, Equatable, Hashable {
         supportsDeliveredTo: Date,
         supportNumber: String,
         claimReference: String? = nil,
-        quantity: Double? = nil,
+        quantity: Decimal? = nil,
         hours: String? = nil,
-        unitPrice: Double,
+        unitPrice: Decimal,
         gstCode: String,
         authorisedBy: String? = nil,
         participantApproved: String? = nil,
@@ -67,7 +66,7 @@ public struct BulkClaimLineSnapshot: Sendable, Equatable, Hashable {
         submissionRef: String? = nil,
         reconciliationNotes: String? = nil,
         reconciledAt: Date? = nil,
-        ndiaPaidAmount: Double? = nil,
+        ndiaPaidAmount: Decimal? = nil,
         ndiaErrorCode: String? = nil,
         ndiaErrorMessage: String? = nil,
         batchId: UUID? = nil,
@@ -106,37 +105,5 @@ public struct BulkClaimLineSnapshot: Sendable, Equatable, Hashable {
         self.invoiceItemId = invoiceItemId
     }
 
-    public init(_ line: BulkClaimLine) {
-        self.id = line.id
-        self.registrationNumber = line.registrationNumber
-        self.ndisNumber = line.ndisNumber
-        self.supportsDeliveredFrom = line.supportsDeliveredFrom
-        self.supportsDeliveredTo = line.supportsDeliveredTo
-        self.supportNumber = line.supportNumber
-        self.claimReference = line.claimReference
-        self.quantity = line.quantity
-        self.hours = line.hours
-        self.unitPrice = line.unitPrice
-        self.gstCode = line.gstCode
-        self.authorisedBy = line.authorisedBy
-        self.participantApproved = line.participantApproved
-        self.inKindFundingProgram = line.inKindFundingProgram
-        self.claimTypeCode = line.claimTypeCode
-        self.cancellationReason = line.cancellationReason
-        self.abnOfSupportProvider = line.abnOfSupportProvider
-        self.draftLineId = line.draftLineId
-        self.isValid = line.isValid
-        self.validationErrorSummary = line.validationErrorSummary
-        self.submissionStatus = line.submissionStatus
-        self.submissionRef = line.submissionRef
-        self.reconciliationNotes = line.reconciliationNotes
-        self.reconciledAt = line.reconciledAt
-        self.ndiaPaidAmount = line.ndiaPaidAmount
-        self.ndiaErrorCode = line.ndiaErrorCode
-        self.ndiaErrorMessage = line.ndiaErrorMessage
-        self.batchId = line.batch?.id
-        self.invoiceId = line.invoice?.id
-        self.invoiceItemId = line.invoiceItem?.id
-    }
 }
 

@@ -13,7 +13,7 @@ public struct InvoiceTemporaryPDF: Sendable {
     }
 
     public func discard() {
-        try? FileManager.default.removeItem(at: workspaceDirectory)
+        InvoiceTemporaryPDFWorkspace.securelyDeleteWorkspace(at: workspaceDirectory)
     }
 }
 
@@ -36,8 +36,10 @@ public enum InvoiceEditorStore {
     @MainActor
     public static func temporaryPDF(
         invoiceID: UUID,
-        in container: ModelContainer
+        in container: ModelContainer,
+        presentation: InvoicePDFPresentation = .invoice
     ) async throws -> InvoiceTemporaryPDF {
+        _ = presentation
         let viewModel = InvoiceEditorViewModel(
             actor: InvoiceModelActor(modelContainer: container)
         )

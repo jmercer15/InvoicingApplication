@@ -1,7 +1,8 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import SwiftData
 import Core
+import PersistenceModels
 
 extension EventKitSyncService {
     // --- Recurring Instance Merge Utilities ---
@@ -142,88 +143,125 @@ extension EventKitSyncService {
         merged: [Date: (Session?, EKEvent?)],
         modelContext: ModelContext
     ) {
-        Task { @MainActor in
+        activeRecurringMergeTask?.cancel()
+        activeRecurringMergeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.activeRecurringMergeTask = nil }
+
+            struct PushWorkItem {
+                let local: Session
+                let localSnapshot: SessionSnapshot
+                let remoteEventId: String?
+                let calendarIdentifier: String
+                let isExisting: Bool
+                let date: Date
+                let eventTitle: String
+                let remoteEventFallback: EKEvent
+            }
+
+            struct PullWorkItem {
+                let remote: EKEvent
+                let date: Date
+            }
+
+            var pushWork: [PushWorkItem] = []
+            var pullWork: [PullWorkItem] = []
+
             for (date, (localInstance, remoteInstance)) in merged {
-                if localInstance != nil && remoteInstance != nil && conflictResolutionPolicy == .prompt {
+                if localInstance != nil && remoteInstance != nil && self.conflictResolutionPolicy == .prompt {
                     continue
                 }
                 if let local = localInstance, remoteInstance == nil {
-                    let localSnapshot = SessionSnapshot(local)
+                    let localSnapshot = local.snapshot()
                     let remoteEvent = await self.findRemoteEvent(for: localSnapshot)
-                    let calendarIdentifier = self.selectedCalendar?.calendarIdentifier
+                    guard let calendarIdentifier = self.selectedCalendar?.calendarIdentifier, !calendarIdentifier.isEmpty else {
+                        continue
+                    }
                     let isExisting = remoteEvent != nil
-                    let remoteEventId = remoteEvent?.eventIdentifier
-                    let eventTitle = local.title
                     let ekEventFallback = EKEvent(eventStore: self.eventStore)
                     if !isExisting {
                         ekEventFallback.calendar = self.selectedCalendar
                     }
-                    let ruleManager = self.recurrenceRuleManager
-
-                    Task {
-                        do {
-                            let savedId = try await Task.detached(priority: .userInitiated) {
-                                let bgStore = EKEventStore()
-                                let bgCalendar = calendarIdentifier.flatMap { bgStore.calendar(withIdentifier: $0) }
-
-                                let bgEvent: EKEvent
-                                if let eventId = remoteEventId, let existing = bgStore.event(withIdentifier: eventId) {
-                                    bgEvent = existing
-                                    _ = bgEvent.refresh()
-                                } else {
-                                    bgEvent = EKEvent(eventStore: bgStore)
-                                    bgEvent.calendar = bgCalendar
-                                }
-
-                                EventKitSessionWriter.mapSessionToEvent(
-                                    localSnapshot,
-                                    event: bgEvent,
-                                    preserveExistingMetadata: isExisting,
-                                    recurrenceRuleManager: ruleManager
-                                )
-                                bgEvent.recurrenceRules = nil
-
-                                try bgStore.save(bgEvent, span: .thisEvent, commit: true)
-                                return bgEvent.eventIdentifier ?? ""
-                            }.value
-
-                            let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? (remoteEvent ?? ekEventFallback)
-                            await self.applyRemoteEventToSession(
-                                remoteEvent: resolvedEvent,
-                                session: local,
-                                includeCoreFields: false
-                            )
-                            print("[SyncService] Pushed detached instance to calendar: \(eventTitle) @ \(date)")
-                        } catch {
-                            print("[SyncService] Error pushing detached instance: \(error.localizedDescription)")
-                        }
-                    }
+                    pushWork.append(
+                        PushWorkItem(
+                            local: local,
+                            localSnapshot: localSnapshot,
+                            remoteEventId: remoteEvent?.eventIdentifier,
+                            calendarIdentifier: calendarIdentifier,
+                            isExisting: isExisting,
+                            date: date,
+                            eventTitle: local.title,
+                            remoteEventFallback: remoteEvent ?? ekEventFallback
+                        )
+                    )
                 } else if let remote = remoteInstance, localInstance == nil {
-                    let descriptor = FetchDescriptor<Session>(
-                        predicate: #Predicate<Session> {
-                            $0.isDetached == true && $0.occurrenceDate == date
-                        }
-                    )
-                    let existing = (try? modelContext.fetch(descriptor))?.first { ($0.derivedFromEKEventID ?? "") == snapshot.id.uuidString }
-
-                    let detached: Session
-                    if let existing = existing {
-                        detached = existing
-                    } else {
-                        let sessionFactory = SessionFactory(context: modelContext)
-                        detached = sessionFactory.createDetachedInstance(from: snapshot, at: date) { _ in }
-                    }
-
-                    await self.applyRemoteEventToSession(
-                        remoteEvent: remote,
-                        session: detached,
-                        includeCoreFields: true
-                    )
-                    detached.status = snapshot.status
-                    detached.recurrenceRuleData = nil
-                    detached.ekRecurrenceRuleDescription = nil
-                    print("[SyncService] Created detached instance from remote: \(detached.title) @ \(date)")
+                    pullWork.append(PullWorkItem(remote: remote, date: date))
                 }
+            }
+
+            for work in pullWork {
+                if Task.isCancelled { return }
+                let occurrenceDate = work.date
+                let descriptor = FetchDescriptor<Session>(
+                    predicate: #Predicate<Session> {
+                        $0.isDetached == true && $0.occurrenceDate == occurrenceDate
+                    }
+                )
+                let existing = (try? modelContext.fetch(descriptor))?.first { ($0.derivedFromEKEventID ?? "") == snapshot.id.uuidString }
+
+                let detached: Session
+                if let existing = existing {
+                    detached = existing
+                } else {
+                    let sessionFactory = SessionFactory(context: modelContext)
+                    detached = sessionFactory.createDetachedInstance(from: snapshot, at: work.date) { _ in }
+                }
+
+                await self.applyRemoteEventToSession(
+                    remoteEvent: work.remote,
+                    session: detached,
+                    includeCoreFields: EventKitSyncPolicy.shouldIncludeCoreFieldsOnPull(for: detached)
+                )
+                detached.status = snapshot.status
+                detached.recurrenceRuleData = nil
+                detached.ekRecurrenceRuleDescription = nil
+                print("[SyncService] Created detached instance from remote: \(detached.title) @ \(work.date)")
+            }
+
+            guard !pushWork.isEmpty else { return }
+
+            do {
+                if Task.isCancelled { return }
+                let payloads = pushWork.map {
+                    DetachedEventSavePayload(
+                        calendarIdentifier: $0.calendarIdentifier,
+                        remoteEventId: $0.remoteEventId,
+                        sessionSnapshot: $0.localSnapshot,
+                        isExisting: $0.isExisting,
+                        clearRecurrenceRules: true
+                    )
+                }
+                let savedIds = try await Self.saveDetachedEventsConcurrently(
+                    payloads: payloads,
+                    recurrenceRuleManager: self.recurrenceRuleManager
+                )
+
+                for (index, work) in pushWork.enumerated() {
+                    if Task.isCancelled { return }
+                    guard index < savedIds.count else { continue }
+                    let savedId = savedIds[index]
+                    let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? work.remoteEventFallback
+                    await self.applyRemoteEventToSession(
+                        remoteEvent: resolvedEvent,
+                        session: work.local,
+                        includeCoreFields: false
+                    )
+                    print("[SyncService] Pushed detached instance to calendar: \(work.eventTitle) @ \(work.date)")
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                print("[SyncService] Error pushing detached instances: \(error.localizedDescription)")
             }
         }
     }
@@ -236,89 +274,79 @@ extension EventKitSyncService {
         remote: EKEvent?,
         modelContext: ModelContext
     ) {
-        Task { @MainActor in
+        activeRecurringMergeTask?.cancel()
+        activeRecurringMergeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.activeRecurringMergeTask = nil }
+
             switch choice {
             case .preferApp:
-                if let local = local {
-                    let localSnapshot = local.snapshot()
-                    let remoteEvent = await self.findRemoteEvent(for: localSnapshot)
-                    let calendarIdentifier = self.selectedCalendar?.calendarIdentifier
-                    let isExisting = remoteEvent != nil
-                    let remoteEventId = remoteEvent?.eventIdentifier
-                    let eventTitle = local.title
-                    let ekEventFallback = EKEvent(eventStore: self.eventStore)
-                    if !isExisting {
-                        ekEventFallback.calendar = self.selectedCalendar
-                    }
-                    let ruleManager = self.recurrenceRuleManager
+                guard let local = local else { return }
+                if Task.isCancelled { return }
+                let localSnapshot = local.snapshot()
+                let remoteEvent = await self.findRemoteEvent(for: localSnapshot)
+                guard let calendarIdentifier = self.selectedCalendar?.calendarIdentifier, !calendarIdentifier.isEmpty else {
+                    return
+                }
+                let isExisting = remoteEvent != nil
+                let eventTitle = local.title
+                let ekEventFallback = EKEvent(eventStore: self.eventStore)
+                if !isExisting {
+                    ekEventFallback.calendar = self.selectedCalendar
+                }
 
-                    Task {
-                        do {
-                            let savedId = try await Task.detached(priority: .userInitiated) {
-                                let bgStore = EKEventStore()
-                                let bgCalendar = calendarIdentifier.flatMap { bgStore.calendar(withIdentifier: $0) }
-
-                                let bgEvent: EKEvent
-                                if let eventId = remoteEventId, let existing = bgStore.event(withIdentifier: eventId) {
-                                    bgEvent = existing
-                                    _ = bgEvent.refresh()
-                                } else {
-                                    bgEvent = EKEvent(eventStore: bgStore)
-                                    bgEvent.calendar = bgCalendar
-                                }
-
-                                EventKitSessionWriter.mapSessionToEvent(
-                                    localSnapshot,
-                                    event: bgEvent,
-                                    preserveExistingMetadata: isExisting,
-                                    recurrenceRuleManager: ruleManager
-                                )
-                                bgEvent.recurrenceRules = nil
-
-                                try bgStore.save(bgEvent, span: .thisEvent, commit: true)
-                                return bgEvent.eventIdentifier ?? ""
-                            }.value
-
-                            let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? (remoteEvent ?? ekEventFallback)
-                            await self.applyRemoteEventToSession(
-                                remoteEvent: resolvedEvent,
-                                session: local,
-                                includeCoreFields: false
-                            )
-                            print("[SyncService] Pushed detached instance to calendar (user preferApp): \(eventTitle) @ \(date)")
-                        } catch {
-                            print("[SyncService] Error pushing detached instance (user preferApp): \(error.localizedDescription)")
-                        }
-                    }
+                do {
+                    if Task.isCancelled { return }
+                    let savedId = try await Self.saveDetachedEvent(
+                        payload: DetachedEventSavePayload(
+                            calendarIdentifier: calendarIdentifier,
+                            remoteEventId: remoteEvent?.eventIdentifier,
+                            sessionSnapshot: localSnapshot,
+                            isExisting: isExisting,
+                            clearRecurrenceRules: true
+                        ),
+                        recurrenceRuleManager: self.recurrenceRuleManager
+                    )
+                    let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? (remoteEvent ?? ekEventFallback)
+                    await self.applyRemoteEventToSession(
+                        remoteEvent: resolvedEvent,
+                        session: local,
+                        includeCoreFields: false
+                    )
+                    print("[SyncService] Pushed detached instance to calendar (user preferApp): \(eventTitle) @ \(date)")
+                } catch is CancellationError {
+                    return
+                } catch {
+                    print("[SyncService] Error pushing detached instance (user preferApp): \(error.localizedDescription)")
                 }
             case .preferCalendar:
-                if let remote = remote {
-                    let descriptor = FetchDescriptor<Session>(
-                        predicate: #Predicate<Session> {
-                            $0.isDetached == true && $0.occurrenceDate == date
-                        }
-                    )
-                    let existing = (try? modelContext.fetch(descriptor))?.first { ($0.derivedFromEKEventID ?? "") == snapshot.id.uuidString }
-
-                    let detached: Session
-                    if let existing = existing {
-                        detached = existing
-                    } else {
-                        let sessionFactory = SessionFactory(context: modelContext)
-                        detached = sessionFactory.createDetachedInstance(from: snapshot, at: date) { _ in }
+                guard let remote = remote else { return }
+                if Task.isCancelled { return }
+                let occurrenceDate = date
+                let descriptor = FetchDescriptor<Session>(
+                    predicate: #Predicate<Session> {
+                        $0.isDetached == true && $0.occurrenceDate == occurrenceDate
                     }
+                )
+                let existing = (try? modelContext.fetch(descriptor))?.first { ($0.derivedFromEKEventID ?? "") == snapshot.id.uuidString }
 
-                    await self.applyRemoteEventToSession(
-                        remoteEvent: remote,
-                        session: detached,
-                        includeCoreFields: true
-                    )
-                    detached.status = snapshot.status
-
-                    detached.recurrenceRuleData = nil
-                    detached.ekRecurrenceRuleDescription = nil
-                    print("[SyncService] Pulled detached instance from calendar (user preferCalendar): \(detached.title) @ \(date)")
+                let detached: Session
+                if let existing = existing {
+                    detached = existing
+                } else {
+                    let sessionFactory = SessionFactory(context: modelContext)
+                    detached = sessionFactory.createDetachedInstance(from: snapshot, at: date) { _ in }
                 }
+
+                await self.applyRemoteEventToSession(
+                    remoteEvent: remote,
+                    session: detached,
+                    includeCoreFields: EventKitSyncPolicy.shouldIncludeCoreFieldsOnPull(for: detached)
+                )
+                detached.status = snapshot.status
+                detached.recurrenceRuleData = nil
+                detached.ekRecurrenceRuleDescription = nil
+                print("[SyncService] Pulled detached instance from calendar (user preferCalendar): \(detached.title) @ \(date)")
             case .skip:
                 break
             }

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 import MapKit
 import SharedUI
@@ -9,10 +10,24 @@ import Observation
 @Observable
 @MainActor
 final class TravelChargeFormState {
+    struct ChargeEstimate {
+        let labourAmount: Double?
+        let nonLabourAmount: Double?
+        let activityTransportAmount: Double?
+        let billableMinutes: Double?
+
+        var total: Double {
+            (labourAmount ?? 0) + (nonLabourAmount ?? 0) + (activityTransportAmount ?? 0)
+        }
+    }
+
     let mainSession: Session
     let daySessions: [DisplayableCalendarItem]
 
     private let geocodingService: any Core.GeocodingServiceProtocol
+    private let travelService = MapKitTravelService()
+    @ObservationIgnored
+    private var distanceTask: Task<Void, Never>?
 
     // MARK: - Form Fields
 
@@ -56,6 +71,23 @@ final class TravelChargeFormState {
     var parking: Double { Double(parkingString) ?? 0 }
     var tolls: Double { Double(tollsString) ?? 0 }
 
+    var saveReadinessMessage: String? {
+        let estimate = chargeEstimate
+        return TravelChargeSaveReadiness.message(
+            chargeType: chargeType,
+            includeLabour: includeLabour,
+            includeNonLabour: includeNonLabour,
+            hasLabourService: labourService != nil,
+            hasNonLabourService: nonLabourService != nil,
+            hasChargeableLabour: (estimate?.labourAmount ?? 0) > 0,
+            hasChargeableNonLabour: (estimate?.nonLabourAmount ?? 0) > 0,
+            hasChargeableActivityTransport: (estimate?.activityTransportAmount ?? 0) > 0,
+            direction: travelDirection,
+            hasExistingTravelBefore: hasExistingTravelBefore,
+            hasExistingTravelAfter: hasExistingTravelAfter
+        )
+    }
+
     var effectiveStartTime: Date {
         mainSession.startTime ?? Date()
     }
@@ -65,10 +97,66 @@ final class TravelChargeFormState {
     }
 
     var canSave: Bool {
-        if chargeType == .standard {
-            return includeLabour || includeNonLabour
+        saveReadinessMessage == nil
+    }
+
+    /// Mirrors `TravelChargePersistence` so users can review the amount that will be saved,
+    /// including MMM caps and participant splitting, before committing a travel row.
+    var chargeEstimate: ChargeEstimate? {
+        switch chargeType {
+        case .standard:
+            let minutes = travelDirection == .before ? travelTimeBefore : travelTimeAfter
+            let labour: (Double, Double?)? = {
+                guard includeLabour, let labourService else { return nil }
+                let breakdown = Core.NDISTravelChargeCalculator.calculate(
+                    providerType: providerType,
+                    hourlyRate: NSDecimalNumber(decimal: labourService.rate).doubleValue,
+                    mmmZoneDescriptor: mmmZone.rawValue,
+                    minutesTravelled: minutes,
+                    kilometresTravelled: 0,
+                    ancillaryCosts: 0,
+                    participantCount: effectiveParticipantCount
+                )
+                return (breakdown.labourPerParticipant, breakdown.billableMinutes)
+            }()
+            let nonLabour: Double? = {
+                guard includeNonLabour, let nonLabourService else { return nil }
+                return Core.NDISTravelChargeCalculator.calculate(
+                    providerType: providerType,
+                    hourlyRate: NSDecimalNumber(decimal: nonLabourService.rate).doubleValue,
+                    mmmZoneDescriptor: mmmZone.rawValue,
+                    minutesTravelled: 0,
+                    kilometresTravelled: distance,
+                    ancillaryCosts: parking + tolls,
+                    participantCount: effectiveParticipantCount
+                ).nonLabourPerParticipant
+            }()
+            guard labour != nil || nonLabour != nil else { return nil }
+            return ChargeEstimate(
+                labourAmount: labour?.0,
+                nonLabourAmount: nonLabour,
+                activityTransportAmount: nil,
+                billableMinutes: labour?.1
+            )
+        case .activityBased:
+            guard let labourService else { return nil }
+            let requestedMinutes = travelDirection == .before ? travelTimeBefore : travelTimeAfter
+            let maximum = Core.NDISTravelChargeCalculator.maxBillableMinutes(forMMMDescriptor: mmmZone.rawValue)
+            let billableMinutes = maximum.isInfinite ? requestedMinutes : min(requestedMinutes, maximum)
+            let labourRate = NSDecimalNumber(decimal: labourService.rate).doubleValue
+            let total = (
+                (billableMinutes / 60.0) * labourRate
+                    + distance * vehicleType.rate
+                    + parking
+                    + tolls
+            ) / Double(effectiveParticipantCount)
+            return ChargeEstimate(
+                labourAmount: nil,
+                nonLabourAmount: nil,
+                activityTransportAmount: total,
+                billableMinutes: billableMinutes
+            )
         }
-        return true
     }
 
     init(
@@ -121,37 +209,43 @@ final class TravelChargeFormState {
     // MARK: - Distance Calculation
 
     func setupAndCalculateDistance() {
-        Task { await doSetupAndCalculateDistance() }
+        distanceTask?.cancel()
+        distanceTask = Task { [weak self] in
+            await self?.doSetupAndCalculateDistance()
+        }
     }
 
     private func doSetupAndCalculateDistance() async {
         distanceCalculationError = nil
         isCalculatingDistance = true
+        defer {
+            if !Task.isCancelled {
+                isCalculatingDistance = false
+            }
+        }
 
         guard let sessionLocation = mainSession.location, !sessionLocation.isEmpty else {
             distanceCalculationError = "The current session address is missing."
-            isCalculatingDistance = false
             return
         }
 
         guard let sessionCoordinates = await getCoordinates(for: sessionLocation) else {
             distanceCalculationError = "Could not geocode the current session address: \(sessionLocation)"
-            isCalculatingDistance = false
             return
         }
+        guard !Task.isCancelled else { return }
 
         let otherLocationData = getOtherLocationData()
         guard let otherAddress = otherLocationData.address, !otherAddress.isEmpty else {
             distanceCalculationError = otherLocationData.address ?? "Other session not found"
-            isCalculatingDistance = false
             return
         }
 
         guard let otherCoordinates = await getCoordinates(for: otherAddress) else {
             distanceCalculationError = "Could not geocode the other location's address: \(otherAddress)"
-            isCalculatingDistance = false
             return
         }
+        guard !Task.isCancelled else { return }
 
         if travelDirection == .before {
             fromAddressString = otherAddress
@@ -161,7 +255,7 @@ final class TravelChargeFormState {
             toAddressString = otherAddress
         }
 
-        calculateDrivingDistance(from: sessionCoordinates, to: otherCoordinates)
+        await calculateDrivingDistance(from: sessionCoordinates, to: otherCoordinates)
     }
 
     // MARK: - Private Helpers
@@ -264,33 +358,14 @@ final class TravelChargeFormState {
         return CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
-    private func calculateDrivingDistance(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D) {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(location: CLLocation(latitude: start.latitude, longitude: start.longitude), address: nil)
-        request.destination = MKMapItem(location: CLLocation(latitude: end.latitude, longitude: end.longitude), address: nil)
-        request.transportType = .automobile
-
-        let directions = MKDirections(request: request)
-        directions.calculate { [weak self] response, error in
-            var distanceInKm: Double?
-            if let dist = response?.routes.first?.distance {
-                distanceInKm = dist / 1000.0
+    private func calculateDrivingDistance(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D) async {
+        guard let details = await travelService.calculateTravelDetails(from: start, to: end) else {
+            if !Task.isCancelled {
+                distanceCalculationError = "Unable to calculate driving distance."
             }
-            let errorMessage = error?.localizedDescription
-
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                isCalculatingDistance = false
-
-                if let errorMsg = errorMessage {
-                    distanceCalculationError = errorMsg
-                    return
-                }
-
-                if let distance = distanceInKm {
-                    distanceString = String(format: "%.1f", distance)
-                }
-            }
+            return
         }
+        guard !Task.isCancelled else { return }
+        distanceString = String(format: "%.1f", details.distance)
     }
 }

@@ -61,8 +61,7 @@ public struct RevenueAnalyticsSummaryView: View {
             }
             .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
             .padding(.vertical, StyleGuide.Dimensions.paddingSmall)
-            .background(ColorSystem.Neutral.gray50.opacity(0.6))
-            .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+            .background(ColorSystem.Neutral.gray50.opacity(0.6), in: RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
         }
     }
 
@@ -77,7 +76,7 @@ public struct RevenueAnalyticsSummaryView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(color)
                 Text(title)
                     .font(StyleGuide.Typography.caption)
@@ -98,15 +97,14 @@ public struct RevenueAnalyticsSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(StyleGuide.Dimensions.paddingSmall)
-        .background(ColorSystem.Neutral.white)
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+        .background(ColorSystem.Neutral.white, in: RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
     }
 
     private func draftCard(count: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: "doc.text.fill")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(StyleGuide.Colors.textSecondary)
                 Text("Drafts")
                     .font(StyleGuide.Typography.caption)
@@ -120,16 +118,10 @@ public struct RevenueAnalyticsSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(StyleGuide.Dimensions.paddingSmall)
-        .background(ColorSystem.Neutral.white)
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+        .background(ColorSystem.Neutral.white, in: RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
     }
 
     private func formatAmount(_ amount: Double, currency: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: amount)) ?? "$\(String(format: "%.2f", amount))"
+        CurrencyFormatting.display(amount, code: currency)
     }
 }

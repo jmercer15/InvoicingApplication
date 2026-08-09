@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - AddressSnapshot
 
@@ -55,23 +54,6 @@ public struct AddressSnapshot: Codable, Sendable, Equatable, Hashable {
         self.longitude = longitude
     }
 
-    public init(_ address: Address) {
-        self.init(
-            id: address.id,
-            country: address.country,
-            postcode: address.postcode,
-            state: address.state,
-            streetName: address.streetName,
-            streetNumber: address.streetNumber,
-            city: address.city,
-            suburb: address.suburb,
-            unitNumber: address.unitNumber,
-            poBox: address.poBox,
-            fullAddressText: address.fullAddressText,
-            latitude: address.latitude,
-            longitude: address.longitude
-        )
-    }
 
     /// Mirrors `Address.fullFormattedAddress` at snapshot time (used by automation / billing).
     public var fullFormattedAddress: String {

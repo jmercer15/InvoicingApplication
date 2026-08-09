@@ -1,6 +1,7 @@
 import SwiftData
 import Core
 import Data
+import DataInterfaces
 import Feature_Settings
 import os
 
@@ -63,12 +64,10 @@ public enum ProductionRuntimeAssembly {
         )
     }
 
-    /// Actor construction runs off the main thread to avoid implicit main-actor binding during bootstrap.
-    private static func loadDatabase() async throws -> DatabasePhase {
-        return try await Task.detached(priority: .userInitiated) {
-            let database = try await AppDatabase.bootstrap(policy: .productionSyncRequired)
-            return DatabasePhase(database: database)
-        }.value
+    /// Bootstrap owns its isolation; callers await it instead of launching unowned work.
+    nonisolated private static func loadDatabase() async throws -> DatabasePhase {
+        let database = try await AppDatabase.bootstrap(policy: .productionSyncRequired)
+        return DatabasePhase(database: database)
     }
 
     public struct IndependentServices {
@@ -82,17 +81,26 @@ public enum ProductionRuntimeAssembly {
     }
 
     public static func makeIndependentServices() -> IndependentServices {
+        makeIndependentServices(startsLiveMonitoring: true, startsEventKitObservation: true)
+    }
+
+    private static func makeIndependentServices(
+        startsLiveMonitoring: Bool,
+        startsEventKitObservation: Bool
+    ) -> IndependentServices {
         let calendarPreferencesStore = CalendarPreferencesStore()
         let geocodingService = GeocodingService()
         let swiftDataGeocodingService = SwiftDataGeocodingService()
         let mmmZoneLookup = MMMZoneLookup()
         let recurrence = RecurrenceRuleManager()
         let cloudKitSyncMonitor = CloudKitSyncMonitor(
-            cloudKitContainerIdentifier: CloudKitConfiguration.containerIdentifier
+            cloudKitContainerIdentifier: CloudKitConfiguration.containerIdentifier,
+            startsLiveMonitoring: startsLiveMonitoring
         )
         let eventKitSyncService = EventKitSyncService(
             preferencesStore: calendarPreferencesStore,
-            recurrenceRuleManager: recurrence
+            recurrenceRuleManager: recurrence,
+            startsLiveObservation: startsEventKitObservation
         )
 
         return IndependentServices(
@@ -112,6 +120,8 @@ public enum ProductionRuntimeAssembly {
         storeChangeMonitor: SwiftDataStoreChangeMonitor
     ) -> AppRuntime.Services {
         let invoiceDigesting = InvoiceDigestActor(modelContainer: database.container)
+        let referenceDataFetching = ReferenceDataWorkflowActor(modelContainer: database.container)
+        let ndisCatalogueFetching = NDISVersioningActor(modelContainer: database.container)
 
         return AppRuntime.Services(
             calendarPreferencesStore: independent.calendarPreferencesStore,
@@ -123,6 +133,8 @@ public enum ProductionRuntimeAssembly {
             storeChangeMonitor: storeChangeMonitor,
             eventKitSyncService: independent.eventKitSyncService,
             invoiceDigesting: invoiceDigesting,
+            referenceDataFetching: referenceDataFetching,
+            ndisCatalogueFetching: ndisCatalogueFetching,
         )
     }
 
@@ -131,12 +143,43 @@ public enum ProductionRuntimeAssembly {
         context.autosaveEnabled = false
 
         let dataWipeService: DataWipeService = DataWipeServiceImpl(modelContext: context)
+        let container = phase.database.container
+        let claimBatchBuilder = ClaimBatchBuilderService(modelContext: context)
+        let claimBatchWorkflow = ClaimBatchWorkflowServices(
+            building: claimBatchBuilder,
+            preflight: BPRPreflightValidator(),
+            csvExport: BPRCSVWriter(),
+            hashVerifier: BulkClaimExportHashVerifier(csvWriter: BPRCSVWriter()),
+            reconciliation: ClaimReconciliationService(modelContext: context),
+            bprfParser: BPRFParser()
+        )
         let settingsServices = SettingsServices(
-            database: phase.database,
-            dataWipeService: dataWipeService
+            importExportCoordinator: ImportExportCoordinator(
+                dataImporterActor: DataImporterActor(modelContainer: container),
+                dataExporterActor: DataExporterActor(modelContainer: container),
+                dataWipeService: dataWipeService,
+                bulkClaimBuilderActor: BulkClaimBuilderActor(modelContainer: container),
+                modelContainer: container
+            ),
+            travelChargeAutomation: TravelChargeAutomationActor(modelContainer: container),
+            calendarSessionWiper: SessionWipeActor(modelContainer: container),
+            claimBatchWorkflow: claimBatchWorkflow,
+            importExportClaimPersistence: SwiftDataImportExportClaimPersistence(modelContext: context),
+            bulkClaimExportHashVerifier: BulkClaimExportHashVerifier(csvWriter: BPRCSVWriter())
+        )
+        let settingsPersistence = AppRuntime.SettingsPersistence(
+            claimBatchPersisting: SwiftDataClaimBatchMainContextPersistence(modelContext: context),
+            businessPersisting: SwiftDataBusinessMainContextPersistence(modelContext: context),
+            travelChargeReviewFetching: SwiftDataTravelChargeReviewMainContextPersistence(modelContext: context),
+            databaseHealthChecking: SwiftDataDatabaseHealthChecker(modelContext: context),
+            clientRelationshipDeleting: SwiftDataClientRelationshipDeleter(modelContext: context)
         )
 
-        return AppRuntime.Persistence(settingsContext: context, settingsServices: settingsServices)
+        return AppRuntime.Persistence(
+            settingsContext: context,
+            settingsServices: settingsServices,
+            settingsPersistence: settingsPersistence
+        )
     }
 
     private static func makeNDISBillingIntegrationService(

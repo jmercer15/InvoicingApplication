@@ -15,10 +15,10 @@ struct ClientNameView: View {
                 HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
                     Image(systemName: "person.fill")
                         .font(CalendarTypography.inlineIcon(size: fontSize))
-                        .foregroundColor(textColor)
+                        .foregroundStyle(textColor)
                     Text(name)
                         .font(CalendarTypography.gridScaled(fontSize))
-                        .foregroundColor(textColor)
+                        .foregroundStyle(textColor)
                         .lineLimit(1)
                 }
             }
@@ -37,10 +37,10 @@ struct ServiceNameView: View {
                 HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
                     Image(systemName: "tag.fill")
                         .font(CalendarTypography.inlineIcon(size: fontSize))
-                        .foregroundColor(textColor)
+                        .foregroundStyle(textColor)
                     Text(name)
                         .font(CalendarTypography.gridScaled(fontSize))
-                        .foregroundColor(textColor)
+                        .foregroundStyle(textColor)
                         .lineLimit(1)
                 }
             }

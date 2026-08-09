@@ -1,5 +1,5 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import Core
 
 extension EventKitSyncService {
@@ -42,8 +42,7 @@ extension EventKitSyncService {
     }
 
     /// Large calendar reads must not block the main actor.
-    /// `EKEventStore` is thread-confined; we spin up a dedicated background queue
-    /// with its own store instance and resume via a checked continuation.
+    /// `EKEventStore` is thread-confined; work runs on a dedicated task with cancellation support.
     /// Pass an empty `calendarIDs` array to query all calendars.
     nonisolated static func fetchEventsOffMainThread(
         start: Date,
@@ -51,89 +50,95 @@ extension EventKitSyncService {
         calendarIDs: [String],
         maxSegmentYears: Int
     ) async -> [EventKitEventSnapshot] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let store = EKEventStore()
-                let segments = EventKitSyncFetchPlanning.buildSegments(
-                    start: start,
-                    end: end,
-                    maxWindowYears: maxSegmentYears,
-                    calendar: Calendar.current
-                )
-                guard !segments.isEmpty else {
-                    continuation.resume(returning: [])
-                    return
-                }
-
-                let calendars: [EKCalendar]? = {
-                    guard !calendarIDs.isEmpty else { return nil }
-                    let cals = calendarIDs.compactMap { store.calendar(withIdentifier: $0) }
-                    return cals.isEmpty ? nil : cals
-                }()
-
-                var allEvents: [EventKitEventSnapshot] = []
-                allEvents.reserveCapacity(segments.count * 64)
-
-                for segment in segments {
-                    let predicate = store.predicateForEvents(
-                        withStart: segment.start,
-                        end: segment.end,
-                        calendars: calendars
+        await withTaskCancellationHandler {
+            do {
+                return try await Task(priority: .userInitiated) {
+                    try Task.checkCancellation()
+                    let store = EKEventStore()
+                    let segments = EventKitSyncFetchPlanning.buildSegments(
+                        start: start,
+                        end: end,
+                        maxWindowYears: maxSegmentYears,
+                        calendar: Calendar.current
                     )
-                    let ekEvents = store.events(matching: predicate)
-                    let mapped = ekEvents.map { event in
-                        let alarmsData = serializeAlarms(event.alarms)
-                        let recurrenceRuleData = event.recurrenceRules?.first.flatMap { RecurrenceRuleManager.shared.serialize($0) }
-                        let recurrenceRuleDescription = event.recurrenceRules?.map(\.description).joined(separator: "\n")
-                        let coordinate = event.structuredLocation?.geoLocation?.coordinate
-                        let googleColorId = GoogleCalendarColors.getGoogleEventColorId(event)
- 
-                        return EventKitEventSnapshot(
-                            eventIdentifier: event.eventIdentifier,
-                            calendarItemExternalIdentifier: event.calendarItemExternalIdentifier,
-                            title: event.title,
-                            startDate: event.startDate,
-                            endDate: event.endDate,
-                            isAllDay: event.isAllDay,
-                            location: event.location,
-                            structuredLocationTitle: event.structuredLocation?.title,
-                            notes: event.notes,
-                            occurrenceDate: event.occurrenceDate,
-                            calendarIdentifier: event.calendar.calendarIdentifier,
-                            calendarSourceIdentifier: event.calendar.source?.sourceIdentifier,
-                            lastModifiedDate: event.lastModifiedDate,
-                            creationDate: event.creationDate,
-                            availabilityRawValue: event.availability.rawValue,
-                            statusRawValue: event.status.rawValue,
-                            organizerName: event.organizer?.name,
-                            organizerURLString: event.organizer?.url.absoluteString,
-                            timeZoneIdentifier: event.timeZone?.identifier,
-                            urlString: event.url?.absoluteString,
-                            attendeesCount: event.attendees?.count ?? 0,
-                            googleColorId: googleColorId,
-                            alarmsData: alarmsData,
-                            recurrenceRuleData: recurrenceRuleData,
-                            recurrenceRuleDescription: recurrenceRuleDescription,
-                            latitude: coordinate?.latitude ?? 0,
-                            longitude: coordinate?.longitude ?? 0
+                    guard !segments.isEmpty else {
+                        return []
+                    }
+
+                    let calendars: [EKCalendar]? = {
+                        guard !calendarIDs.isEmpty else { return nil }
+                        let cals = calendarIDs.compactMap { store.calendar(withIdentifier: $0) }
+                        return cals.isEmpty ? nil : cals
+                    }()
+
+                    var allEvents: [EventKitEventSnapshot] = []
+                    allEvents.reserveCapacity(segments.count * 64)
+
+                    for segment in segments {
+                        try Task.checkCancellation()
+                        let predicate = store.predicateForEvents(
+                            withStart: segment.start,
+                            end: segment.end,
+                            calendars: calendars
                         )
+                        let ekEvents = store.events(matching: predicate)
+                        let mapped = ekEvents.map { event in
+                            let alarmsData = serializeAlarms(event.alarms)
+                            let recurrenceRuleData = event.recurrenceRules?.first.flatMap { RecurrenceRuleManager.shared.serialize($0) }
+                            let recurrenceRuleDescription = event.recurrenceRules?.map(\.description).joined(separator: "\n")
+                            let coordinate = event.structuredLocation?.geoLocation?.coordinate
+                            let googleColorId = GoogleCalendarColors.getGoogleEventColorId(event)
+
+                            return EventKitEventSnapshot(
+                                eventIdentifier: event.eventIdentifier,
+                                calendarItemExternalIdentifier: event.calendarItemExternalIdentifier,
+                                title: event.title,
+                                startDate: event.startDate,
+                                endDate: event.endDate,
+                                isAllDay: event.isAllDay,
+                                location: event.location,
+                                structuredLocationTitle: event.structuredLocation?.title,
+                                notes: event.notes,
+                                occurrenceDate: event.occurrenceDate,
+                                calendarIdentifier: event.calendar.calendarIdentifier,
+                                calendarSourceIdentifier: event.calendar.source?.sourceIdentifier,
+                                lastModifiedDate: event.lastModifiedDate,
+                                creationDate: event.creationDate,
+                                availabilityRawValue: event.availability.rawValue,
+                                statusRawValue: event.status.rawValue,
+                                organizerName: event.organizer?.name,
+                                organizerURLString: event.organizer?.url.absoluteString,
+                                timeZoneIdentifier: event.timeZone?.identifier,
+                                urlString: event.url?.absoluteString,
+                                attendeesCount: event.attendees?.count ?? 0,
+                                googleColorId: googleColorId,
+                                alarmsData: alarmsData,
+                                recurrenceRuleData: recurrenceRuleData,
+                                recurrenceRuleDescription: recurrenceRuleDescription,
+                                latitude: coordinate?.latitude ?? 0,
+                                longitude: coordinate?.longitude ?? 0
+                            )
+                        }
+                        allEvents.append(contentsOf: mapped)
                     }
-                    allEvents.append(contentsOf: mapped)
-                }
- 
-                // Deduplicate and sort snapshots (similar to EventKitSyncFetchPlanning but for snapshots)
-                let sorted = allEvents.sorted { lhs, rhs in
-                    let lStart = lhs.startDate ?? Date.distantPast
-                    let rStart = rhs.startDate ?? Date.distantPast
-                    if lStart != rStart {
-                        return lStart < rStart
+
+                    let sorted = allEvents.sorted { lhs, rhs in
+                        let lStart = lhs.startDate ?? Date.distantPast
+                        let rStart = rhs.startDate ?? Date.distantPast
+                        if lStart != rStart {
+                            return lStart < rStart
+                        }
+                        return (lhs.eventIdentifier ?? "") < (rhs.eventIdentifier ?? "")
                     }
-                    return (lhs.eventIdentifier ?? "") < (rhs.eventIdentifier ?? "")
-                }
- 
-                continuation.resume(returning: sorted)
+
+                    return sorted
+                }.value
+            } catch is CancellationError {
+                return []
+            } catch {
+                return []
             }
-        }
+        } onCancel: {}
     }
  
     // MARK: - Main-Actor Fetch (UI range)

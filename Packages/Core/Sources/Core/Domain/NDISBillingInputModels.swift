@@ -35,6 +35,7 @@ public struct NDISBillingInputVector: Sendable {
     }
 }
 
+/// Participant identity and plan context supplied to the billing algorithm.
 public struct NDISParticipantInfo: Sendable {
     public let ndisNumber: String
     public let planManagementType: String
@@ -47,6 +48,7 @@ public struct NDISParticipantInfo: Sendable {
     }
 }
 
+/// Registered provider identity and location for claim-path validation.
 public struct NDISProviderInfo: Sendable {
     public let abn: String
     public let location: NDISLocation
@@ -59,6 +61,7 @@ public struct NDISProviderInfo: Sendable {
     }
 }
 
+/// Delivered support session details including timing, quantity, and catalogue item.
 public struct NDISServiceInfo: Sendable {
     public let supportItemNumber: String
     public let startTime: Date
@@ -96,6 +99,7 @@ public struct NDISServiceInfo: Sendable {
     }
 }
 
+/// Service-agreement pricing and travel-rate terms for a billed session.
 public struct NDISAgreementInfo: Sendable {
     public let agreedPrice: Double
     public let agreedCancellationPolicy: String?
@@ -108,6 +112,7 @@ public struct NDISAgreementInfo: Sendable {
     }
 }
 
+/// Claim modifiers, group sizing, attendance, and provider classification flags.
 public struct NDISContextInfo: Sendable {
     public let isPrepaymentClaim: Bool
     public let isSubscriptionClaim: Bool
@@ -141,6 +146,9 @@ public struct NDISContextInfo: Sendable {
     public let travelTolls: Double?
     public let travelParking: Double?
 
+    /// Worker classification for time-of-day loadings (`"DSW"`, `"Therapist"`, `"Nurse"`).
+    public let providerType: String
+
     public init(
         isPrepaymentClaim: Bool = false,
         isSubscriptionClaim: Bool = false,
@@ -170,7 +178,8 @@ public struct NDISContextInfo: Sendable {
         travelTimeFrom: Double? = nil,
         travelKilometres: Double? = nil,
         travelTolls: Double? = nil,
-        travelParking: Double? = nil
+        travelParking: Double? = nil,
+        providerType: String = TravelChargeProviderType.dsw.rawValue
     ) {
         self.isPrepaymentClaim = isPrepaymentClaim
         self.isSubscriptionClaim = isSubscriptionClaim
@@ -201,39 +210,66 @@ public struct NDISContextInfo: Sendable {
         self.travelKilometres = travelKilometres
         self.travelTolls = travelTolls
         self.travelParking = travelParking
+        self.providerType = providerType
     }
 }
 
+/// Provider-travel time, distance, and parking/toll inputs for travel line items.
 public struct NDISTravelInfo: Sendable {
     public let timeTo: Double
     public let timeFrom: Double
     public let kilometres: Double
     public let tolls: Double
     public let parking: Double
+    /// When set, ProviderTravel_Labour uses this total instead of hours × rate.
+    public let preferredLabourChargeAmount: Double?
+    /// When set, ProviderTravel_NonLabour uses this total instead of km × rate.
+    public let preferredNonLabourChargeAmount: Double?
 
-    public init(timeTo: Double = 0, timeFrom: Double = 0, kilometres: Double = 0, tolls: Double = 0, parking: Double = 0) {
+    public init(
+        timeTo: Double = 0,
+        timeFrom: Double = 0,
+        kilometres: Double = 0,
+        tolls: Double = 0,
+        parking: Double = 0,
+        preferredLabourChargeAmount: Double? = nil,
+        preferredNonLabourChargeAmount: Double? = nil
+    ) {
         self.timeTo = timeTo
         self.timeFrom = timeFrom
         self.kilometres = kilometres
         self.tolls = tolls
         self.parking = parking
+        self.preferredLabourChargeAmount = preferredLabourChargeAmount
+        self.preferredNonLabourChargeAmount = preferredNonLabourChargeAmount
     }
 }
 
+/// Activity-transport distance and charge overrides for transport line items.
 public struct NDISTransportInfo: Sendable {
     public let kilometres: Double
     public let tolls: Double
     public let parking: Double
     public let isModifiedVehicle: Bool
+    /// When set, ActivityTransport uses this total instead of recomputing from km/tolls/parking.
+    public let preferredChargeAmount: Double?
 
-    public init(kilometres: Double = 0, tolls: Double = 0, parking: Double = 0, isModifiedVehicle: Bool = false) {
+    public init(
+        kilometres: Double = 0,
+        tolls: Double = 0,
+        parking: Double = 0,
+        isModifiedVehicle: Bool = false,
+        preferredChargeAmount: Double? = nil
+    ) {
         self.kilometres = kilometres
         self.tolls = tolls
         self.parking = parking
         self.isModifiedVehicle = isModifiedVehicle
+        self.preferredChargeAmount = preferredChargeAmount
     }
 }
 
+/// Cancellation notice timestamp used for short-notice policy evaluation.
 public struct NDISCancellationInfo: Sendable {
     public let noticeTime: Date
 
@@ -242,6 +278,7 @@ public struct NDISCancellationInfo: Sendable {
     }
 }
 
+/// Prepayment or subscription claim amounts tied to a quoted support item.
 public struct NDISPrepaymentInfo: Sendable {
     public let supportItemNumber: String
     public let totalCost: Double

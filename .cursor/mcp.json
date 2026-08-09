@@ -16,13 +16,8 @@
       "command": "npx",
       "args": [
         "-y",
-        "@kimsungwhee/apple-docs-mcp@latest"
-      ],
-      "env": {
-        "USER_AGENT_ROTATION_ENABLED": "true",
-        "USER_AGENT_POOL_STRATEGY": "smart",
-        "USER_AGENT_MAX_RETRIES": "5"
-      }
+        "apple-doc-mcp-server@latest"
+      ]
     },
     "xcode-tools": {
       "command": "xcrun",

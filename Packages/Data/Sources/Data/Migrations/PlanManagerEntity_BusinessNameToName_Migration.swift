@@ -9,7 +9,7 @@
 //  to match the domain model convention.
 //
 
-import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 

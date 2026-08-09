@@ -3,7 +3,7 @@ import SwiftData
 import SharedUI
 import WorkspaceUI
 import Core
-import Data
+import PersistenceModels
 
 struct CompanyView: View {
     @Query(sort: \Business.id) private var businessEntities: [Business]

@@ -9,7 +9,7 @@ enum InvoiceEditorDeleteCopy {
         let draftWarning = discardsUnsavedChanges
             ? " Unsaved changes to this invoice will also be discarded."
             : ""
-        return "This permanently deletes \(subject) and all of its line items.\(draftWarning)"
+        return "This permanently deletes \(subject) and all of its line items. This cannot be undone.\(draftWarning)"
     }
 }
 
@@ -134,7 +134,7 @@ struct InvoiceEditorView: View {
             }
         }
         .alert("Delete this invoice?", isPresented: $toolbarState.showsDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
+            Button("Delete Invoice", role: .destructive) {
                 Task { await viewModel.deleteSelectedInvoice() }
             }
             Button("Cancel", role: .cancel) {}
@@ -293,6 +293,7 @@ struct InvoiceEditorStatusBanner: View {
             || message.hasPrefix("Review")
             || message.hasPrefix("Save or fix")
             || message.hasPrefix("Enter valid")
+            || message.hasPrefix("Resolve ")
             || message.hasPrefix("Invoice couldn't")
             || message.hasPrefix("Invoice could not")
             || message.hasPrefix("Template couldn't")

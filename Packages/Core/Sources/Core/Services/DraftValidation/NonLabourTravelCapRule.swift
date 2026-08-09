@@ -6,15 +6,15 @@ public struct NonLabourTravelCapRule: Sendable {
 
     public init() {}
 
-    public func evaluate(context: DraftValidationContext) -> [DraftIssue] {
-        var issues: [DraftIssue] = []
+    public func evaluate(context: DraftValidationContext) -> [DraftIssueSnapshot] {
+        var issues: [DraftIssueSnapshot] = []
         let km = context.billingContext.travelDistance
         guard km > 0 else { return issues }
 
         let isNonLabour = context.billingContext.isActivityTransport
             || (context.billingContext.isProviderTravel == false && km > 0)
         if isNonLabour {
-            issues.append(DraftIssue(
+            issues.append(DraftIssueSnapshot(
                 id: UUID(),
                 draftId: context.draftId,
                 severity: .warning,

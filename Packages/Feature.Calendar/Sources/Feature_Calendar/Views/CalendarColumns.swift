@@ -8,15 +8,20 @@ public struct CalendarContentColumn: View {
     /// externally owned `@Observable` class — split-view / toolbar menu hosting can evaluate
     /// nested closures outside the column's observation scope and crash reading filter state.
     private let viewModel: CalendarViewModel
+    private let openBillingHub: (([UUID]) -> Void)?
     @State private var showViewOptions = false
 
-    public init(viewModel: CalendarViewModel) {
+    public init(viewModel: CalendarViewModel, openBillingHub: (([UUID]) -> Void)? = nil) {
         self.viewModel = viewModel
+        self.openBillingHub = openBillingHub
     }
 
     public var body: some View {
         @Bindable var viewModel = viewModel
         let activeFilterCount = Self.activeFilterCount(for: viewModel)
+        let pendingBillingHubCount = viewModel.sessionReadyForBillingHubMessage == nil
+            ? viewModel.sessionReadyForBillingHubSessionIDs.count
+            : 0
 
         VStack(spacing: 12) {
             if viewModel.isBulkSelectionMode {
@@ -25,7 +30,8 @@ public struct CalendarContentColumn: View {
 
             CalendarView(
                 viewModel: viewModel,
-                queryRange: viewModel.currentViewDateRange
+                queryRange: viewModel.currentViewDateRange,
+                openBillingHub: openBillingHub
             )
             .id(CalendarQueryRangeIdentity(viewModel.currentViewDateRange))
         }
@@ -34,6 +40,14 @@ public struct CalendarContentColumn: View {
             CalendarContentToolbar(
                 viewModel: viewModel,
                 activeFilterCount: activeFilterCount,
+                pendingBillingHubCount: pendingBillingHubCount,
+                openPendingBillingHubWork: openBillingHub.map { openBillingHub in
+                    {
+                        let focusIDs = viewModel.sessionReadyForBillingHubSessionIDs
+                        viewModel.clearBillingHubNudge()
+                        openBillingHub(focusIDs)
+                    }
+                },
                 showViewOptions: $showViewOptions
             )
         }
@@ -53,6 +67,8 @@ public struct CalendarContentColumn: View {
 private struct CalendarContentToolbar: ToolbarContent {
     let viewModel: CalendarViewModel
     let activeFilterCount: Int
+    let pendingBillingHubCount: Int
+    let openPendingBillingHubWork: (() -> Void)?
     @Binding var showViewOptions: Bool
 
     var body: some ToolbarContent {
@@ -70,6 +86,27 @@ private struct CalendarContentToolbar: ToolbarContent {
             CalendarJumpToDateButton(viewModel: viewModel)
             CalendarFiltersMenu(viewModel: viewModel, activeFilterCount: activeFilterCount)
             CalendarViewOptionsButton(viewModel: viewModel, showViewOptions: $showViewOptions)
+        }
+
+        if pendingBillingHubCount > 0, let openPendingBillingHubWork {
+            AppToolbarStatusGroup {
+                Button(action: openPendingBillingHubWork) {
+                    Label(
+                        CalendarSessionCompletionFeedback.pendingHandoffLabel(
+                            count: pendingBillingHubCount
+                        ),
+                        systemImage: "arrow.right.circle.fill"
+                    )
+                }
+                .appToolbarLinkStyle(
+                    help: CalendarSessionCompletionFeedback.pendingHandoffHelp(
+                        count: pendingBillingHubCount
+                    )
+                )
+                .accessibilityHint(
+                    "Switches to Billing Hub and focuses ready sessions."
+                )
+            }
         }
 
         ToolbarItem(placement: .primaryAction) {

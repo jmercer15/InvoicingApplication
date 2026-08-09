@@ -4,13 +4,13 @@ import Foundation
 public struct EvidenceCompletenessGate: Sendable {
     public init() {}
 
-    public func evaluate(context: DraftValidationContext) -> [DraftIssue] {
-        var issues: [DraftIssue] = []
+    public func evaluate(context: DraftValidationContext) -> [DraftIssueSnapshot] {
+        var issues: [DraftIssueSnapshot] = []
         let isNdiaManaged = (context.client.planManagementType?.lowercased().contains("ndia") ?? false)
             || (context.client.billingAuthority?.rawValue.lowercased() == "ndia")
         guard isNdiaManaged else { return issues }
 
-        issues.append(DraftIssue(
+        issues.append(DraftIssueSnapshot(
             id: UUID(),
             draftId: context.draftId,
             severity: .info,

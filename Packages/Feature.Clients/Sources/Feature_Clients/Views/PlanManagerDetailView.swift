@@ -3,15 +3,10 @@ import AppKit // For NSColor, NSPasteboard
 import MapKit // For address map view
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import WorkspaceUI
 import Observation
-
-// MARK: - Helper Functions
-
-// Import helper function from Data package to avoid Codable conflicts
-// Helper functions defined in Packages/Data/Sources/Data/Mapping/Client+Mapping.swift
 
 // MARK: - PlanManagerDetailView
 
@@ -22,8 +17,14 @@ struct PlanManagerDetailView: View {
     @State private var viewModel: PlanManagerDetailViewModel
 
     // UI state only
-    @State private var showingMapSheet: Bool = false
-    @State private var showingAddressEditingSheet: Bool = false
+    @State private var activeSheet: PlanManagerDetailSheet?
+
+    private enum PlanManagerDetailSheet: Identifiable {
+        case map
+        case addressEditing
+
+        var id: Self { self }
+    }
     
     // Sorting state
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
@@ -102,8 +103,8 @@ struct PlanManagerDetailView: View {
                     maxLabelWidth: maxLabelWidth,
                     hasAddressData: viewModel.planManager.address != nil,
                     addressText: planManagerAddressText,
-                    showingMapSheet: $showingMapSheet,
-                    showingAddressEditingSheet: $showingAddressEditingSheet
+                    showingMapSheet: mapSheetBinding,
+                    showingAddressEditingSheet: addressEditingSheetBinding
                 )
                 PlanManagerDetailManagedClientsCard(
                     clients: sortedClients,
@@ -120,8 +121,7 @@ struct PlanManagerDetailView: View {
         }
         .foregroundColor(StyleGuide.Colors.text)
         .task(id: viewModel.planManager.id) {
-            let actor = ReferenceDataWorkflowActor(modelContainer: viewModel.modelContext.container)
-            await viewModel.refreshRelatedInvoices(using: actor)
+            await viewModel.refreshRelatedInvoices()
         }
         .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
@@ -129,15 +129,31 @@ struct PlanManagerDetailView: View {
         } message: {
             Text(viewModel.alertMessage)
         }
-        .sheet(isPresented: $showingMapSheet) {
-            if let address = viewModel.planManager.address {
-                InteractiveMapView(address: viewModel.formattedAddressString(from: address))
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .map:
+                if let address = viewModel.planManager.address {
+                    InteractiveMapView(address: viewModel.formattedAddressString(from: address))
+                }
+            case .addressEditing:
+                PlanManagerAddressEditingSheetView(viewModel: viewModel, isPresented: addressEditingSheetBinding)
             }
         }
-        .sheet(isPresented: $showingAddressEditingSheet) {
-            PlanManagerAddressEditingSheetView(viewModel: viewModel, isPresented: $showingAddressEditingSheet)
-        }
         
+    }
+
+    private var mapSheetBinding: Binding<Bool> {
+        Binding(
+            get: { activeSheet == .map },
+            set: { activeSheet = $0 ? .map : nil }
+        )
+    }
+
+    private var addressEditingSheetBinding: Binding<Bool> {
+        Binding(
+            get: { activeSheet == .addressEditing },
+            set: { activeSheet = $0 ? .addressEditing : nil }
+        )
     }
     
     // MARK: - Helper Functions

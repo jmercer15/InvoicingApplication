@@ -13,7 +13,7 @@ struct NativeSessionFormNotesSection: View {
             VStack(spacing: FormSectionTokens.fieldStackSpacing) {
                 TextEditor(text: viewModel.formBinding(\.notes))
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                     .accentColor(ColorSystem.Primary.blue)
                     .frame(minHeight: 80)
                     .scrollContentBackground(.hidden)

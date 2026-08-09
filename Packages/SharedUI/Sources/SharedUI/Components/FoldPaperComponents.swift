@@ -1,47 +1,18 @@
 import SwiftUI
 import Core
-
-
-// MARK: - TreeItem Data Structure
-public struct TreeItem: Hashable, Identifiable, Sendable {
-    public var id: String
-    public var title: String
-    public var subtitle: String?
-    public var children: [TreeItem]? = nil
-    public var entityID: String?
-    public var entityType: String?
-    /// Optional domain state used only for row presentation (for example invoice status colour).
-    public var entityState: String?
-
-    public init(
-        id: String,
-        title: String,
-        subtitle: String? = nil,
-        children: [TreeItem]? = nil,
-        entityID: String? = nil,
-        entityType: String? = nil,
-        entityState: String? = nil
-    ) {
-        self.id = id
-        self.title = title
-        self.subtitle = subtitle
-        self.children = children
-        self.entityID = entityID
-        self.entityType = entityType
-        self.entityState = entityState
-    }
-}
+import PersistenceModels
 
 // MARK: - Simple List Container
 
-public struct FoldPaperContainer: View {
+/// Hierarchical fold-paper list container with breadcrumb drill-down and optional per-item context menus.
+public struct FoldPaperContainer<ContextMenu: View>: View {
     @Binding var items: [TreeItem]
     @State private var selectedItemID: String? = nil
     @State private var selectionPath: [String] = []
     @FocusState private var keyboardFocusedItemID: String?
     let selectedItemIDs: Set<String>?
     let onItemTap: ((TreeItem) -> Void)?
-    let onItemContextMenu: ((TreeItem) -> AnyView?)?
+    let makeContextMenu: (TreeItem) -> ContextMenu
     let rootTitle: String
 
     public init(
@@ -49,39 +20,74 @@ public struct FoldPaperContainer: View {
         selectedItemIDs: Set<String>? = nil,
         rootTitle: String = "All Items",
         onItemTap: ((TreeItem) -> Void)? = nil,
-        onItemContextMenu: ((TreeItem) -> AnyView?)? = nil
+        @ViewBuilder makeContextMenu: @escaping (TreeItem) -> ContextMenu
     ) {
         self._items = items
         self.selectedItemIDs = selectedItemIDs
         self.rootTitle = rootTitle
         self.onItemTap = onItemTap
-        self.onItemContextMenu = onItemContextMenu
+        self.makeContextMenu = makeContextMenu
     }
+}
+
+public extension FoldPaperContainer where ContextMenu == EmptyView {
+    init(
+        items: Binding<[TreeItem]>,
+        selectedItemIDs: Set<String>? = nil,
+        rootTitle: String = "All Items",
+        onItemTap: ((TreeItem) -> Void)? = nil
+    ) {
+        self.init(
+            items: items,
+            selectedItemIDs: selectedItemIDs,
+            rootTitle: rootTitle,
+            onItemTap: onItemTap,
+            makeContextMenu: { _ in EmptyView() }
+        )
+    }
+}
+
+extension FoldPaperContainer {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             breadcrumbView
                 .padding(.bottom, FormSectionTokens.sectionStackSpacing)
 
-            ScrollView {
-                LazyVStack(spacing: PanelShellTokens.contentListGridSpacing) {
-                    ForEach(currentItems, id: \.id) { item in
-                        rowView(for: item)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: PanelShellTokens.contentListGridSpacing) {
+                        ForEach(currentItems, id: \.id) { item in
+                            rowView(for: item)
+                        }
                     }
+                    .standardContentPanelListInsets()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .standardContentPanelListInsets()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.hidden)
+                .onChange(of: selectionPath) {
+                    scrollToSelection(proxy: proxy)
+                }
+                .onAppear {
+                    scrollToSelection(proxy: proxy)
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .animation(.easeInOut(duration: StyleGuide.Animations.durationMedium), value: selectionPath)
+        .appRespectsReduceMotion()
         .onMoveCommand(perform: handleMoveCommand)
-        .onAppear(perform: ensureKeyboardFocus)
+        .onAppear {
+            ensureKeyboardFocus()
+            revealSelectionIfNeeded()
+        }
         .onChange(of: items) {
             pruneSelectionPath()
         }
         .onChange(of: currentItemIDs) {
             ensureKeyboardFocus()
+        }
+        .onChange(of: selectedItemIDs) {
+            revealSelectionIfNeeded()
         }
     }
 
@@ -113,20 +119,33 @@ public struct FoldPaperContainer: View {
         currentItems.map(\.id)
     }
 
+    private struct BreadcrumbNode: Identifiable {
+        let id: String
+        let node: TreeItem?
+        let indentLevel: Int
+    }
+
+    private var breadcrumbNodes: [BreadcrumbNode] {
+        var nodes = [BreadcrumbNode(id: "root", node: nil, indentLevel: 0)]
+        for (index, item) in breadcrumbTrail.enumerated() {
+            nodes.append(BreadcrumbNode(id: item.id, node: item, indentLevel: index + 1))
+        }
+        return nodes
+    }
+
     private var breadcrumbView: some View {
         AppBreadcrumbBar(
             showsBackButton: !selectionPath.isEmpty,
             onBack: goBack
         ) {
-            let nodes: [TreeItem?] = [nil] + breadcrumbTrail.map { Optional($0) }
-            ForEach(Array(nodes.enumerated()), id: \.offset) { index, node in
+            ForEach(breadcrumbNodes) { entry in
                 AppBreadcrumbSegmentButton(
-                    title: node?.title ?? rootTitle,
-                    count: entityCount(for: node),
-                    indentLevel: index,
-                    backgroundColor: breadcrumbBackground(for: node)
+                    title: entry.node?.title ?? rootTitle,
+                    count: entityCount(for: entry.node),
+                    indentLevel: entry.indentLevel,
+                    backgroundColor: breadcrumbBackground(for: entry.node)
                 ) {
-                    crumbTapped(at: index)
+                    crumbTapped(at: entry.indentLevel)
                 }
             }
         }
@@ -223,8 +242,10 @@ public struct FoldPaperContainer: View {
             }
         }
 
-        if let menu = onItemContextMenu?(item) {
-            row.contextMenu { menu }
+        if item.entityID != nil {
+            row.contextMenu {
+                makeContextMenu(item)
+            }
         } else {
             row
         }
@@ -246,6 +267,29 @@ public struct FoldPaperContainer: View {
                 selectedItemID = item.id
             }
             onItemTap?(item)
+        }
+    }
+
+    /// Deep-linked selections (e.g. arriving via Billing Hub's `openInvoice`) may point at a leaf
+    /// nested several groups deep. Drill the breadcrumb path down to that leaf's parent so the item
+    /// is actually visible instead of silently selected off-screen.
+    private func revealSelectionIfNeeded() {
+        guard let selectedItemIDs, !selectedItemIDs.isEmpty else { return }
+        if currentItems.contains(where: { selectedItemIDs.contains($0.id) }) { return }
+        guard let path = FoldPaperSelectionReveal.path(toReveal: selectedItemIDs, in: items) else { return }
+        if path != selectionPath {
+            selectionPath = path
+        }
+    }
+
+    private func scrollToSelection(proxy: ScrollViewProxy) {
+        guard let selectedItemIDs,
+              let targetID = currentItems.first(where: { selectedItemIDs.contains($0.id) })?.id
+        else { return }
+        Task { @MainActor in
+            withAnimation(.easeInOut(duration: StyleGuide.Animations.durationMedium)) {
+                proxy.scrollTo(targetID, anchor: .center)
+            }
         }
     }
 
@@ -332,32 +376,5 @@ public struct FoldPaperContainer: View {
         keyboardFocusedItemID = currentItems.first(where: {
             selectedItemIDs?.contains($0.id) == true
         })?.id ?? selectedItemID ?? currentItems.first?.id
-    }
-}
-
-enum FoldPaperKeyboardNavigation {
-    enum Move: Equatable {
-        case previous
-        case next
-    }
-
-    static func adjacentItemID(
-        currentID: String?,
-        itemIDs: [String],
-        move: Move
-    ) -> String? {
-        guard !itemIDs.isEmpty else { return nil }
-        guard let currentID,
-              let currentIndex = itemIDs.firstIndex(of: currentID)
-        else {
-            return move == .next ? itemIDs.first : itemIDs.last
-        }
-
-        switch move {
-        case .previous:
-            return itemIDs[max(0, currentIndex - 1)]
-        case .next:
-            return itemIDs[min(itemIDs.count - 1, currentIndex + 1)]
-        }
     }
 }

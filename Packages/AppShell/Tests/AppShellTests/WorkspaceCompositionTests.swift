@@ -1,15 +1,16 @@
 import Core
 import SharedUI
 @testable import AppShell
-import XCTest
+import Foundation
+import Testing
 import SwiftUI
 import SwiftData
 import Data
 import InvoiceTableLayoutEditor
 
 @MainActor
-final class WorkspaceCompositionTests: XCTestCase {
-    func testTemplateCreationHandoffOpensOnlyMaterializedInvoice() async throws {
+@Suite struct WorkspaceCompositionTests {
+    @Test func TemplateCreationHandoffOpensOnlyMaterializedInvoice() async throws {
         let createdID = UUID()
         var openedIDs: [UUID] = []
 
@@ -18,11 +19,11 @@ final class WorkspaceCompositionTests: XCTestCase {
             openInvoice: { openedIDs.append($0) }
         )
 
-        XCTAssertEqual(result, createdID)
-        XCTAssertEqual(openedIDs, [createdID])
+        #expect(result == createdID)
+        #expect(openedIDs == [createdID])
     }
 
-    func testTemplateCreationHandoffDoesNotNavigateAfterCreationFailure() async {
+    @Test func TemplateCreationHandoffDoesNotNavigateAfterCreationFailure() async {
         var openedIDs: [UUID] = []
 
         do {
@@ -30,28 +31,28 @@ final class WorkspaceCompositionTests: XCTestCase {
                 createInvoice: { throw TestInvoiceCreationError.failed },
                 openInvoice: { openedIDs.append($0) }
             )
-            XCTFail("Expected creation failure")
+            Issue.record("Expected creation failure")
         } catch {
-            XCTAssertEqual(error as? TestInvoiceCreationError, .failed)
+            #expect(error as? TestInvoiceCreationError == .failed)
         }
 
-        XCTAssertTrue(openedIDs.isEmpty)
+        #expect(openedIDs.isEmpty)
     }
 
-    func testWorkspaceSceneNavigationStatesOwnIndependentNavigationManagers() {
+    @Test func WorkspaceSceneNavigationStatesOwnIndependentNavigationManagers() {
         let first = WorkspaceSceneNavigationState()
         let second = WorkspaceSceneNavigationState()
 
         first.navigationManager.navigateTo(tab: .billingHub)
         first.navigationManager.inspectorIsPresented = true
 
-        XCTAssertEqual(first.navigationManager.selectedTab, .billingHub)
-        XCTAssertEqual(second.navigationManager.selectedTab, .invoices)
-        XCTAssertTrue(first.navigationManager.inspectorIsPresented)
-        XCTAssertFalse(second.navigationManager.inspectorIsPresented)
+        #expect(first.navigationManager.selectedTab == .billingHub)
+        #expect(second.navigationManager.selectedTab == .invoices)
+        #expect(first.navigationManager.inspectorIsPresented)
+        #expect(!(second.navigationManager.inspectorIsPresented))
     }
 
-    func testCommandActionsRouteTabsInspectorAndCreationClosuresThroughNavigationManager() {
+    @Test func CommandActionsRouteTabsInspectorAndCreationClosuresThroughNavigationManager() {
         let navigationManager = AppNavigationManager()
         let actions = WorkspaceCommandActionFactory.make(
             navigationManager: navigationManager,
@@ -60,20 +61,20 @@ final class WorkspaceCompositionTests: XCTestCase {
         )
 
         actions.switchToTab(.relationships)
-        XCTAssertEqual(navigationManager.selectedTab, .relationships)
+        #expect(navigationManager.selectedTab == .relationships)
 
-        XCTAssertFalse(navigationManager.inspectorIsPresented)
+        #expect(!(navigationManager.inspectorIsPresented))
         actions.toggleInspector?()
-        XCTAssertTrue(navigationManager.inspectorIsPresented)
+        #expect(navigationManager.inspectorIsPresented)
 
         actions.createNewInvoice?()
-        XCTAssertEqual(navigationManager.selectedTab, .invoices)
+        #expect(navigationManager.selectedTab == .invoices)
 
         actions.createNewSession?()
-        XCTAssertEqual(navigationManager.selectedTab, .calendar)
+        #expect(navigationManager.selectedTab == .calendar)
     }
 
-    func testEntityNavigationHandlersRouteRelatedFeatureEntitiesThroughWorkspacePath() {
+    @Test func EntityNavigationHandlersRouteRelatedFeatureEntitiesThroughWorkspacePath() {
         let navigationManager = AppNavigationManager()
         let handlers = makeWorkspaceEntityNavigationHandlers(navigationManager: navigationManager)
         let invoiceID = UUID()
@@ -81,27 +82,27 @@ final class WorkspaceCompositionTests: XCTestCase {
         let clientID = UUID()
 
         handlers.openInvoice(invoiceID)
-        XCTAssertEqual(navigationManager.selectedTab, .invoices)
-        XCTAssertEqual(navigationManager.navigationPath, [.invoice(invoiceID)])
+        #expect(navigationManager.selectedTab == .invoices)
+        #expect(navigationManager.navigationPath == [.invoice(invoiceID)])
 
         handlers.openSession(sessionID)
-        XCTAssertEqual(navigationManager.selectedTab, .calendar)
-        XCTAssertEqual(navigationManager.navigationPath, [.session(sessionID)])
+        #expect(navigationManager.selectedTab == .calendar)
+        #expect(navigationManager.navigationPath == [.session(sessionID)])
 
         handlers.openClient(clientID)
-        XCTAssertEqual(navigationManager.selectedTab, .relationships)
-        XCTAssertEqual(navigationManager.navigationPath, [.client(clientID)])
+        #expect(navigationManager.selectedTab == .relationships)
+        #expect(navigationManager.navigationPath == [.client(clientID)])
 
         navigationManager.navigateBack()
-        XCTAssertEqual(navigationManager.selectedTab, .calendar)
-        XCTAssertEqual(navigationManager.navigationPath, [.session(sessionID)])
+        #expect(navigationManager.selectedTab == .calendar)
+        #expect(navigationManager.navigationPath == [.session(sessionID)])
 
         navigationManager.navigateBack()
-        XCTAssertEqual(navigationManager.selectedTab, .invoices)
-        XCTAssertEqual(navigationManager.navigationPath, [.invoice(invoiceID)])
+        #expect(navigationManager.selectedTab == .invoices)
+        #expect(navigationManager.navigationPath == [.invoice(invoiceID)])
     }
 
-    func testWorkspaceCommandActionsExcludeEditorOwnedDocumentCommands() {
+    @Test func WorkspaceCommandActionsExcludeEditorOwnedDocumentCommands() {
         let navigationManager = AppNavigationManager()
         navigationManager.navigateTo(tab: .invoices)
 
@@ -110,12 +111,12 @@ final class WorkspaceCompositionTests: XCTestCase {
             canToggleInspector: true
         )
 
-        XCTAssertFalse(actions.canCreateNewInvoice)
-        XCTAssertFalse(actions.canCreateNewSession)
-        XCTAssertTrue(actions.canToggleInspector)
+        #expect(!(actions.canCreateNewInvoice))
+        #expect(!(actions.canCreateNewSession))
+        #expect(actions.canToggleInspector)
     }
 
-    func testWorkspaceCreationCommandCanBeDisabledWhileCreationIsInFlight() {
+    @Test func WorkspaceCreationCommandCanBeDisabledWhileCreationIsInFlight() {
         let navigationManager = AppNavigationManager()
         let actions = WorkspaceCommandActionFactory.make(
             navigationManager: navigationManager,
@@ -123,10 +124,10 @@ final class WorkspaceCompositionTests: XCTestCase {
             canCreateNewInvoice: false
         )
 
-        XCTAssertFalse(actions.canCreateNewInvoice)
+        #expect(!(actions.canCreateNewInvoice))
     }
 
-    func testInvoiceCommandRefreshTokenTracksSelectionAndCreationActivity() {
+    @Test func InvoiceCommandRefreshTokenTracksSelectionAndCreationActivity() {
         let invoiceID = UUID()
         let idle = WorkspaceInvoiceCommandRefreshToken(
             selectedInvoiceID: invoiceID,
@@ -141,11 +142,11 @@ final class WorkspaceCompositionTests: XCTestCase {
             isCreatingInvoice: false
         )
 
-        XCTAssertNotEqual(idle, creating)
-        XCTAssertNotEqual(idle, differentSelection)
+        #expect(idle != creating)
+        #expect(idle != differentSelection)
     }
 
-    func testWorkspaceCommandRefreshCoalescesEquivalentAvailability() {
+    @Test func WorkspaceCommandRefreshCoalescesEquivalentAvailability() {
         let navigationManager = AppNavigationManager()
         let actions = WorkspaceCommandActionFactory.make(
             navigationManager: navigationManager,
@@ -158,7 +159,7 @@ final class WorkspaceCompositionTests: XCTestCase {
             createNewSession: {}
         )
 
-        XCTAssertFalse(actions.apply(equivalent))
+        #expect(!(actions.apply(equivalent)))
 
         navigationManager.navigateTo(tab: .relationships)
         let changed = WorkspaceCommandActionFactory.make(
@@ -167,13 +168,13 @@ final class WorkspaceCompositionTests: XCTestCase {
             createNewSession: {}
         )
 
-        XCTAssertTrue(actions.apply(changed))
-        XCTAssertFalse(actions.canSwitchToTab(.relationships))
-        XCTAssertTrue(actions.canSwitchToTab(.invoices))
-        XCTAssertFalse(actions.apply(changed))
+        #expect(actions.apply(changed))
+        #expect(!(actions.canSwitchToTab(.relationships)))
+        #expect(actions.canSwitchToTab(.invoices))
+        #expect(!(actions.apply(changed)))
     }
 
-    func testFocusedInvoiceEditorConstrainsWorkspaceOwnedCreationWhileBusy() {
+    @Test func FocusedInvoiceEditorConstrainsWorkspaceOwnedCreationWhileBusy() {
         let editor = InvoiceEditorCommandActions()
         editor.updateCapabilities(
             canCreate: false,
@@ -186,28 +187,20 @@ final class WorkspaceCompositionTests: XCTestCase {
             isInvoiceContext: true
         )
 
-        XCTAssertTrue(AppInvoiceCommandRoutingPolicy.showsInvoiceDocumentCommands(editor))
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canCreate(
+        #expect(AppInvoiceCommandRoutingPolicy.showsInvoiceDocumentCommands(editor))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canCreate(
                 editor: editor,
                 workspaceCanCreate: true
-            )
-        )
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canPrint(editor: editor)
-        )
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor)
-        )
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canToggleInspector(
+            )))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canPrint(editor: editor)))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor)))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canToggleInspector(
                 editor: editor,
                 workspaceCanToggle: true
-            )
-        )
+            )))
     }
 
-    func testFocusedTemplateEditorKeepsMockDocumentCommandsIsolated() {
+    @Test func FocusedTemplateEditorKeepsMockDocumentCommandsIsolated() {
         let editor = InvoiceEditorCommandActions()
         editor.updateCapabilities(
             canCreate: true,
@@ -220,28 +213,20 @@ final class WorkspaceCompositionTests: XCTestCase {
             isInvoiceContext: false
         )
 
-        XCTAssertFalse(AppInvoiceCommandRoutingPolicy.showsInvoiceDocumentCommands(editor))
-        XCTAssertTrue(
-            AppInvoiceCommandRoutingPolicy.canCreate(
+        #expect(!(AppInvoiceCommandRoutingPolicy.showsInvoiceDocumentCommands(editor)))
+        #expect(AppInvoiceCommandRoutingPolicy.canCreate(
                 editor: editor,
                 workspaceCanCreate: true
-            )
-        )
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canPrint(editor: editor)
-        )
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor)
-        )
-        XCTAssertTrue(
-            AppInvoiceCommandRoutingPolicy.canToggleInspector(
+            ))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canPrint(editor: editor)))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor)))
+        #expect(AppInvoiceCommandRoutingPolicy.canToggleInspector(
                 editor: editor,
                 workspaceCanToggle: false
-            )
-        )
+            ))
     }
 
-    func testFocusedTemplateEditorCanDisableCreationForInvalidFormatState() {
+    @Test func FocusedTemplateEditorCanDisableCreationForInvalidFormatState() {
         let editor = InvoiceEditorCommandActions()
         editor.updateCapabilities(
             canCreate: false,
@@ -254,32 +239,26 @@ final class WorkspaceCompositionTests: XCTestCase {
             isInvoiceContext: false
         )
 
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canCreate(
+        #expect(!(AppInvoiceCommandRoutingPolicy.canCreate(
                 editor: editor,
                 workspaceCanCreate: true
-            )
-        )
+            )))
     }
 
-    func testOnlyWorkspaceOwnedCommandsFallBackWithoutFocusedInvoiceEditor() {
-        XCTAssertTrue(
-            AppInvoiceCommandRoutingPolicy.canCreate(
+    @Test func OnlyWorkspaceOwnedCommandsFallBackWithoutFocusedInvoiceEditor() {
+        #expect(AppInvoiceCommandRoutingPolicy.canCreate(
                 editor: nil,
                 workspaceCanCreate: true
-            )
-        )
-        XCTAssertFalse(AppInvoiceCommandRoutingPolicy.canPrint(editor: nil))
-        XCTAssertFalse(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: nil))
-        XCTAssertTrue(
-            AppInvoiceCommandRoutingPolicy.canToggleInspector(
+            ))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canPrint(editor: nil)))
+        #expect(!(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: nil)))
+        #expect(AppInvoiceCommandRoutingPolicy.canToggleInspector(
                 editor: nil,
                 workspaceCanToggle: true
-            )
-        )
+            ))
     }
 
-    func testWorkspaceCreationGateStillAppliesWhenInvoiceEditorIsAvailable() {
+    @Test func WorkspaceCreationGateStillAppliesWhenInvoiceEditorIsAvailable() {
         let editor = InvoiceEditorCommandActions()
         editor.updateCapabilities(
             canCreate: true,
@@ -292,15 +271,13 @@ final class WorkspaceCompositionTests: XCTestCase {
             isInvoiceContext: true
         )
 
-        XCTAssertFalse(
-            AppInvoiceCommandRoutingPolicy.canCreate(
+        #expect(!(AppInvoiceCommandRoutingPolicy.canCreate(
                 editor: editor,
                 workspaceCanCreate: false
-            )
-        )
+            )))
     }
 
-    func testFocusedEditorPreparationCanStopWorkspaceOwnedCreation() async {
+    @Test func FocusedEditorPreparationCanStopWorkspaceOwnedCreation() async {
         let editor = InvoiceEditorCommandActions()
         var preparationCount = 0
         editor.prepareForInvoiceCreation = {
@@ -310,12 +287,12 @@ final class WorkspaceCompositionTests: XCTestCase {
 
         let focusedResult = await AppInvoiceCommandRoutingPolicy.prepareForCreate(editor: editor)
         let unfocusedResult = await AppInvoiceCommandRoutingPolicy.prepareForCreate(editor: nil)
-        XCTAssertFalse(focusedResult)
-        XCTAssertEqual(preparationCount, 1)
-        XCTAssertTrue(unfocusedResult)
+        #expect(!(focusedResult))
+        #expect(preparationCount == 1)
+        #expect(unfocusedResult)
     }
 
-    func testFocusedEditorExclusivelyPublishesPrintAndExportCapabilities() {
+    @Test func FocusedEditorExclusivelyPublishesPrintAndExportCapabilities() {
         let editor = InvoiceEditorCommandActions()
         editor.updateCapabilities(
             canCreate: false,
@@ -328,69 +305,69 @@ final class WorkspaceCompositionTests: XCTestCase {
             isInvoiceContext: true
         )
 
-        XCTAssertTrue(AppInvoiceCommandRoutingPolicy.canPrint(editor: editor))
-        XCTAssertTrue(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor))
+        #expect(AppInvoiceCommandRoutingPolicy.canPrint(editor: editor))
+        #expect(AppInvoiceCommandRoutingPolicy.canExportPDF(editor: editor))
     }
 
-    func testCommandActionsBackForwardUsesNavigationHistory() {
+    @Test func CommandActionsBackForwardUsesNavigationHistory() {
         let navigationManager = AppNavigationManager()
         let actions = WorkspaceCommandActionFactory.make(navigationManager: navigationManager)
 
         navigationManager.navigateTo(tab: .relationships)
-        XCTAssertEqual(navigationManager.selectedTab, .relationships)
-        XCTAssertTrue(actions.canNavigateBack())
+        #expect(navigationManager.selectedTab == .relationships)
+        #expect(actions.canNavigateBack())
 
         actions.navigateBack()
-        XCTAssertEqual(navigationManager.selectedTab, .invoices)
-        XCTAssertTrue(actions.canNavigateForward())
+        #expect(navigationManager.selectedTab == .invoices)
+        #expect(actions.canNavigateForward())
 
         actions.navigateForward()
-        XCTAssertEqual(navigationManager.selectedTab, .relationships)
+        #expect(navigationManager.selectedTab == .relationships)
     }
 
-    func testWorkspaceSearchConfigurationWritesToSearchBindingSource() {
+    @Test func WorkspaceSearchConfigurationWritesToSearchBindingSource() {
         let source = TestWorkspaceSearchBindingSource()
 
-        XCTAssertTrue(WorkspaceSearchConfiguration.isPresented(for: .invoices))
-        XCTAssertFalse(WorkspaceSearchConfiguration.isPresented(for: .calendar))
-        XCTAssertFalse(WorkspaceSearchConfiguration.isPresented(for: .invoiceTemplateEditor))
+        #expect(WorkspaceSearchConfiguration.isPresented(for: .invoices))
+        #expect(!(WorkspaceSearchConfiguration.isPresented(for: .calendar)))
+        #expect(!(WorkspaceSearchConfiguration.isPresented(for: .invoiceTemplateEditor)))
 
         let invoiceSearch = WorkspaceSearchConfiguration.textBinding(for: .invoices, source: source)
         invoiceSearch.wrappedValue = "priority"
-        XCTAssertEqual(source.invoiceSearchText, "priority")
+        #expect(source.invoiceSearchText == "priority")
 
         let relationshipSearch = WorkspaceSearchConfiguration.textBinding(for: .relationships, source: source)
         relationshipSearch.wrappedValue = "client"
-        XCTAssertEqual(source.relationshipSearchText, "client")
+        #expect(source.relationshipSearchText == "client")
 
         let ndisSearch = WorkspaceSearchConfiguration.textBinding(for: .ndisCatalogue, source: source)
         ndisSearch.wrappedValue = "support"
-        XCTAssertEqual(source.ndisSearchText, "support")
+        #expect(source.ndisSearchText == "support")
 
         let billingSearch = WorkspaceSearchConfiguration.textBinding(for: .billingHub, source: source)
         billingSearch.wrappedValue = "session"
-        XCTAssertEqual(source.billingHubSearchText, "session")
+        #expect(source.billingHubSearchText == "session")
     }
 
-    func testActiveWorkspaceSceneSessionKeyFocusedValues() {
+    @Test func ActiveWorkspaceSceneSessionKeyFocusedValues() {
         let keyPath = \FocusedValues.activeWorkspaceSceneSession
-        XCTAssertEqual(keyPath, \FocusedValues.activeWorkspaceSceneSession)
+        #expect(keyPath == \FocusedValues.activeWorkspaceSceneSession)
     }
 
-    func testApplicationWorkspaceContextTracksLastActiveWindowSession() {
+    @Test func ApplicationWorkspaceContextTracksLastActiveWindowSession() {
         let first = TestWorkspaceSessionReference()
         let second = TestWorkspaceSessionReference()
         let context = ApplicationWorkspaceContext()
 
         context.activate(first)
-        XCTAssertTrue(context.isActive(first))
+        #expect(context.isActive(first))
 
         context.activate(second)
         context.release(first)
-        XCTAssertTrue(context.isActive(second))
+        #expect(context.isActive(second))
 
         context.release(second)
-        XCTAssertFalse(context.isActive(second))
+        #expect(!(context.isActive(second)))
     }
 }
 

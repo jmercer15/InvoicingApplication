@@ -1,18 +1,10 @@
-import Data
 import Core
 
 enum ImportExportImportResultMapping {
     typealias CoreImportResult = Core.ImportResult
 
-    static func make(_ dataResult: Data.ImportResult) -> CoreImportResult {
-        make(
-            sourceRawValue: dataResult.source.rawValue,
-            successful: dataResult.successful,
-            failed: dataResult.failed,
-            importedCounts: dataResult.importedCounts,
-            messages: dataResult.messages,
-            fileName: dataResult.fileName
-        )
+    static func make(_ dataResult: CoreImportResult) -> CoreImportResult {
+        dataResult
     }
 
     static func make(
@@ -26,50 +18,6 @@ enum ImportExportImportResultMapping {
             fileName: fileName,
             message: "Import failed: \(message)"
         )
-    }
-
-    static func makeAllDataSummary(
-        from results: [Data.ImportResult],
-        source: ImportSource = .allData,
-        fileName: String = "Internal Resource Bundle"
-    ) -> CoreImportResult {
-        let totalSuccessful = results.reduce(0) { $0 + $1.successful }
-        let totalFailed = results.reduce(0) { $0 + $1.failed }
-        let allMessages = results.flatMap(\.messages)
-        let aggregatedCounts = results.reduce(into: [String: Int]()) { counts, result in
-            for (key, value) in result.importedCounts {
-                counts[key, default: 0] += value
-            }
-        }
-
-        return CoreImportResult(
-            source: source,
-            success: totalFailed == 0,
-            successful: totalSuccessful,
-            failed: totalFailed,
-            importedCounts: aggregatedCounts,
-            messages: allMessages,
-            fileName: fileName
-        )
-    }
-
-    static func makePreferredSourceResult(
-        from results: [Data.ImportResult],
-        preferredSource: ImportSource,
-        fileName: String = "Internal Resource Bundle"
-    ) -> CoreImportResult {
-        guard let preferred = results.first(where: { $0.source == preferredSource }) else {
-            return results.first.map(make(_:)) ?? CoreImportResult(
-                source: preferredSource,
-                success: false,
-                successful: 0,
-                failed: 1,
-                messages: ["No result was returned."],
-                fileName: fileName
-            )
-        }
-
-        return make(preferred)
     }
 
     static func makeFailure(

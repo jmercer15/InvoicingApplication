@@ -1,5 +1,4 @@
 import SwiftUI
-import Data
 import SharedUI
 
 struct DetailedReviewView: View {

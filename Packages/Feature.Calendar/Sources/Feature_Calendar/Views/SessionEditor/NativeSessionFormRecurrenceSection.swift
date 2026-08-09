@@ -1,5 +1,4 @@
 import SwiftUI
-import Data
 import SharedUI
 
 struct NativeSessionFormRecurrenceSection: View {
@@ -18,7 +17,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Repeat:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     Picker("", selection: $selectedRepeatOption) {
                         ForEach(RepeatOption.allCases, id: \.self) { option in
@@ -51,7 +50,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 if viewModel.formModel.hasRecurrence {
                     Text(getRecurrenceSummaryText())
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.leading, StyleGuide.Dimensions.formLabelWidth + StyleGuide.Dimensions.paddingSmall)
                         .fluidListTransition()
@@ -68,7 +67,7 @@ struct NativeSessionFormRecurrenceSection: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Frequency:")
                     .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
 
                 Picker("Frequency", selection: viewModel.formBinding(\.recurrenceFrequency)) {
                     ForEach(RecurrenceFrequency.allCases, id: \.self) { frequency in
@@ -89,14 +88,14 @@ struct NativeSessionFormRecurrenceSection: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Every:")
                     .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
 
                 HStack(spacing: FormSectionTokens.fieldStackSpacing) {
                     Stepper("", value: viewModel.formBinding(\.recurrenceInterval), in: 1...100)
                         .labelsHidden()
 
                     Text("\(viewModel.formModel.recurrenceInterval) \(pluralizeUnit(viewModel.formModel.recurrenceFrequency, interval: viewModel.formModel.recurrenceInterval))")
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     Spacer()
                 }
@@ -107,7 +106,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("On Days:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack(spacing: FormSectionTokens.fieldStackSpacing) {
                         ForEach(SelectableWeekday.allCases, id: \.self) { weekday in
@@ -139,7 +138,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Pattern:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                     Picker("Type", selection: viewModel.formBinding(\.monthlyRecurrenceType)) {
                         Text("On specific day(s)").tag(PositionalRecurrenceType.onSpecificDays)
                         Text("On the ordinal weekday").tag(PositionalRecurrenceType.onTheOrdinalDayOfWeek)
@@ -154,7 +153,7 @@ struct NativeSessionFormRecurrenceSection: View {
                     HStack(alignment: .top, spacing: 6) {
                         Text("Days:")
                             .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                         MonthDayGridView(selectedDays: viewModel.formBinding(\.selectedMonthDaysNumbers))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -164,7 +163,7 @@ struct NativeSessionFormRecurrenceSection: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("Ordinal:")
                             .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                         Picker("Ordinal", selection: viewModel.formBinding(\.selectedOrdinal)) {
                             ForEach([1, 2, 3, 4, -1], id: \.self) { value in
                                 Text(value == -1 ? "Last" : [1: "First", 2: "Second", 3: "Third", 4: "Fourth"][value]!).tag(value)
@@ -191,16 +190,15 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .top, spacing: 6) {
                     Text("Months:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         ForEach(SelectableMonth.allCases, id: \.self) { month in
                             Button(action: { toggleYearMonth(month) }) {
                                 Text(month.shortName)
-                                    .font(StyleGuide.Typography.itemSubtitle)
-                                    .fontWeight(.medium)
+                                    .font(StyleGuide.Typography.gridSubtext)
                                     .frame(maxWidth: .infinity, minHeight: 30)
                                     .background(viewModel.formModel.selectedYearMonths.contains(month) ? Color.accentColor : Color.white.opacity(0.1))
-                                    .foregroundColor(viewModel.formModel.selectedYearMonths.contains(month) ? .white : .white.opacity(0.8))
+                                    .foregroundStyle(viewModel.formModel.selectedYearMonths.contains(month) ? Color.white : Color.white.opacity(0.8))
                                     .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact))
                             }
                             .buttonStyle(.plain)
@@ -214,7 +212,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Pattern:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                     Picker("Type", selection: viewModel.formBinding(\.yearlyRecurrenceType)) {
                         Text("On specific day(s)").tag(PositionalRecurrenceType.onSpecificDays)
                         Text("On the ordinal weekday").tag(PositionalRecurrenceType.onTheOrdinalDayOfWeek)
@@ -229,7 +227,7 @@ struct NativeSessionFormRecurrenceSection: View {
                     HStack(alignment: .top, spacing: 6) {
                         Text("Days:")
                             .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                         MonthDayGridView(selectedDays: viewModel.formBinding(\.selectedYearlyDaysNumbers))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -239,7 +237,7 @@ struct NativeSessionFormRecurrenceSection: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("Ordinal:")
                             .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                         Picker("Ordinal", selection: viewModel.formBinding(\.selectedOrdinal)) {
                             ForEach([1, 2, 3, 4, -1], id: \.self) { value in
                                 Text(value == -1 ? "Last" : [1: "First", 2: "Second", 3: "Third", 4: "Fourth"][value]!).tag(value)
@@ -269,7 +267,7 @@ struct NativeSessionFormRecurrenceSection: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Ends:")
                     .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
 
                 Picker("End Type", selection: viewModel.formBinding(\.recurrenceEndType)) {
                     Text("Never").tag(RecurrenceEndType.never)
@@ -284,14 +282,14 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("After:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack(spacing: FormSectionTokens.fieldStackSpacing) {
                         Stepper("", value: viewModel.formBinding(\.recurrenceCount), in: 1...999)
                             .labelsHidden()
 
                         Text("\(viewModel.formModel.recurrenceCount) occurrences")
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         Spacer()
                     }
@@ -305,7 +303,7 @@ struct NativeSessionFormRecurrenceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("End Date:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     DatePicker("", selection: viewModel.formBinding(\.recurrenceEndDate), displayedComponents: .date)
                         .datePickerStyle(.compact)

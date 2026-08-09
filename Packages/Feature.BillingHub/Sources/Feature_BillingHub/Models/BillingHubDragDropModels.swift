@@ -36,12 +36,69 @@ public struct InvoiceWorkflowSnapshot: Hashable, Sendable {
     public let status: String
     public let sentDate: Date?
     public let paidDate: Date?
+    public let notes: String?
+
+    public init(
+        id: UUID,
+        status: String,
+        sentDate: Date?,
+        paidDate: Date?,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.sentDate = sentDate
+        self.paidDate = paidDate
+        self.notes = notes
+    }
+}
+
+/// Snapshot of a session's board state before a bulk action, used for undo.
+public struct SessionWorkflowSnapshot: Hashable, Sendable {
+    public let id: UUID
+    public let status: String
+    public let groupID: UUID?
+
+    public init(id: UUID, status: String, groupID: UUID?) {
+        self.id = id
+        self.status = status
+        self.groupID = groupID
+    }
 }
 
 /// Represents a bulk action that can be undone.
 public struct BulkUndoAction: Hashable, Sendable {
     public let label: String
     public let snapshots: [InvoiceWorkflowSnapshot]
+    public let sessionSnapshots: [SessionWorkflowSnapshot]
+
+    public init(
+        label: String,
+        snapshots: [InvoiceWorkflowSnapshot] = [],
+        sessionSnapshots: [SessionWorkflowSnapshot] = []
+    ) {
+        self.label = label
+        self.snapshots = snapshots
+        self.sessionSnapshots = sessionSnapshots
+    }
+}
+
+/// Confirmation prompt before mutating a Hub session already linked to an invoice.
+public struct BillingHubInvoicedSessionAction: Identifiable {
+    public let id = UUID()
+    public let message: String
+    public let confirmTitle: String
+    public let perform: () async -> Void
+
+    public init(
+        message: String,
+        confirmTitle: String = "Continue",
+        perform: @escaping () async -> Void
+    ) {
+        self.message = message
+        self.confirmTitle = confirmTitle
+        self.perform = perform
+    }
 }
 
 /// Data for a drag-and-drop operation in the Billing Hub.
@@ -103,9 +160,9 @@ public enum BillingHubDropPolicy: Sendable {
 }
 
 public extension UTType {
-    static let billingHubSessionID = UTType(exportedAs: "com.invoicingapp.billing-hub-session-id")
-    static let billingHubInvoiceID = UTType(exportedAs: "com.invoicingapp.billing-hub-invoice-id")
-    static let billingHubGroupID = UTType(exportedAs: "com.invoicingapp.billing-hub-group-id")
+    static let billingHubSessionID = UTType(exportedAs: "com.jesse.InvoicingApplication.billing-hub-session-id")
+    static let billingHubInvoiceID = UTType(exportedAs: "com.jesse.InvoicingApplication.billing-hub-invoice-id")
+    static let billingHubGroupID = UTType(exportedAs: "com.jesse.InvoicingApplication.billing-hub-group-id")
 
     static var acceptedTypeIdentifiers: [String] {
         [billingHubSessionID.identifier, billingHubInvoiceID.identifier, billingHubGroupID.identifier]

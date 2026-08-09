@@ -1,19 +1,19 @@
 import Core
 @testable import SharedUI
-import XCTest
-
-final class NavigationHistoryStoreTests: XCTestCase {
-    func testAddToHistoryDeduplicatesCurrentEntry() {
+import Foundation
+import Testing
+@Suite struct NavigationHistoryStoreTests {
+    @Test func AddToHistoryDeduplicatesCurrentEntry() {
         var store = NavigationHistoryStore()
 
         store.addToHistory(tab: .invoices, context: nil)
         store.addToHistory(tab: .invoices, context: nil)
 
-        XCTAssertEqual(store.recentHistory.count, 1)
-        XCTAssertFalse(store.canNavigateBack)
+        #expect(store.recentHistory.count == 1)
+        #expect(!(store.canNavigateBack))
     }
 
-    func testBackAndForwardReturnEntries() {
+    @Test func BackAndForwardReturnEntries() {
         var store = NavigationHistoryStore()
         let invoiceID = UUID()
         let invoiceContext = NavigationContext(
@@ -26,16 +26,16 @@ final class NavigationHistoryStoreTests: XCTestCase {
         store.addToHistory(tab: .relationships, context: nil)
 
         let backEntry = store.navigateBack()
-        XCTAssertEqual(backEntry?.tab, .invoices)
-        XCTAssertEqual(backEntry?.context?.targetEntity, invoiceID)
-        XCTAssertTrue(store.canNavigateForward)
+        #expect(backEntry?.tab == .invoices)
+        #expect(backEntry?.context?.targetEntity == invoiceID)
+        #expect(store.canNavigateForward)
 
         let forwardEntry = store.navigateForward()
-        XCTAssertEqual(forwardEntry?.tab, .relationships)
-        XCTAssertFalse(store.canNavigateForward)
+        #expect(forwardEntry?.tab == .relationships)
+        #expect(!(store.canNavigateForward))
     }
 
-    func testAddingAfterBackPrunesForwardHistory() {
+    @Test func AddingAfterBackPrunesForwardHistory() {
         var store = NavigationHistoryStore()
 
         store.addToHistory(tab: .invoices, context: nil)
@@ -45,25 +45,25 @@ final class NavigationHistoryStoreTests: XCTestCase {
 
         store.addToHistory(tab: .billingHub, context: nil)
 
-        XCTAssertFalse(store.canNavigateForward)
-        XCTAssertEqual(store.currentHistoryEntry?.tab, .billingHub)
+        #expect(!(store.canNavigateForward))
+        #expect(store.currentHistoryEntry?.tab == .billingHub)
     }
 
-    func testReplaceCurrentEntryRewritesCursorWithoutGrowingStack() {
+    @Test func ReplaceCurrentEntryRewritesCursorWithoutGrowingStack() {
         var store = NavigationHistoryStore()
 
         store.addToHistory(tab: .invoices, context: nil)
         store.addToHistory(tab: .relationships, context: nil)
-        XCTAssertEqual(store.recentHistory.count, 2)
+        #expect(store.recentHistory.count == 2)
 
         store.replaceCurrentEntry(tab: .calendar, context: nil)
 
-        XCTAssertEqual(store.recentHistory.count, 2)
-        XCTAssertEqual(store.currentHistoryEntry?.tab, .calendar)
-        XCTAssertTrue(store.canNavigateBack)
+        #expect(store.recentHistory.count == 2)
+        #expect(store.currentHistoryEntry?.tab == .calendar)
+        #expect(store.canNavigateBack)
     }
 
-    func testReplaceCurrentEntryTruncatesForwardBranch() {
+    @Test func ReplaceCurrentEntryTruncatesForwardBranch() {
         var store = NavigationHistoryStore()
 
         store.addToHistory(tab: .invoices, context: nil)
@@ -71,11 +71,11 @@ final class NavigationHistoryStoreTests: XCTestCase {
         store.addToHistory(tab: .calendar, context: nil)
         _ = store.navigateBack()
 
-        XCTAssertTrue(store.canNavigateForward)
+        #expect(store.canNavigateForward)
 
         store.replaceCurrentEntry(tab: .billingHub, context: nil)
 
-        XCTAssertFalse(store.canNavigateForward)
-        XCTAssertEqual(store.currentHistoryEntry?.tab, .billingHub)
+        #expect(!(store.canNavigateForward))
+        #expect(store.currentHistoryEntry?.tab == .billingHub)
     }
 }

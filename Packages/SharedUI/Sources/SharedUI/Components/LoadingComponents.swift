@@ -36,13 +36,14 @@ public struct LoadingView: View {
 public struct LoadingOverlayModifier: ViewModifier {
     let isLoading: Bool
     let message: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     public func body(content: Content) -> some View {
         ZStack {
             content
                 .disabled(isLoading) // Prevent interaction while loading
                 .blur(radius: isLoading ? 2 : 0) // Optional: blur background slightly
-                .animation(.easeInOut, value: isLoading)
+                .animation(reduceMotion ? nil : .easeInOut, value: isLoading)
             
             if isLoading {
                 LoadingView(message)

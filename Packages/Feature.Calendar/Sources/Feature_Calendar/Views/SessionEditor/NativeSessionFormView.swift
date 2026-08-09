@@ -6,8 +6,7 @@
 //
 import SwiftUI
 import SwiftData
-import Data
-import Core
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -82,6 +81,7 @@ struct NativeSessionFormView: View {
                         missingSelectedClientID: missingSelectedClientID,
                         missingSelectedServiceID: missingSelectedServiceID
                     )
+                    NativeSessionFormStatusSection(viewModel: viewModel)
                     NativeSessionFormRecurrenceSection(
                         viewModel: viewModel,
                         selectedRepeatOption: $selectedRepeatOption
@@ -92,7 +92,6 @@ struct NativeSessionFormView: View {
                     )
                     NativeSessionFormNotesSection(viewModel: viewModel)
                     NativeSessionFormSupportLogSection(viewModel: viewModel)
-                    NativeSessionFormStatusSection(viewModel: viewModel)
                 }
                 .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
                 .padding(.bottom, StyleGuide.Dimensions.paddingLarge)

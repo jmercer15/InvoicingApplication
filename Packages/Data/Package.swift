@@ -13,6 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
         .package(path: "../DataInterfaces"),
         .package(url: "https://github.com/CoreOffice/CoreXLSX.git", from: "0.14.0")
     ],
@@ -21,6 +22,7 @@ let package = Package(
             name: "Data", 
             dependencies: [
                 "Core",
+                "PersistenceModels",
                 "DataInterfaces",
                 .product(name: "CoreXLSX", package: "CoreXLSX")
             ],
@@ -28,25 +30,25 @@ let package = Package(
         ),
         .testTarget(
             name: "DataUseCaseTests",
-            dependencies: ["Data", "Core"],
+            dependencies: ["Data", "Core", "PersistenceModels"],
             path: "Tests/DataTests/UseCases",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataServiceTests",
-            dependencies: ["Data", "Core"],
+            dependencies: ["Data", "Core", "PersistenceModels"],
             path: "Tests/DataTests/Services",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataBusinessLogicTests",
-            dependencies: ["Data", "Core"],
+            dependencies: ["Data", "Core", "PersistenceModels"],
             path: "Tests/DataTests/BusinessLogic",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataValidationTests",
-            dependencies: ["Data", "Core"],
+            dependencies: ["Data", "Core", "PersistenceModels"],
             path: "Tests/DataTests/Validation",
             swiftSettings: strictConcurrencySettings
         )

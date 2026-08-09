@@ -1,5 +1,5 @@
 import SwiftUI
-import Core
+import PersistenceModels
 import SharedUI
 
 enum RepeatOption: String, CaseIterable, Identifiable {
@@ -21,11 +21,11 @@ struct SessionAddressDisplayView: View {
         Group {
             if let address = address {
                 Text(address.fullFormattedAddress)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     .font(StyleGuide.Typography.itemSubtitle)
             } else {
                 Text("No address")
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     .font(StyleGuide.Typography.itemSubtitle)
             }
         }

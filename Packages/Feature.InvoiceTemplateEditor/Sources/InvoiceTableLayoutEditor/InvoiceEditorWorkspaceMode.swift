@@ -125,8 +125,8 @@ struct InvoiceEditorCommandCapabilities: Equatable {
         self.canSave = hasInvoice && hasUnsavedChanges && !isBusy
         self.canDuplicate = hasInvoice && !isBusy
         self.canDelete = hasInvoice && !isBusy
-        self.canPrint = hasInvoice && !isBusy
-        self.canExportPDF = hasInvoice && !isBusy
+        self.canPrint = hasInvoice && !isBusy && !hasRevisionConflict
+        self.canExportPDF = hasInvoice && !isBusy && !hasRevisionConflict
         self.canToggleInspector = hasDocument
         self.isInvoiceContext = isInvoiceContext
         self.canAddLineItem = hasInvoice && !isBusy

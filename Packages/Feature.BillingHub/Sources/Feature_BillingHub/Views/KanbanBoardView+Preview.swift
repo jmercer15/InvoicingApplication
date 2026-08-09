@@ -18,8 +18,14 @@ private struct FullKanbanBoardPreview: View {
     var body: some View {
         BillingHubPreviewSupport.PreviewLoader(minHeight: 680) { payload in
             KanbanBoardView(
-                viewModel: payload.viewModel,
+                displayState: KanbanBoardDisplayState(
+                    searchText: payload.viewModel.searchText,
+                    hasActiveFilters: payload.viewModel.hasActiveFilters
+                ),
+                actions: payload.viewModel.kanbanBoardActionsForCurrentSortOptions(),
+                cardActions: payload.viewModel.kanbanCardActionsForCurrentSortOptions(),
                 projection: payload.projection,
+                boardRevision: payload.viewModel.dataRevision,
                 selectedCardID: $selectedCardID,
                 onOpenCard: { _ in }
             )

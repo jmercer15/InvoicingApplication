@@ -1,14 +1,16 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import PersistenceModels
+import DataInterfaces
 import Observation
-import os
+
 @Observable
 @MainActor
 public class NDISContainerViewModel {
     // MARK: - Dependencies
-    let modelContext: ModelContext
+    let catalogueFetching: any NDISCatalogueFetching
+    private let storeChangeMonitor: (any StoreChangeMonitoring)?
     
     // MARK: - Published State for UI
     public var selectedItemID: UUID? = nil
@@ -79,6 +81,8 @@ public class NDISContainerViewModel {
     var preferredRegionIdentifier: String? = nil
     var hasResolvedPreferredRegion = false
     
+    var catalogueLoadTask: Task<Void, Never>?
+    var catalogueLoadRequestID: UUID?
     var processingTask: Task<Void, Never>?
     
     // MARK: - Catalogue Types
@@ -112,15 +116,16 @@ public class NDISContainerViewModel {
     
     // MARK: - Initializer
     public init(
-        modelContext: ModelContext,
-        storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+        catalogueFetching: any NDISCatalogueFetching,
+        storeChangeMonitor: (any StoreChangeMonitoring)? = nil
     ) {
-        self.modelContext = modelContext
+        self.catalogueFetching = catalogueFetching
+        self.storeChangeMonitor = storeChangeMonitor
         
         setupDataProcessingPipeline()
         setupDynamicRegistrationGroupPipeline()
 
-        SwiftDataStoreChangeMonitor.subscribeToStoreChanges(monitor: storeChangeMonitor) { [weak self] revision in
+        StoreChangeMonitoringSubscription.subscribe(monitor: storeChangeMonitor) { [weak self] revision in
             self?.dataRevision = revision
         }
     }
@@ -131,19 +136,32 @@ public class NDISContainerViewModel {
 
     public func loadCatalogue(force: Bool) {
         guard force || !hasLoadedCatalogue else { return }
-        Task {
+        catalogueLoadTask?.cancel()
+        let requestID = UUID()
+        catalogueLoadRequestID = requestID
+        let fetcher = catalogueFetching
+
+        catalogueLoadTask = Task { [weak self] in
             do {
-                let container = modelContext.container
-                let actor = NDISVersioningActor(modelContainer: container)
-                let snapshots = try await actor.fetchNDISItemSnapshots()
-                await refreshItems(snapshots)
-                hasLoadedCatalogue = true
-                loadError = nil
+                let snapshots = try await fetcher.fetchNDISItemSnapshots()
+                try Task.checkCancellation()
+                guard let self, self.catalogueLoadRequestID == requestID else { return }
+                await self.refreshItems(snapshots)
+                guard self.catalogueLoadRequestID == requestID else { return }
+                self.hasLoadedCatalogue = true
+                self.loadError = nil
             } catch {
-                print("❌ [NDISContainerViewModel] Failed to load NDIS items: \(error)")
-                loadError = error
+                guard !Task.isCancelled,
+                      let self,
+                      self.catalogueLoadRequestID == requestID else { return }
+                self.loadError = error
             }
         }
+    }
+
+    isolated deinit {
+        catalogueLoadTask?.cancel()
+        processingTask?.cancel()
     }
     
     /// Inspector window / coordinator fallback when selection is driven by id before the catalogue column updates ``selectedItemID``.

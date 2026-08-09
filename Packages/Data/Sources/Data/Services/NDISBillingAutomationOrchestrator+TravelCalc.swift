@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Core
+import PersistenceModels
 
 extension NDISBillingAutomationOrchestrator {
 
@@ -16,9 +17,17 @@ extension NDISBillingAutomationOrchestrator {
             return nil
         }
 
+        guard let businessCoordinate = MapKitTravelService.resolveBusinessCoordinate(
+            modelContext: self.modelContext
+        ) else {
+            print("⚠️ [NDIS Automation] Cannot calculate travel details - no business coordinates")
+            result.addWarning("Cannot calculate travel details - no business address coordinates")
+            return nil
+        }
+
         let travelDetails = await self.mapKitTravelService.calculateTravelDetailsForSession(
             endAddress: session.location,
-            modelContext: self.modelContext
+            businessCoordinate: businessCoordinate
         )
 
         if let details = travelDetails {

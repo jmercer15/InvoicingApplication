@@ -1,16 +1,17 @@
 import Core
 import Data
 import Foundation
+import PersistenceModels
 import SwiftData
-import XCTest
+import Testing
 @testable import InvoiceTableLayoutEditor
 
-final class InvoiceModelActorIntegrationTests: XCTestCase {
-    func testSharedCoreEditorConfigurationLoadsWithFeaturePresentationDefaults() async throws {
+@Suite struct InvoiceModelActorIntegrationTests {
+    @Test func SharedCoreEditorConfigurationLoadsWithFeaturePresentationDefaults() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let invoice = Core.Invoice(invoiceNumber: "INV-SHARED-STATE")
-        invoice.invoiceEditorStateData = try Core.InvoiceEditorConfiguration(
+        let invoice = Invoice(invoiceNumber: "INV-SHARED-STATE")
+        invoice.invoiceEditorStateData = try InvoiceEditorConfiguration(
             title: "NDIS Invoice",
             billParticipantDirectly: false,
             billToPhone: "07 3000 0000",
@@ -22,25 +23,25 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         let snapshot = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
 
-        XCTAssertEqual(snapshot?.title, "NDIS Invoice")
-        XCTAssertEqual(snapshot?.billParticipantDirectly, false)
-        XCTAssertEqual(snapshot?.billToPhone, "07 3000 0000")
-        XCTAssertEqual(snapshot?.discountAmount, 15)
-        XCTAssertEqual(snapshot?.showsTaxSummary, false)
-        XCTAssertEqual(snapshot?.paperSize, .default)
-        XCTAssertEqual(snapshot?.pageOrientation, .portrait)
-        XCTAssertEqual(snapshot?.templateConfiguration, .default)
+        #expect(snapshot?.title == "NDIS Invoice")
+        #expect(snapshot?.billParticipantDirectly == false)
+        #expect(snapshot?.billToPhone == "07 3000 0000")
+        #expect(snapshot?.discountAmount == 15)
+        #expect(snapshot?.showsTaxSummary == false)
+        #expect(snapshot?.paperSize == .default)
+        #expect(snapshot?.pageOrientation == .portrait)
+        #expect(snapshot?.templateConfiguration == .default)
     }
 
-    func testEditorOpensExistingCoreInvoiceWithoutEditorState() async throws {
+    @Test func EditorOpensExistingCoreInvoiceWithoutEditorState() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let invoice = Core.Invoice(invoiceNumber: "INV-2026-001")
+        let invoice = Invoice(invoiceNumber: "INV-2026-001")
         invoice.clientName = "Existing Client"
         invoice.businessName = "Existing Provider"
         invoice.currencyCode = "AUD"
         invoice.effectiveStatus = .cancelled
-        let item = Core.InvoiceItem(itemDescription: "Existing support")
+        let item = InvoiceItem(itemDescription: "Existing support")
         item.quantity = 1.5
         item.rate = 80
         item.taxRate = 10
@@ -52,13 +53,13 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         let actor = InvoiceModelActor(modelContainer: container)
         let fetchedValue = try await actor.fetchInvoice(id: invoice.id)
-        let fetched = try XCTUnwrap(fetchedValue)
-        XCTAssertEqual(fetched.invoiceNumber, "INV-2026-001")
-        XCTAssertEqual(fetched.clientName, "Existing Client")
-        XCTAssertEqual(fetched.status, .cancelled)
-        XCTAssertEqual(fetched.lineItems.first?.itemDescription, "Existing support")
-        XCTAssertEqual(fetched.grandTotal, 132)
-        XCTAssertEqual(fetched.templateConfiguration, .default)
+        let fetched = try #require(fetchedValue)
+        #expect(fetched.invoiceNumber == "INV-2026-001")
+        #expect(fetched.clientName == "Existing Client")
+        #expect(fetched.status == .cancelled)
+        #expect(fetched.lineItems.first?.itemDescription == "Existing support")
+        #expect(fetched.grandTotal == 132)
+        #expect(fetched.templateConfiguration == .default)
 
         var layoutEdit = InvoiceDraft(fetched)
         layoutEdit.title = "Cancelled Invoice Layout"
@@ -67,42 +68,38 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             expectedRevision: fetched.revision,
             draft: layoutEdit
         )
-        XCTAssertTrue(validation.isValid)
-        XCTAssertEqual(validation.savedSnapshot?.revision, fetched.revision + 1)
-        XCTAssertEqual(validation.savedSnapshot?.title, "Cancelled Invoice Layout")
+        #expect(validation.isValid)
+        #expect(validation.savedSnapshot?.revision == fetched.revision + 1)
+        #expect(validation.savedSnapshot?.title == "Cancelled Invoice Layout")
         let afterLayoutEditValue = try await actor.fetchInvoice(id: invoice.id)
-        let afterLayoutEdit = try XCTUnwrap(afterLayoutEditValue)
-        XCTAssertEqual(afterLayoutEdit.status, .cancelled)
-        XCTAssertEqual(invoice.effectiveStatus, .cancelled)
+        let afterLayoutEdit = try #require(afterLayoutEditValue)
+        #expect(afterLayoutEdit.status == .cancelled)
+        #expect(invoice.effectiveStatus == .cancelled)
     }
 
-    func testEditorFallsBackForMalformedPersistedCurrencyAtSnapshotBoundary() async throws {
+    @Test func EditorFallsBackForMalformedPersistedCurrencyAtSnapshotBoundary() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let invoice = Core.Invoice(invoiceNumber: "INV-LEGACY-CURRENCY")
+        let invoice = Invoice(invoiceNumber: "INV-LEGACY-CURRENCY")
         invoice.currencyCode = "12!"
         context.insert(invoice)
         try context.save()
 
         let snapshot = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
 
-        XCTAssertEqual(snapshot?.currencyCode, InvoiceCurrencyCode.defaultValue)
+        #expect(snapshot?.currencyCode == InvoiceCurrencyCode.defaultValue)
     }
 
-    func testExistingInvoiceWithoutEditorStateIgnoresCurrentTemplateDefaults() async throws {
-        let preferences = UserDefaults.standard
-        let original = preferences.data(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
+    @Test func ExistingInvoiceWithoutEditorStateIgnoresCurrentTemplateDefaults() async throws {
+        let suiteName = "InvoiceModelActorIntegrationTests.\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer {
-            if let original {
-                preferences.set(original, forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            } else {
-                preferences.removeObject(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            }
+            preferences.removePersistentDomain(forName: suiteName)
         }
 
         var currentTemplate = InvoiceTemplatePreset.modern.configuration
         currentTemplate.accentTheme = .forest
-        XCTAssertTrue(InvoiceTemplatePreferenceStore.save(
+        #expect(InvoiceTemplatePreferenceStore.save(
             InvoiceTemplateDefaults(
                 paperSize: .legal,
                 pageOrientation: .landscape,
@@ -113,34 +110,34 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let existing = Core.Invoice(invoiceNumber: "INV-PRE-TEMPLATE")
+        let existing = Invoice(invoiceNumber: "INV-PRE-TEMPLATE")
         existing.clientName = "Existing Client"
         context.insert(existing)
         try context.save()
 
         let snapshot = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: existing.id)
 
-        XCTAssertEqual(snapshot?.paperSize, .default)
-        XCTAssertEqual(snapshot?.pageOrientation, .portrait)
-        XCTAssertEqual(snapshot?.templateConfiguration, .default)
+        #expect(snapshot?.paperSize == .default)
+        #expect(snapshot?.pageOrientation == .portrait)
+        #expect(snapshot?.templateConfiguration == .default)
     }
 
-    func testExistingRelationshipDataBackfillsMissingInvoiceSnapshots() async throws {
+    @Test func ExistingRelationshipDataBackfillsMissingInvoiceSnapshots() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let clientAddress = Core.Address()
+        let clientAddress = Address()
         clientAddress.streetNumber = "8"
         clientAddress.streetName = "Market Street"
         clientAddress.city = "Brisbane"
         clientAddress.state = "QLD"
         clientAddress.postcode = "4000"
-        let businessAddress = Core.Address()
+        let businessAddress = Address()
         businessAddress.streetNumber = "14"
         businessAddress.streetName = "Provider Lane"
         businessAddress.city = "Brisbane"
         businessAddress.state = "QLD"
         businessAddress.postcode = "4001"
-        let business = Core.Business(abn: "53 004 085 616")
+        let business = Business(abn: "53 004 085 616")
         business.name = "Example Supports"
         business.email = "billing@example-supports.com"
         business.phone = "07 3000 0000"
@@ -149,11 +146,11 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         business.bankAccountName = "Example Supports"
         business.bankBSB = "123-456"
         business.bankAccountNumber = "12345678"
-        let manager = Core.PlanManager(abn: "12 345 678 901")
+        let manager = PlanManager(abn: "12 345 678 901")
         manager.name = "Example Plan Management"
         manager.email = "accounts@example.com"
         manager.phone = "07 3111 1111"
-        let client = Core.Client(
+        let client = Client(
             ndisNumber: "4300999999",
             fullName: "Legacy Participant",
             email: "participant@example.com",
@@ -162,7 +159,7 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         )
         client.address = clientAddress
         client.planManager = manager
-        let invoice = Core.Invoice(invoiceNumber: "INV-LINKED")
+        let invoice = Invoice(invoiceNumber: "INV-LINKED")
         invoice.business = business
         invoice.client = client
         context.insert(clientAddress)
@@ -174,39 +171,202 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         try context.save()
 
         let fetchedValue = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
-        let fetched = try XCTUnwrap(fetchedValue)
-        XCTAssertEqual(fetched.sellerName, "Example Supports")
-        XCTAssertEqual(fetched.sellerAddress, "14 Provider Lane, Brisbane, QLD, 4001")
-        XCTAssertEqual(fetched.sellerEmail, "billing@example-supports.com")
-        XCTAssertEqual(fetched.sellerPhone, "07 3000 0000")
-        XCTAssertEqual(fetched.sellerTaxID, "53 004 085 616")
-        XCTAssertEqual(fetched.bankName, "Example Bank")
-        XCTAssertEqual(fetched.bankAccountName, "Example Supports")
-        XCTAssertEqual(fetched.bankBSB, "123-456")
-        XCTAssertEqual(fetched.bankAccountNumber, "12345678")
-        XCTAssertEqual(fetched.clientID, client.id)
-        XCTAssertEqual(fetched.clientName, "Legacy Participant")
-        XCTAssertEqual(fetched.clientAddress, "8 Market Street, Brisbane, QLD, 4000")
-        XCTAssertEqual(fetched.clientEmail, "participant@example.com")
-        XCTAssertEqual(fetched.clientPhone, "0400 999 999")
-        XCTAssertEqual(fetched.clientTaxID, "4300999999")
-        XCTAssertEqual(fetched.billingAuthority, Core.BillingAuthority.planManager.rawValue)
-        XCTAssertEqual(fetched.billToName, "Example Plan Management")
-        XCTAssertEqual(fetched.billToEmail, "accounts@example.com")
-        XCTAssertEqual(fetched.billToPhone, "07 3111 1111")
-        XCTAssertFalse(fetched.billParticipantDirectly)
+        let fetched = try #require(fetchedValue)
+        #expect(fetched.sellerName == "Example Supports")
+        #expect(fetched.sellerAddress == "14 Provider Lane, Brisbane, QLD, 4001")
+        #expect(fetched.sellerEmail == "billing@example-supports.com")
+        #expect(fetched.sellerPhone == "07 3000 0000")
+        #expect(fetched.sellerTaxID == "53 004 085 616")
+        #expect(fetched.bankName == "Example Bank")
+        #expect(fetched.bankAccountName == "Example Supports")
+        #expect(fetched.bankBSB == "123-456")
+        #expect(fetched.bankAccountNumber == "12345678")
+        #expect(fetched.clientID == client.id)
+        #expect(fetched.clientName == "Legacy Participant")
+        #expect(fetched.clientAddress == "8 Market Street, Brisbane, QLD, 4000")
+        #expect(fetched.clientEmail == "participant@example.com")
+        #expect(fetched.clientPhone == "0400 999 999")
+        #expect(fetched.clientTaxID == "4300999999")
+        #expect(fetched.billingAuthority == Core.BillingAuthority.planManager.rawValue)
+        #expect(fetched.billToName == "Example Plan Management")
+        #expect(fetched.billToEmail == "accounts@example.com")
+        #expect(fetched.billToPhone == "07 3111 1111")
+        #expect(!(fetched.billParticipantDirectly))
     }
 
-    func testExistingPayeeSnapshotsBackfillParentGuardianRecipient() async throws {
+    @Test func BlankPersistedSnapshotsDoNotMaskLinkedLiveData() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let payeeAddress = Core.Address()
+
+        let business = Business(abn: "11 222 333 444")
+        business.name = "Live Provider"
+        business.email = "accounts@live-provider.example"
+        business.phone = "07 3555 0100"
+        business.bankName = "Live Bank"
+        business.bankAccountName = "Live Provider Operating"
+        business.bankBSB = "111-222"
+        business.bankAccountNumber = "123456"
+        let businessAddress = Address()
+        businessAddress.streetNumber = "18"
+        businessAddress.streetName = "Live Street"
+        businessAddress.city = "Brisbane"
+        businessAddress.state = "QLD"
+        businessAddress.postcode = "4000"
+        business.address = businessAddress
+
+        let client = Client(
+            ndisNumber: "4300123456",
+            fullName: "Live Participant",
+            email: "participant@live.example",
+            phone: "0400 123 456",
+            billingAuthority: .client
+        )
+        let clientAddress = Address()
+        clientAddress.streetNumber = "42"
+        clientAddress.streetName = "Participant Road"
+        clientAddress.city = "Brisbane"
+        clientAddress.state = "QLD"
+        clientAddress.postcode = "4001"
+        client.address = clientAddress
+
+        let invoice = Invoice(invoiceNumber: "INV-BLANK-SNAPSHOTS")
+        invoice.business = business
+        invoice.client = client
+        invoice.businessName = "   "
+        invoice.businessEmail = ""
+        invoice.businessPhone = " "
+        invoice.businessABN = ""
+        invoice.clientName = " "
+        invoice.clientEmail = ""
+        invoice.clientPhone = " "
+        invoice.clientNDISNumber = ""
+        invoice.billToName = " "
+        invoice.billToEmail = ""
+        invoice.bankName = " "
+        invoice.bankAccountName = ""
+        invoice.bankBSB = " "
+        invoice.bankAccountNumber = ""
+        invoice.invoiceEditorStateData = try InvoiceEditorConfiguration(
+            billToPhone: "   "
+        ).encoded()
+
+        context.insert(businessAddress)
+        context.insert(clientAddress)
+        context.insert(business)
+        context.insert(client)
+        context.insert(invoice)
+        try context.save()
+
+        let fetchedValue = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
+        let fetched = try #require(fetchedValue)
+
+        #expect(fetched.sellerName == "Live Provider")
+        #expect(fetched.sellerAddress == "18 Live Street, Brisbane, QLD, 4000")
+        #expect(fetched.sellerEmail == "accounts@live-provider.example")
+        #expect(fetched.sellerPhone == "07 3555 0100")
+        #expect(fetched.sellerTaxID == "11 222 333 444")
+        #expect(fetched.clientName == "Live Participant")
+        #expect(fetched.clientAddress == "42 Participant Road, Brisbane, QLD, 4001")
+        #expect(fetched.clientEmail == "participant@live.example")
+        #expect(fetched.clientPhone == "0400 123 456")
+        #expect(fetched.clientTaxID == "4300123456")
+        #expect(fetched.billToName == "Live Participant")
+        #expect(fetched.billToEmail == "participant@live.example")
+        #expect(fetched.billToAddress == "42 Participant Road, Brisbane, QLD, 4001")
+        #expect(fetched.billToPhone == "0400 123 456")
+        #expect(fetched.bankName == "Live Bank")
+        #expect(fetched.bankAccountName == "Live Provider Operating")
+        #expect(fetched.bankBSB == "111-222")
+        #expect(fetched.bankAccountNumber == "123456")
+    }
+
+    @Test func PersistedClientSnapshotBackfillsDirectBillingWithoutRelationship() async throws {
+        let container = try ModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let clientAddress = Address()
+        clientAddress.streetNumber = "9"
+        clientAddress.streetName = "Snapshot Avenue"
+        clientAddress.city = "Brisbane"
+        clientAddress.state = "QLD"
+        clientAddress.postcode = "4002"
+        let invoice = Invoice(invoiceNumber: "INV-DIRECT-SNAPSHOT")
+        invoice.billingAuthority = .client
+        invoice.clientName = "Persisted Participant"
+        invoice.clientEmail = "persisted.participant@example.com"
+        invoice.clientPhone = "0400 222 333"
+        invoice.clientNDISNumber = "4300222333"
+        invoice.clientAddressSnapshot = clientAddress.snapshot()
+        context.insert(invoice)
+        try context.save()
+
+        let fetchedValue = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
+        let fetched = try #require(fetchedValue)
+
+        #expect(fetched.clientName == "Persisted Participant")
+        #expect(fetched.clientAddress == "9 Snapshot Avenue, Brisbane, QLD, 4002")
+        #expect(fetched.clientEmail == "persisted.participant@example.com")
+        #expect(fetched.clientPhone == "0400 222 333")
+        #expect(fetched.clientTaxID == "4300222333")
+        #expect(fetched.billToName == "Persisted Participant")
+        #expect(fetched.billToAddress == "9 Snapshot Avenue, Brisbane, QLD, 4002")
+        #expect(fetched.billToEmail == "persisted.participant@example.com")
+        #expect(fetched.billToPhone == "0400 222 333")
+        #expect(fetched.billParticipantDirectly)
+    }
+
+    @Test func LinkedServiceDataBackfillsSparseInvoiceLineItemDocumentFields() async throws {
+        let container = try ModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let service = ClientService(serviceName: "Capacity building support", unit: "hour", rate: 193.99)
+        service.ndisItemNumber = "15_037_0117_1_3"
+        service.gstCode = "P2"
+        let session = Session(
+            title: "Therapy session",
+            assignedServiceName: "Therapy supports",
+            assignedRate: 215
+        )
+        session.clientService = service
+        let invoice = Invoice(invoiceNumber: "INV-LINE-BACKFILL")
+        let item = InvoiceItem(itemDescription: "   ")
+        item.invoice = invoice
+        item.clientService = service
+        item.session = session
+        item.quantity = 2
+        item.rate = 0
+        item.unit = " "
+        item.ndisItemNumber = ""
+        item.gstCode = ""
+        invoice.items = [item]
+
+        context.insert(service)
+        context.insert(session)
+        context.insert(invoice)
+        context.insert(item)
+        try context.save()
+
+        let fetchedValue = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
+        let fetched = try #require(fetchedValue)
+        let fetchedItem = try #require(fetched.lineItems.first)
+
+        #expect(fetchedItem.itemDescription == "Therapy supports")
+        #expect(fetchedItem.itemCode == "15_037_0117_1_3")
+        #expect(fetchedItem.unit == "hour")
+        #expect(fetchedItem.unitPrice == 215)
+        #expect(fetchedItem.gstCode == "P2")
+        #expect(fetchedItem.sessionID == session.id)
+        #expect(fetchedItem.clientServiceID == service.id)
+    }
+
+    @Test func ExistingPayeeSnapshotsBackfillParentGuardianRecipient() async throws {
+        let container = try ModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let payeeAddress = Address()
         payeeAddress.streetNumber = "25"
         payeeAddress.streetName = "Guardian Road"
         payeeAddress.city = "Brisbane"
         payeeAddress.state = "QLD"
         payeeAddress.postcode = "4002"
-        let invoice = Core.Invoice(invoiceNumber: "INV-PAYEE-SNAPSHOT")
+        let invoice = Invoice(invoiceNumber: "INV-PAYEE-SNAPSHOT")
         invoice.billingAuthority = .parentGuardian
         invoice.payeeName = "Morgan Guardian"
         invoice.payeeEmail = "morgan@example.com"
@@ -216,20 +376,20 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         try context.save()
 
         let fetchedValue = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
-        let fetched = try XCTUnwrap(fetchedValue)
+        let fetched = try #require(fetchedValue)
 
-        XCTAssertEqual(fetched.billToName, "Morgan Guardian")
-        XCTAssertEqual(fetched.billToEmail, "morgan@example.com")
-        XCTAssertEqual(fetched.billToPhone, "0400 111 222")
-        XCTAssertEqual(fetched.billToAddress, "25 Guardian Road, Brisbane, QLD, 4002")
-        XCTAssertEqual(fetched.billingAuthority, Core.BillingAuthority.parentGuardian.rawValue)
-        XCTAssertFalse(fetched.billParticipantDirectly)
+        #expect(fetched.billToName == "Morgan Guardian")
+        #expect(fetched.billToEmail == "morgan@example.com")
+        #expect(fetched.billToPhone == "0400 111 222")
+        #expect(fetched.billToAddress == "25 Guardian Road, Brisbane, QLD, 4002")
+        #expect(fetched.billingAuthority == Core.BillingAuthority.parentGuardian.rawValue)
+        #expect(!(fetched.billParticipantDirectly))
     }
 
-    func testFirstClassFieldsOverrideLegacyEditorEnvelopeShadows() async throws {
+    @Test func FirstClassFieldsOverrideLegacyEditorEnvelopeShadows() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let invoice = Core.Invoice(invoiceNumber: "INV-2026-LEGACY")
+        let invoice = Invoice(invoiceNumber: "INV-2026-LEGACY")
         invoice.businessPhone = "current seller phone"
         invoice.clientPhone = "current client phone"
         invoice.taxRate = 10
@@ -240,7 +400,7 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
                 defaultTaxRate: 5
             )
         )
-        let item = Core.InvoiceItem(itemDescription: "Legacy taxed item")
+        let item = InvoiceItem(itemDescription: "Legacy taxed item")
         item.quantity = 1
         item.rate = 100
         item.invoice = invoice
@@ -250,23 +410,23 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         try context.save()
 
         let fetched = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
-        let snapshot = try XCTUnwrap(fetched)
-        XCTAssertEqual(snapshot.sellerPhone, "current seller phone")
-        XCTAssertEqual(snapshot.clientPhone, "current client phone")
-        XCTAssertEqual(snapshot.defaultTaxRate, 10)
-        XCTAssertEqual(snapshot.lineItems.first?.taxRate, 10)
-        XCTAssertEqual(snapshot.grandTotal, 110)
+        let snapshot = try #require(fetched)
+        #expect(snapshot.sellerPhone == "current seller phone")
+        #expect(snapshot.clientPhone == "current client phone")
+        #expect(snapshot.defaultTaxRate == 10)
+        #expect(snapshot.lineItems.first?.taxRate == 10)
+        #expect(snapshot.grandTotal == 110)
     }
 
-    func testEditorUsesAppSchemaForCreateUpdateFetchAndDelete() async throws {
+    @Test func EditorUsesAppSchemaForCreateUpdateFetchAndDelete() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
 
         let id = try await actor.createInvoice()
         let createdSnapshot = try await actor.fetchInvoice(id: id)
-        var snapshot = try XCTUnwrap(createdSnapshot)
-        XCTAssertEqual(snapshot.revision, 0)
-        XCTAssertEqual(snapshot.lineItems.count, 1)
+        var snapshot = try #require(createdSnapshot)
+        #expect(snapshot.revision == 0)
+        #expect(snapshot.lineItems.count == 1)
 
         var draft = InvoiceDraft(snapshot)
         draft.title = "Service Invoice"
@@ -286,38 +446,38 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             expectedRevision: snapshot.revision,
             draft: draft
         )
-        XCTAssertTrue(validation.isValid)
-        XCTAssertEqual(validation.savedSnapshot?.revision, 1)
-        XCTAssertEqual(validation.savedSnapshot?.clientName, "Taylor Client")
+        #expect(validation.isValid)
+        #expect(validation.savedSnapshot?.revision == 1)
+        #expect(validation.savedSnapshot?.clientName == "Taylor Client")
 
         let updatedSnapshot = try await actor.fetchInvoice(id: id)
-        snapshot = try XCTUnwrap(updatedSnapshot)
-        XCTAssertEqual(snapshot.revision, 1)
-        XCTAssertEqual(snapshot.title, "Service Invoice")
-        XCTAssertEqual(snapshot.clientName, "Taylor Client")
-        XCTAssertEqual(snapshot.currencyCode, "AUD")
-        XCTAssertEqual(snapshot.grandTotal, 209)
+        snapshot = try #require(updatedSnapshot)
+        #expect(snapshot.revision == 1)
+        #expect(snapshot.title == "Service Invoice")
+        #expect(snapshot.clientName == "Taylor Client")
+        #expect(snapshot.currencyCode == "AUD")
+        #expect(snapshot.grandTotal == 209)
 
         let context = ModelContext(container)
-        let invoices = try context.fetch(FetchDescriptor<Core.Invoice>())
-        let persisted = try XCTUnwrap(invoices.first { $0.id == id })
-        XCTAssertEqual(persisted.invoiceEditorRevision, 1)
-        XCTAssertEqual(persisted.clientName, "Taylor Client")
-        XCTAssertEqual(persisted.itemsArray.count, 1)
-        XCTAssertEqual(persisted.itemsArray[0].itemDescription, "Support service")
-        XCTAssertNotNil(persisted.invoiceEditorStateData)
+        let invoices = try context.fetch(FetchDescriptor<Invoice>())
+        let persisted = try #require(invoices.first { $0.id == id })
+        #expect(persisted.invoiceEditorRevision == 1)
+        #expect(persisted.clientName == "Taylor Client")
+        #expect(persisted.itemsArray.count == 1)
+        #expect(persisted.itemsArray[0].itemDescription == "Support service")
+        #expect(persisted.invoiceEditorStateData != nil)
 
         try await actor.deleteInvoice(id: id, expectedRevision: snapshot.revision)
         let deletedSnapshot = try await actor.fetchInvoice(id: id)
-        XCTAssertNil(deletedSnapshot)
+        #expect(deletedSnapshot == nil)
     }
 
-    func testPersistenceCanonicalizesDirectBillingOverStaleAuthority() async throws {
+    @Test func PersistenceCanonicalizesDirectBillingOverStaleAuthority() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
         let originalValue = try await actor.fetchInvoice(id: id)
-        let original = try XCTUnwrap(originalValue)
+        let original = try #require(originalValue)
         var draft = InvoiceDraft(original)
         draft.client.name = "Direct Participant"
         draft.billing.billsParticipantDirectly = true
@@ -329,43 +489,43 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             expectedRevision: original.revision,
             draft: draft
         )
-        let saved = try XCTUnwrap(result.savedSnapshot)
+        let saved = try #require(result.savedSnapshot)
 
-        XCTAssertEqual(saved.billingAuthority, Core.BillingAuthority.client.rawValue)
-        XCTAssertTrue(saved.billParticipantDirectly)
+        #expect(saved.billingAuthority == Core.BillingAuthority.client.rawValue)
+        #expect(saved.billParticipantDirectly)
 
         let context = ModelContext(container)
-        let persisted = try XCTUnwrap(
-            context.fetch(FetchDescriptor<Core.Invoice>()).first(where: { $0.id == id })
+        let persisted = try #require(
+            context.fetch(FetchDescriptor<Invoice>()).first(where: { $0.id == id })
         )
-        XCTAssertEqual(persisted.billingAuthority, .client)
+        #expect(persisted.billingAuthority == .client)
     }
 
     @MainActor
-    func testClientPickerLoadsBillingSnapshotAndPersistsRelationship() async throws {
+    @Test func ClientPickerLoadsBillingSnapshotAndPersistsRelationship() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
-        let clientAddress = Core.Address()
+        let clientAddress = Address()
         clientAddress.streetNumber = "12"
         clientAddress.streetName = "River Street"
         clientAddress.city = "Brisbane"
         clientAddress.state = "QLD"
         clientAddress.postcode = "4000"
 
-        let payeeAddress = Core.Address()
+        let payeeAddress = Address()
         payeeAddress.streetNumber = "4"
         payeeAddress.streetName = "Guardian Road"
         payeeAddress.city = "Brisbane"
         payeeAddress.state = "QLD"
         payeeAddress.postcode = "4001"
 
-        let payee = Core.Payee(fullName: "Jordan Guardian")
+        let payee = Payee(fullName: "Jordan Guardian")
         payee.email = "guardian@example.com"
         payee.phone = "07 3000 0000"
         payee.address = payeeAddress
 
-        let client = Core.Client(
+        let client = Client(
             ndisNumber: "4300123456",
             fullName: "Alex Participant",
             email: "alex@example.com",
@@ -387,34 +547,34 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         await viewModel.loadClientOptions()
 
         viewModel.selectClient(id: client.id)
-        XCTAssertEqual(viewModel.clientName, "Alex Participant")
-        XCTAssertEqual(viewModel.clientAddress, "12 River Street, Brisbane, QLD, 4000")
-        XCTAssertEqual(viewModel.clientTaxID, "4300123456")
-        XCTAssertEqual(viewModel.billingAuthority, Core.BillingAuthority.parentGuardian.rawValue)
-        XCTAssertEqual(viewModel.billToName, "Jordan Guardian")
-        XCTAssertEqual(viewModel.billToEmail, "guardian@example.com")
-        XCTAssertFalse(viewModel.billParticipantDirectly)
+        #expect(viewModel.clientName == "Alex Participant")
+        #expect(viewModel.clientAddress == "12 River Street, Brisbane, QLD, 4000")
+        #expect(viewModel.clientTaxID == "4300123456")
+        #expect(viewModel.billingAuthority == Core.BillingAuthority.parentGuardian.rawValue)
+        #expect(viewModel.billToName == "Jordan Guardian")
+        #expect(viewModel.billToEmail == "guardian@example.com")
+        #expect(!(viewModel.billParticipantDirectly))
 
         viewModel.lineItems[0].itemDescription = "Support service"
         await viewModel.saveCurrentInvoice()
 
         let persistedValue = try await actor.fetchInvoice(id: invoiceID)
-        let persisted = try XCTUnwrap(persistedValue)
-        XCTAssertEqual(persisted.clientID, client.id)
-        XCTAssertEqual(persisted.clientName, "Alex Participant")
-        XCTAssertEqual(persisted.billToName, "Jordan Guardian")
-        XCTAssertEqual(persisted.billToPhone, "07 3000 0000")
+        let persisted = try #require(persistedValue)
+        #expect(persisted.clientID == client.id)
+        #expect(persisted.clientName == "Alex Participant")
+        #expect(persisted.billToName == "Jordan Guardian")
+        #expect(persisted.billToPhone == "07 3000 0000")
     }
 
     @MainActor
-    func testClientOptionsLoadAfterColdWorkspaceReceivesFirstSelection() async throws {
+    @Test func ClientOptionsLoadAfterColdWorkspaceReceivesFirstSelection() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let client = Core.Client(
+        let client = Client(
             ndisNumber: "4300987654",
             fullName: "Cold Workspace Client"
         )
-        let invoice = Core.Invoice(invoiceNumber: "INV-COLD-SELECTION")
+        let invoice = Invoice(invoiceNumber: "INV-COLD-SELECTION")
         context.insert(client)
         context.insert(invoice)
         try context.save()
@@ -423,17 +583,17 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             actor: InvoiceModelActor(modelContainer: container)
         )
         await viewModel.bootstrap(preferredInvoiceID: nil)
-        XCTAssertTrue(viewModel.clientOptions.isEmpty)
+        #expect(viewModel.clientOptions.isEmpty)
 
         await viewModel.selectInvoice(id: invoice.id)
         await viewModel.loadClientOptionsIfNeeded()
 
-        XCTAssertEqual(viewModel.currentInvoice?.id, invoice.id)
-        XCTAssertEqual(viewModel.clientOptions.map(\.id), [client.id])
-        XCTAssertNil(viewModel.clientOptionsLoadError)
+        #expect(viewModel.currentInvoice?.id == invoice.id)
+        #expect(viewModel.clientOptions.map(\.id) == [client.id])
+        #expect(viewModel.clientOptionsLoadError == nil)
     }
 
-    func testCreateAppliesSharedDefaultsAndSupportsManualInvoiceNumber() async throws {
+    @Test func CreateAppliesSharedDefaultsAndSupportsManualInvoiceNumber() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let defaults = InvoiceCreationDefaults(
@@ -447,17 +607,14 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         let id = try await actor.createInvoice(defaults: defaults)
         let createdValue = try await actor.fetchInvoice(id: id)
-        let created = try XCTUnwrap(createdValue)
-        XCTAssertEqual(created.invoiceNumber, "")
-        XCTAssertEqual(created.defaultTaxRate, 15)
-        XCTAssertEqual(created.lineItems.first?.taxRate, 15)
-        XCTAssertEqual(created.paymentTerms, "Payment due in seven days.")
-        XCTAssertEqual(created.notes, "Thank you for your business.")
-        XCTAssertFalse(created.showsTaxSummary)
-        XCTAssertEqual(
-            Calendar.current.dateComponents([.day], from: created.issueDate, to: created.dueDate).day,
-            7
-        )
+        let created = try #require(createdValue)
+        #expect(created.invoiceNumber == "")
+        #expect(created.defaultTaxRate == 15)
+        #expect(created.lineItems.first?.taxRate == 15)
+        #expect(created.paymentTerms == "Payment due in seven days.")
+        #expect(created.notes == "Thank you for your business.")
+        #expect(!(created.showsTaxSummary))
+        #expect(Calendar.current.dateComponents([.day], from: created.issueDate, to: created.dueDate).day == 7)
 
         var draft = InvoiceDraft(created)
         draft.invoiceNumber = "MANUAL-001"
@@ -468,16 +625,16 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             expectedRevision: created.revision,
             draft: draft
         )
-        XCTAssertTrue(result.isValid)
+        #expect(result.isValid)
 
         let savedValue = try await actor.fetchInvoice(id: id)
-        let saved = try XCTUnwrap(savedValue)
-        XCTAssertEqual(saved.invoiceNumber, "MANUAL-001")
-        XCTAssertEqual(saved.notes, defaults.notes)
-        XCTAssertFalse(saved.showsTaxSummary)
+        let saved = try #require(savedValue)
+        #expect(saved.invoiceNumber == "MANUAL-001")
+        #expect(saved.notes == defaults.notes)
+        #expect(!(saved.showsTaxSummary))
     }
 
-    func testCreateCapturesTemplateEditorDefaultsAtFeatureBoundary() async throws {
+    @Test func CreateCapturesTemplateEditorDefaultsAtFeatureBoundary() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let creationDefaults = InvoiceCreationDefaults(
@@ -503,17 +660,17 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             templateDefaults: templateDefaults
         )
         let createdValue = try await actor.fetchInvoice(id: id)
-        let created = try XCTUnwrap(createdValue)
+        let created = try #require(createdValue)
 
-        XCTAssertEqual(created.paperSize, .legal)
-        XCTAssertEqual(created.pageOrientation, .landscape)
-        XCTAssertEqual(created.templateConfiguration.accentTheme, .forest)
-        XCTAssertEqual(created.templateConfiguration.headerStyle, .fullBleed)
-        XCTAssertFalse(created.templateConfiguration.showPaymentTerms)
+        #expect(created.paperSize == .legal)
+        #expect(created.pageOrientation == .landscape)
+        #expect(created.templateConfiguration.accentTheme == .forest)
+        #expect(created.templateConfiguration.headerStyle == .fullBleed)
+        #expect(!(created.templateConfiguration.showPaymentTerms))
     }
 
     @MainActor
-    func testBootstrapRestoresPreferredInvoiceSelection() async throws {
+    @Test func BootstrapRestoresPreferredInvoiceSelection() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         _ = try await actor.createInvoice()
@@ -522,12 +679,12 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         await viewModel.bootstrap(preferredInvoiceID: preferredID)
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, preferredID)
-        XCTAssertEqual(viewModel.currentInvoice?.id, preferredID)
+        #expect(viewModel.selectedInvoiceID == preferredID)
+        #expect(viewModel.currentInvoice?.id == preferredID)
     }
 
     @MainActor
-    func testInvoiceSelectionWaitsForActiveDocumentGeneration() async throws {
+    @Test func InvoiceSelectionWaitsForActiveDocumentGeneration() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -541,15 +698,15 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         }
 
         try await Task.sleep(for: .milliseconds(60))
-        XCTAssertEqual(viewModel.currentInvoice?.id, firstID)
+        #expect(viewModel.currentInvoice?.id == firstID)
 
         viewModel.isGeneratingDocument = false
         await selectionTask.value
-        XCTAssertEqual(viewModel.currentInvoice?.id, secondID)
+        #expect(viewModel.currentInvoice?.id == secondID)
     }
 
     @MainActor
-    func testInvoiceSelectionInvalidatesPreviousDocumentPaginationMeasurements() async throws {
+    @Test func InvoiceSelectionInvalidatesPreviousDocumentPaginationMeasurements() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -561,16 +718,16 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             rowHeight: 44
         )
         viewModel.updateMeasuredDimensions(dimensions)
-        XCTAssertEqual(viewModel.measuredDimensions, dimensions)
+        #expect(viewModel.measuredDimensions == dimensions)
 
         await viewModel.selectInvoice(id: secondID)
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, secondID)
-        XCTAssertNil(viewModel.measuredDimensions)
+        #expect(viewModel.selectedInvoiceID == secondID)
+        #expect(viewModel.measuredDimensions == nil)
     }
 
     @MainActor
-    func testCancelledSelectionDoesNotResumeAfterDocumentGeneration() async throws {
+    @Test func CancelledSelectionDoesNotResumeAfterDocumentGeneration() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -588,12 +745,12 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         viewModel.isGeneratingDocument = false
         await selectionTask.value
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, firstID)
-        XCTAssertEqual(viewModel.currentInvoice?.id, firstID)
+        #expect(viewModel.selectedInvoiceID == firstID)
+        #expect(viewModel.currentInvoice?.id == firstID)
     }
 
     @MainActor
-    func testFeatureOwnedCreationPreparationSavesCurrentDraftBeforeAllowingCreation() async throws {
+    @Test func FeatureOwnedCreationPreparationSavesCurrentDraftBeforeAllowingCreation() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -605,18 +762,18 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         viewModel.lineItems[0].itemDescription = "Support service"
         let isPrepared = await viewModel.prepareForFeatureOwnedInvoiceCreation()
 
-        XCTAssertTrue(isPrepared)
-        XCTAssertFalse(viewModel.hasUnsavedChanges)
-        XCTAssertEqual(viewModel.selectedInvoiceID, firstID)
-        XCTAssertEqual(viewModel.statusMessage, "Changes saved before creating invoice.")
+        #expect(isPrepared)
+        #expect(!(viewModel.hasUnsavedChanges))
+        #expect(viewModel.selectedInvoiceID == firstID)
+        #expect(viewModel.statusMessage == "Changes saved before creating invoice.")
         let persisted = try await actor.fetchInvoice(id: firstID)
-        XCTAssertEqual(persisted?.title, "Saved before creation")
+        #expect(persisted?.title == "Saved before creation")
         let context = ModelContext(container)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Core.Invoice>()), 1)
+        #expect(try context.fetchCount(FetchDescriptor<Invoice>()) == 1)
     }
 
     @MainActor
-    func testFeatureOwnedCreationPreparationBlocksInvalidDraftWithoutCreatingRecord() async throws {
+    @Test func FeatureOwnedCreationPreparationBlocksInvalidDraftWithoutCreatingRecord() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -628,17 +785,17 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         viewModel.invoiceNumber = ""
         let isPrepared = await viewModel.prepareForFeatureOwnedInvoiceCreation()
 
-        XCTAssertFalse(isPrepared)
-        XCTAssertTrue(viewModel.hasUnsavedChanges)
-        XCTAssertEqual(viewModel.statusMessage, "Review the Validation section and try again.")
+        #expect(!(isPrepared))
+        #expect(viewModel.hasUnsavedChanges)
+        #expect(viewModel.statusMessage == "Review the Validation section and try again.")
         let persisted = try await actor.fetchInvoice(id: id)
-        XCTAssertEqual(persisted?.title, savedTitle)
+        #expect(persisted?.title == savedTitle)
         let context = ModelContext(container)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Core.Invoice>()), 1)
+        #expect(try context.fetchCount(FetchDescriptor<Invoice>()) == 1)
     }
 
     @MainActor
-    func testLaterSelectionSupersedesExternalCloseWaitingForDocumentGeneration() async throws {
+    @Test func LaterSelectionSupersedesExternalCloseWaitingForDocumentGeneration() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -660,12 +817,12 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         await closeTask.value
         await selectionTask.value
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, secondID)
-        XCTAssertEqual(viewModel.currentInvoice?.id, secondID)
+        #expect(viewModel.selectedInvoiceID == secondID)
+        #expect(viewModel.currentInvoice?.id == secondID)
     }
 
     @MainActor
-    func testBootstrapWithoutSelectionDoesNotClaimListOwnership() async throws {
+    @Test func BootstrapWithoutSelectionDoesNotClaimListOwnership() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         _ = try await actor.createInvoice()
@@ -673,13 +830,13 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         await viewModel.bootstrap()
 
-        XCTAssertNil(viewModel.selectedInvoiceID)
-        XCTAssertNil(viewModel.currentInvoice)
-        XCTAssertNil(viewModel.statusMessage)
+        #expect(viewModel.selectedInvoiceID == nil)
+        #expect(viewModel.currentInvoice == nil)
+        #expect(viewModel.statusMessage == nil)
     }
 
     @MainActor
-    func testEditorSessionPreservesInvalidDraftAcrossWorkspaceReentry() async throws {
+    @Test func EditorSessionPreservesInvalidDraftAcrossWorkspaceReentry() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -687,18 +844,18 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         await session.viewModel.bootstrap(preferredInvoiceID: id)
         session.viewModel.title = "Unfinished session draft"
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         await session.viewModel.saveBeforeLeavingWorkspace()
         await session.viewModel.bootstrap(preferredInvoiceID: id)
 
-        XCTAssertEqual(session.viewModel.title, "Unfinished session draft")
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
-        XCTAssertEqual(session.viewModel.currentInvoice?.id, id)
+        #expect(session.viewModel.title == "Unfinished session draft")
+        #expect(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.currentInvoice?.id == id)
     }
 
     @MainActor
-    func testWorkspaceReentryUsesDraftTransitionBeforeOpeningDifferentInvoice() async throws {
+    @Test func WorkspaceReentryUsesDraftTransitionBeforeOpeningDifferentInvoice() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -710,18 +867,15 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         await viewModel.openForWorkspace(requestedInvoiceID: secondID)
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, firstID)
-        XCTAssertEqual(viewModel.currentInvoice?.id, firstID)
-        XCTAssertEqual(viewModel.title, "Unfinished routed draft")
-        XCTAssertTrue(viewModel.hasPendingDiscardTransition)
-        XCTAssertEqual(
-            viewModel.pendingDiscardTransitionTitle,
-            "Discard Changes and Switch Invoices?"
-        )
+        #expect(viewModel.selectedInvoiceID == firstID)
+        #expect(viewModel.currentInvoice?.id == firstID)
+        #expect(viewModel.title == "Unfinished routed draft")
+        #expect(viewModel.hasPendingDiscardTransition)
+        #expect(viewModel.pendingDiscardTransitionTitle == "Discard Changes and Switch Invoices?")
     }
 
     @MainActor
-    func testInvalidDraftCanBeDiscardedWhenSwitchingInvoices() async throws {
+    @Test func InvalidDraftCanBeDiscardedWhenSwitchingInvoices() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let firstID = try await actor.createInvoice()
@@ -733,30 +887,30 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         await viewModel.selectInvoice(id: secondID)
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, firstID)
-        XCTAssertTrue(viewModel.hasPendingDiscardTransition)
-        XCTAssertEqual(viewModel.pendingDiscardTransitionTitle, "Discard Changes and Switch Invoices?")
-        XCTAssertEqual(viewModel.validationRecoveryRequestRevision, 1)
+        #expect(viewModel.selectedInvoiceID == firstID)
+        #expect(viewModel.hasPendingDiscardTransition)
+        #expect(viewModel.pendingDiscardTransitionTitle == "Discard Changes and Switch Invoices?")
+        #expect(viewModel.validationRecoveryRequestRevision == 1)
 
-        let transition = try XCTUnwrap(
+        let transition = try #require(
             viewModel.prepareToDiscardDraftAndContinueTransition()
         )
-        XCTAssertFalse(viewModel.hasPendingDiscardTransition)
+        #expect(!(viewModel.hasPendingDiscardTransition))
 
         // Mirrors confirmationDialog's dismissal write after its button action.
         // Captured destination must survive this presentation-state cleanup.
         viewModel.keepEditingAfterBlockedTransition()
         await viewModel.continueDiscardedTransition(transition)
 
-        XCTAssertEqual(viewModel.selectedInvoiceID, secondID)
-        XCTAssertEqual(viewModel.currentInvoice?.id, secondID)
-        XCTAssertFalse(viewModel.hasPendingDiscardTransition)
-        XCTAssertFalse(viewModel.hasInvalidNumericInput)
-        XCTAssertEqual(viewModel.statusMessage, "Unsaved changes discarded.")
+        #expect(viewModel.selectedInvoiceID == secondID)
+        #expect(viewModel.currentInvoice?.id == secondID)
+        #expect(!(viewModel.hasPendingDiscardTransition))
+        #expect(!(viewModel.hasInvalidNumericInput))
+        #expect(viewModel.statusMessage == "Unsaved changes discarded.")
     }
 
     @MainActor
-    func testRevisionConflictResolutionSurvivesDialogDismissalWrite() async throws {
+    @Test func RevisionConflictResolutionSurvivesDialogDismissalWrite() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -764,7 +918,7 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         await viewModel.bootstrap(preferredInvoiceID: id)
 
         let originalValue = try await actor.fetchInvoice(id: id)
-        let original = try XCTUnwrap(originalValue)
+        let original = try #require(originalValue)
         var remoteDraft = InvoiceDraft(original)
         remoteDraft.title = "Saved in another window"
         remoteDraft.client.name = "Conflict Test Client"
@@ -773,35 +927,35 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
             expectedRevision: original.revision,
             draft: remoteDraft
         )
-        XCTAssertTrue(remoteUpdate.isValid)
+        #expect(remoteUpdate.isValid)
 
         viewModel.title = "Local conflicting draft"
         viewModel.clientName = "Conflict Test Client"
         await viewModel.saveCurrentInvoice()
-        XCTAssertTrue(viewModel.hasRevisionConflict)
-        XCTAssertTrue(viewModel.revisionConflictCanReload)
+        #expect(viewModel.hasRevisionConflict)
+        #expect(viewModel.revisionConflictCanReload)
 
-        let resolution = try XCTUnwrap(
+        let resolution = try #require(
             viewModel.beginRevisionConflictResolution(.reloadLatest)
         )
-        XCTAssertTrue(viewModel.isResolvingRevisionConflict)
+        #expect(viewModel.isResolvingRevisionConflict)
 
         // Mirrors confirmationDialog's dismissal write after its button action.
         // Active resolution must retain conflict context until async work settles.
         viewModel.keepEditingAfterRevisionConflict()
-        XCTAssertTrue(viewModel.hasRevisionConflict)
-        XCTAssertTrue(viewModel.revisionConflictCanReload)
+        #expect(viewModel.hasRevisionConflict)
+        #expect(viewModel.revisionConflictCanReload)
 
         await viewModel.continueRevisionConflictResolution(resolution)
 
-        XCTAssertFalse(viewModel.isResolvingRevisionConflict)
-        XCTAssertFalse(viewModel.hasRevisionConflict)
-        XCTAssertEqual(viewModel.title, "Saved in another window")
-        XCTAssertEqual(viewModel.statusMessage, "Reloaded the latest saved invoice.")
+        #expect(!(viewModel.isResolvingRevisionConflict))
+        #expect(!(viewModel.hasRevisionConflict))
+        #expect(viewModel.title == "Saved in another window")
+        #expect(viewModel.statusMessage == "Reloaded the latest saved invoice.")
     }
 
     @MainActor
-    func testDeletionDiscardsInvalidLocalInputAfterConfirmation() async throws {
+    @Test func DeletionDiscardsInvalidLocalInputAfterConfirmation() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -812,15 +966,15 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         await viewModel.deleteSelectedInvoice()
 
         let deletedInvoice = try await actor.fetchInvoice(id: id)
-        XCTAssertNil(deletedInvoice)
-        XCTAssertNil(viewModel.selectedInvoiceID)
-        XCTAssertNil(viewModel.currentInvoice)
-        XCTAssertFalse(viewModel.hasInvalidNumericInput)
-        XCTAssertEqual(viewModel.statusMessage, "Invoice deleted.")
+        #expect(deletedInvoice == nil)
+        #expect(viewModel.selectedInvoiceID == nil)
+        #expect(viewModel.currentInvoice == nil)
+        #expect(!(viewModel.hasInvalidNumericInput))
+        #expect(viewModel.statusMessage == "Invoice deleted.")
     }
 
     @MainActor
-    func testEditorSessionPublishesInsertUpdateDuplicateAndDeleteMutations() async throws {
+    @Test func EditorSessionPublishesInsertUpdateDuplicateAndDeleteMutations() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let createdID = try await actor.createInvoice()
@@ -833,21 +987,18 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         session.viewModel.lineItems[0].itemDescription = "Support service"
         await session.viewModel.saveCurrentInvoice()
         await session.viewModel.duplicateSelectedInvoice()
-        let duplicatedID = try XCTUnwrap(session.viewModel.selectedInvoiceID)
+        let duplicatedID = try #require(session.viewModel.selectedInvoiceID)
         await session.viewModel.deleteSelectedInvoice()
 
-        XCTAssertEqual(
-            mutations,
-            [
-                .updated(createdID),
-                .inserted(duplicatedID),
-                .deleted(duplicatedID)
-            ]
-        )
+        #expect(mutations == [
+            .updated(createdID),
+            .inserted(duplicatedID),
+            .deleted(duplicatedID),
+        ])
     }
 
     @MainActor
-    func testOwningFeatureDeletionClosesMatchingDraftWithoutSavingIt() async throws {
+    @Test func OwningFeatureDeletionClosesMatchingDraftWithoutSavingIt() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let deletedID = try await actor.createInvoice()
@@ -855,33 +1006,33 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         let session = InvoiceEditorSession(modelContainer: container)
         await session.viewModel.bootstrap(preferredInvoiceID: deletedID)
         session.viewModel.title = "Unsaved local title"
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         let unrelatedLease = await session.prepareForDeletingInvoices([preservedID])
-        XCTAssertNil(unrelatedLease)
-        XCTAssertEqual(session.viewModel.currentInvoice?.id, deletedID)
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(unrelatedLease == nil)
+        #expect(session.viewModel.currentInvoice?.id == deletedID)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         let cancelledLease = await session.prepareForDeletingInvoices([deletedID])
-        XCTAssertNotNil(cancelledLease)
+        #expect(cancelledLease != nil)
         session.cancelDeletingInvoices(cancelledLease)
-        XCTAssertEqual(session.viewModel.currentInvoice?.id, deletedID)
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.currentInvoice?.id == deletedID)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         let committedLease = await session.prepareForDeletingInvoices([deletedID])
         session.completeDeletingInvoices(committedLease, deletedInvoiceIDs: [deletedID])
-        XCTAssertNil(session.viewModel.selectedInvoiceID)
-        XCTAssertNil(session.viewModel.currentInvoice)
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
-        XCTAssertEqual(session.viewModel.statusMessage, "Closed the deleted invoice.")
+        #expect(session.viewModel.selectedInvoiceID == nil)
+        #expect(session.viewModel.currentInvoice == nil)
+        #expect(!(session.viewModel.hasUnsavedChanges))
+        #expect(session.viewModel.statusMessage == "Closed the deleted invoice.")
 
         let persistedValue = try await actor.fetchInvoice(id: deletedID)
-        let persisted = try XCTUnwrap(persistedValue)
-        XCTAssertNotEqual(persisted.title, "Unsaved local title")
+        let persisted = try #require(persistedValue)
+        #expect(persisted.title != "Unsaved local title")
     }
 
     @MainActor
-    func testOwningFeatureDeletionWaitsForDocumentWorkBeforeClosingDraft() async throws {
+    @Test func OwningFeatureDeletionWaitsForDocumentWorkBeforeClosingDraft() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let deletedID = try await actor.createInvoice()
@@ -895,25 +1046,25 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(30))
 
-        XCTAssertEqual(session.viewModel.currentInvoice?.id, deletedID)
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.currentInvoice?.id == deletedID)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         session.viewModel.isGeneratingDocument = false
         let lease = await preparationTask.value
 
-        XCTAssertNotNil(lease)
-        XCTAssertTrue(session.viewModel.isBusy)
-        XCTAssertEqual(session.viewModel.currentInvoice?.id, deletedID)
+        #expect(lease != nil)
+        #expect(session.viewModel.isBusy)
+        #expect(session.viewModel.currentInvoice?.id == deletedID)
 
         session.completeDeletingInvoices(lease, deletedInvoiceIDs: [deletedID])
 
-        XCTAssertNil(session.viewModel.selectedInvoiceID)
-        XCTAssertNil(session.viewModel.currentInvoice)
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.selectedInvoiceID == nil)
+        #expect(session.viewModel.currentInvoice == nil)
+        #expect(!(session.viewModel.hasUnsavedChanges))
     }
 
     @MainActor
-    func testLeavingWorkspacePersistsValidDraft() async throws {
+    @Test func LeavingWorkspacePersistsValidDraft() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -926,14 +1077,14 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         await session.viewModel.saveBeforeLeavingWorkspace()
 
         let persistedValue = try await actor.fetchInvoice(id: id)
-        let persisted = try XCTUnwrap(persistedValue)
-        XCTAssertEqual(persisted.clientName, "Saved Client")
-        XCTAssertEqual(persisted.lineItems.first?.itemDescription, "Support service")
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
+        let persisted = try #require(persistedValue)
+        #expect(persisted.clientName == "Saved Client")
+        #expect(persisted.lineItems.first?.itemDescription == "Support service")
+        #expect(!(session.viewModel.hasUnsavedChanges))
     }
 
     @MainActor
-    func testWorkspaceHandoffPersistsValidDraftBeforeAllowingNavigation() async throws {
+    @Test func WorkspaceHandoffPersistsValidDraftBeforeAllowingNavigation() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -946,13 +1097,13 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         let canNavigate = await session.viewModel.prepareForWorkspaceHandoff()
         let persisted = try await actor.fetchInvoice(id: id)
 
-        XCTAssertTrue(canNavigate)
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
-        XCTAssertEqual(persisted?.title, "Saved before template handoff")
+        #expect(canNavigate)
+        #expect(!(session.viewModel.hasUnsavedChanges))
+        #expect(persisted?.title == "Saved before template handoff")
     }
 
     @MainActor
-    func testWorkspaceHandoffKeepsInvalidDraftOpenAndRejectsNavigation() async throws {
+    @Test func WorkspaceHandoffKeepsInvalidDraftOpenAndRejectsNavigation() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -966,19 +1117,16 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
 
         let canNavigate = await session.viewModel.prepareForWorkspaceHandoff()
 
-        XCTAssertFalse(canNavigate)
-        XCTAssertEqual(session.viewModel.selectedInvoiceID, id)
-        XCTAssertEqual(session.viewModel.title, "Invalid draft stays open")
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
-        XCTAssertEqual(
-            session.viewModel.statusMessage,
-            "Enter valid numeric values before saving."
-        )
-        XCTAssertEqual(session.viewModel.validationRecoveryRequestRevision, 1)
+        #expect(!(canNavigate))
+        #expect(session.viewModel.selectedInvoiceID == id)
+        #expect(session.viewModel.title == "Invalid draft stays open")
+        #expect(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.statusMessage == "Enter valid numeric values before saving.")
+        #expect(session.viewModel.validationRecoveryRequestRevision == 1)
     }
 
     @MainActor
-    func testLeavingWorkspaceWaitsForActiveDocumentWorkBeforeSaving() async throws {
+    @Test func LeavingWorkspaceWaitsForActiveDocumentWorkBeforeSaving() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -995,21 +1143,21 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(50))
 
-        XCTAssertEqual(session.viewModel.currentInvoice?.title, originalTitle)
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(session.viewModel.currentInvoice?.title == originalTitle)
+        #expect(session.viewModel.hasUnsavedChanges)
 
         session.viewModel.isGeneratingDocument = false
         await saveTask.value
 
-        XCTAssertEqual(session.viewModel.statusMessage, "Changes saved.")
+        #expect(session.viewModel.statusMessage == "Changes saved.")
 
         let saved = try await actor.fetchInvoice(id: id)
-        XCTAssertEqual(saved?.title, "Saved after document work")
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
+        #expect(saved?.title == "Saved after document work")
+        #expect(!(session.viewModel.hasUnsavedChanges))
     }
 
     @MainActor
-    func testValidationIssuesLinkToRecoverableInspectorFields() async throws {
+    @Test func ValidationIssuesLinkToRecoverableInspectorFields() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -1026,26 +1174,26 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         viewModel.creditApplied = -1
         viewModel.lineItems = []
 
-        XCTAssertEqual(viewModel.validationRecoveryRequestRevision, 0)
+        #expect(viewModel.validationRecoveryRequestRevision == 0)
         await viewModel.saveCurrentInvoice()
 
         let targets = Set(viewModel.validationIssues.compactMap(\.target))
-        XCTAssertTrue(targets.contains(.invoiceNumber))
-        XCTAssertTrue(targets.contains(.clientName))
-        XCTAssertTrue(targets.contains(.dueDate))
-        XCTAssertTrue(targets.contains(.currencyCode))
-        XCTAssertTrue(targets.contains(.defaultTaxRate))
-        XCTAssertTrue(targets.contains(.discountPercent))
-        XCTAssertTrue(targets.contains(.discountAmount))
-        XCTAssertTrue(targets.contains(.creditApplied))
-        XCTAssertTrue(targets.contains(.lineItems))
-        XCTAssertEqual(targets.count, 9)
-        XCTAssertEqual(viewModel.statusMessage, "Review the Validation section and try again.")
-        XCTAssertEqual(viewModel.validationRecoveryRequestRevision, 1)
+        #expect(targets.contains(.invoiceNumber))
+        #expect(targets.contains(.clientName))
+        #expect(targets.contains(.dueDate))
+        #expect(targets.contains(.currencyCode))
+        #expect(targets.contains(.defaultTaxRate))
+        #expect(targets.contains(.discountPercent))
+        #expect(targets.contains(.discountAmount))
+        #expect(targets.contains(.creditApplied))
+        #expect(targets.contains(.lineItems))
+        #expect(targets.count == 9)
+        #expect(viewModel.statusMessage == "Review the Validation section and try again.")
+        #expect(viewModel.validationRecoveryRequestRevision == 1)
     }
 
     @MainActor
-    func testPublicStoreCreatesAndExportsUsingAppContainer() async throws {
+    @Test func PublicStoreCreatesAndExportsUsingAppContainer() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let id = try await InvoiceEditorStore.createInvoice(in: container)
 
@@ -1063,18 +1211,18 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         }
 
         let data = try Data(contentsOf: firstPDF.url)
-        XCTAssertGreaterThan(data.count, 100)
-        XCTAssertEqual(data.prefix(4), Data("%PDF".utf8))
-        XCTAssertEqual(firstPDF.url.lastPathComponent, secondPDF.url.lastPathComponent)
-        XCTAssertNotEqual(firstPDF.url, secondPDF.url)
+        #expect(data.count > 100)
+        #expect(data.prefix(4) == Data("%PDF".utf8))
+        #expect(firstPDF.url.lastPathComponent == secondPDF.url.lastPathComponent)
+        #expect(firstPDF.url != secondPDF.url)
 
         let discardedURL = firstPDF.url
         firstPDF.discard()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: discardedURL.path))
+        #expect(!(FileManager.default.fileExists(atPath: discardedURL.path)))
     }
 
     @MainActor
-    func testEditorSessionBulkDocumentSavesAndRendersActiveDraft() async throws {
+    @Test func EditorSessionBulkDocumentSavesAndRendersActiveDraft() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
@@ -1087,33 +1235,33 @@ final class InvoiceModelActorIntegrationTests: XCTestCase {
         defer { pdf.discard() }
 
         let saved = try await actor.fetchInvoice(id: id)
-        XCTAssertEqual(saved?.invoiceNumber, "INV-LIVE-DRAFT")
-        XCTAssertEqual(pdf.url.lastPathComponent, "Invoice-INV-LIVE-DRAFT.pdf")
-        XCTAssertFalse(session.viewModel.hasUnsavedChanges)
+        #expect(saved?.invoiceNumber == "INV-LIVE-DRAFT")
+        #expect(pdf.url.lastPathComponent == "Invoice-INV-LIVE-DRAFT.pdf")
+        #expect(!(session.viewModel.hasUnsavedChanges))
     }
 
     @MainActor
-    func testEditorSessionBulkDocumentPreservesInvalidActiveDraft() async throws {
+    @Test func EditorSessionBulkDocumentPreservesInvalidActiveDraft() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         let id = try await actor.createInvoice()
         let originalSnapshot = try await actor.fetchInvoice(id: id)
-        let original = try XCTUnwrap(originalSnapshot)
+        let original = try #require(originalSnapshot)
         let session = InvoiceEditorSession(modelContainer: container)
         await session.viewModel.bootstrap(preferredInvoiceID: id)
         session.viewModel.invoiceNumber = ""
 
         do {
             _ = try await session.temporaryPDF(invoiceID: id)
-            XCTFail("Expected invalid active draft to block PDF generation")
+            Issue.record("Expected invalid active draft to block PDF generation")
         } catch let error as InvoiceEditorSessionDocumentError {
-            XCTAssertEqual(error, .activeDraftCouldNotBeSaved)
+            #expect(error == .activeDraftCouldNotBeSaved)
         }
 
         let persisted = try await actor.fetchInvoice(id: id)
-        XCTAssertEqual(persisted?.invoiceNumber, original.invoiceNumber)
-        XCTAssertEqual(session.viewModel.invoiceNumber, "")
-        XCTAssertTrue(session.viewModel.hasUnsavedChanges)
+        #expect(persisted?.invoiceNumber == original.invoiceNumber)
+        #expect(session.viewModel.invoiceNumber == "")
+        #expect(session.viewModel.hasUnsavedChanges)
     }
 }
 

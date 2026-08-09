@@ -1,14 +1,15 @@
 import Foundation
 import Core
 import Data
+import PersistenceModels
 import SwiftData
 import SwiftUI
-import XCTest
+import Testing
 @testable import Feature_BillingHub
 
 @MainActor
-final class BillingHubFeatureSmokeTests: XCTestCase {
-    func testDragDropCoordinatorValidatesSessionAndInvoiceMoves() {
+@Suite struct BillingHubFeatureSmokeTests {
+    @Test func DragDropCoordinatorValidatesSessionAndInvoiceMoves() {
         let sourceSessionID = UUID()
         let targetSessionID = UUID()
         let sourceInvoiceID = UUID()
@@ -35,14 +36,14 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
         )
         let coordinator = BillingHubDragDropCoordinator(projection: projection)
 
-        XCTAssertTrue(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .grouped, before: nil))
-        XCTAssertFalse(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .readyToSend, before: nil))
-        XCTAssertFalse(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .grouped, before: sourceSessionID))
-        XCTAssertTrue(coordinator.canAcceptCardDrop(.invoice(sourceInvoiceID), into: .readyToSend, before: nil))
-        XCTAssertFalse(coordinator.canAcceptCardDrop(.invoice(sourceInvoiceID), into: .pending, before: nil))
+        #expect(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .grouped, before: nil))
+        #expect(!(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .readyToSend, before: nil)))
+        #expect(!(coordinator.canAcceptCardDrop(.session(sourceSessionID), into: .grouped, before: sourceSessionID)))
+        #expect(coordinator.canAcceptCardDrop(.invoice(sourceInvoiceID), into: .readyToSend, before: nil))
+        #expect(!(coordinator.canAcceptCardDrop(.invoice(sourceInvoiceID), into: .pending, before: nil)))
     }
 
-    func testWorkflowActorCompletesSessionMoveAndPersistsStatus() async throws {
+    @Test func WorkflowActorCompletesSessionMoveAndPersistsStatus() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let workflow = BillingHubWorkflowActor(modelContainer: container)
 
@@ -54,13 +55,13 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
             modelID: session.persistentModelID,
             to: .grouped
         )
-        XCTAssertEqual(result, .success)
+        #expect(result == .success)
 
         let updated = try context.fetch(FetchDescriptor<Session>()).first { $0.persistentModelID == session.persistentModelID }
-        XCTAssertEqual(updated?.status, Optional(.grouped))
+        #expect(updated?.status == Optional(.grouped))
     }
 
-    func testWorkflowActorReturnsNotFoundForDeletedSessionModelID() async throws {
+    @Test func WorkflowActorReturnsNotFoundForDeletedSessionModelID() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let workflow = BillingHubWorkflowActor(modelContainer: container)
         let session = makeSession()
@@ -75,10 +76,10 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
             to: .grouped
         )
 
-        XCTAssertEqual(result, .notFound)
+        #expect(result == .notFound)
     }
 
-    func testWorkflowActorBulkUpdateInvoiceOperationHandlesLargeBatch() async throws {
+    @Test func WorkflowActorBulkUpdateInvoiceOperationHandlesLargeBatch() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let workflow = BillingHubWorkflowActor(modelContainer: container)
 
@@ -97,15 +98,53 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
         ) { invoice in
             if invoice.paidDate == nil { invoice.paidDate = Date() }
         }
-        XCTAssertEqual(processed, total)
+        #expect(processed == total)
 
         let refreshedInvoices = try context.fetch(FetchDescriptor<Invoice>())
-        XCTAssertEqual(refreshedInvoices.count, total)
-        XCTAssertTrue(refreshedInvoices.allSatisfy { $0.effectiveStatus == .received })
-        XCTAssertTrue(refreshedInvoices.allSatisfy { $0.invoiceEditorRevision == 1 })
+        #expect(refreshedInvoices.count == total)
+        #expect(refreshedInvoices.allSatisfy { $0.effectiveStatus == .received })
+        #expect(refreshedInvoices.allSatisfy { $0.invoiceEditorRevision == 1 })
     }
 
-    func testWorkflowActorInvoiceMetadataEditInvalidatesOpenEditorDraft() async throws {
+    @Test func WorkflowActorFetchProjectionUsesOnlyReferencedRelationships() async throws {
+        let (container, context) = try ModelContainerFactory.makeInMemoryContext()
+        let workflow = BillingHubWorkflowActor(modelContainer: container)
+
+        let referencedClient = Client(fullName: "Referenced Client")
+        let unrelatedClient = Client(fullName: "Unrelated Client")
+        let service = ClientService(serviceName: "Therapy", unit: "Hour", rate: 120)
+        service.client = referencedClient
+        referencedClient.clientServices = [service]
+
+        let session = makeSession()
+        session.client = referencedClient
+        session.clientService = service
+        session.assignedServiceName = "Therapy"
+
+        context.insert(referencedClient)
+        context.insert(unrelatedClient)
+        context.insert(service)
+        context.insert(session)
+        try context.save()
+
+        let projection = try await workflow.fetchProjection(
+            searchText: "",
+            selectedClientID: nil,
+            sortOptions: [:]
+        )
+
+        #expect(projection.clientSummaries.map(\.name) == ["Referenced Client"])
+        let completedCards = projection.sessionsByStatus[.completed] ?? []
+        let sessionCard = try #require(completedCards.first)
+        if case .session(let data) = sessionCard {
+            #expect(data.clientName == "Referenced Client")
+            #expect(data.serviceName == "Therapy")
+        } else {
+            Issue.record("Expected completed session card")
+        }
+    }
+
+    @Test func WorkflowActorInvoiceMetadataEditInvalidatesOpenEditorDraft() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let workflow = BillingHubWorkflowActor(modelContainer: container)
         let invoice = makeInvoice(index: 1, status: .reviewDraft)
@@ -117,16 +156,16 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
             clientName: "Updated Client"
         )
 
-        let refreshed = try XCTUnwrap(context.fetch(FetchDescriptor<Invoice>()).first)
-        XCTAssertEqual(refreshed.clientName, "Updated Client")
-        XCTAssertEqual(refreshed.invoiceEditorRevision, 1)
-        XCTAssertEqual(refreshed.totalAmount, 1)
+        let refreshed = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        #expect(refreshed.clientName == "Updated Client")
+        #expect(refreshed.invoiceEditorRevision == 1)
+        #expect(refreshed.totalAmount == 1)
 
         try await workflow.updateInvoiceDetails(
             modelID: invoice.persistentModelID,
             clientName: "Updated Client"
         )
-        XCTAssertEqual(refreshed.invoiceEditorRevision, 1)
+        #expect(refreshed.invoiceEditorRevision == 1)
     }
 
     private func makeSession() -> Session {
@@ -144,6 +183,7 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
     ) -> SessionKanbanCardData {
         SessionKanbanCardData(
             sessionId: sessionID,
+            clientID: UUID(),
             title: "Session",
             clientName: "Client",
             serviceName: "Service",
@@ -191,7 +231,7 @@ final class BillingHubFeatureSmokeTests: XCTestCase {
         invoice.issueDate = Date(timeIntervalSince1970: Double(index))
         invoice.date = Date(timeIntervalSince1970: Double(index))
         invoice.dueDate = Date(timeIntervalSince1970: Double(index)).addingTimeInterval(86_400)
-        invoice.totalAmount = Double(index)
+        invoice.totalAmount = Decimal(index)
         invoice.status = status
         return invoice
     }

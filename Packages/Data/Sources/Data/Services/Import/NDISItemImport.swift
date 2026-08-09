@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
+import os
 
 // Representations of data for NDIS item creation/update
 struct NDISItemData: Equatable {
@@ -27,16 +29,7 @@ struct NDISItemData: Equatable {
 struct NDISItemImport {
     
     static func importNDISItems(data: Data, fileName: String, context: ModelContext) throws -> ImportResult {
-        guard let _ = try? context.fetch(FetchDescriptor<NDISItem>()) else {
-            throw NSError(
-                domain: "NDISImportError",
-                code: 1000,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Entity 'NDISItem' not found in SwiftData model",
-                    NSLocalizedFailureReasonErrorKey: "The application's data model doesn't include the NDISItem. Please update your model or contact support."
-                ]
-            )
-        }
+        _ = try context.fetchCount(FetchDescriptor<NDISItem>())
 
         var messages: [String] = []
 
@@ -54,11 +47,11 @@ struct NDISItemImport {
                  )
             }
 
-            print("Successfully parsed \(parsedItems.count) items. Starting SwiftData import...")
+            Logger.data.debug("NDIS import parsed \(parsedItems.count, privacy: .public) items")
             return try processParsedItems(parsedItems, fileName: fileName, context: context, initialMessages: messages)
 
         } catch {
-            print("NDIS import error during parsing: \(error)")
+            Logger.data.error("NDIS import parsing failed: \(error.localizedDescription, privacy: .private(mask: .hash))")
             throw NSError(
                 domain: "NDISImportError",
                 code: 103,
@@ -83,24 +76,26 @@ struct NDISItemImport {
             .sorted { versionSortingKey(for: $0) < versionSortingKey(for: $1) }
         let deduplicatedTotal = deduplicatedItems.count
 
-        print("Starting batch processing for \(deduplicatedTotal) unique items (\(totalItems) total input rows)...")
+        Logger.data.debug("NDIS import processing \(deduplicatedTotal, privacy: .public) unique items from \(totalItems, privacy: .public) rows")
 
         for i in stride(from: 0, to: deduplicatedTotal, by: batchSize) {
             let batchEnd = min(i + batchSize, deduplicatedTotal)
             let batchItems = Array(deduplicatedItems[i..<batchEnd])
-            print("Processing batch \(i/batchSize + 1)/\( (deduplicatedTotal + batchSize - 1) / batchSize )... (\(batchItems.count) items)")
 
             for itemData in batchItems {
                 let versionId = versionIdentifier(for: itemData)
                 
                 let itemNumber = itemData.itemNumber
                 let itemName = itemData.name
-                let fetchDescriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> {
-                    $0.itemNumber == itemNumber && $0.name == itemName && $0.versionIdentifier == versionId
-                })
-                
                 let entity: NDISItem
-                if let existingEntity = try? context.fetch(fetchDescriptor).first {
+                if let existingEntity = try resolveExistingItem(
+                    itemNumber: itemNumber,
+                    itemName: itemName,
+                    versionIdentifier: versionId,
+                    effectiveStartDate: itemData.effectiveStartDate,
+                    effectiveEndDate: itemData.effectiveEndDate,
+                    context: context
+                ) {
                     entity = existingEntity
                 } else {
                     entity = NDISItem(id: UUID(), itemNumber: itemData.itemNumber, name: itemData.name, versionIdentifier: versionId)
@@ -120,13 +115,7 @@ struct NDISItemImport {
                 entity.effectiveEndDate = itemData.effectiveEndDate
 
                 if let pricesData = itemData.regionalPricesData {
-                    for (region, amount) in pricesData {
-                        let priceEntity = RegionalPrice(id: UUID())
-                        priceEntity.regionIdentifier = region
-                        priceEntity.amount = amount
-                        priceEntity.ndisItem = entity
-                        context.insert(priceEntity)
-                    }
+                    replaceRegionalPrices(pricesData, for: entity, context: context)
                 }
                 
                 successful += 1
@@ -138,22 +127,17 @@ struct NDISItemImport {
                 if components.count == 2 {
                     let itemNumber = String(components[0])
                     let itemName = String(components[1])
-                    do {
-                        try updateCurrentStatusForItem(itemNumber: itemNumber, itemName: itemName, context: context)
-                    } catch {
-                        print("Warning: Failed to update current status for \(itemNumber) - \(itemName): \(error)")
-                    }
+                    try updateCurrentStatusForItem(itemNumber: itemNumber, itemName: itemName, context: context)
                 }
             }
 
             do {
                 try context.save()
-                print("Saved batch \(i/batchSize + 1)")
             } catch {
                 failed += batchItems.count
                 successful -= batchItems.count
                 messages.append("Error saving batch \(i/batchSize + 1): \(error.localizedDescription)")
-                print("Error saving batch \(i/batchSize + 1): \(error)")
+                Logger.data.error("NDIS import save failed: \(error.localizedDescription, privacy: .private(mask: .hash))")
             }
         }
 
@@ -169,7 +153,6 @@ struct NDISItemImport {
              messages.insert("File parsed, but no items were processed (check format or existing data).", at: 0)
         }
 
-        print("Import finished. Success: \(successful), Failed: \(failed)")
         return ImportResult(
             source: .ndisItems,
             successful: successful,
@@ -177,6 +160,50 @@ struct NDISItemImport {
             messages: messages,
             fileName: fileName
         )
+    }
+
+    static func replaceRegionalPrices(
+        _ pricesData: [String: Double],
+        for item: NDISItem,
+        context: ModelContext
+    ) {
+        for existingPrice in item.regionalPrices ?? [] {
+            context.delete(existingPrice)
+        }
+        item.regionalPrices = []
+
+        for (region, amount) in pricesData.sorted(by: { $0.key < $1.key }) {
+            let price = RegionalPrice(id: UUID())
+            price.regionIdentifier = region
+            price.amount = MoneyDecimalImport.decimal(from: amount)
+            price.ndisItem = item
+            context.insert(price)
+        }
+    }
+
+    static func resolveExistingItem(
+        itemNumber: String,
+        itemName: String,
+        versionIdentifier: String,
+        effectiveStartDate: Date?,
+        effectiveEndDate: Date?,
+        context: ModelContext
+    ) throws -> NDISItem? {
+        let exactDescriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> {
+            $0.itemNumber == itemNumber && $0.name == itemName && $0.versionIdentifier == versionIdentifier
+        })
+        if let existing = try context.fetch(exactDescriptor).first {
+            return existing
+        }
+
+        // Pre-stable-hash stores have a process-random version identifier. Resolve those rows
+        // by their immutable version dates, then rewrite to the stable identifier on import.
+        let legacyDescriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> {
+            $0.itemNumber == itemNumber && $0.name == itemName
+        })
+        return try context.fetch(legacyDescriptor).first {
+            $0.effectiveStartDate == effectiveStartDate && $0.effectiveEndDate == effectiveEndDate
+        }
     }
 
     private static func versionDeduplicationKey(for item: NDISItemData) -> String {

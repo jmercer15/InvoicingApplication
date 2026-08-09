@@ -1,11 +1,12 @@
 import Core
 import Data
+import PersistenceModels
 import SwiftData
 @testable import Feature_Calendar
-import XCTest
-
-final class CalendarSessionPrefetchActorTests: XCTestCase {
-    func testDisplayRefreshFingerprintInvalidatesForCrossFeatureStoreRevision() {
+import Foundation
+import Testing
+@Suite struct CalendarSessionPrefetchActorTests {
+    @Test func DisplayRefreshFingerprintInvalidatesForCrossFeatureStoreRevision() {
         let range = (start: Date(timeIntervalSinceReferenceDate: 100), end: Date(timeIntervalSinceReferenceDate: 200))
         let first = DisplayItemsRefreshFingerprint(
             viewRange: range,
@@ -22,10 +23,10 @@ final class CalendarSessionPrefetchActorTests: XCTestCase {
             storeRevision: 2
         )
 
-        XCTAssertNotEqual(first, second)
+        #expect(first != second)
     }
 
-    func testLoadsSupportLogThroughModelActorBoundary() async throws {
+    @Test func LoadsSupportLogThroughModelActorBoundary() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         context.autosaveEnabled = false
@@ -42,14 +43,14 @@ final class CalendarSessionPrefetchActorTests: XCTestCase {
         let actor = CalendarSessionPrefetchActor(modelContainer: container)
         let result = await actor.load(sessionID: session.id)
 
-        XCTAssertNil(result.clientID)
-        XCTAssertNil(result.clientServiceID)
-        XCTAssertEqual(result.supportLog?.participantName, "Alex")
-        XCTAssertEqual(result.supportLog?.supportItemNumber, "01_001_0107_1_1")
-        XCTAssertTrue(result.supportLog?.isEnabled == true)
+        #expect(result.clientID == nil)
+        #expect(result.clientServiceID == nil)
+        #expect(result.supportLog?.participantName == "Alex")
+        #expect(result.supportLog?.supportItemNumber == "01_001_0107_1_1")
+        #expect(result.supportLog?.isEnabled == true)
     }
 
-    func testMissingSessionReturnsEmptySnapshot() async throws {
+    @Test func MissingSessionReturnsEmptySnapshot() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         context.autosaveEnabled = false
@@ -63,8 +64,8 @@ final class CalendarSessionPrefetchActorTests: XCTestCase {
         let actor = CalendarSessionPrefetchActor(modelContainer: container)
         let result = await actor.load(sessionID: deletedID)
 
-        XCTAssertNil(result.clientID)
-        XCTAssertNil(result.clientServiceID)
-        XCTAssertNil(result.supportLog)
+        #expect(result.clientID == nil)
+        #expect(result.clientServiceID == nil)
+        #expect(result.supportLog == nil)
     }
 }

@@ -1,5 +1,7 @@
 import Foundation
 import Core
+import DataInterfaces
+import PersistenceModels
 import SwiftData
 import os
 
@@ -63,7 +65,7 @@ public actor TravelChargeAutomationActor: ModelActor {
         return result
     }
 
-    /// Runs automation using this actor’s isolated `ModelContext`. When `testingMode` is `true`, results are returned via ``TravelChargeAutomationService/getTestResults()`` without persisting claim rows.
+    /// Resolves models locally, then sends immutable snapshots to an independently context-owning service actor.
     private func runAutomation(
         sessions: [Session],
         dateRange: ClosedRange<Date>?,
@@ -72,7 +74,7 @@ public actor TravelChargeAutomationActor: ModelActor {
         recurrenceRuleManager: RecurrenceRuleManager
     ) async -> (charges: [String], reviews: [String], detailedReviews: [DetailedReviewItem]) {
         let service = TravelChargeAutomationService(
-            modelContext: modelContext,
+            modelContainer: modelContainer,
             businessRules: BusinessRules(),
             userPreferences: UserPreferences(),
             mmmZoneTable: MMMZoneTable(mmmZoneLookup: mmmZoneLookup),
@@ -81,7 +83,7 @@ public actor TravelChargeAutomationActor: ModelActor {
         )
         let sessionSnapshots = sessions.map { $0.snapshot() }
         await service.automateTravelChargesFromSnapshots(for: sessionSnapshots, dateRange: dateRange)
-        return service.getTestResults()
+        return await service.getTestResults()
     }
 
     /// Resolves a review item with an override using this actor's isolated context.
@@ -94,7 +96,7 @@ public actor TravelChargeAutomationActor: ModelActor {
     ) async throws {
         let reviewItem = try resolveReviewEntity(reviewModelID: reviewModelID)
         let service = TravelChargeAutomationService(
-            modelContext: modelContext,
+            modelContainer: modelContainer,
             businessRules: BusinessRules(),
             userPreferences: UserPreferences(),
             mmmZoneTable: MMMZoneTable(mmmZoneLookup: mmmZoneLookup),
@@ -135,3 +137,5 @@ public actor TravelChargeAutomationActor: ModelActor {
         try modelContext.save()
     }
 }
+
+extension TravelChargeAutomationActor: TravelChargeAutomating {}

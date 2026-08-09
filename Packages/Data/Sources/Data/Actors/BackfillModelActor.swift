@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import os
 
 /// Actor specifically designed for background data migrations and backfilling.

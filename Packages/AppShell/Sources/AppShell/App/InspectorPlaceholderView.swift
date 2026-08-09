@@ -1,3 +1,4 @@
+import PersistenceModels
 import SwiftUI
 import SwiftData
 import Feature_Invoices

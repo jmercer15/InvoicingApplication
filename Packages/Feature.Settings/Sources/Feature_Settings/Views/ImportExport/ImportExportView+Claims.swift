@@ -1,6 +1,6 @@
 import SwiftUI
-import Data
 import Core
+import PersistenceModels
 import SharedUI
 
 extension ImportExportView {
@@ -12,6 +12,11 @@ extension ImportExportView {
                 title: "NDIS Claims Export",
                 description: "Create, validate, preview, and export NDIS claim batches as CSV."
             ) {
+                Text("Claim CSV exports include participant identifiers, NDIS item codes, service dates, and payment amounts. Store exported files securely.")
+                    .font(.caption)
+                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .padding(.bottom, StyleGuide.Dimensions.paddingSmall)
+
                 SettingsCard(title: "Batch Setup") {
                     HStack(spacing: FormSectionTokens.formGroupSpacing) {
                         DatePicker("From", selection: $viewModel.claimFromDate, displayedComponents: .date)
@@ -88,7 +93,7 @@ extension ImportExportView {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 6) {
                                 ForEach(Array(viewModel.claimPreviewLines.enumerated()), id: \.element.id) { index, line in
-                                    Text("\(index + 1). \(line.ndisNumber) · \(line.supportNumber) · \(line.unitPrice, specifier: "%.2f") · \(line.isValid ? "valid" : "invalid")")
+                                    Text("\(index + 1). \(line.ndisNumber) · \(line.supportNumber) · \(ExportMachineFormatting.exportDecimal2(line.unitPrice)) · \(line.isValid ? "valid" : "invalid")")
                                         .font(.caption)
                                         .foregroundColor(line.isValid ? Color("TextSecondary", bundle: .sharedUI) : .red)
                                 }
@@ -177,25 +182,25 @@ extension ImportExportView {
                 .font(.caption.weight(.semibold))
 
             Text("Rows \(row.batch.rowCount) · Errors \(row.batch.errorCount)")
-                .font(.caption2)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .font(.caption)
+                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
 
             if row.lineCount > 0 {
                 Text(row.reconciliationSummary)
-                    .font(.caption2)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(.caption)
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
 
             if !row.clientNames.isEmpty {
                 Text("Clients: \(row.clientNames.joined(separator: ", "))")
-                    .font(.caption2)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(.caption)
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
 
             if let fileName = row.batch.exportFileName {
                 Text("File: \(fileName)")
-                    .font(.caption2)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .font(.caption)
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
 
             if let checksum = row.batch.checksumSHA256 {
@@ -205,9 +210,13 @@ extension ImportExportView {
                     }
                     return "not verified"
                 }()
-                Text("SHA256: \(checksum) (\(statusText))")
-                    .font(.caption2)
-                    .foregroundColor(row.exportHashVerified == false ? .red : Color("TextSecondary", bundle: .sharedUI))
+                let statusSymbol = row.exportHashVerified == true
+                    ? "checkmark.seal.fill"
+                    : (row.exportHashVerified == false ? "xmark.seal.fill" : "questionmark.circle")
+                Label("SHA256: \(checksum) (\(statusText))", systemImage: statusSymbol)
+                    .font(.caption)
+                    .foregroundStyle(row.exportHashVerified == false ? ColorSystem.Status.error : Color("TextSecondary", bundle: .sharedUI))
+                    .accessibilityLabel("Export checksum \(statusText)")
             }
 
             HStack {

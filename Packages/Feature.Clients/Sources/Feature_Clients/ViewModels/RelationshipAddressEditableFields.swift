@@ -1,4 +1,4 @@
-import Core
+import PersistenceModels
 
 /// Shared load/apply for relationship entity address editing (client, payee, plan manager).
 struct RelationshipAddressEditableFields: Equatable {

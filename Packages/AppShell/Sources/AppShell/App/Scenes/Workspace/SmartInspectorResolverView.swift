@@ -42,6 +42,7 @@ struct SmartInspectorResolverView: View {
         .onChange(of: resolvedSelection) { _, newSelection in
             syncSelectionToInspector(newSelection)
         }
+        .appRespectsReduceMotion()
     }
 
     private func emptyState(_ text: String) -> some View {

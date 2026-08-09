@@ -3,6 +3,10 @@ import Foundation
 import MapKit
 import os
 
+/// Actor-isolated MapKit geocoder with in-memory forward-geocode caching.
+///
+/// Use this type when you need **pure** address ↔ coordinate resolution without touching SwiftData.
+/// For persistence onto `Address` / `Session` entities, prefer `SwiftDataGeocodingService` in Data.
 public actor GeocodingService: GeocodingServiceProtocol {
 
     nonisolated public static let shared = GeocodingService()
@@ -22,7 +26,7 @@ public actor GeocodingService: GeocodingServiceProtocol {
 
     /// Geocodes an address snapshot payload.
     /// Returns updated coordinates without persisting.
-    public func geocodeAddress(_ address: Address) async -> (latitude: Double, longitude: Double)? {
+    public func geocodeAddress(_ address: AddressSnapshot) async -> (latitude: Double, longitude: Double)? {
         let fullAddress = address.fullFormattedAddress
         guard !fullAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil

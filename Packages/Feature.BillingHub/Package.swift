@@ -13,14 +13,19 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
         .package(path: "../Data"),
+        .package(path: "../DataInterfaces"),
         .package(path: "../SharedUI"),
-        .package(path: "../WorkspaceUI")
+        .package(path: "../WorkspaceUI"),
+        .package(path: "../Feature.InvoiceTemplateEditor")
     ],
     targets: [
         .target(
             name: "Feature_BillingHub",
-            dependencies: ["Core", "Data", "SharedUI", "WorkspaceUI"],
+            dependencies: [
+                "Core",
+                "PersistenceModels", "DataInterfaces", "SharedUI", "WorkspaceUI", .product(name: "InvoiceTableLayoutEditor", package: "Feature.InvoiceTemplateEditor")],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
@@ -28,7 +33,8 @@ let package = Package(
             dependencies: [
                 "Feature_BillingHub",
                 "Core",
-                "Data"
+                "Data",
+                "SharedUI"
             ],
             swiftSettings: strictConcurrencySettings
         )

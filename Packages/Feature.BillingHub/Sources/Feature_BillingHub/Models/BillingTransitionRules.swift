@@ -7,7 +7,7 @@ public enum BillingTransitionRules {
         case (.completed, .grouped), (.completed, .addTravel): return true
         case (.grouped, .completed): return true
         case (.addTravel, .completed): return true
-        case (.grouped, .grouped): return true // Reordering
+        case (.grouped, .grouped): return true // Peer reorder within Grouped (positions unused today)
         default: return from == to
         }
     }
@@ -20,6 +20,7 @@ public enum BillingTransitionRules {
         // Allow moving back
         case (.readyToSend, .reviewDrafts): return true
         case (.pending, .readyToSend): return true
+        case (.received, .pending): return true
         default: return from == to
         }
     }

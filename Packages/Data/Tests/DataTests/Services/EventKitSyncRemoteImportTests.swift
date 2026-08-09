@@ -1,10 +1,10 @@
 @testable import Data
 import Core
 import Foundation
-import XCTest
-
-final class EventKitSyncRemoteImportTests: XCTestCase {
-    func testUnmatchedRemoteDoesNotAutoCreateLocalMaster() {
+import Testing
+import PersistenceModels
+@Suite struct EventKitSyncRemoteImportTests {
+    @Test func UnmatchedRemoteDoesNotAutoCreateLocalMaster() {
         let shouldImport = EventKitSyncPolicy.shouldImportRemoteEvent(
             skipAutoCreate: false,
             eventKey: "remote-1",
@@ -13,10 +13,10 @@ final class EventKitSyncRemoteImportTests: XCTestCase {
             localIdentityKeys: ["event:event-2"]
         )
 
-        XCTAssertFalse(shouldImport)
+        #expect(!(shouldImport))
     }
 
-    func testDetachedExceptionDoesNotAutoCreateDuringReconciliation() {
+    @Test func DetachedExceptionDoesNotAutoCreateDuringReconciliation() {
         let baseDate = Date(timeIntervalSinceReferenceDate: 200_000)
         let nextDate = baseDate.addingTimeInterval(86_400)
 
@@ -49,7 +49,7 @@ final class EventKitSyncRemoteImportTests: XCTestCase {
             remoteIdentityKeys: unmatchedDetachedKeys,
             localIdentityKeys: localIdentityKeys
         )
-        XCTAssertFalse(shouldImportDetached)
+        #expect(!(shouldImportDetached))
 
         let alreadyImportedDetachedKeys: Set<String> = [
             "external:ext-series",
@@ -62,6 +62,6 @@ final class EventKitSyncRemoteImportTests: XCTestCase {
             remoteIdentityKeys: alreadyImportedDetachedKeys,
             localIdentityKeys: localIdentityKeys
         )
-        XCTAssertFalse(shouldImportDuplicateDetached)
+        #expect(!(shouldImportDuplicateDetached))
     }
 }

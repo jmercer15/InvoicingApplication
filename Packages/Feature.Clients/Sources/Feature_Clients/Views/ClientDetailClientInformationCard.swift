@@ -1,8 +1,7 @@
 import AppKit
 import SwiftData
 import SwiftUI
-import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 struct ClientDetailClientInformationCard<Address: View>: View {

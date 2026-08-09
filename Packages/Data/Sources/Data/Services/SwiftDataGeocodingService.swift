@@ -3,6 +3,7 @@ import CoreLocation
 import SwiftData
 import MapKit
 import Core
+import PersistenceModels
 
 /// SwiftData-facing geocoding: resolves coordinates and **persists** lat/long on entities.
 /// For **pure** address → coordinate lookup without persistence, use `Core.GeocodingService` (actor).
@@ -16,15 +17,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
     /// Geocodes an address snapshot payload.
     /// Returns updated coordinates without persisting.
     public func geocodeAddress(_ address: Address) async -> (latitude: Double, longitude: Double)? {
-        let fullAddress = address.fullFormattedAddress
-        guard !fullAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        
-        if let coordinate = await geocodeAddress(fullAddress) {
-            return (coordinate.latitude, coordinate.longitude)
-        }
-        return nil
+        await GeocodingService.shared.geocodeAddress(address.snapshot())
     }
     
     /// Geocodes an address string and returns coordinates (pure function, no persistence)

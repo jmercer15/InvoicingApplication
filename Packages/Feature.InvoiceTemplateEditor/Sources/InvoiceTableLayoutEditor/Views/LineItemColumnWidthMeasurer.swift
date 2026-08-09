@@ -33,35 +33,9 @@ struct LineItemTableColumnWidths: Equatable {
     let rate: CGFloat
     let total: CGFloat
 
-    subscript(column: LineItemTableColumn) -> CGFloat {
-        switch column {
-        case .date: date
-        case .description: description
-        case .qty: qty
-        case .unit: unit
-        case .rate: rate
-        case .total: total
-        }
-    }
-
-    /// Width spanned by description, qty, and unit columns in the totals section.
-    var descriptionBlockWidth: CGFloat {
-        description + qty + unit
-    }
-
-    /// Width spanned by the qty and unit columns (totals label column).
-    var qtyUnitWidth: CGFloat {
-        qty + unit
-    }
-
     /// Width spanned by the qty, unit, and rate columns (totals label region).
     var qtyUnitRateWidth: CGFloat {
         qty + unit + rate
-    }
-
-    /// Width spanned by the rate and total columns (totals value column).
-    var rateTotalWidth: CGFloat {
-        rate + total
     }
 
     /// Sum of the five fixed-width columns (everything except description flex).
@@ -70,8 +44,13 @@ struct LineItemTableColumnWidths: Equatable {
     }
 
     /// Description column width that fills the printable content area.
+    ///
+    /// Always the remainder after fixed columns so
+    /// `fixedColumnsWidth + descriptionWidth == contentWidth`. The measured
+    /// description minimum may wrap/clip inside that remainder; it must not
+    /// expand the table past the page.
     func descriptionColumnWidth(for contentWidth: CGFloat) -> CGFloat {
-        max(contentWidth - fixedColumnsWidth, description)
+        max(contentWidth - fixedColumnsWidth, 0)
     }
 }
 
@@ -107,24 +86,6 @@ enum LineItemColumnWidthMeasurer {
     static let numericFieldChrome: CGFloat = 6
     /// Spacing between an editable currency / percentage affix and its value.
     static let numericAffixSpacing: CGFloat = 2
-    /// Compatibility aliases for existing width-measurement tests.
-    static let decimalFieldChrome = numericFieldChrome
-    static let decimalAffixSpacing = numericAffixSpacing
-
-    // MARK: Inspector Form chrome (measured against AppKit / SwiftUI control footprints)
-
-    /// Horizontal bezel inset for a `.roundedBorder` `TextField` in the inspector.
-    /// Matches `InspectorControlMetrics.roundedBorderChrome` (measured AppKit cellSize − text).
-    static let textFieldChrome: CGFloat = InspectorControlMetrics.roundedBorderChrome
-
-    /// Fitting width of a compact inspector `DatePicker` (measured hosted control).
-    static let inspectorCompactDatePickerWidth: CGFloat =
-        InspectorControlMetrics.compactDatePickerSize.width
-
-    /// Fitting height of a compact inspector `DatePicker` (measured hosted control).
-    static let inspectorCompactDatePickerHeight: CGFloat =
-        InspectorControlMetrics.compactDatePickerSize.height
-
     static func measure(
         lineItems: [InvoiceLineItemSnapshot],
         presentation: LineItemTablePresentation = .preview,
@@ -133,6 +94,7 @@ enum LineItemColumnWidthMeasurer {
         typographyScale: CGFloat? = nil,
         currencyCode: String = InvoiceCurrencyCode.defaultValue,
         currencyDisplayStyle: InvoiceCurrencyDisplayStyle = .default,
+        dateFormatStyle: InvoiceDateFormatStyle = .default,
         showsItemCode: (InvoiceLineItemSnapshot) -> Bool = { !$0.itemCode.isEmpty }
     ) -> LineItemTableColumnWidths {
         let dateChrome = presentation == .editable ? datePickerChrome : 0
@@ -177,7 +139,10 @@ enum LineItemColumnWidthMeasurer {
         )
 
         for item in lineItems {
-            let dateText = InvoiceDateFormatter.compactString(for: item.serviceDate)
+            let dateText = InvoiceDateFormatter.documentString(
+                for: item.serviceDate,
+                style: dateFormatStyle
+            )
             dateCell = max(
                 dateCell,
                 textWidth(dateText, font: cellFont) + dateChrome
@@ -374,32 +339,6 @@ enum InspectorControlMetrics {
     /// Width is stable across dates for a given locale; height is font-independent.
     static let compactDatePickerSize = CGSize(width: 95, height: 22)
 
-    /// Horizontal chrome of `.roundedBorder` / rounded-bezel fields
-    /// (`NSTextField.cellSize.width − string width`, consistently 12 across 11–15pt).
-    static let roundedBorderChrome: CGFloat = 12
-
-    /// Rounded-border field height at `NSFont.systemFontSize` (13pt).
-    static let systemRoundedBorderFieldHeight: CGFloat = 24
-
-    /// Width of a rounded-border field showing `string` at `font`.
-    static func roundedBorderFieldWidth(for string: String, font: NSFont) -> CGFloat {
-        let stringWidth = ceil(
-            (string as NSString).size(withAttributes: [.font: font]).width
-        )
-        return stringWidth + roundedBorderChrome
-    }
-
-    /// Height of a rounded-border field at `font` (plain line + bezel inset).
-    static func roundedBorderFieldHeight(font: NSFont) -> CGFloat {
-        if font.pointSize == NSFont.systemFontSize {
-            return systemRoundedBorderFieldHeight
-        }
-        let plain = max(
-            ceil(font.ascender - font.descender),
-            ceil(font.boundingRectForFont.height)
-        )
-        return plain + LineItemRowHeightMeasurer.roundedBorderFieldBezelInset
-    }
 }
 
 /// Shared column widths for the inspector line-item header and value rows.
@@ -648,41 +587,5 @@ enum LineItemRowHeightMeasurer {
     private static func headerTextHeight(fontSize: CGFloat) -> CGFloat {
         let font = NSFont.boldSystemFont(ofSize: fontSize)
         return ceil(font.boundingRectForFont.height)
-    }
-}
-
-// MARK: - NSFont mirrors (keep measurers in sync with `InvoiceDocumentDesign`)
-
-extension InvoiceLineItemsTypography {
-    static var previewBodyNSFont: NSFont {
-        NSFont.systemFont(ofSize: bodyFontSize)
-    }
-
-    static var previewBodyEmphasisNSFont: NSFont {
-        NSFont.systemFont(ofSize: bodyFontSize, weight: .semibold)
-    }
-
-    static var previewTableHeaderNSFont: NSFont {
-        NSFont.systemFont(ofSize: bodyFontSize, weight: .bold)
-    }
-
-    static var previewBodyStrongNSFont: NSFont {
-        NSFont.boldSystemFont(ofSize: bodyFontSize)
-    }
-
-    static var previewMetaNSFont: NSFont {
-        NSFont.systemFont(ofSize: metaFontSize)
-    }
-
-    static var previewMetaLabelNSFont: NSFont {
-        NSFont.systemFont(ofSize: metaFontSize, weight: .medium)
-    }
-
-    static var previewBodyMonospacedNSFont: NSFont {
-        NSFont.monospacedDigitSystemFont(ofSize: bodyFontSize, weight: .regular)
-    }
-
-    static var previewBodyStrongMonospacedNSFont: NSFont {
-        NSFont.monospacedDigitSystemFont(ofSize: bodyFontSize, weight: .bold)
     }
 }

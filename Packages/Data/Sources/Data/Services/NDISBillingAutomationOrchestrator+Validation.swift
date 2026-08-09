@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 
 extension NDISBillingAutomationOrchestrator {
 

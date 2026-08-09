@@ -26,8 +26,21 @@ public struct NDISBillingContext: Hashable, Sendable {
     public var isActivityTransport: Bool = false
     public var travelDistance: Double = 0
     public var travelTime: Double = 0
+    /// Minutes travelling to the session (before). Prefer over collapsing into `travelTime`.
+    public var travelTimeTo: Double = 0
+    /// Minutes travelling from the session (after).
+    public var travelTimeFrom: Double = 0
     public var travelTolls: Double = 0
     public var travelParking: Double = 0
+    public var travelMMMZoneDescriptor: String?
+    /// Prefer this amount for ActivityTransport when set (from persisted `TravelCharge.chargeAmount`).
+    public var activityTransportChargeAmount: Double?
+    /// Prefer this amount for ProviderTravel_Labour when set (from labour `TravelCharge.chargeAmount`).
+    public var providerTravelLabourChargeAmount: Double?
+    /// Prefer this amount for ProviderTravel_NonLabour when set (from non-labour `TravelCharge.chargeAmount`).
+    public var providerTravelNonLabourChargeAmount: Double?
+    /// From persisted `TravelCharge.vehicleType` (modified/bus → true).
+    public var isModifiedVehicle: Bool = false
 
     // Special Circumstances
     public var isShadowShift: Bool = false

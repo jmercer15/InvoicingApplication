@@ -21,195 +21,58 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>26.1</string>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Billing Hub Board Transfer Item</string>
+			<string>Billing Hub Session Identifier</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.invoicingapp.billing-hub-board-transfer-item</string>
+			<string>com.jesse.InvoicingApplication.billing-hub-session-id</string>
 			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
+			<array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bhboarditem</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/x-invoicingapp-billing-hub-board-transfer-item</string>
-				</array>
-			</dict>
+			<dict><key>public.filename-extension</key><array><string>billinghubsessionid</string></array></dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Invoice Template Component</string>
+			<string>Billing Hub Invoice Identifier</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.invoice-component</string>
+			<string>com.jesse.InvoicingApplication.billing-hub-invoice-id</string>
 			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
+			<array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>invoicecomponent</string>
-				</array>
-			</dict>
+			<dict><key>public.filename-extension</key><array><string>billinghubinvoiceid</string></array></dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Invoice Template Section</string>
+			<string>Billing Hub Group Identifier</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.section-component</string>
+			<string>com.jesse.InvoicingApplication.billing-hub-group-id</string>
 			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
+			<array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>sectioncomponent</string>
-				</array>
-			</dict>
+			<dict><key>public.filename-extension</key><array><string>billinghubgroupid</string></array></dict>
 		</dict>
 		<dict>
 			<key>UTTypeDescription</key>
-			<string>Fruit Identifier</string>
+			<string>Calendar Session Drag Item</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.fruit-id</string>
+			<string>com.jesse.InvoicingApplication.calendar-session-drag-type</string>
 			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
+			<array><string>public.data</string></array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>fruitid</string>
-				</array>
+				<key>public.filename-extension</key><array><string>caldragitem</string></array>
+				<key>public.mime-type</key><array><string>application/vnd.com.jesse.invoicingapplication.calendar-session-drag-item</string></array>
 			</dict>
 		</dict>
-			<dict>
-				<key>UTTypeDescription</key>
-				<string>Fruit Property Identifier</string>
-				<key>UTTypeIdentifier</key>
-				<string>com.example.fruit-property-id</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>fruitpropertyid</string>
-					</array>
-				</dict>
-			</dict>
-			<dict>
-				<key>UTTypeDescription</key>
-				<string>Billing Hub Session Identifier</string>
-				<key>UTTypeIdentifier</key>
-				<string>com.invoicingapp.billing-hub-session-id</string>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
-				</array>
-				<key>UTTypeTagSpecification</key>
-				<dict>
-					<key>public.filename-extension</key>
-					<array>
-						<string>billinghubsessionid</string>
-					</array>
-				</dict>
-			</dict>
-			<dict>
-				<key>UTTypeDescription</key>
-				<string>Billing Hub Invoice Identifier</string>
-				<key>UTTypeIdentifier</key>
-				<string>com.invoicingapp.billing-hub-invoice-id</string>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
-				</array>
-				<key>UTTypeTagSpecification</key>
-				<dict>
-					<key>public.filename-extension</key>
-					<array>
-						<string>billinghubinvoiceid</string>
-					</array>
-				</dict>
-			</dict>
-			<dict>
-				<key>UTTypeDescription</key>
-				<string>Billing Hub Group Identifier</string>
-				<key>UTTypeIdentifier</key>
-				<string>com.invoicingapp.billing-hub-group-id</string>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
-				</array>
-				<key>UTTypeTagSpecification</key>
-				<dict>
-					<key>public.filename-extension</key>
-					<array>
-						<string>billinghubgroupid</string>
-					</array>
-				</dict>
-			</dict>
-			<dict>
-				<key>UTTypeDescription</key>
-				<string>Calendar Session Drag Item</string>
-				<key>UTTypeIdentifier</key>
-				<string>com.invoicingapp.calendar-session-drag-type</string>
-				<key>UTTypeConformsTo</key>
-				<array>
-					<string>public.data</string>
-				</array>
-				<key>UTTypeTagSpecification</key>
-				<dict>
-					<key>public.filename-extension</key>
-					<array>
-						<string>caldragitem</string>
-					</array>
-					<key>public.mime-type</key>
-					<array>
-						<string>application/x-invoicingapp-calendar-session-drag-type</string>
-					</array>
-				</dict>
-			</dict>
-		</array>
-	<key>NSServices</key>
-	<array>
-		<dict/>
-		<dict/>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 	<key>NSCalendarsUsageDescription</key>
 	<string>To sync appointments and invoice due dates with your calendar.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>To add appointments and invoice due dates to your selected calendar.</string>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-		<key>UISceneConfigurations</key>
-		<dict/>
-	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your location is used to display your position on the map.</string>
 </dict>
 </plist>

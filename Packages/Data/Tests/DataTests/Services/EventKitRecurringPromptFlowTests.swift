@@ -1,20 +1,20 @@
 @testable import Data
 import Core
 import Foundation
-import XCTest
-
-final class EventKitRecurringPromptFlowTests: XCTestCase {
-    func testRecurringConflictDatesAreProcessedInDeterministicOrder() {
+import Testing
+import PersistenceModels
+@Suite struct EventKitRecurringPromptFlowTests {
+    @Test func RecurringConflictDatesAreProcessedInDeterministicOrder() {
         let third = Date(timeIntervalSinceReferenceDate: 30)
         let first = Date(timeIntervalSinceReferenceDate: 10)
         let second = Date(timeIntervalSinceReferenceDate: 20)
 
         let ordered = EventKitSyncPolicy.orderedOccurrenceDates([third, first, second, first])
 
-        XCTAssertEqual(ordered, [first, first, second, third])
+        #expect(ordered == [first, first, second, third])
     }
 
-    func testPromptPolicyKeepsRecurringConflictUserMediated() {
+    @Test func PromptPolicyKeepsRecurringConflictUserMediated() {
         let decision = EventKitSyncPolicy.reconcileDecision(
             syncDirection: .bidirectional,
             conflictResolutionPolicy: .prompt,
@@ -22,6 +22,6 @@ final class EventKitRecurringPromptFlowTests: XCTestCase {
             remoteFreshness: .unknown
         )
 
-        XCTAssertEqual(decision, .prompt)
+        #expect(decision == .prompt)
     }
 }

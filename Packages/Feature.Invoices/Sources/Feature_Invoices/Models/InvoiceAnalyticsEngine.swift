@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 
 public struct CurrencyAnalyticsSummary: Sendable, Equatable, Identifiable {
     public var id: String { currencyCode }
@@ -89,7 +90,9 @@ public enum InvoiceAnalyticsEngine {
                     continue
                 }
 
-                let amount = invoice.calculatedTotal
+                // Use stored list total — avoids faulting InvoiceItem.taxRate during
+                // CloudKit history reset when line items may already be invalidated.
+                let amount = NSDecimalNumber(decimal: invoice.totalAmount).doubleValue
                 totalBilled += amount
 
                 if status == .received {

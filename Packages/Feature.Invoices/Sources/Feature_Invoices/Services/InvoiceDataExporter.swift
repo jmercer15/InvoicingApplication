@@ -1,15 +1,16 @@
 import Foundation
 import Core
+import PersistenceModels
 
 public struct InvoiceItemExportDTO: Codable, Sendable, Equatable {
     public let id: UUID
     public let itemDescription: String
     public let position: Int32
-    public let quantity: Double
-    public let rate: Double
+    public let quantity: Decimal
+    public let rate: Decimal
     public let unit: String?
     public let gstCode: String?
-    public let taxRate: Double
+    public let taxRate: Decimal
     public let ndisItemNumber: String?
     public let claimType: String?
 
@@ -30,11 +31,11 @@ public struct InvoiceItemExportDTO: Codable, Sendable, Equatable {
         id: UUID,
         itemDescription: String,
         position: Int32,
-        quantity: Double,
-        rate: Double,
+        quantity: Decimal,
+        rate: Decimal,
         unit: String?,
         gstCode: String?,
-        taxRate: Double,
+        taxRate: Decimal,
         ndisItemNumber: String?,
         claimType: String?
     ) {
@@ -58,13 +59,13 @@ public struct InvoiceExportDTO: Codable, Sendable, Equatable {
     public let dueDate: Date?
     public let paidDate: Date?
     public let status: String
-    public let totalAmount: Double
+    public let totalAmount: Decimal
     public let currencyCode: String
-    public let subtotal: Double
-    public let taxRate: Double
-    public let taxAmount: Double
-    public let discount: Double
-    public let creditApplied: Double
+    public let subtotal: Decimal
+    public let taxRate: Decimal
+    public let taxAmount: Decimal
+    public let discount: Decimal
+    public let creditApplied: Decimal
     public let notes: String?
     public let paymentTerms: String?
     public let clientName: String?
@@ -105,13 +106,13 @@ public struct InvoiceExportDTO: Codable, Sendable, Equatable {
         dueDate: Date?,
         paidDate: Date?,
         status: String,
-        totalAmount: Double,
+        totalAmount: Decimal,
         currencyCode: String,
-        subtotal: Double,
-        taxRate: Double,
-        taxAmount: Double,
-        discount: Double,
-        creditApplied: Double,
+        subtotal: Decimal,
+        taxRate: Decimal,
+        taxAmount: Decimal,
+        discount: Decimal,
+        creditApplied: Decimal,
         notes: String?,
         paymentTerms: String?,
         clientName: String?,
@@ -145,6 +146,7 @@ public struct InvoiceExportDTO: Codable, Sendable, Equatable {
     }
 }
 
+/// Exports invoice payloads to CSV/JSON using machine-formatted numeric and date tokens.
 public enum InvoiceDataExporter {
     public static func escapeCSVField(_ value: String) -> String {
         let needsQuoting = value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")
@@ -192,12 +194,12 @@ public enum InvoiceDataExporter {
                 dueDateStr,
                 paidDateStr,
                 invoice.effectiveStatus.rawValue,
-                String(format: "%.2f", invoice.calculatedTotal),
+                ExportMachineFormatting.exportDecimal2(invoice.calculatedTotal),
                 invoice.currencyCode,
-                String(format: "%.2f", invoice.subtotal),
-                String(format: "%.2f", invoice.taxRate),
-                String(format: "%.2f", invoice.taxAmount),
-                String(format: "%.2f", invoice.discount),
+                ExportMachineFormatting.exportDecimal2(invoice.subtotal),
+                ExportMachineFormatting.exportDecimal2(invoice.taxRate),
+                ExportMachineFormatting.exportDecimal2(invoice.taxAmount),
+                ExportMachineFormatting.exportDecimal2(invoice.discount),
                 invoice.notes ?? "",
                 "\(invoice.itemsArray.count)"
             ]

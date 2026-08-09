@@ -18,6 +18,14 @@ enum BillingHubBoardSectionID: String, CaseIterable, Identifiable {
         }
     }
 
+    var summary: String {
+        switch self {
+        case .preparing: "Complete sessions, then organise them into client batches."
+        case .processing: "Create, review, and approve invoices before they are sent."
+        case .payment: "Record payments and keep completed billing easy to find."
+        }
+    }
+
     var icon: String {
         switch self {
         case .preparing: "calendar.badge.plus"
@@ -44,6 +52,18 @@ enum BillingHubBoardSectionID: String, CaseIterable, Identifiable {
             return [.pending, .received]
         }
     }
+
+    static func section(
+        containing column: KanbanCardData.BillingColumnType
+    ) -> Self? {
+        allCases.first { $0.columns.contains(column) }
+    }
+}
+
+struct BillingHubBoardFocusTarget: Equatable {
+    let cardID: UUID
+    let sectionID: BillingHubBoardSectionID
+    let column: KanbanCardData.BillingColumnType
 }
 
 enum BillingHubLaneContent {
@@ -78,6 +98,7 @@ struct BillingHubLanePresentation: Identifiable {
     let sortOption: ColumnSortOption?
     let onSortChange: ((ColumnSortOption) -> Void)?
     let total: String?
+    let emptyStateMessage: String
     let content: BillingHubLaneContent
 
     var isInvoiceLane: Bool {
@@ -86,10 +107,12 @@ struct BillingHubLanePresentation: Identifiable {
 
     var helpSummary: String {
         if let total {
-            return "\(title) · \(count) items · \(total)"
+            return "\(title) · \(itemCountLabel) · \(total)"
         }
-        return "\(title) · \(count) items"
+        return "\(title) · \(itemCountLabel)"
     }
+
+    var itemCountLabel: String { BillingHubBoardCopy.itemCount(count) }
 }
 
 struct BillingHubBoardSectionPresentation: Identifiable {
@@ -97,47 +120,125 @@ struct BillingHubBoardSectionPresentation: Identifiable {
     let lanes: [BillingHubLanePresentation]
 
     var title: String { id.title }
+    var summary: String { id.summary }
     var icon: String { id.icon }
     var tint: Color { id.tint }
     var count: Int { lanes.reduce(into: 0) { $0 += $1.count } }
+    var itemCountLabel: String { BillingHubBoardCopy.itemCount(count) }
 }
 
 struct KanbanBoardView: View {
-    @Bindable var viewModel: BillingHubViewModel
+    let displayState: KanbanBoardDisplayState
+    let actions: KanbanBoardActions
+    let cardActions: KanbanCardActions
     let projection: BillingHubBoardProjection
+    let boardRevision: Int
     @Binding var selectedCardID: UUID?
     let onOpenCard: (UUID) -> Void
+    /// When set, horizontal board scrolls so the matching section/lane for this card is visible.
+    var focusScrollID: UUID? = nil
     @State private var interactionState = BillingHubBoardInteractionState()
     @State private var collapsedSections: Set<BillingHubBoardSectionID> = []
+    @State private var cachedSectionPresentations: [BillingHubBoardSectionPresentation] = []
+
+    private var sectionPresentationsCacheKey: SectionPresentationsCacheKey {
+        SectionPresentationsCacheKey(
+            boardRevision: boardRevision,
+            displayState: displayState,
+            projectionFingerprint: projection.contentFingerprint
+        )
+    }
 
     var body: some View {
         ZStack {
             boardBackground.ignoresSafeArea()
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(sectionPresentations) { section in
-                        BillingHubDemoSectionContainer(
-                            viewModel: viewModel,
-                            section: section,
-                            isCollapsed: collapseBinding(for: section.id),
-                            selectedCardID: $selectedCardID,
-                            interactionState: interactionState,
-                            onOpenCard: onOpenCard
-                        )
+            ScrollViewReader { proxy in
+                VStack(spacing: 0) {
+                    BillingHubBoardOverviewBar(
+                        sections: sectionPresentations,
+                        selectedSectionID: focusedCardTarget?.sectionID
+                    ) { sectionID in
+                        scrollToSection(sectionID, proxy: proxy)
                     }
+
+                    Divider()
+
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        LazyHStack(alignment: .top, spacing: 12) {
+                            ForEach(sectionPresentations) { section in
+                                BillingHubDemoSectionContainer(
+                                    cardActions: cardActions,
+                                    section: section,
+                                    isCollapsed: collapseBinding(for: section.id),
+                                    selectedCardID: $selectedCardID,
+                                    interactionState: interactionState,
+                                    onOpenCard: onOpenCard
+                                )
+                                .id(section.id)
+                            }
+                        }
+                        .padding(BillingHubTheme.Dimensions.boardPadding)
+                        .frame(maxHeight: .infinity, alignment: .topLeading)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(BillingHubTheme.Dimensions.boardPadding)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .onChange(of: focusedCardTarget) { _, target in
+                    scrollToFocusedCard(target, proxy: proxy)
+                }
+                .onAppear {
+                    scrollToFocusedCard(focusedCardTarget, proxy: proxy)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .billingHubBoardCleanup(interactionState: interactionState)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: sectionPresentationsCacheKey) {
+            cachedSectionPresentations = BillingHubBoardSectionID.allCases.map(makeSectionPresentation(for:))
+        }
     }
 
     private var sectionPresentations: [BillingHubBoardSectionPresentation] {
-        BillingHubBoardSectionID.allCases.map(makeSectionPresentation(for:))
+        cachedSectionPresentations.isEmpty
+            ? BillingHubBoardSectionID.allCases.map(makeSectionPresentation(for:))
+            : cachedSectionPresentations
+    }
+
+    private var focusedCardTarget: BillingHubBoardFocusTarget? {
+        guard let focusScrollID,
+              let card = projection.card(for: focusScrollID),
+              let sectionID = BillingHubBoardSectionID.section(
+                containing: card.columnType
+              ) else { return nil }
+        return BillingHubBoardFocusTarget(
+            cardID: focusScrollID,
+            sectionID: sectionID,
+            column: card.columnType
+        )
+    }
+
+    private func scrollToFocusedCard(
+        _ target: BillingHubBoardFocusTarget?,
+        proxy: ScrollViewProxy
+    ) {
+        guard let target else { return }
+        scrollToSection(target.sectionID, proxy: proxy)
+    }
+
+    private func scrollToSection(
+        _ sectionID: BillingHubBoardSectionID,
+        proxy: ScrollViewProxy
+    ) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            collapsedSections.remove(sectionID)
+            proxy.scrollTo(sectionID, anchor: .center)
+        }
+    }
+
+    private struct SectionPresentationsCacheKey: Equatable {
+        let boardRevision: Int
+        let displayState: KanbanBoardDisplayState
+        let projectionFingerprint: Int
     }
 
     private func collapseBinding(for sectionID: BillingHubBoardSectionID) -> Binding<Bool> {
@@ -188,13 +289,13 @@ struct KanbanBoardView: View {
                 column: column,
                 cards: projection.invoicesByStatus[column] ?? [],
                 dropPolicy: .invoicesOnly,
-                total: viewModel.formattedTotal(for: column, in: projection)
+                total: actions.formattedTotal(column, projection)
             ) { sourceID, beforeTargetID in
-                viewModel.reorderInvoices(
-                    in: column,
-                    sourceID: sourceID,
-                    beforeTargetID: beforeTargetID,
-                    projection: projection
+                actions.reorderInvoices(
+                    column,
+                    sourceID,
+                    beforeTargetID,
+                    projection
                 )
                 return true
             }
@@ -214,10 +315,14 @@ struct KanbanBoardView: View {
             icon: column.laneIcon,
             tint: column.laneTint,
             count: cards.count,
-            searchText: viewModel.searchText,
-            sortOption: viewModel.sortOption(for: column),
-            onSortChange: { viewModel.setSortOption($0, for: column) },
+            searchText: displayState.searchText,
+            sortOption: actions.sortOption(column),
+            onSortChange: { actions.setSortOption($0, column) },
             total: total,
+            emptyStateMessage: BillingHubBoardCopy.emptyLaneMessage(
+                for: column,
+                hasActiveFilters: displayState.hasActiveFilters
+            ),
             content: .cards(
                 cards: cards,
                 dropPolicy: dropPolicy,
@@ -225,7 +330,20 @@ struct KanbanBoardView: View {
                     canAcceptCardDrop(dragKind, into: column, before: beforeTargetID)
                 },
                 onReorderBetween: { sourceID, beforeTargetID, _ in
-                    onReorder(sourceID, beforeTargetID)
+                    // Validation already accepted this drop. End drag feedback immediately while
+                    // persistence completes; the view model reports any eventual write failure.
+                    if let card = projection.card(for: sourceID), card.columnType != column {
+                        Task {
+                            switch card {
+                            case .session:
+                                _ = await actions.moveSession(sourceID, column)
+                            case .invoice:
+                                _ = await actions.moveInvoice(sourceID, column)
+                            }
+                        }
+                        return true
+                    }
+                    return onReorder(sourceID, beforeTargetID)
                 }
             )
         )
@@ -238,32 +356,42 @@ struct KanbanBoardView: View {
             icon: KanbanCardData.BillingColumnType.grouped.laneIcon,
             tint: KanbanCardData.BillingColumnType.grouped.laneTint,
             count: projection.sessionsByStatus[.grouped]?.count ?? 0,
-            searchText: viewModel.searchText,
+            searchText: displayState.searchText,
             sortOption: nil,
             onSortChange: nil,
             total: nil,
+            emptyStateMessage: BillingHubBoardCopy.emptyLaneMessage(
+                for: .grouped,
+                hasActiveFilters: displayState.hasActiveFilters
+            ),
             content: .grouped(
                 groups: projection.groupedSessions,
                 canReorderSessionInColumn: { sourceID, beforeClusterID in
                     canAcceptSessionDropInGroupedColumn(sourceID: sourceID, beforeClusterID: beforeClusterID)
                 },
-                onReorderSessionInColumn: { sourceID, beforeClusterID in
-                    viewModel.reorderSessionInGroupedColumn(sourceID: sourceID, beforeClusterID: beforeClusterID)
+                onReorderSessionInColumn: { sourceID, _ in
+                    // Cross-column move into Grouped. Validation already accepted the drop.
+                    Task {
+                        _ = await actions.moveSession(sourceID, .grouped)
+                    }
                     return true
                 },
                 canReorderSessionInGroup: { sourceID, beforeTargetID, scopeGroupID in
                     canAcceptSessionDropInGroup(sourceID: sourceID, beforeTargetID: beforeTargetID, scopeGroupID: scopeGroupID)
                 },
-                onReorderSessionInGroup: { sourceID, beforeTargetID, scopeGroupID in
-                    viewModel.reorderInGrouped(sourceID: sourceID, beforeTargetID: beforeTargetID, scopeGroupID: scopeGroupID)
+                onReorderSessionInGroup: { sourceID, _, scopeGroupID in
+                    // Adding into a group (not reorder) is handled when canAccept is true for non-members.
+                    guard let scopeGroupID else { return false }
+                    Task {
+                        await actions.addSessionToGroup(sourceID, scopeGroupID)
+                    }
                     return true
                 },
-                canReorderGroup: { groupID, beforeTargetID in
-                    canAcceptGroupDropInGroupedColumn(sourceGroupID: groupID, beforeTargetID: beforeTargetID)
+                canReorderGroup: { _, _ in
+                    false
                 },
-                onReorderGroup: { groupID, beforeTargetID in
-                    viewModel.reorderGroupInGroupedColumn(sourceGroupID: groupID, beforeTargetID: beforeTargetID)
-                    return true
+                onReorderGroup: { _, _ in
+                    false
                 },
                 canDropOnCard: { sourceID, targetID in
                     canAcceptSessionGrouping(sourceID: sourceID, targetID: targetID)
@@ -272,15 +400,17 @@ struct KanbanBoardView: View {
                     guard canAcceptSessionGrouping(sourceID: sourceID, targetID: targetID) else {
                         return false
                     }
-                    _ = viewModel.groupSessionsSmooth(sourceID: sourceID, targetID: targetID)
+                    Task {
+                        await actions.groupSessionsSmooth(sourceID, targetID)
+                    }
                     return true
                 },
                 onAddSessionToGroup: { sessionID, groupID in
-                    _ = viewModel.addSessionToGroup(sessionID: sessionID, groupID: groupID)
+                    Task {
+                        await actions.addSessionToGroup(sessionID, groupID)
+                    }
                 },
-                canAddSessionToGroup: { sessionID, groupID in
-                    viewModel.canAddSessionToGroup(sourceID: sessionID, groupID: groupID)
-                }
+                canAddSessionToGroup: actions.canAddSessionToGroup
             )
         )
     }
@@ -288,18 +418,9 @@ struct KanbanBoardView: View {
     private func makeSessionReorderHandler(
         for column: KanbanCardData.BillingColumnType
     ) -> (UUID, UUID?) -> Bool {
+        // Completed / Add Travel peer reindex not implemented — canAccept rejects same-column drops.
         switch column {
-        case .completed:
-            return { sourceID, beforeTargetID in
-                viewModel.reorderInCompleted(sourceID: sourceID, beforeTargetID: beforeTargetID)
-                return true
-            }
-        case .addTravel:
-            return { sourceID, beforeTargetID in
-                viewModel.reorderInAddTravel(sourceID: sourceID, beforeTargetID: beforeTargetID)
-                return true
-            }
-        case .grouped, .reviewDrafts, .readyToSend, .pending, .received:
+        case .completed, .addTravel, .grouped, .reviewDrafts, .readyToSend, .pending, .received:
             return { _, _ in false }
         }
     }
@@ -328,19 +449,12 @@ struct KanbanBoardView: View {
         coordinator.canAcceptSessionDropInGroup(sourceID: sourceID, beforeTargetID: beforeTargetID, scopeGroupID: scopeGroupID)
     }
 
-    private func canAcceptGroupDropInGroupedColumn(sourceGroupID: UUID, beforeTargetID _: UUID?) -> Bool {
-        // Coordinator doesn't have this yet, let's keep it here or add it.
-        // For now, simple implementation:
-        projection.groupedSessions.contains(where: { $0.groupID == sourceGroupID })
-    }
-
     private func canAcceptSessionGrouping(sourceID: UUID, targetID: UUID) -> Bool {
         guard sourceID != targetID else { return false }
         guard let sourceCard = sessionCard(for: sourceID), let targetCard = sessionCard(for: targetID) else { return false }
-        // We'll delegate client matching to the coordinator if possible, 
-        // but for now we have the logic in the coordinator's canAcceptSessionDropInGroup or similar.
-        // Let's just use the basic rule here.
-        return sourceCard.columnType.billingStatus != .grouped && targetCard.columnType.billingStatus != .grouped
+        guard sourceCard.columnType.billingStatus != .grouped, targetCard.columnType.billingStatus != .grouped else { return false }
+        guard let sourceClientID = sourceCard.clientID, let targetClientID = targetCard.clientID else { return false }
+        return sourceClientID == targetClientID
     }
 
     private func sessionCard(for id: UUID) -> SessionKanbanCardData? {

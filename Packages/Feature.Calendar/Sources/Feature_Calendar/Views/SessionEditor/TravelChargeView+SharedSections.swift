@@ -1,22 +1,60 @@
 import SwiftUI
-import Core
+import PersistenceModels
 import SharedUI
 
 extension TravelChargeView {
+    @ViewBuilder
+    var travelEstimateSection: some View {
+        if let estimate = viewModel.form.chargeEstimate {
+            Section("Estimated Charge") {
+                if let labourAmount = estimate.labourAmount {
+                    LabeledContent(
+                        "Provider travel",
+                        value: labourAmount.formatted(.currency(code: "AUD"))
+                    )
+                }
+                if let nonLabourAmount = estimate.nonLabourAmount {
+                    LabeledContent(
+                        "Kilometres and extras",
+                        value: nonLabourAmount.formatted(.currency(code: "AUD"))
+                    )
+                }
+                if let activityAmount = estimate.activityTransportAmount {
+                    LabeledContent(
+                        "Activity transport",
+                        value: activityAmount.formatted(.currency(code: "AUD"))
+                    )
+                }
+                if let minutes = estimate.billableMinutes {
+                    LabeledContent("Billable time", value: "\(minutes.formatted(.number.precision(.fractionLength(0...1)))) min")
+                }
+                LabeledContent(
+                    "Total per participant",
+                    value: estimate.total.formatted(.currency(code: "AUD"))
+                )
+                .font(StyleGuide.Typography.bodyMedium.weight(.semibold))
+
+                Text("Estimate updates with travel inputs. Billing Hub carries this travel row into the invoice.")
+                    .font(StyleGuide.Typography.itemSubtitle)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
+            }
+        }
+    }
+
     var multiParticipantSection: some View {
         Section("Multi-Participant") {
             VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
-                Text("Split Costs Between Multiple Participants")
+                Toggle("Split costs between participants", isOn: $viewModel.form.splitCosts.animation())
+                Text("Divides calculated travel costs evenly across participants.")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
-                Toggle("Split Costs Between Multiple Participants", isOn: $viewModel.form.splitCosts.animation())
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
 
             if viewModel.form.splitCosts {
                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     Text("Number of Participants")
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                     TextField("2", text: $viewModel.form.participantCountString)
                         .textFieldStyle(.roundedBorder)
                 }
@@ -41,19 +79,19 @@ extension TravelChargeView {
                (viewModel.form.chargeType == .activityBased && viewModel.form.labourService == nil) {
                 Text("Could not find a matching NDIS travel item for this service's registration group.")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(ColorSystem.Status.warning)
+                    .foregroundStyle(ColorSystem.Status.warning)
             }
         }
     }
     
     func serviceRow(title: String, service: ClientService?) -> some View {
         VStack(alignment: .leading) {
-            Text(title).font(StyleGuide.Typography.itemSubtitle).foregroundColor(StyleGuide.Colors.textSecondary)
+            Text(title).font(StyleGuide.Typography.itemSubtitle).foregroundStyle(StyleGuide.Colors.textSecondary)
             if let service = service {
                 Text(service.serviceName)
                 Text(service.ndisCode ?? "No NDIS Code")
                     .font(StyleGuide.Typography.nano)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             } else {
                 Text("N/A").italic()
             }

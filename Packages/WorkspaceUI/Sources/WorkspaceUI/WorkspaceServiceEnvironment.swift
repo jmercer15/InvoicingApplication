@@ -1,6 +1,7 @@
 import SwiftUI
 import Core
 import Data
+import DataInterfaces
 
 // MARK: - Geocoding
 
@@ -38,11 +39,11 @@ extension EnvironmentValues {
 // MARK: - Calendar / EventKit
 
 private enum EventKitSyncServiceEnvironmentKey: EnvironmentKey {
-    static var defaultValue: EventKitSyncService? { nil }
+    static var defaultValue: (any CalendarIntegrationService)? { nil }
 }
 
 extension EnvironmentValues {
-    public var eventKitSyncService: EventKitSyncService? {
+    public var eventKitSyncService: (any CalendarIntegrationService)? {
         get { self[EventKitSyncServiceEnvironmentKey.self] }
         set { self[EventKitSyncServiceEnvironmentKey.self] = newValue }
     }

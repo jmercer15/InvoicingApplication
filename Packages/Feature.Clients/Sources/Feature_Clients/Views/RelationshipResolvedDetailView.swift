@@ -1,41 +1,49 @@
 import SwiftUI
 
 /// Resolves a SwiftData entity from a live `@Query` list when selection changes.
-struct RelationshipResolvedDetailView<Entity: Identifiable, Revision: Equatable, Content: View>: View
+struct RelationshipResolvedDetailView<Entity: Identifiable, Revision: Equatable, EmptyState: View, Content: View>: View
 where Entity.ID == UUID {
     let objectID: UUID
     let entities: [Entity]
     @Binding var resolved: Entity?
     let revision: Revision
-    let emptyState: AnyView
+    let emptyState: EmptyState
     let content: (Entity) -> Content
+
+    /// Tracks which revision `resolved` belongs to. Prevents touching invalidated
+    /// models after CloudKit HistoryExpired while the resolve task is still pending.
+    @State private var resolvedRevision: Revision?
 
     init(
         objectID: UUID,
         entities: [Entity],
         resolved: Binding<Entity?>,
         revision: Revision,
-        emptyState: some View,
+        emptyState: EmptyState,
         @ViewBuilder content: @escaping (Entity) -> Content
     ) {
         self.objectID = objectID
         self.entities = entities
         self._resolved = resolved
         self.revision = revision
-        self.emptyState = AnyView(emptyState)
+        self.emptyState = emptyState
         self.content = content
     }
 
     var body: some View {
         Group {
-            if let entity = resolved, entity.id == objectID {
+            if let entity = resolved, resolvedRevision == revision, entity.id == objectID {
                 content(entity)
             } else {
                 emptyState
             }
         }
         .task(id: ResolveTaskId(id: objectID, revision: revision)) {
-            resolved = entities.first { $0.id == objectID }
+            resolved = nil
+            resolvedRevision = nil
+            let match = entities.first { $0.id == objectID }
+            resolved = match
+            resolvedRevision = revision
         }
     }
 

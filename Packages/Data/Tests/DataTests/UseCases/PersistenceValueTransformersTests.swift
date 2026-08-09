@@ -1,33 +1,28 @@
 import SwiftData
-import XCTest
+import Foundation
+import Testing
+import PersistenceModels
 @testable import Core
 @testable import Data
 
 @MainActor
-final class PersistenceValueTransformersTests: XCTestCase {
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
+@Suite struct PersistenceValueTransformersTests {
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
+        self.modelContainer = container
+        self.modelContext = context
     }
 
-    override func tearDown() async throws {
-        modelContext = nil
-        modelContainer = nil
-        try await super.tearDown()
-    }
-
-    func testRegisterAllInstallsLegacyTransformerSupport() {
+    @Test func RegisterAllInstallsLegacyTransformerSupport() {
         PersistenceValueTransformers.registerAll()
 
-        XCTAssertNotNil(ValueTransformer(forName: DateArrayValueTransformer.name))
+        #expect(ValueTransformer(forName: DateArrayValueTransformer.name) != nil)
     }
 
-    func testCustomTransformersRoundTripPersistedValues() throws {
+    @Test func CustomTransformersRoundTripPersistedValues() throws {
         let client = Client(
             id: UUID(),
             ndisNumber: "4300000000",
@@ -90,37 +85,37 @@ final class PersistenceValueTransformersTests: XCTestCase {
         let fetchedClient = try readContext.fetch(
             FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.id == clientID })
         ).first
-        XCTAssertEqual(fetchedClient?.status, .active)
-        XCTAssertEqual(fetchedClient?.billingAuthority, .parentGuardian)
+        #expect(fetchedClient?.status == .active)
+        #expect(fetchedClient?.billingAuthority == .parentGuardian)
 
         let fetchedSession = try readContext.fetch(
             FetchDescriptor<Session>(predicate: #Predicate<Session> { $0.id == sessionID })
         ).first
-        XCTAssertEqual(fetchedSession?.status, .grouped)
+        #expect(fetchedSession?.status == .grouped)
 
         let fetchedInvoice = try readContext.fetch(
             FetchDescriptor<Invoice>(predicate: #Predicate<Invoice> { $0.id == invoiceID })
         ).first
-        XCTAssertEqual(fetchedInvoice?.status, .pending)
-        XCTAssertEqual(fetchedInvoice?.billingAuthority, .parentGuardian)
-        XCTAssertEqual(fetchedInvoice?.businessAddressSnapshot?.streetName, "Bridge Street")
-        XCTAssertEqual(fetchedInvoice?.businessAddressSnapshot?.poBox, "PO123")
+        #expect(fetchedInvoice?.status == .pending)
+        #expect(fetchedInvoice?.billingAuthority == .parentGuardian)
+        #expect(fetchedInvoice?.businessAddressSnapshot?.streetName == "Bridge Street")
+        #expect(fetchedInvoice?.businessAddressSnapshot?.poBox == "PO123")
 
         let fetchedTravelCharge = try readContext.fetch(
             FetchDescriptor<TravelCharge>(predicate: #Predicate<TravelCharge> { $0.id == travelChargeID })
         ).first
-        XCTAssertEqual(fetchedTravelCharge?.vehicleType, .car)
-        XCTAssertEqual(fetchedTravelCharge?.chargeType, .labour)
-        XCTAssertEqual(fetchedTravelCharge?.travelDirection, .toClient)
+        #expect(fetchedTravelCharge?.vehicleType == .car)
+        #expect(fetchedTravelCharge?.chargeType == .labour)
+        #expect(fetchedTravelCharge?.travelDirection == .toClient)
 
         let fetchedCreditHistory = try readContext.fetch(
             FetchDescriptor<CreditHistoryEntry>(predicate: #Predicate<CreditHistoryEntry> { $0.id == creditHistoryID })
         ).first
-        XCTAssertEqual(fetchedCreditHistory?.type, .credit)
+        #expect(fetchedCreditHistory?.type == .credit)
 
         let fetchedAddress = try readContext.fetch(
             FetchDescriptor<Address>(predicate: #Predicate<Address> { $0.id == addressID })
         ).first
-        XCTAssertEqual(fetchedAddress?.validationStatus, .valid)
+        #expect(fetchedAddress?.validationStatus == .valid)
     }
 }

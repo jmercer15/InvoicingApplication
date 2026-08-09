@@ -4,11 +4,9 @@ import SharedUI
 // MARK: - Navigation Group Card
 struct RelationshipGroupCard: View, Equatable {
     nonisolated static func == (lhs: RelationshipGroupCard, rhs: RelationshipGroupCard) -> Bool {
-        MainActor.assumeIsolated {
-            lhs.node.id == rhs.node.id &&
-            lhs.count == rhs.count &&
-            lhs.isListStyle == rhs.isListStyle
-        }
+        lhs.node.id == rhs.node.id &&
+        lhs.count == rhs.count &&
+        lhs.isListStyle == rhs.isListStyle
     }
 
     let node: TreeItem
@@ -170,14 +168,12 @@ struct RelationshipGroupCard: View, Equatable {
 // MARK: - Entity Card
 struct RelationshipCard: View, Equatable {
     nonisolated static func == (lhs: RelationshipCard, rhs: RelationshipCard) -> Bool {
-        MainActor.assumeIsolated {
-            lhs.title == rhs.title &&
-            lhs.subtitle == rhs.subtitle &&
-            lhs.entityType == rhs.entityType &&
-            lhs.status == rhs.status &&
-            lhs.isSelected == rhs.isSelected &&
-            lhs.isListStyle == rhs.isListStyle
-        }
+        lhs.title == rhs.title &&
+        lhs.subtitle == rhs.subtitle &&
+        lhs.entityType == rhs.entityType &&
+        lhs.status == rhs.status &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.isListStyle == rhs.isListStyle
     }
 
     let title: String

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 
 public struct SessionWorkflowReference: Sendable, Hashable {
     public let sessionID: UUID
@@ -44,13 +44,12 @@ public actor BillingHubWorkflowActor {
             },
             sortBy: [SortDescriptor(\.issueDate, order: .reverse)]
         )
-        let clientDescriptor = FetchDescriptor<Client>(sortBy: [SortDescriptor(\.fullName)])
-        let serviceDescriptor = FetchDescriptor<ClientService>(sortBy: [SortDescriptor(\.serviceName)])
-
         let sessions = try modelContext.fetch(sessionDescriptor)
         let invoices = try modelContext.fetch(invoiceDescriptor)
-        let clients = try modelContext.fetch(clientDescriptor)
-        let clientServices = try modelContext.fetch(serviceDescriptor)
+        let clientIDs = Set(sessions.compactMap(\.clientId) + invoices.compactMap(\.clientId))
+        let serviceIDs = Set(sessions.compactMap(\.clientServiceId))
+        let clients = try fetchClients(withIDs: clientIDs)
+        let clientServices = try fetchClientServices(withIDs: serviceIDs)
 
         return BillingHubProjectionBuilder.project(
             sessions: sessions,
@@ -61,6 +60,24 @@ public actor BillingHubWorkflowActor {
             selectedClientID: selectedClientID,
             sortOptions: sortOptions
         )
+    }
+
+    private func fetchClients(withIDs ids: Set<UUID>) throws -> [Client] {
+        guard !ids.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<Client>(
+            predicate: #Predicate { ids.contains($0.id) },
+            sortBy: [SortDescriptor(\.fullName), SortDescriptor(\.id)]
+        )
+        return try modelContext.fetch(descriptor)
+    }
+
+    private func fetchClientServices(withIDs ids: Set<UUID>) throws -> [ClientService] {
+        guard !ids.isEmpty else { return [] }
+        let descriptor = FetchDescriptor<ClientService>(
+            predicate: #Predicate { ids.contains($0.id) },
+            sortBy: [SortDescriptor(\.serviceName), SortDescriptor(\.id)]
+        )
+        return try modelContext.fetch(descriptor)
     }
 
     /// Updates the billing status of a session
@@ -120,7 +137,7 @@ public actor BillingHubWorkflowActor {
     public func moveInvoice(
         modelID: PersistentIdentifier,
         to column: KanbanCardData.BillingColumnType,
-        complianceValidator: NDISComplianceValidator? = nil
+        complianceValidator: (any ComplianceValidating)? = nil
     ) async throws -> MoveResult {
         guard let entity = try resolveInvoice(modelID: modelID) else { return .notFound }
         
@@ -160,6 +177,48 @@ public actor BillingHubWorkflowActor {
         return complianceHadWarnings ? .successWithComplianceWarnings : .success
     }
 
+    /// Approves a draft in one persistence operation. Keeping the due-date write with the
+    /// validated status transition prevents a blocked approval from silently changing payment
+    /// terms while the invoice remains in Review Drafts.
+    public func approveDraftInvoice(
+        modelID: PersistentIdentifier,
+        dueDate: Date,
+        complianceValidator: (any ComplianceValidating)? = nil
+    ) async throws -> MoveResult {
+        guard let entity = try resolveInvoice(modelID: modelID) else { return .notFound }
+
+        let currentStatusRaw = entity.status?.rawValue ?? ""
+        guard let currentStatus = BillingStatus(rawValue: currentStatusRaw) else {
+            return .invalidTransition(from: currentStatusRaw, to: BillingStatus.readyToSend.rawValue)
+        }
+        guard BillingTransitionRules.isValidInvoiceTransition(
+            from: currentStatus,
+            to: .readyToSend
+        ) else {
+            return .invalidTransition(from: currentStatus.rawValue, to: BillingStatus.readyToSend.rawValue)
+        }
+
+        var complianceHadWarnings = false
+        if let validator = complianceValidator {
+            let validation = try await validator.validateInvoiceTransition(
+                invoiceId: entity.id,
+                action: .statusChange,
+                targetStatus: BillingStatus.readyToSend.rawValue
+            )
+            if validation.isBlocked {
+                let detail = validation.blockers.map(\.message).joined(separator: " ")
+                return .blocked(detail.isEmpty ? "Blocked by compliance." : "Blocked: \(detail)")
+            }
+            complianceHadWarnings = !validation.warnings.isEmpty
+        }
+
+        entity.dueDate = dueDate
+        entity.status = InvoiceStatus(rawValue: BillingStatus.readyToSend.rawValue)
+        entity.markContentChanged()
+        try modelContext.save()
+        return complianceHadWarnings ? .successWithComplianceWarnings : .success
+    }
+
     // MARK: - Private Helpers
 
     private func resolveSession(modelID: PersistentIdentifier) throws -> Session? {
@@ -174,6 +233,12 @@ public actor BillingHubWorkflowActor {
         var descriptor = FetchDescriptor<Invoice>(
             predicate: #Predicate { $0.persistentModelID == modelID }
         )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    private func resolveSessionByID(_ id: UUID) throws -> Session? {
+        var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first
     }
@@ -200,27 +265,111 @@ public actor BillingHubWorkflowActor {
 
     // MARK: - Bulk Actions
 
+    /// Creates draft invoices from the given sessions.
+    ///
+    /// Idempotency: any session that already has `session.invoice` set is refused up front and
+    /// reported back as a failed session rather than silently re-billed. Sessions are refetched by
+    /// UUID (not by the caller-provided `PersistentIdentifier`) after the NDIS service call
+    /// completes, since that call runs its own `ModelContext` and may have registered fresh model
+    /// instances for this container. On partial success, groups left with leftover (failed)
+    /// members are reindexed/dissolved so the Grouped column never shows stale positions.
     public func createDraftInvoices(
         sessions: [SessionWorkflowReference],
         clientID: UUID,
         ndisService: NDISBillingIntegrationServiceProtocol
     ) async throws -> Core.NDISBillingReport {
-        let sessionIDs = sessions.map(\.sessionID)
-        let report = try await ndisService.generateNDISInvoice(for: sessionIDs, clientId: clientID)
-        
+        var alreadyInvoiced: [Core.NDISBillingIssue] = []
+        var eligibleSessions: [SessionWorkflowReference] = []
+        var originalGroupIDs: Set<UUID> = []
+
+        for session in sessions {
+            guard let entity = try resolveSession(modelID: session.modelID) else {
+                alreadyInvoiced.append(Core.NDISBillingIssue(sessionId: session.sessionID, sessionTitle: "Unknown", reason: "Session not found"))
+                continue
+            }
+            if let groupID = entity.groupID {
+                originalGroupIDs.insert(groupID)
+            }
+            if entity.invoice != nil {
+                alreadyInvoiced.append(Core.NDISBillingIssue(sessionId: session.sessionID, sessionTitle: entity.title, reason: "Session already has an invoice"))
+                continue
+            }
+            if let sessionClientID = entity.client?.id, sessionClientID != clientID {
+                alreadyInvoiced.append(Core.NDISBillingIssue(
+                    sessionId: session.sessionID,
+                    sessionTitle: entity.title,
+                    reason: "Session belongs to a different client"
+                ))
+                continue
+            }
+            if entity.client?.id == nil {
+                alreadyInvoiced.append(Core.NDISBillingIssue(
+                    sessionId: session.sessionID,
+                    sessionTitle: entity.title,
+                    reason: "Session has no client"
+                ))
+                continue
+            }
+            eligibleSessions.append(session)
+        }
+
+        guard !eligibleSessions.isEmpty else {
+        return Core.NDISBillingReport(
+            invoice: nil,
+            processedSessionsCount: sessions.count,
+            successfulSessionsCount: 0,
+            failedSessions: alreadyInvoiced,
+            warnings: []
+        )
+    }
+
+        let eligibleSessionIDs = eligibleSessions.map(\.sessionID)
+        let report = try await ndisService.generateNDISInvoice(for: eligibleSessionIDs, clientId: clientID)
+        var combinedFailedSessions = alreadyInvoiced + report.failedSessions
+
         if report.invoice != nil {
             let failedIDs = Set(report.failedSessions.map { $0.sessionId })
-            let successfulSessions = sessions.filter { !failedIDs.contains($0.sessionID) }
+            let successfulSessionIDs = eligibleSessionIDs.filter { !failedIDs.contains($0) }
 
-            for session in successfulSessions {
-                if let entity = try resolveSession(modelID: session.modelID) {
+            // Refetch by UUID: the NDIS service mutated sessions through its own ModelContext, so
+            // resolving fresh instances here (rather than reusing the caller's modelID) avoids
+            // acting on stale registrations before the status/groupID update.
+            var refetchMisses: [Core.NDISBillingIssue] = []
+            for sessionID in successfulSessionIDs {
+                if let entity = try resolveSessionByID(sessionID) {
                     entity.status = SessionStatus(normalized: BillingStatus.reviewDrafts.rawValue)
                     entity.groupID = nil
+                } else {
+                    // Retry once after save/context refresh signal.
+                    try modelContext.save()
+                    if let retry = try resolveSessionByID(sessionID) {
+                        retry.status = SessionStatus(normalized: BillingStatus.reviewDrafts.rawValue)
+                        retry.groupID = nil
+                    } else {
+                        refetchMisses.append(Core.NDISBillingIssue(
+                            sessionId: sessionID,
+                            sessionTitle: "Unknown",
+                            reason: "Session linked to invoice but could not be refreshed — reopen Billing Hub to sync"
+                        ))
+                    }
                 }
             }
             try modelContext.save()
+            combinedFailedSessions += refetchMisses
+
+            for groupID in originalGroupIDs {
+                try await dissolveGroupIfSingleton(groupID: groupID)
+                try await reindexGroupedScope(groupID)
+            }
         }
-        return report
+
+        return Core.NDISBillingReport(
+            invoice: report.invoice,
+            processedSessionsCount: sessions.count,
+            successfulSessionsCount: report.successfulSessionsCount,
+            failedSessions: combinedFailedSessions,
+            warnings: report.warnings
+        )
     }
 
     public func bulkUpdateInvoices(
@@ -239,6 +388,33 @@ public actor BillingHubWorkflowActor {
         }
         try modelContext.save()
         return count
+    }
+
+    /// Mutates an invoice without forcing a `BillingStatus` column transition (e.g. persisting a
+    /// note-only payment draft, or approving a due date). Still bumps `markContentChanged()` so any
+    /// open editor draft is invalidated.
+    @discardableResult
+    public func updateInvoice(
+        modelID: PersistentIdentifier,
+        mutate: @Sendable (Invoice) -> Void
+    ) async throws -> Bool {
+        guard let entity = try resolveInvoice(modelID: modelID) else { return false }
+        mutate(entity)
+        entity.markContentChanged()
+        try modelContext.save()
+        return true
+    }
+
+    /// Marks an invoice overdue. `overdue` isn't part of the kanban `BillingStatus` enum (it stays
+    /// visually in the Payment/Pending lane), so this writes `InvoiceStatus.overdue` directly
+    /// instead of going through `moveInvoice`.
+    @discardableResult
+    public func markInvoiceOverdue(modelID: PersistentIdentifier) async throws -> Bool {
+        guard let entity = try resolveInvoice(modelID: modelID) else { return false }
+        entity.status = .overdue
+        entity.markContentChanged()
+        try modelContext.save()
+        return true
     }
 
     // MARK: - Reordering
@@ -271,22 +447,41 @@ public actor BillingHubWorkflowActor {
     }
 
     public func ungroupSessions(modelIDs: [PersistentIdentifier]) async throws {
+        var previousGroups: Set<UUID> = []
         for modelID in modelIDs {
             if let sessionModel = try resolveSession(modelID: modelID) {
+                if let groupID = sessionModel.groupID {
+                    previousGroups.insert(groupID)
+                }
                 sessionModel.groupID = nil
             }
         }
         try modelContext.save()
+        for groupID in previousGroups {
+            try await dissolveGroupIfSingleton(groupID: groupID)
+        }
     }
 
     public func updateSessionDetails(modelID: PersistentIdentifier, durationString: String) async throws {
         guard let sessionModel = try resolveSession(modelID: modelID) else { return }
-        // Simple duration parsing for now - in real app would be more robust
-        let hours = Double(durationString.replacingOccurrences(of: "h", with: "")) ?? 1.0
+        guard let minutes = BillingHubDurationParser.totalMinutes(from: durationString) else {
+            throw BillingHubDurationError.unrecognizedFormat(durationString)
+        }
         if let start = sessionModel.startTime {
-            sessionModel.endTime = Calendar.current.date(byAdding: .minute, value: Int(hours * 60), to: start)
+            sessionModel.endTime = Calendar.current.date(byAdding: .minute, value: minutes, to: start)
         }
         try modelContext.save()
+    }
+
+    public enum BillingHubDurationError: LocalizedError {
+        case unrecognizedFormat(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .unrecognizedFormat(let value):
+                return "Could not parse duration \"\(value)\". Try formats like 1h 30m or 90m."
+            }
+        }
     }
 
     public func updateInvoiceDetails(modelID: PersistentIdentifier, clientName: String) async throws {
@@ -301,7 +496,11 @@ public actor BillingHubWorkflowActor {
     public func upsertSupportLog(sessionModelID: PersistentIdentifier, draft: SupportLogDraft) async throws {
         guard let sessionModel = try resolveSession(modelID: sessionModelID) else { return }
 
-        let supportLog = SupportLog(id: UUID())
+        // True upsert: update the newest existing log when present (parity with Calendar editor).
+        let existing = sessionModel.supportLogs?.max { lhs, rhs in
+            lhs.attestedAt < rhs.attestedAt
+        }
+        let supportLog = existing ?? SupportLog(id: UUID())
         supportLog.participantName = draft.participantName
         supportLog.participantNdisNumber = draft.participantNdisNumber
         supportLog.supportItemNumber = draft.supportItemNumber
@@ -320,9 +519,37 @@ public actor BillingHubWorkflowActor {
         supportLog.notes = draft.notes
         supportLog.client = sessionModel.client
         supportLog.session = sessionModel
+        supportLog.sessionId = sessionModel.id
 
-        modelContext.insert(supportLog)
+        if existing == nil {
+            modelContext.insert(supportLog)
+        }
         try modelContext.save()
+    }
+
+    public func calculateTravelBreakdown(
+        sessionModelID: PersistentIdentifier,
+        distance: Double,
+        time: Double,
+        tolls: Double,
+        parking: Double,
+        chargeType: String,
+        vehicleType: String,
+        participantCount: Int,
+        splitCosts: Bool
+    ) throws -> TravelCalculationBreakdown? {
+        guard let sessionModel = try resolveSession(modelID: sessionModelID) else { return nil }
+        return Self.travelBreakdown(
+            for: sessionModel,
+            distance: distance,
+            time: time,
+            tolls: tolls,
+            parking: parking,
+            participantCount: participantCount,
+            splitCosts: splitCosts,
+            chargeType: chargeType,
+            vehicleType: vehicleType
+        )
     }
 
     public func addTravelCharge(
@@ -337,26 +564,53 @@ public actor BillingHubWorkflowActor {
         participantCount: Int,
         splitCosts: Bool
     ) async throws {
-        guard let sessionModel = try resolveSession(modelID: sessionModelID) else { return }
+        guard let sessionModel = try resolveSession(modelID: sessionModelID) else {
+            throw BillingHubTravelError.sessionNotFound
+        }
+
+        let mmmZone = sessionModel.travelCharges?
+            .compactMap(\.mmmZoneName)
+            .first
+        let direction = TravelChargeDirection(rawValue: travelDirection)
+        // Replace same-direction charge (Calendar before/after semantics) — never stack.
+        if let direction, let existing = sessionModel.travelCharges {
+            for charge in existing where charge.travelDirection == direction {
+                modelContext.delete(charge)
+            }
+        }
+
+        let breakdown = Self.travelBreakdown(
+            for: sessionModel,
+            mmmZoneDescriptor: mmmZone,
+            distance: distance,
+            time: time,
+            tolls: tolls,
+            parking: parking,
+            participantCount: participantCount,
+            splitCosts: splitCosts,
+            chargeType: chargeType,
+            vehicleType: vehicleType
+        )
 
         let travelCharge = TravelCharge(
             id: UUID(),
-            chargeAmount: distance * 0.85,
+            chargeAmount: Decimal(breakdown.chargeAmount),
             distanceKM: distance,
-            durationMinutes: time,
+            durationMinutes: breakdown.billableMinutes,
             location: nil,
             status: .pending,
-            chargeType: TravelChargeType(rawValue: chargeType),
-            travelDirection: TravelChargeDirection(rawValue: travelDirection),
+            chargeType: Self.persistedTravelChargeType(chargeType),
+            travelDirection: direction,
             vehicleType: VehicleType(rawValue: vehicleType),
             participantCount: Int16(participantCount),
             splitCosts: splitCosts,
-            parkingCost: parking,
-            tollCost: tolls,
+            parkingCost: Decimal(parking),
+            tollCost: Decimal(tolls),
             notes: nil,
             startTime: sessionModel.startTime,
             endTime: sessionModel.endTime
         )
+        travelCharge.mmmZoneName = mmmZone
         travelCharge.client = sessionModel.client
         travelCharge.linkedSession = sessionModel
         travelCharge.service = sessionModel.clientService
@@ -367,12 +621,99 @@ public actor BillingHubWorkflowActor {
         try modelContext.save()
     }
 
+    /// Maps Hub UI charge-type tags onto `TravelChargeType` raw values (`Standard`, `labour`, …).
+    static func persistedTravelChargeType(_ raw: String) -> TravelChargeType? {
+        if let exact = TravelChargeType(rawValue: raw) { return exact }
+        switch raw.lowercased() {
+        case "standard": return .standard
+        case "labour": return .labour
+        case "non-labour": return .nonLabour
+        case "activity-based": return .activityBased
+        default: return nil
+        }
+    }
+
+    private static func travelBreakdown(
+        for sessionModel: Session,
+        mmmZoneDescriptor: String? = nil,
+        distance: Double,
+        time: Double,
+        tolls: Double,
+        parking: Double,
+        participantCount: Int,
+        splitCosts: Bool,
+        chargeType: String,
+        vehicleType: String
+    ) -> TravelCalculationBreakdown {
+        let service = sessionModel.clientService
+        let providerType = BillingHubTravelChargeCalculator.inferredProviderType(
+            itemName: service?.serviceName,
+            itemDescription: nil,
+            ndisCode: service?.ndisCode
+        )
+        let hourlyRate = NSDecimalNumber(decimal: sessionModel.assignedRate ?? service?.rate ?? 0).doubleValue
+        let mmmZone = mmmZoneDescriptor
+            ?? sessionModel.travelCharges?.compactMap(\.mmmZoneName).first
+        return BillingHubTravelChargeCalculator.breakdown(
+            providerType: providerType,
+            hourlyRate: hourlyRate,
+            mmmZoneDescriptor: mmmZone,
+            distance: distance,
+            time: time,
+            tolls: tolls,
+            parking: parking,
+            participantCount: participantCount,
+            splitCosts: splitCosts,
+            chargeType: chargeType,
+            vehicleType: vehicleType
+        )
+    }
+
+    // MARK: - Bulk undo restore
+
+    public func restoreInvoices(from snapshots: [InvoiceWorkflowSnapshot]) async throws {
+        for snapshot in snapshots {
+            guard let entity = try resolveInvoiceByID(snapshot.id) else { continue }
+            entity.status = InvoiceStatus(normalized: snapshot.status)
+            entity.sentDate = snapshot.sentDate
+            entity.paidDate = snapshot.paidDate
+            if let notes = snapshot.notes {
+                entity.notes = notes
+            }
+            entity.markContentChanged()
+        }
+        try modelContext.save()
+    }
+
+    public func restoreSessions(from snapshots: [SessionWorkflowSnapshot]) async throws {
+        for snapshot in snapshots {
+            guard let entity = try resolveSessionByID(snapshot.id) else { continue }
+            entity.status = SessionStatus(normalized: snapshot.status)
+            entity.groupID = snapshot.groupID
+            entity.lastModifiedDate = Date()
+        }
+        try modelContext.save()
+    }
+
+    private func resolveInvoiceByID(_ id: UUID) throws -> Invoice? {
+        var descriptor = FetchDescriptor<Invoice>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
     // MARK: - Identity resolution (SwiftData executor; avoids duplicate main-context fetches for workflow handoff)
 
     public func persistentModelIDForSession(id: UUID) throws -> PersistentIdentifier? {
         var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first?.persistentModelID
+    }
+
+    public func persistentModelIDsForSessions(ids: [UUID]) throws -> [UUID: PersistentIdentifier] {
+        guard !ids.isEmpty else { return [:] }
+        let descriptor = FetchDescriptor<Session>(predicate: #Predicate { ids.contains($0.id) })
+        let sessions = try modelContext.fetch(descriptor)
+        return Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.persistentModelID) })
     }
 
     public func persistentModelIDForInvoice(id: UUID) throws -> PersistentIdentifier? {

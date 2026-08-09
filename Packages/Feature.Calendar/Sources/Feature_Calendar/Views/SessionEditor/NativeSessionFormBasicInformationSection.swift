@@ -11,12 +11,12 @@ struct NativeSessionFormBasicInformationSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Title:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
                         TextField("Session title", text: viewModel.formBinding(\.title))
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                             .accentColor(ColorSystem.Primary.blue)
                             .font(StyleGuide.Typography.sectionTitle)
                             .fontWeight(.semibold)
@@ -35,7 +35,7 @@ struct NativeSessionFormBasicInformationSection: View {
 
                         if let error = validationErrors["title"] {
                             Text(error)
-                                .foregroundColor(ColorSystem.Status.error)
+                                .foregroundStyle(ColorSystem.Status.error)
                                 .font(StyleGuide.Typography.itemSubtitle)
                                 .fluidListTransition()
                                 .animation(.easeInOut(duration: 0.3), value: validationErrors["title"])
@@ -46,13 +46,13 @@ struct NativeSessionFormBasicInformationSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Date:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack(spacing: FormSectionTokens.sectionStackSpacing) {
                         DatePicker("", selection: viewModel.formBinding(\.startTime), displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .labelsHidden()
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                             .accentColor(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.formModel.startTime) { _, newValue in
                                 var updated = viewModel.formModel
@@ -68,7 +68,7 @@ struct NativeSessionFormBasicInformationSection: View {
 
                         Toggle("All Day", isOn: viewModel.formBinding(\.isAllDay))
                             .toggleStyle(.switch)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                             .onChange(of: viewModel.formModel.isAllDay) { _, isAllDay in
                                 if isAllDay {
                                     let cal = Calendar.current
@@ -95,13 +95,13 @@ struct NativeSessionFormBasicInformationSection: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("Time:")
                             .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         HStack(spacing: FormSectionTokens.sectionStackSpacing) {
                             DatePicker("Start", selection: viewModel.formBinding(\.startTime), displayedComponents: .hourAndMinute)
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                                 .accentColor(ColorSystem.Primary.blue)
                                 .onChange(of: viewModel.formModel.startTime) { _, newValue in
                                     var updated = viewModel.formModel
@@ -112,12 +112,12 @@ struct NativeSessionFormBasicInformationSection: View {
                                 }
 
                             Text("to")
-                                .foregroundColor(StyleGuide.Colors.textSecondary)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
 
                             DatePicker("End", selection: viewModel.formBinding(\.endTime), displayedComponents: .hourAndMinute)
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                                 .accentColor(ColorSystem.Primary.blue)
                                 .onChange(of: viewModel.formModel.endTime) { _, newValue in
                                     var updated = viewModel.formModel

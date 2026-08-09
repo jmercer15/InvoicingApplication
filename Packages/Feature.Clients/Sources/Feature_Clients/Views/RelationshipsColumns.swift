@@ -1,8 +1,8 @@
 import SwiftUI
 import SwiftData
 import Core
+import PersistenceModels
 import SharedUI
-import Data
 import Observation
 
 public struct RelationshipsContentColumn: View {
@@ -13,7 +13,6 @@ public struct RelationshipsContentColumn: View {
     @State private var selectedStatus: StatusFilter = .all
     @State private var selectionPath: [String] = []
     @State private var cachedProjection: RelationshipsProjection = .empty
-    private let minimumCardWidth: CGFloat = 260
     private let externalSelectionPath: Binding<[String]>?
     private let onSelectionChanged: ((AppSelection?) -> Void)?
 
@@ -33,18 +32,6 @@ public struct RelationshipsContentColumn: View {
     private var descendantCountLookup: [String: Int] { cachedProjection.counts }
     private var isDetailVisible: Bool { viewModel.detailState != .none }
     private var isListStyle: Bool { isDetailVisible }
-
-    /// Layout rule (`.cursor/rules/swiftui/layout-system.mdc`):
-    /// "Never start with `GeometryReader` for ordinary screen layout." Use
-    /// `GridItem.adaptive(minimum:)` so the container packs columns based on
-    /// intrinsic minimum card width without a parent measurement loop.
-    private var gridColumns: [GridItem] {
-        let spacing = PanelShellTokens.contentListGridSpacing
-        if isListStyle {
-            return [GridItem(.flexible(), spacing: spacing)]
-        }
-        return [GridItem(.adaptive(minimum: minimumCardWidth), spacing: spacing)]
-    }
 
     public init(
         viewModel: RelationshipsContainerViewModel,
@@ -95,14 +82,12 @@ public struct RelationshipsContentColumn: View {
             }
         }
         .task(id: projectionTaskID) {
-            try? await Task.sleep(for: .milliseconds(150))
-            let container = modelContext.container
-            let actor = RelationshipsProjectionActor(modelContainer: container)
-            
-            if let newProjection = try? await actor.build(
+            guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
+            if let newProjection = await viewModel.buildProjection(
                 searchText: viewModel.relationshipSearchText,
                 selectedFilter: selectedFilter,
-                selectedStatus: selectedStatus
+                selectedStatus: selectedStatus,
+                modelContainer: modelContext.container
             ) {
                 cachedProjection = newProjection
                 let normalized = normalizedSelectionPath(from: selectionPath, tree: newProjection.tree)

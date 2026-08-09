@@ -5,37 +5,38 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import EventKit
 
-/// SwiftData-native session create/edit/delete and recurrence operations.
-///
-/// - Important: This service works with SwiftData `@Model` entities directly.
-///   It uses snapshots only at OS/service boundaries (e.g. `SyncService`).
-@MainActor
-final class SessionModificationService {
-    private let modelContext: ModelContext
-    private let syncService: SyncService
-    private let eventKitService: any CalendarEventService
-    private let recurrenceRuleBuilder: RecurrenceRuleBuilder
-    private let recurrenceRuleManager: Core.RecurrenceRuleManager
+/// SwiftData-native session create/edit/delete and recurrence operations on a `ModelActor`.
+actor SessionModificationService: ModelActor {
+    nonisolated let modelContainer: ModelContainer
+    nonisolated let modelExecutor: any ModelExecutor
+    nonisolated private let syncService: SyncService
+    nonisolated private let eventKitService: any CalendarEventService
+    nonisolated private let recurrenceRuleBuilder: RecurrenceRuleBuilder
+    nonisolated private let recurrenceRuleManager: Core.RecurrenceRuleManager
 
     init(
-        modelContext: ModelContext,
+        modelContainer: ModelContainer,
         syncService: SyncService,
         eventKitService: any CalendarEventService,
         recurrenceRuleManager: Core.RecurrenceRuleManager,
         recurrenceRuleBuilder: RecurrenceRuleBuilder = RecurrenceRuleBuilder()
     ) {
-        self.modelContext = modelContext
         self.syncService = syncService
         self.eventKitService = eventKitService
         self.recurrenceRuleManager = recurrenceRuleManager
         self.recurrenceRuleBuilder = recurrenceRuleBuilder
+        self.modelContainer = modelContainer
+        let context = ModelContext(modelContainer)
+        context.autosaveEnabled = false
+        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
     }
     
     // MARK: - Public API (used by `NewSessionViewModel` / `CalendarViewModel`)
     
-    func createSession(from formModel: SessionFormModel) async throws -> Session {
+    func createSession(from formModel: SessionFormModel) async throws -> UUID {
         let validationErrors = formModel.validateForm()
         if !validationErrors.isEmpty {
             throw SessionModificationError.validationFailed(validationErrors.map(\.localizedDescription))
@@ -59,6 +60,8 @@ final class SessionModificationService {
             assignedServiceName: nil,
             assignedRate: nil
         )
+        session.sessionLatitude = formModel.sessionLatitude
+        session.sessionLongitude = formModel.sessionLongitude
 
         applyEventKitFields(to: session, formModel: formModel, forDetachedOccurrence: nil)
         try applyRecurrenceIfNeeded(to: session, formModel: formModel)
@@ -69,10 +72,28 @@ final class SessionModificationService {
         try saveChanges()
 
         scheduleSessionSync(session, span: .thisEvent)
-        return session
+        return session.id
     }
 
     func modifySession(
+        sessionID: UUID,
+        with formModel: SessionFormModel,
+        mode: RecurringEditMode,
+        originalInstanceDate: Date?
+    ) async throws -> UUID {
+        guard let session = try fetchSession(id: sessionID) else {
+            throw SessionModificationError.sessionNotFound(sessionID)
+        }
+        let updated = try await modifySession(
+            session,
+            with: formModel,
+            mode: mode,
+            originalInstanceDate: originalInstanceDate
+        )
+        return updated.id
+    }
+
+    private func modifySession(
         _ session: Session,
         with formModel: SessionFormModel,
         mode: RecurringEditMode,
@@ -118,8 +139,12 @@ final class SessionModificationService {
                 return detached
             }
 
+            let masterWasInvoiced = session.invoice != nil
             let detached = makeDetachedInstance(master: session, occurrenceDate: instanceDate)
             applyEdits(to: detached, formModel: formModel)
+            if masterWasInvoiced {
+                stampDetachedFromInvoicedSeriesNote(on: detached)
+            }
             try await resolveRelationships(for: detached, formModel: formModel)
             applyAddressIfNeeded(to: detached, formModel: formModel, preferredID: detached.id)
             modelContext.insert(detached)
@@ -133,11 +158,23 @@ final class SessionModificationService {
                 return try await modifySession(session, with: formModel, mode: .all, originalInstanceDate: nil)
             }
 
-            // 1) Truncate current series before instanceDate
+            // Capture pre-truncate RRULE so the new master never inherits the truncated UNTIL.
+            let originalRecurrenceData = session.recurrenceRuleData
+            let masterWasInvoiced = session.invoice != nil
+
+            // 1) Truncate current series before instanceDate (old master only).
             try truncateSeries(session, endingBefore: instanceDate)
 
             // 2) Create a new series master starting at instanceDate using the edited form model.
             let newMaster = makeFutureSeriesMaster(from: session, instanceDate: instanceDate, formModel: formModel)
+            if masterWasInvoiced {
+                stampDetachedFromInvoicedSeriesNote(on: newMaster)
+            }
+            try applyFutureSeriesRecurrence(
+                to: newMaster,
+                formModel: formModel,
+                fallbackRecurrenceData: originalRecurrenceData
+            )
             try await resolveRelationships(for: newMaster, formModel: formModel)
             applyAddressIfNeeded(to: newMaster, formModel: formModel, preferredID: newMaster.id)
             modelContext.insert(newMaster)
@@ -146,12 +183,19 @@ final class SessionModificationService {
             try removeFutureDetachedInstances(of: session, onOrAfter: instanceDate)
 
             try saveChanges()
+            // Sync both truncated old master and new future master to EventKit.
+            scheduleSessionSync(session, span: .futureEvents)
             scheduleSessionSync(newMaster, span: .futureEvents)
             return newMaster
         }
     }
 
-    func deleteSession(_ session: Session, mode: RecurringEditMode, originalInstanceDate: Date?) async throws {
+    func deleteSession(sessionID: UUID, mode: RecurringEditMode, originalInstanceDate: Date?) async throws {
+        guard let session = try fetchSession(id: sessionID) else { return }
+        try await deleteSession(session, mode: mode, originalInstanceDate: originalInstanceDate)
+    }
+
+    private func deleteSession(_ session: Session, mode: RecurringEditMode, originalInstanceDate: Date?) async throws {
         if session.recurrenceRuleData == nil {
             deleteEntity(session)
             try saveChanges()
@@ -210,11 +254,12 @@ final class SessionModificationService {
     }
 
     func processRecurringModification(
-        session: Session,
+        sessionID: UUID,
         modification: RecurringModificationType,
         mode: RecurringEditMode,
         originalInstanceDate: Date?
-    ) async throws -> Session {
+    ) async throws {
+        guard let session = try fetchSession(id: sessionID) else { return }
         var formModel = SessionFormModel(from: session, recurrenceRuleManager: recurrenceRuleManager)
         switch modification {
         case .move(let newStartTime):
@@ -225,7 +270,12 @@ final class SessionModificationService {
             formModel.startTime = newStartTime
             formModel.endTime = newEndTime
         }
-        return try await modifySession(session, with: formModel, mode: mode, originalInstanceDate: originalInstanceDate)
+        _ = try await modifySession(
+            session,
+            with: formModel,
+            mode: mode,
+            originalInstanceDate: originalInstanceDate
+        )
     }
 
     // MARK: - Core edits
@@ -328,9 +378,14 @@ final class SessionModificationService {
         }
 
         if let clientServiceId = formModel.selectedClientServiceID {
-            session.clientService = try fetchClientService(id: clientServiceId)
+            let clientService = try fetchClientService(id: clientServiceId)
+            session.clientService = clientService
+            session.assignedServiceName = clientService?.serviceName
+            session.assignedRate = clientService?.rate
         } else {
             session.clientService = nil
+            session.assignedServiceName = nil
+            session.assignedRate = nil
         }
     }
 
@@ -352,6 +407,17 @@ final class SessionModificationService {
 
     // MARK: - Recurrence helpers
 
+    /// Soft-lock already confirmed editing an invoiced master; stamp the new thisOnly
+    /// occurrence (or thisAndFuture master) so billing knows it is intentionally uninvoiced.
+    static let detachedFromInvoicedSeriesNote = "Detached from invoiced series — new uninvoiced occurrence."
+
+    private func stampDetachedFromInvoicedSeriesNote(on session: Session) {
+        let marker = Self.detachedFromInvoicedSeriesNote
+        let existing = session.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if existing.contains(marker) { return }
+        session.notes = existing.isEmpty ? marker : existing + "\n" + marker
+    }
+
     private func makeDetachedInstance(master: Session, occurrenceDate: Date) -> Session {
         let detached = Session(
             id: UUID(),
@@ -363,8 +429,8 @@ final class SessionModificationService {
             notes: master.notes,
             status: master.status,
             isTravel: master.isTravel,
-            groupID: master.groupID,
-            groupedPosition: master.groupedPosition,
+            groupID: nil,
+            groupedPosition: 0,
             travelDistanceKM: master.travelDistanceKM,
             travelTimeMinutes: master.travelTimeMinutes,
             recurrenceRuleData: nil,
@@ -380,6 +446,8 @@ final class SessionModificationService {
         detached.eventIdentifier = ""
         detached.lastModifiedDate = Date()
         detached.travelTollsAmount = master.travelTollsAmount
+        detached.sessionLatitude = master.sessionLatitude
+        detached.sessionLongitude = master.sessionLongitude
         return detached
     }
 
@@ -394,11 +462,12 @@ final class SessionModificationService {
             notes: formModel.notes,
             status: Core.SessionStatus(normalized: formModel.status)?.asEntityStatus,
             isTravel: master.isTravel,
-            groupID: master.groupID,
-            groupedPosition: master.groupedPosition,
+            groupID: nil,
+            groupedPosition: 0,
             travelDistanceKM: master.travelDistanceKM,
             travelTimeMinutes: master.travelTimeMinutes,
-            recurrenceRuleData: master.recurrenceRuleData,
+            // RRULE applied separately from form / pre-truncate original — never copy truncated old master.
+            recurrenceRuleData: nil,
             assignedServiceName: master.assignedServiceName,
             assignedRate: master.assignedRate
         )
@@ -409,12 +478,28 @@ final class SessionModificationService {
         newMaster.eventIdentifier = ""
         newMaster.lastModifiedDate = Date()
         newMaster.travelTollsAmount = master.travelTollsAmount
+        newMaster.sessionLatitude = formModel.sessionLatitude
+        newMaster.sessionLongitude = formModel.sessionLongitude
 
         // Ensure the new master logically starts on/after the split date.
         if let start = newMaster.startTime, start < instanceDate {
             newMaster.startTime = instanceDate
         }
         return newMaster
+    }
+
+    /// Applies form recurrence to the future master when present; otherwise restores the
+    /// pre-truncate original RRULE so the new series keeps expanding past the split.
+    private func applyFutureSeriesRecurrence(
+        to session: Session,
+        formModel: SessionFormModel,
+        fallbackRecurrenceData: Data?
+    ) throws {
+        if formModel.hasRecurrence {
+            try applyRecurrenceIfNeeded(to: session, formModel: formModel)
+            return
+        }
+        session.recurrenceRuleData = fallbackRecurrenceData
     }
 
     private func fetchDetachedInstances(master: Session) throws -> [Session] {
@@ -486,15 +571,16 @@ final class SessionModificationService {
     // MARK: - Sync & EventKit
 
     private func scheduleSessionSync(_ session: Session, span _: EKSpan) {
+        let snapshot = session.snapshot()
         Task { @MainActor in
-            try? await syncService.sync(session: session.snapshot())
+            try? await syncService.sync(session: snapshot)
         }
     }
 
     private func scheduleEventDeletion(identifier: String, span: EKSpan) {
         guard !identifier.isEmpty else { return }
         Task { @MainActor in
-            eventKitService.delete(syncIdentifier: identifier, span: span)
+            self.eventKitService.delete(syncIdentifier: identifier, span: span)
         }
     }
 
@@ -503,6 +589,12 @@ final class SessionModificationService {
     }
 
     // MARK: - ModelContext utilities
+
+    private func fetchSession(id: UUID) throws -> Session? {
+        var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
 
     private func deleteEntity<T: PersistentModel>(_ model: T) {
         modelContext.delete(model)
@@ -519,6 +611,7 @@ enum SessionModificationError: Error {
     case validationFailed([String])
     case recurrenceRuleEncodingFailed(Error)
     case seriesTruncationFailed
+    case sessionNotFound(UUID)
 }
 
 private extension Core.SessionStatus {

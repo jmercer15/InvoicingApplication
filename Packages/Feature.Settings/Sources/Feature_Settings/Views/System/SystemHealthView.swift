@@ -3,6 +3,7 @@ import SwiftData
 import SharedUI
 import EventKit
 import Core
+import DataInterfaces
 #if os(macOS)
 import AppKit
 #endif
@@ -10,13 +11,12 @@ import AppKit
 // MARK: - System Health View
 
 struct SystemHealthView: View {
-    @Environment(\.modelContext) var viewContext
+    @Environment(\.databaseHealthChecking) private var databaseHealthChecking
     @State private var healthChecks: [HealthCheck] = []
     @State private var isRunning = false
     
     @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
     @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
-    @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall = StyleGuide.Dimensions.cornerRadiusSmall
 
     var body: some View {
         ScrollView {
@@ -96,7 +96,7 @@ struct SystemHealthView: View {
                 }
                 Spacer()
                 if let action = check.action {
-                    Button(action) { onAction(action, check) }.buttonStyle(.glass).controlSize(.small)
+                    Button(action) { onAction(action) }.buttonStyle(.glass).controlSize(.small)
                 }
             }
             Text(check.details).font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI)).padding(.leading, StyleGuide.Dimensions.paddingXXLarge)
@@ -111,8 +111,9 @@ struct SystemHealthView: View {
         // 1. Database Connection check
         let dbCheck: HealthCheck
         do {
-            let fetchDescriptor = FetchDescriptor<Business>()
-            _ = try viewContext.fetch(fetchDescriptor)
+            if let checker = databaseHealthChecking {
+                try checker.verifyConnection()
+            }
             dbCheck = HealthCheck(
                 title: "Database Connection",
                 description: "Core Data stack",
@@ -124,8 +125,10 @@ struct SystemHealthView: View {
             dbCheck = HealthCheck(
                 title: "Database Connection",
                 description: "Core Data stack",
-                status: .error,
-                details: "Failed to query database: \(error.localizedDescription)",
+                status: databaseHealthChecking == nil ? .warning : .error,
+                details: databaseHealthChecking == nil
+                    ? "Database health checker is not configured for this window."
+                    : "Failed to query database: \(error.localizedDescription)",
                 action: nil
             )
         }
@@ -250,7 +253,7 @@ struct SystemHealthView: View {
         isRunning = false
     }
     
-    private func onAction(_ action: String, _ check: HealthCheck) {
+    private func onAction(_ action: String) {
         if action == "Request Access" || action == "Request Full Access" {
             requestCalendarAccessAndRefresh()
         } else if action == "Open Settings" {

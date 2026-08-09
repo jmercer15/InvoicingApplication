@@ -4,7 +4,7 @@ import EventKit
 import Combine
 import SwiftData
 import Core
-import Data
+import DataInterfaces
 import SharedUI
 import Observation
 
@@ -13,9 +13,9 @@ import Observation
 @MainActor
 public class CalendarSettingsViewModel {
     // MARK: - Dependencies
-    private let modelContext: ModelContext
     let preferences: CalendarPreferencesStore
     private let eventKitService: any CalendarIntegrationService
+    private let sessionWiper: any CalendarSessionWiping
 
     // MARK: - UI State
     var showingInvalidCalendarAlert: Bool = false
@@ -48,13 +48,13 @@ public class CalendarSettingsViewModel {
 
     // MARK: - Initialization
     public init(
-        modelContext: ModelContext,
         preferencesStore: CalendarPreferencesStore,
-        eventKitService: any CalendarIntegrationService
+        eventKitService: any CalendarIntegrationService,
+        sessionWiper: any CalendarSessionWiping
     ) {
-        self.modelContext = modelContext
         self.preferences = preferencesStore
         self.eventKitService = eventKitService
+        self.sessionWiper = sessionWiper
         setupStateObservers()
         initializeState()
     }
@@ -277,17 +277,13 @@ public class CalendarSettingsViewModel {
     }
 
     func clearAllSessions() async {
-        let container = modelContext.container
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
         do {
-            let wipeActor = SessionWipeActor(modelContainer: container)
-            try await wipeActor.wipeSessions()
-            print("All sessions deleted successfully.")
+            try await sessionWiper.wipeAllSessions()
         } catch {
-            print("Failed to delete all sessions: \(error)")
             errorMessage = "Failed to delete sessions: \(error.localizedDescription)"
         }
     }

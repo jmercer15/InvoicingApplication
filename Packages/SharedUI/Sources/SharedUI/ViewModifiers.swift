@@ -1,5 +1,4 @@
 import SwiftUI
-import Core
 
 // MARK: - Form Field Component
 public struct FormField<Content: View>: View {
@@ -68,7 +67,7 @@ public struct StatusBadge: View {
 // NavigateToMapButton moved to NavigateToMapButton.swift
 
 // MARK: - Address Data Type
-public struct AddressData: Codable, Hashable {
+public struct AddressData: Codable, Hashable, Sendable {
     public var unitNumber: String = ""
     public var streetNumber: String = ""
     public var streetName: String = ""
@@ -77,6 +76,9 @@ public struct AddressData: Codable, Hashable {
     public var postcode: String = ""
     public var country: String = ""
     public var poBox: String = ""
+    /// Coordinates from the originating search/geocode result (e.g. MapKit), when available.
+    public var latitude: Double? = nil
+    public var longitude: Double? = nil
     
     public init() {
         // Default initializer
@@ -90,7 +92,9 @@ public struct AddressData: Codable, Hashable {
         state: String = "",
         postcode: String = "",
         country: String = "",
-        poBox: String = ""
+        poBox: String = "",
+        latitude: Double? = nil,
+        longitude: Double? = nil
     ) {
         self.unitNumber = unitNumber
         self.streetNumber = streetNumber
@@ -100,6 +104,8 @@ public struct AddressData: Codable, Hashable {
         self.postcode = postcode
         self.country = country
         self.poBox = poBox
+        self.latitude = latitude
+        self.longitude = longitude
     }
     
     var street: String {

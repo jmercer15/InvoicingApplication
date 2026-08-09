@@ -1,8 +1,7 @@
 import SwiftUI
 import SwiftData
-import Core
+import PersistenceModels
 import MapKit
-import Data
 import SharedUI
 import Observation
 
@@ -24,7 +23,7 @@ struct TravelChargeView: View {
                 Section {
                     Picker("", selection: $viewModel.form.chargeType) {
                         ForEach(TravelChargeSheetChargeType.allCases, id: \.self) { type in
-                            Text(String(describing: type)).tag(type)
+                            Text(type.rawValue).tag(type)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -32,12 +31,30 @@ struct TravelChargeView: View {
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(Color.clear)
 
+                if let message = viewModel.form.saveReadinessMessage {
+                    feedbackSection(
+                        message: message,
+                        systemImage: "exclamationmark.triangle.fill",
+                        color: ColorSystem.Status.warning
+                    )
+                }
+
+                if let saveError = viewModel.saveError {
+                    feedbackSection(
+                        message: "Travel charges could not be saved. \(saveError)",
+                        systemImage: "xmark.octagon.fill",
+                        color: ColorSystem.Status.error
+                    )
+                }
+
                 switch viewModel.form.chargeType {
                 case .standard:
                     standardTravelForm
                 case .activityBased:
                     activityBasedForm
                 }
+
+                travelEstimateSection
 
                 multiParticipantSection
                 travelServiceSection
@@ -55,7 +72,7 @@ struct TravelChargeView: View {
         }
         .overlay {
             if viewModel.form.isLoading {
-                ProgressView("Loading Services...")
+                ProgressView("Loading services…")
                     .padding()
                     .glassEffect(.regular, in: .rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
             }
@@ -67,21 +84,42 @@ struct TravelChargeView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .center, spacing: StyleGuide.Dimensions.paddingMedium) {
             VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                 Text("Add Travel Charges")
                     .font(StyleGuide.Typography.sectionTitle)
                     .fontWeight(.bold)
                 Text("For: \(viewModel.form.mainSession.title)")
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
             Spacer()
             Button("Cancel", role: .cancel, action: { dismiss() })
-            Button("Save", action: viewModel.saveTravelCharges)
+                .keyboardShortcut(.cancelAction)
+            Button("Save") {
+                viewModel.saveTravelCharges()
+            }
                 .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.form.canSave)
+                .keyboardShortcut(.defaultAction)
+                .help(viewModel.form.saveReadinessMessage ?? "Save travel charges")
         }
         .padding()
         .background(StyleGuide.Colors.background)
+    }
+
+    private func feedbackSection(
+        message: String,
+        systemImage: String,
+        color: Color
+    ) -> some View {
+        Section {
+            Label(message, systemImage: systemImage)
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundStyle(color)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

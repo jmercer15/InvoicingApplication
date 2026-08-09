@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - SessionSnapshot
 
@@ -32,7 +31,7 @@ public struct SessionSnapshot: Sendable, Equatable, Hashable {
     public let travelTimeMinutes: Double?
     public let travelTollsAmount: Double?
     public let assignedServiceName: String?
-    public let assignedRate: Double?
+    public let assignedRate: Decimal?
     public let clientId: UUID?
     public let clientServiceId: UUID?
     public let addressId: UUID?
@@ -152,61 +151,5 @@ public struct SessionSnapshot: Sendable, Equatable, Hashable {
         self.url = nil
     }
 
-    public init(_ session: Session) {
-        self.id = session.id
-        self.title = session.title
-        self.startTime = session.startTime
-        self.endTime = session.endTime
-        self.isAllDay = session.isAllDay
-        self.location = session.location
-        self.notes = session.notes
-        self.attendeesCount = session.attendeesCount
-        self.derivedFromEKEventID = session.derivedFromEKEventID
-        self.googleColorId = session.googleColorId
-        self.isTravel = session.isTravel
-        self.effectiveStatus = session.status ?? .scheduled
-        self.statusToken = session.statusToken
-        self.groupID = session.groupID
-        self.groupedPosition = session.groupedPosition
-        self.sessionLatitude = session.sessionLatitude
-        self.sessionLongitude = session.sessionLongitude
-        self.travelDistanceKM = session.travelDistanceKM
-        self.travelTimeMinutes = session.travelTimeMinutes
-        self.travelTollsAmount = session.travelTollsAmount
-        self.assignedServiceName = session.assignedServiceName
-        self.assignedRate = session.assignedRate
-        self.clientId = session.client?.id
-        self.clientServiceId = session.clientService?.id
-        self.addressId = session.address?.id
-        self.ndisItemNumber = session.clientService?.ndisItemNumber
-        self.claimType = nil
-        self.invoiceId = session.invoice?.id
-        self.address = session.address.map(AddressSnapshot.init)
-        self.travelCharges = (session.travelCharges ?? []).map(TravelChargeSnapshot.init)
-        self.calendarIdentifier = session.calendarIdentifier
-        self.ekCreationDate = session.ekCreationDate
-        self.ekEventAvailabilityRaw = session.ekEventAvailabilityRaw
-        self.ekEventStatusRaw = session.ekEventStatusRaw
-        self.ekRecurrenceRuleDescription = session.ekRecurrenceRuleDescription
-        self.eventIdentifier = session.eventIdentifier
-        self.eventExternalIdentifier = session.eventExternalIdentifier
-        self.hasEKAlarms = session.hasEKAlarms
-        self.alarmsData = session.alarmsData
-        self.isDetached = session.isDetached
-        self.lastModifiedDate = session.lastModifiedDate
-        self.lastSyncTag = session.lastSyncTag
-        self.eventKitAliasSetData = session.eventKitAliasSetData
-        self.eventKitSyncToken = session.eventKitSyncToken
-        self.lastObservedRemoteModifiedDate = session.lastObservedRemoteModifiedDate
-        self.isEventKitLinkStale = session.isEventKitLinkStale
-        self.eventKitConsecutiveWindowMisses = session.eventKitConsecutiveWindowMisses
-        self.organizerName = session.organizerName
-        self.organizerURL = session.organizerURL
-        self.occurrenceDate = session.occurrenceDate
-        self.recurrenceRuleData = session.recurrenceRuleData
-        self.calendarSourceIdentifier = session.calendarSourceIdentifier
-        self.timeZone = session.timeZone
-        self.url = session.url
-    }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 /// Background actor for executing potentially heavy NDIS versioning operations off the main thread.
 @ModelActor

@@ -11,10 +11,11 @@ public enum Priority: String, CaseIterable, Identifiable, Sendable {
 public struct SessionKanbanCardData: Identifiable, Equatable, Sendable {
     public var id: UUID { sessionId }
     public let sessionId: UUID
+    public let clientID: UUID?
     public let title: String
     public let clientName: String
     public let serviceName: String
-    public let travelRate: Double?
+    public let travelRate: Decimal?
     public let travelRateUnit: String?
     public let suggestedTravelDistanceKM: Double?
     public let suggestedTravelTimeMinutes: Double?
@@ -84,6 +85,18 @@ public enum KanbanCardData: Identifiable, Equatable, Sendable {
         case completed, grouped, readyToInvoice, draftReview, readyToSend, pendingPayment, paymentReceived
         
         public var id: String { rawValue }
+
+        var recordTitle: String {
+            switch self {
+            case .completed: "Completed"
+            case .grouped: "Grouped"
+            case .readyToInvoice: "Travel Review"
+            case .draftReview: "Draft Review"
+            case .readyToSend: "Ready to Send"
+            case .pendingPayment: "Sent"
+            case .paymentReceived: "Payment Received"
+            }
+        }
     }
 
     public enum BillingColumnType: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -110,14 +123,14 @@ extension KanbanCardData.BillingColumnType {
         case .reviewDrafts: "Review Drafts"
         case .readyToSend: "Ready to Send"
         case .pending: "Sent"
-        case .received: "Completed"
+        case .received: "Payment Received"
         }
     }
 
     var menuTitle: String {
         switch self {
-        case .pending: "Pending"
-        case .received: "Received"
+        case .pending: "Sent"
+        case .received: "Payment Received"
         default: laneTitle
         }
     }
@@ -175,6 +188,27 @@ extension KanbanCardData.BillingColumnType {
             true
         case .completed, .grouped, .addTravel:
             false
+        }
+    }
+
+    /// "What to do next" copy shown in place of the generic drag target when a lane has no
+    /// cards, so an empty column teaches the workflow instead of just looking unfinished.
+    var emptyStateMessage: String {
+        switch self {
+        case .completed:
+            "Sessions you mark Completed in Calendar will show up here."
+        case .grouped:
+            "Drag Completed sessions here to prepare them for a draft invoice."
+        case .addTravel:
+            "Sessions with travel to review will appear here."
+        case .reviewDrafts:
+            "Create a draft invoice from Grouped to review it here."
+        case .readyToSend:
+            "Approve a draft in Review Drafts to queue it for sending."
+        case .pending:
+            "Send an invoice to track it here while payment is outstanding."
+        case .received:
+            "Mark payment received to see it here."
         }
     }
 

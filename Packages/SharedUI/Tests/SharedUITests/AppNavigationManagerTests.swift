@@ -1,14 +1,15 @@
 import Core
 import Observation
 @testable import SharedUI
-import XCTest
-
+import Foundation
+import Synchronization
+import Testing
 @MainActor
-final class AppNavigationManagerTests: XCTestCase {
-    func testRepeatedCurrentTabSelectionDoesNotRepublishNavigationState() {
+@Suite struct AppNavigationManagerTests {
+    @Test func RepeatedCurrentTabSelectionDoesNotRepublishNavigationState() {
         let manager = AppNavigationManager()
         let persistenceToken = manager.navigationPersistenceToken
-        nonisolated(unsafe) var navigationStateChanged = false
+        let navigationStateChanged = Mutex(false)
 
         withObservationTracking {
             _ = manager.selectedTab
@@ -16,22 +17,22 @@ final class AppNavigationManagerTests: XCTestCase {
             _ = manager.selection
             _ = manager.navigationPath
         } onChange: {
-            navigationStateChanged = true
+            navigationStateChanged.withLock { $0 = true }
         }
 
         manager.selectTab(.invoices)
 
-        XCTAssertFalse(navigationStateChanged)
-        XCTAssertEqual(manager.navigationPersistenceToken, persistenceToken)
-        XCTAssertEqual(manager.selectedTab, .invoices)
+        #expect(!navigationStateChanged.withLock { $0 })
+        #expect(manager.navigationPersistenceToken == persistenceToken)
+        #expect(manager.selectedTab == .invoices)
     }
 
-    func testRepeatedEntityNavigationDoesNotRepublishCurrentRouteState() {
+    @Test func RepeatedEntityNavigationDoesNotRepublishCurrentRouteState() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
         manager.navigateToInvoice(invoiceID)
         let persistenceToken = manager.navigationPersistenceToken
-        nonisolated(unsafe) var routeStateChanged = false
+        let routeStateChanged = Mutex(false)
 
         withObservationTracking {
             _ = manager.selectedTab
@@ -39,34 +40,34 @@ final class AppNavigationManagerTests: XCTestCase {
             _ = manager.selection
             _ = manager.navigationPath
         } onChange: {
-            routeStateChanged = true
+            routeStateChanged.withLock { $0 = true }
         }
 
         manager.navigateToInvoice(invoiceID)
 
-        XCTAssertFalse(routeStateChanged)
-        XCTAssertEqual(manager.navigationPersistenceToken, persistenceToken)
-        XCTAssertEqual(manager.navigationPath, [.invoice(invoiceID)])
+        #expect(!routeStateChanged.withLock { $0 })
+        #expect(manager.navigationPersistenceToken == persistenceToken)
+        #expect(manager.navigationPath == [.invoice(invoiceID)])
     }
 
-    func testRootNavigationClearsEntitySelectionContextAndPathTogether() {
+    @Test func RootNavigationClearsEntitySelectionContextAndPathTogether() {
         let manager = AppNavigationManager()
         manager.navigateToInvoice(UUID())
 
         manager.navigateTo(tab: .invoices)
 
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertNil(manager.selection)
-        XCTAssertNil(manager.navigationContext)
-        XCTAssertTrue(manager.navigationPath.isEmpty)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext == nil)
+        #expect(manager.navigationPath.isEmpty)
     }
 
-    func testRepeatedRootNavigationDoesNotRepublishNavigationState() {
+    @Test func RepeatedRootNavigationDoesNotRepublishNavigationState() {
         let manager = AppNavigationManager()
         manager.navigateTo(tab: .billingHub)
         let persistenceToken = manager.navigationPersistenceToken
         let historyDepth = manager.recentHistory.count
-        nonisolated(unsafe) var navigationStateChanged = false
+        let navigationStateChanged = Mutex(false)
 
         withObservationTracking {
             _ = manager.selectedTab
@@ -74,17 +75,17 @@ final class AppNavigationManagerTests: XCTestCase {
             _ = manager.selection
             _ = manager.navigationPath
         } onChange: {
-            navigationStateChanged = true
+            navigationStateChanged.withLock { $0 = true }
         }
 
         manager.navigateTo(tab: .billingHub)
 
-        XCTAssertFalse(navigationStateChanged)
-        XCTAssertEqual(manager.navigationPersistenceToken, persistenceToken)
-        XCTAssertEqual(manager.recentHistory.count, historyDepth)
+        #expect(!navigationStateChanged.withLock { $0 })
+        #expect(manager.navigationPersistenceToken == persistenceToken)
+        #expect(manager.recentHistory.count == historyDepth)
     }
 
-    func testNavigationHistoryRestoresTabAndContextWhenNavigatingBackAndForward() {
+    @Test func NavigationHistoryRestoresTabAndContextWhenNavigatingBackAndForward() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
         let clientID = UUID()
@@ -92,60 +93,60 @@ final class AppNavigationManagerTests: XCTestCase {
         manager.navigateToInvoice(invoiceID)
         manager.navigateToClient(clientID)
 
-        XCTAssertEqual(manager.selectedTab, .relationships)
-        XCTAssertEqual(manager.navigationContext?.targetEntity, clientID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
-        XCTAssertTrue(manager.canNavigateBack)
-        XCTAssertFalse(manager.canNavigateForward)
+        #expect(manager.selectedTab == .relationships)
+        #expect(manager.navigationContext?.targetEntity == clientID)
+        #expect(manager.navigationContext?.targetEntityType == .client)
+        #expect(manager.canNavigateBack)
+        #expect(!(manager.canNavigateForward))
 
         manager.navigateBack()
 
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertEqual(manager.navigationContext?.targetEntity, invoiceID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .invoice)
-        XCTAssertTrue(manager.canNavigateForward)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.navigationContext?.targetEntity == invoiceID)
+        #expect(manager.navigationContext?.targetEntityType == .invoice)
+        #expect(manager.canNavigateForward)
 
         manager.navigateForward()
 
-        XCTAssertEqual(manager.selectedTab, .relationships)
-        XCTAssertEqual(manager.navigationContext?.targetEntity, clientID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
+        #expect(manager.selectedTab == .relationships)
+        #expect(manager.navigationContext?.targetEntity == clientID)
+        #expect(manager.navigationContext?.targetEntityType == .client)
     }
 
-    func testSelectionUpdatesInspectorFallbackCoordinators() {
+    @Test func SelectionUpdatesInspectorFallbackCoordinators() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
 
         manager.selection = .invoice(invoiceID)
 
-        XCTAssertEqual(manager.inspectorFallbackSelection(), .invoice(invoiceID))
+        #expect(manager.inspectorFallbackSelection() == .invoice(invoiceID))
     }
 
-    func testSelectionUpdatesCentralNavigationPath() {
+    @Test func SelectionUpdatesCentralNavigationPath() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
 
         manager.selection = .invoice(invoiceID)
 
-        XCTAssertEqual(manager.navigationPath, [.invoice(invoiceID)])
+        #expect(manager.navigationPath == [.invoice(invoiceID)])
     }
 
-    func testClearingCentralNavigationPathClearsSelectionAndContext() {
+    @Test func ClearingCentralNavigationPathClearsSelectionAndContext() {
         let manager = AppNavigationManager()
 
         manager.navigateToInvoice(UUID())
-        XCTAssertEqual(manager.navigationPath.count, 1)
-        XCTAssertNotNil(manager.selection)
-        XCTAssertNotNil(manager.navigationContext)
+        #expect(manager.navigationPath.count == 1)
+        #expect(manager.selection != nil)
+        #expect(manager.navigationContext != nil)
 
         manager.updateNavigationPathFromStack([])
 
-        XCTAssertEqual(manager.navigationPath.count, 0)
-        XCTAssertNil(manager.selection)
-        XCTAssertNil(manager.navigationContext)
+        #expect(manager.navigationPath.count == 0)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext == nil)
     }
 
-    func testRestoresCodableCentralNavigationPath() throws {
+    @Test func RestoresCodableCentralNavigationPath() throws {
         let path = [WorkspaceRoute.client(UUID())]
         let data = try JSONEncoder().encode(path)
         let restoredPath = try JSONDecoder().decode([WorkspaceRoute].self, from: data)
@@ -153,23 +154,23 @@ final class AppNavigationManagerTests: XCTestCase {
         let manager = AppNavigationManager()
         manager.restoreNavigationPath(restoredPath)
 
-        XCTAssertEqual(manager.navigationPath.count, 1)
+        #expect(manager.navigationPath.count == 1)
     }
 
-    func testRestoresNavigationPathWithRouteToSelectionAndContext() {
+    @Test func RestoresNavigationPathWithRouteToSelectionAndContext() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
         let path = [WorkspaceRoute.invoice(invoiceID)]
 
         manager.restoreNavigationPath(path)
 
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertEqual(manager.selection, .invoice(invoiceID))
-        XCTAssertEqual(manager.navigationContext?.targetEntity, invoiceID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .invoice)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.selection == .invoice(invoiceID))
+        #expect(manager.navigationContext?.targetEntity == invoiceID)
+        #expect(manager.navigationContext?.targetEntityType == .invoice)
     }
 
-    func testRestoreNavigationPathWinsOverStaleSelectionAndContext() {
+    @Test func RestoreNavigationPathWinsOverStaleSelectionAndContext() {
         let manager = AppNavigationManager()
         let staleSelectionID = UUID()
         let staleContextID = UUID()
@@ -182,14 +183,14 @@ final class AppNavigationManagerTests: XCTestCase {
         )
         manager.restoreNavigationPath([.session(routeID)])
 
-        XCTAssertEqual(manager.selectedTab, .calendar)
-        XCTAssertNil(manager.selection)
-        XCTAssertEqual(manager.navigationContext?.targetEntity, routeID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .session)
-        XCTAssertEqual(manager.navigationPath.count, 1)
+        #expect(manager.selectedTab == .calendar)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext?.targetEntity == routeID)
+        #expect(manager.navigationContext?.targetEntityType == .session)
+        #expect(manager.navigationPath.count == 1)
     }
 
-    func testRestoresMultiSegmentNavigationPathFromLastRoute() {
+    @Test func RestoresMultiSegmentNavigationPathFromLastRoute() {
         let manager = AppNavigationManager()
         let invoiceID = UUID()
         let clientID = UUID()
@@ -200,41 +201,41 @@ final class AppNavigationManagerTests: XCTestCase {
 
         manager.restoreNavigationPath(path)
 
-        XCTAssertEqual(manager.navigationPath.count, 2)
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertEqual(manager.selection, .invoice(invoiceID))
-        XCTAssertEqual(manager.navigationContext?.targetEntity, invoiceID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .invoice)
+        #expect(manager.navigationPath.count == 2)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.selection == .invoice(invoiceID))
+        #expect(manager.navigationContext?.targetEntity == invoiceID)
+        #expect(manager.navigationContext?.targetEntityType == .invoice)
     }
 
-    func testSelectionClearedOnIncompatibleTabSwitch() {
+    @Test func SelectionClearedOnIncompatibleTabSwitch() {
         let manager = AppNavigationManager()
         let clientID = UUID()
 
         manager.navigateToClient(clientID)
-        XCTAssertEqual(manager.selection, .client(clientID))
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
+        #expect(manager.selection == .client(clientID))
+        #expect(manager.navigationContext?.targetEntityType == .client)
 
         manager.applyTabSelectionRules(newTab: .calendar)
 
-        XCTAssertNil(manager.selection)
-        XCTAssertNil(manager.navigationContext)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext == nil)
     }
 
-    func testClientServiceRouteRestoresDeterministicStateFromPath() {
+    @Test func ClientServiceRouteRestoresDeterministicStateFromPath() {
         let manager = AppNavigationManager()
         let clientServiceID = UUID()
         let path = [WorkspaceRoute.clientService(clientServiceID)]
 
         manager.restoreNavigationPath(path)
 
-        XCTAssertEqual(manager.selectedTab, .relationships)
-        XCTAssertNil(manager.selection)
-        XCTAssertEqual(manager.navigationContext?.targetEntity, clientServiceID)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .clientService)
+        #expect(manager.selectedTab == .relationships)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext?.targetEntity == clientServiceID)
+        #expect(manager.navigationContext?.targetEntityType == .clientService)
     }
 
-    func testSameDepthRouteChangeUpdatesNavigationPersistenceToken() {
+    @Test func SameDepthRouteChangeUpdatesNavigationPersistenceToken() {
         let manager = AppNavigationManager()
 
         manager.navigateToSession(UUID())
@@ -242,11 +243,11 @@ final class AppNavigationManagerTests: XCTestCase {
 
         manager.navigateToSession(UUID())
 
-        XCTAssertEqual(manager.navigationPath.count, 1)
-        XCTAssertNotEqual(manager.navigationPersistenceToken, firstToken)
+        #expect(manager.navigationPath.count == 1)
+        #expect(manager.navigationPersistenceToken != firstToken)
     }
 
-    func testMismatchedContextDoesNotPushRouteForDifferentTab() {
+    @Test func MismatchedContextDoesNotPushRouteForDifferentTab() {
         let manager = AppNavigationManager()
 
         manager.navigateTo(
@@ -257,30 +258,30 @@ final class AppNavigationManagerTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(manager.selectedTab, .calendar)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
-        XCTAssertEqual(manager.navigationPath.count, 0)
+        #expect(manager.selectedTab == .calendar)
+        #expect(manager.navigationContext?.targetEntityType == .client)
+        #expect(manager.navigationPath.count == 0)
     }
 
-    func testContextNavigationClearsStaleSelectionWhenNoMatchingRouteSelectionExists() {
+    @Test func ContextNavigationClearsStaleSelectionWhenNoMatchingRouteSelectionExists() {
         let manager = AppNavigationManager()
 
         manager.navigateToClient(UUID())
-        XCTAssertNotNil(manager.selection)
+        #expect(manager.selection != nil)
 
         manager.navigateToClientService(UUID())
 
-        XCTAssertEqual(manager.selectedTab, .relationships)
-        XCTAssertNil(manager.selection)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .clientService)
-        XCTAssertEqual(manager.navigationPath.count, 1)
+        #expect(manager.selectedTab == .relationships)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext?.targetEntityType == .clientService)
+        #expect(manager.navigationPath.count == 1)
     }
 
-    func testAllowedContextWithoutMatchingRouteClearsStaleSelectionButKeepsContext() {
+    @Test func AllowedContextWithoutMatchingRouteClearsStaleSelectionButKeepsContext() {
         let manager = AppNavigationManager()
 
         manager.navigateToInvoice(UUID())
-        XCTAssertNotNil(manager.selection)
+        #expect(manager.selection != nil)
 
         manager.navigateTo(
             tab: .calendar,
@@ -290,13 +291,13 @@ final class AppNavigationManagerTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(manager.selectedTab, .calendar)
-        XCTAssertNil(manager.selection)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
-        XCTAssertEqual(manager.navigationPath.count, 0)
+        #expect(manager.selectedTab == .calendar)
+        #expect(manager.selection == nil)
+        #expect(manager.navigationContext?.targetEntityType == .client)
+        #expect(manager.navigationPath.count == 0)
     }
 
-    func testHistoryForwardDoesNotPushMismatchedContextRoute() {
+    @Test func HistoryForwardDoesNotPushMismatchedContextRoute() {
         let manager = AppNavigationManager()
 
         manager.navigateToInvoice(UUID())
@@ -310,46 +311,46 @@ final class AppNavigationManagerTests: XCTestCase {
         manager.navigateBack()
         manager.navigateForward()
 
-        XCTAssertEqual(manager.selectedTab, .calendar)
-        XCTAssertEqual(manager.navigationContext?.targetEntityType, .client)
-        XCTAssertEqual(manager.navigationPath.count, 0)
+        #expect(manager.selectedTab == .calendar)
+        #expect(manager.navigationContext?.targetEntityType == .client)
+        #expect(manager.navigationPath.count == 0)
     }
 
-    func testEnsureCurrentTabInHistoryDoesNotDuplicateLatestEntry() {
+    @Test func EnsureCurrentTabInHistoryDoesNotDuplicateLatestEntry() {
         let manager = AppNavigationManager()
 
         manager.ensureCurrentTabInHistory()
 
-        XCTAssertEqual(manager.recentHistory.count, 1)
-        XCTAssertFalse(manager.canNavigateBack)
+        #expect(manager.recentHistory.count == 1)
+        #expect(!(manager.canNavigateBack))
     }
 
     /// SceneStorage restore must not append a spurious history entry (init default vs restored tab).
-    func testReconcileHistoryAfterSceneRestoreReplacesCursorWithoutGrowingDepth() {
+    @Test func ReconcileHistoryAfterSceneRestoreReplacesCursorWithoutGrowingDepth() {
         let manager = AppNavigationManager()
         let clientID = UUID()
 
         manager.navigateToClient(clientID)
         let depthAfterDrillIn = manager.recentHistory.count
-        XCTAssertGreaterThan(depthAfterDrillIn, 1)
+        #expect(depthAfterDrillIn > 1)
 
         manager.selectedTab = .invoices
         manager.navigationContext = nil
         manager.reconcileHistoryAfterSceneRestore()
 
-        XCTAssertEqual(manager.recentHistory.count, depthAfterDrillIn)
-        XCTAssertEqual(manager.currentHistoryEntry?.tab, .invoices)
-        XCTAssertNil(manager.currentHistoryEntry?.context?.targetEntity)
+        #expect(manager.recentHistory.count == depthAfterDrillIn)
+        #expect(manager.currentHistoryEntry?.tab == .invoices)
+        #expect(manager.currentHistoryEntry?.context?.targetEntity == nil)
     }
 
-    func testApplyRoutingIntentSelectTabNavigates() {
+    @Test func ApplyRoutingIntentSelectTabNavigates() {
         let manager = AppNavigationManager()
         manager.applyRoutingIntent(.selectTab(.billingHub))
-        XCTAssertEqual(manager.selectedTab, .billingHub)
+        #expect(manager.selectedTab == .billingHub)
     }
 
     /// Sidebar / ⌘-number: coalesce current history slot; no extra stack depth vs ``navigateTo(tab:)``.
-    func testSelectTabReplacesHistoryCursorWithoutGrowingDepth() {
+    @Test func SelectTabReplacesHistoryCursorWithoutGrowingDepth() {
         let manager = AppNavigationManager()
         let clientID = UUID()
 
@@ -358,35 +359,35 @@ final class AppNavigationManagerTests: XCTestCase {
 
         manager.selectTab(.invoices)
 
-        XCTAssertEqual(manager.recentHistory.count, depthAfterDrillIn)
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertNil(manager.navigationContext)
+        #expect(manager.recentHistory.count == depthAfterDrillIn)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.navigationContext == nil)
 
         manager.navigateBack()
 
-        XCTAssertEqual(manager.selectedTab, .invoices)
-        XCTAssertNil(manager.navigationContext?.targetEntity)
+        #expect(manager.selectedTab == .invoices)
+        #expect(manager.navigationContext?.targetEntity == nil)
     }
 
-    func testApplyRoutingIntentToggleInspector() {
+    @Test func ApplyRoutingIntentToggleInspector() {
         let manager = AppNavigationManager()
-        XCTAssertFalse(manager.inspectorIsPresented)
+        #expect(!(manager.inspectorIsPresented))
         manager.applyRoutingIntent(.toggleInspector)
-        XCTAssertTrue(manager.inspectorIsPresented)
+        #expect(manager.inspectorIsPresented)
         manager.applyRoutingIntent(.toggleInspector)
-        XCTAssertFalse(manager.inspectorIsPresented)
+        #expect(!(manager.inspectorIsPresented))
     }
 
-    func testApplyRoutingIntentCreateInvoiceInvokesSideEffect() {
+    @Test func ApplyRoutingIntentCreateInvoiceInvokesSideEffect() {
         let manager = AppNavigationManager()
         var calls = 0
         manager.applyRoutingIntent(.createNewInvoice, onCreateInvoice: { calls += 1 })
-        XCTAssertEqual(calls, 1)
+        #expect(calls == 1)
     }
 
     /// Each workspace window owns its own `AppNavigationManager` instance; selection, tab, and
     /// inspector visibility must not leak between windows.
-    func testTwoInstancesAreFullyIndependent() {
+    @Test func TwoInstancesAreFullyIndependent() {
         let firstWindow = AppNavigationManager()
         let secondWindow = AppNavigationManager()
 
@@ -396,17 +397,17 @@ final class AppNavigationManagerTests: XCTestCase {
 
         secondWindow.navigateTo(tab: .relationships)
 
-        XCTAssertEqual(firstWindow.selectedTab, .invoices)
-        XCTAssertEqual(secondWindow.selectedTab, .relationships)
+        #expect(firstWindow.selectedTab == .invoices)
+        #expect(secondWindow.selectedTab == .relationships)
 
-        XCTAssertNotNil(firstWindow.selection)
-        XCTAssertNil(secondWindow.selection)
+        #expect(firstWindow.selection != nil)
+        #expect(secondWindow.selection == nil)
 
-        XCTAssertTrue(firstWindow.inspectorIsPresented)
-        XCTAssertFalse(secondWindow.inspectorIsPresented)
+        #expect(firstWindow.inspectorIsPresented)
+        #expect(!(secondWindow.inspectorIsPresented))
 
-        XCTAssertNotEqual(firstWindow.recentHistory.count, 0)
-        XCTAssertNotEqual(secondWindow.recentHistory.count, 0)
-        XCTAssertNotEqual(firstWindow.recentHistory, secondWindow.recentHistory)
+        #expect(firstWindow.recentHistory.count != 0)
+        #expect(secondWindow.recentHistory.count != 0)
+        #expect(firstWindow.recentHistory != secondWindow.recentHistory)
     }
 }

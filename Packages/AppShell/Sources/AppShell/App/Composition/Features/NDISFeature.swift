@@ -1,19 +1,25 @@
 import SwiftData
-import Data
+import DataInterfaces
 import Feature_NDIS
 
 @MainActor
 final class NDISFeature {
     private struct Dependencies {
-        let context: ModelContext
-        let storeChangeMonitor: SwiftDataStoreChangeMonitor
+        let catalogueFetching: any NDISCatalogueFetching
+        let storeChangeMonitor: any StoreChangeMonitoring
     }
 
     private let dependencies: Dependencies
     private var storage: NDISContainerViewModel?
 
-    init(context: ModelContext, storeChangeMonitor: SwiftDataStoreChangeMonitor) {
-        self.dependencies = Dependencies(context: context, storeChangeMonitor: storeChangeMonitor)
+    init(
+        catalogueFetching: any NDISCatalogueFetching,
+        storeChangeMonitor: any StoreChangeMonitoring
+    ) {
+        self.dependencies = Dependencies(
+            catalogueFetching: catalogueFetching,
+            storeChangeMonitor: storeChangeMonitor
+        )
     }
 
     func viewModel() -> NDISContainerViewModel {
@@ -23,7 +29,7 @@ final class NDISFeature {
 
         let viewModel = NDISWorkspaceFactory.makeViewModel(
             .init(
-                modelContext: dependencies.context,
+                catalogueFetching: dependencies.catalogueFetching,
                 storeChangeMonitor: dependencies.storeChangeMonitor
             )
         )

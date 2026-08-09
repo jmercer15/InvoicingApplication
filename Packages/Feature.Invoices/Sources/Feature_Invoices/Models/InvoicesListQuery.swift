@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 import SharedUI
 import SwiftData
 import os
@@ -44,8 +45,8 @@ struct InvoicePersistenceQuerySpec: Equatable {
     let statuses: Set<String>
     let filterStartDate: Date
     let filterEndDate: Date
-    let minimumAmount: Double
-    let maximumAmount: Double
+    let minimumAmount: Decimal
+    let maximumAmount: Decimal
     let sortField: SortField
     let sortDirection: SortDirection
 }
@@ -54,8 +55,8 @@ struct InvoicePersistenceMembershipSpec: Equatable {
     let statuses: Set<String>
     let filterStartDate: Date
     let filterEndDate: Date
-    let minimumAmount: Double
-    let maximumAmount: Double
+    let minimumAmount: Decimal
+    let maximumAmount: Decimal
 }
 
 extension InvoicePersistenceQuerySpec {
@@ -89,6 +90,8 @@ struct InvoicePersistenceQuery {
 
 enum InvoicesListQueryEngine {
     private static let querySignpostLog = OSLog(subsystem: "com.invoicingapplication.app", category: "invoice-query")
+    private static let persistenceMinimumUnbounded = Decimal(string: "-999999999999999")!
+    private static let persistenceMaximumUnbounded = Decimal(string: "999999999999999")!
 
     static func buildPersistenceQuerySpec(from spec: InvoicesListQuerySpec) -> InvoicePersistenceQuerySpec {
         let calendar = Calendar.current
@@ -100,8 +103,8 @@ enum InvoicesListQueryEngine {
             ?? calendar.date(byAdding: DateComponents(day: 1, second: -1), to: $0)
             ?? $0
         } ?? .distantFuture
-        let minimumAmount = amountBounds.lower ?? -Double.infinity
-        let maximumAmount = amountBounds.upper ?? Double.infinity
+        let minimumAmount = amountBounds.lower.map { Decimal($0) } ?? persistenceMinimumUnbounded
+        let maximumAmount = amountBounds.upper.map { Decimal($0) } ?? persistenceMaximumUnbounded
         let activeStatuses = spec.statuses.isEmpty ? Set(AppConstants.invoiceStatusOptions) : spec.statuses
         return InvoicePersistenceQuerySpec(
             statuses: activeStatuses,
@@ -120,14 +123,9 @@ enum InvoicesListQueryEngine {
         let statusValues = persistenceSpec.statuses
         let startDate = persistenceSpec.filterStartDate
         let endDate = persistenceSpec.filterEndDate
-        let minimumAmount = persistenceSpec.minimumAmount
-        let maximumAmount = persistenceSpec.maximumAmount
 
-        // Apply only the most stable, macro-safe constraints at the persistence layer.
-        // Search remains in-memory so fuzzy matching stays source-of-truth at the view layer.
+        // Amount bounds stay in-memory: SwiftData #Predicate does not compare Decimal reliably.
         let predicate = #Predicate<Invoice> { invoice in
-            invoice.totalAmount >= minimumAmount &&
-            invoice.totalAmount <= maximumAmount &&
             invoice.date >= startDate &&
             invoice.date <= endDate &&
             (!statusFilterActive || statusValues.contains(invoice.statusToken))
@@ -218,11 +216,13 @@ enum InvoicesListQueryEngine {
         }
 
         if let minimumAmount = amountBounds.lower {
-            filtered = filtered.filter { $0.totalAmount >= minimumAmount }
+            let bound = Decimal(minimumAmount)
+            filtered = filtered.filter { $0.totalAmount >= bound }
         }
 
         if let maximumAmount = amountBounds.upper {
-            filtered = filtered.filter { $0.totalAmount <= maximumAmount }
+            let bound = Decimal(maximumAmount)
+            filtered = filtered.filter { $0.totalAmount <= bound }
         }
 
         if !spec.clientNames.isEmpty {

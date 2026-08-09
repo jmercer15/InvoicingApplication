@@ -6,7 +6,8 @@
 //
 
 import SwiftUI
-@preconcurrency import MapKit
+import MapKit
+import AppKit
 
 
 
@@ -124,6 +125,7 @@ public struct InteractiveMapView: View {
             
             // Map
             MapViewRepresentable(address: address)
+                .accessibilityElement(children: .combine)
         }
         .frame(minWidth: 600, minHeight: 400)
     }
@@ -143,33 +145,43 @@ struct MapViewRepresentable: NSViewRepresentable {
         mapView.isScrollEnabled = true
         mapView.isPitchEnabled = true
         mapView.isRotateEnabled = true
+        mapView.setAccessibilityLabel("Map for \(address)")
+        mapView.setAccessibilityHelp("Interactive map showing the location for this address. Use pinch to zoom and drag to pan.")
         return mapView
     }
     
     func updateNSView(_ mapView: MKMapView, context: Context) {
-        // Clear existing annotations
+        context.coordinator.address = address
+        context.coordinator.geocodeTask?.cancel()
         mapView.removeAnnotations(mapView.annotations)
-        
-        // Use the new MapKit geocoding API
-        Task {
+
+        let task = Task {
             do {
                 guard let request = MKGeocodingRequest(addressString: address) else {
-                    print("Failed to create geocoding request for '\(address)'")
+                    await MainActor.run {
+                        context.coordinator.reportGeocodeFailure(on: mapView, address: address, reason: "Invalid address format")
+                    }
                     return
                 }
                 let mapItems = try await request.mapItems
-                
+
                 guard let firstItem = mapItems.first else {
+                    await MainActor.run {
+                        context.coordinator.reportGeocodeFailure(on: mapView, address: address, reason: "No matching location found")
+                    }
                     return
                 }
                 let location = firstItem.location
-                
+
                 let coordinate = location.coordinate
                 let annotation = MKPointAnnotation()
                 annotation.coordinate = coordinate
                 annotation.title = address
-                
+
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
+                    mapView.setAccessibilityLabel("Map showing \(address)")
+                    mapView.setAccessibilityHelp("Interactive map with a pin at the geocoded address. Use pinch to zoom and drag to pan.")
                     mapView.addAnnotation(annotation)
 
                     let region = MKCoordinateRegion(
@@ -180,9 +192,14 @@ struct MapViewRepresentable: NSViewRepresentable {
                     mapView.setRegion(region, animated: true)
                 }
             } catch {
-                print("Geocoding failed for '\(address)': \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        context.coordinator.reportGeocodeFailure(on: mapView, address: address, reason: error.localizedDescription)
+                    }
+                }
             }
         }
+        context.coordinator.geocodeTask = task
     }
     
     func makeCoordinator() -> Coordinator {
@@ -190,6 +207,20 @@ struct MapViewRepresentable: NSViewRepresentable {
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
+        var address: String = ""
+        var geocodeTask: Task<Void, Never>?
+
+        @MainActor
+        func reportGeocodeFailure(on mapView: MKMapView, address: String, reason: String) {
+            mapView.setAccessibilityLabel("Map location unavailable")
+            mapView.setAccessibilityHelp("Could not find a map location for \(address). \(reason)")
+            NSAccessibility.post(
+                element: mapView,
+                notification: .announcementRequested,
+                userInfo: [.announcement: "Could not show map location for \(address). \(reason)"]
+            )
+        }
+
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard !annotation.isKind(of: MKUserLocation.self) else { return nil }
             
@@ -208,7 +239,6 @@ struct MapViewRepresentable: NSViewRepresentable {
         }
     }
 }
-
 
 
 

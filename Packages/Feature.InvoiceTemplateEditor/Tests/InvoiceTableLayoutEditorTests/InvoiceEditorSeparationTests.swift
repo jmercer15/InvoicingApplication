@@ -1,12 +1,13 @@
 import Core
 import Data
 import Foundation
+import PersistenceModels
 import SwiftData
-import XCTest
+import Testing
 @testable import InvoiceTableLayoutEditor
 
-final class InvoiceEditorSeparationTests: XCTestCase {
-    func testOperationErrorPresentationReplacesOpaqueSwiftDataDiagnostics() {
+@Suite struct InvoiceEditorSeparationTests {
+    @Test func OperationErrorPresentationReplacesOpaqueSwiftDataDiagnostics() {
         let error = NSError(
             domain: "SwiftData.SwiftDataError",
             code: 1,
@@ -16,16 +17,13 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(
-            InvoiceOperationErrorPresentation.detail(
+        #expect(InvoiceOperationErrorPresentation.detail(
                 for: error,
                 fallback: "Invoice data could not be read. Try again."
-            ),
-            "Invoice data could not be read. Try again."
-        )
+            ) == "Invoice data could not be read. Try again.")
     }
 
-    func testOperationErrorPresentationFindsNestedPersistenceDiagnostics() {
+    @Test func OperationErrorPresentationFindsNestedPersistenceDiagnostics() {
         let persistenceError = NSError(
             domain: "SwiftData.SwiftDataError",
             code: 1
@@ -39,151 +37,105 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(
-            InvoiceOperationErrorPresentation.detail(
+        #expect(InvoiceOperationErrorPresentation.detail(
                 for: wrapper,
                 fallback: "Invoice data could not be refreshed. Try again."
-            ),
-            "Invoice data could not be refreshed. Try again."
-        )
+            ) == "Invoice data could not be refreshed. Try again.")
     }
 
-    func testOperationErrorPresentationPreservesMeaningfulDomainCopy() {
-        XCTAssertEqual(
-            InvoiceOperationErrorPresentation.detail(
+    @Test func OperationErrorPresentationPreservesMeaningfulDomainCopy() {
+        #expect(InvoiceOperationErrorPresentation.detail(
                 for: InvoiceModelError.invoiceNotFound,
                 fallback: "Invoice data could not be read. Try again."
-            ),
-            "The invoice no longer exists."
-        )
+            ) == "The invoice no longer exists.")
     }
 
     @MainActor
-    func testTypedBillingAuthorityKeepsDirectBillingStateConsistent() {
+    @Test func TypedBillingAuthorityKeepsDirectBillingStateConsistent() {
         let viewModel = InvoiceEditorViewModel()
 
         viewModel.updateBillingAuthority(.client)
-        XCTAssertEqual(viewModel.billingAuthority, Core.BillingAuthority.client.rawValue)
-        XCTAssertTrue(viewModel.billParticipantDirectly)
+        #expect(viewModel.billingAuthority == Core.BillingAuthority.client.rawValue)
+        #expect(viewModel.billParticipantDirectly)
 
         viewModel.updateBillingAuthority(.planManager)
-        XCTAssertEqual(viewModel.billingAuthority, Core.BillingAuthority.planManager.rawValue)
-        XCTAssertFalse(viewModel.billParticipantDirectly)
+        #expect(viewModel.billingAuthority == Core.BillingAuthority.planManager.rawValue)
+        #expect(!(viewModel.billParticipantDirectly))
 
         viewModel.updateBillingAuthority(nil)
-        XCTAssertEqual(viewModel.billingAuthority, "")
-        XCTAssertFalse(viewModel.billParticipantDirectly)
+        #expect(viewModel.billingAuthority == "")
+        #expect(!(viewModel.billParticipantDirectly))
     }
 
-    func testDirectBillingWinsOverStaleAuthorityAtPersistenceBoundary() {
-        XCTAssertEqual(
-            InvoiceBillingAuthorityResolution.resolve(
+    @Test func DirectBillingWinsOverStaleAuthorityAtPersistenceBoundary() {
+        #expect(InvoiceBillingAuthorityResolution.resolve(
                 rawValue: Core.BillingAuthority.planManager.rawValue,
                 billsParticipantDirectly: true
-            ),
-            .client
-        )
-        XCTAssertEqual(
-            InvoiceBillingAuthorityResolution.resolve(
+            ) == .client)
+        #expect(InvoiceBillingAuthorityResolution.resolve(
                 rawValue: Core.BillingAuthority.parentGuardian.rawValue,
                 billsParticipantDirectly: false
-            ),
-            .parentGuardian
-        )
-        XCTAssertNil(
-            InvoiceBillingAuthorityResolution.resolve(
+            ) == .parentGuardian)
+        #expect(InvoiceBillingAuthorityResolution.resolve(
                 rawValue: "invalid authority",
                 billsParticipantDirectly: false
-            )
-        )
+            ) == nil)
     }
 
-    func testTemplateInvalidInputsRouteToStableRecoverySections() {
-        XCTAssertEqual(
-            InvoiceTemplateInvalidInputDestination.section(
+    @Test func TemplateInvalidInputsRouteToStableRecoverySections() {
+        #expect(InvoiceTemplateInvalidInputDestination.section(
                 for: InvoiceTemplateGeometryInputID.pageWidth
-            ),
-            .layout
-        )
-        XCTAssertEqual(
-            InvoiceTemplateInvalidInputDestination.section(
+            ) == .layout)
+        #expect(InvoiceTemplateInvalidInputDestination.section(
                 for: InvoiceTemplateGeometryInputID.borderWidth
-            ),
-            .design
-        )
-        XCTAssertNil(
-            InvoiceTemplateInvalidInputDestination.section(for: "unknown.template.input")
-        )
+            ) == .design)
+        #expect(InvoiceTemplateInvalidInputDestination.section(for: "unknown.template.input") == nil)
 
-        XCTAssertEqual(
-            InvoiceTemplateInvalidInputDestination.firstSection(
+        #expect(InvoiceTemplateInvalidInputDestination.firstSection(
                 for: [
                     InvoiceTemplateGeometryInputID.borderWidth,
                     InvoiceTemplateGeometryInputID.margin,
                 ]
-            ),
-            .layout
-        )
+            ) == .layout)
     }
 
-    func testBorderlessTemplateClearsNowIrrelevantBorderWidthInput() {
-        XCTAssertEqual(
-            InvoiceTemplateInputRelevance.disabledInputIDs(tableStyle: .borderless),
-            [InvoiceTemplateGeometryInputID.borderWidth]
-        )
-        XCTAssertTrue(
-            InvoiceTemplateInputRelevance.disabledInputIDs(tableStyle: .ruled).isEmpty
-        )
+    @Test func BorderlessTemplateClearsNowIrrelevantBorderWidthInput() {
+        #expect(InvoiceTemplateInputRelevance.disabledInputIDs(tableStyle: .borderless) == [InvoiceTemplateGeometryInputID.borderWidth])
+        #expect(InvoiceTemplateInputRelevance.disabledInputIDs(tableStyle: .ruled).isEmpty)
     }
 
-    func testInspectorPresentationPolicySuppressesEquivalentLayoutWrites() {
-        XCTAssertNil(
-            InvoiceEditorInspectorPresentationPolicy.replacement(
+    @Test func InspectorPresentationPolicySuppressesEquivalentLayoutWrites() {
+        #expect(InvoiceEditorInspectorPresentationPolicy.replacement(
                 current: true,
                 requested: true
-            )
-        )
-        XCTAssertNil(
-            InvoiceEditorInspectorPresentationPolicy.replacement(
+            ) == nil)
+        #expect(InvoiceEditorInspectorPresentationPolicy.replacement(
                 current: false,
                 requested: false
-            )
-        )
-        XCTAssertEqual(
-            InvoiceEditorInspectorPresentationPolicy.replacement(
+            ) == nil)
+        #expect(InvoiceEditorInspectorPresentationPolicy.replacement(
                 current: false,
                 requested: true
-            ),
-            true
-        )
-        XCTAssertEqual(
-            InvoiceEditorInspectorPresentationPolicy.replacement(
+            ) == true)
+        #expect(InvoiceEditorInspectorPresentationPolicy.replacement(
                 current: true,
                 requested: false
-            ),
-            false
-        )
+            ) == false)
     }
 
-    func testMoneyFormattingFallsBackForMalformedCurrencyCodes() {
-        XCTAssertEqual(
-            InvoiceMoneyFormatter.string(
+    @Test func MoneyFormattingFallsBackForMalformedCurrencyCodes() {
+        #expect(InvoiceMoneyFormatter.string(
                 for: 125,
                 currencyCode: "12!",
                 displayStyle: .code
-            ),
-            "AUD 125"
-        )
-        XCTAssertEqual(
-            InvoiceMoneyFormatter.editableSuffix(
+            ) == "AUD 125")
+        #expect(InvoiceMoneyFormatter.editableSuffix(
                 currencyCode: "invalid",
                 displayStyle: .iso
-            ),
-            "AUD"
-        )
+            ) == "AUD")
     }
 
-    func testAtomicPDFWriterReplacesExistingExport() throws {
+    @Test func AtomicPDFWriterReplacesExistingExport() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("InvoicePDFWriterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -198,11 +150,11 @@ final class InvoiceEditorSeparationTests: XCTestCase {
 
         try InvoicePDFFileWriter.write(source: source, to: destination)
 
-        XCTAssertEqual(try Data(contentsOf: destination), replacementData)
-        XCTAssertEqual(try Data(contentsOf: source), replacementData)
+        #expect(try Data(contentsOf: destination) == replacementData)
+        #expect(try Data(contentsOf: source) == replacementData)
     }
 
-    func testAtomicPDFWriterPreservesExistingExportWhenSourceReadFails() throws {
+    @Test func AtomicPDFWriterPreservesExistingExportWhenSourceReadFails() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("InvoicePDFWriterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -213,97 +165,85 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         let originalData = Data("existing export".utf8)
         try originalData.write(to: destination)
 
-        XCTAssertThrowsError(
+        #expect(throws: (any Error).self) {
             try InvoicePDFFileWriter.write(source: missingSource, to: destination)
-        )
-        XCTAssertEqual(try Data(contentsOf: destination), originalData)
+        }
+        #expect(try Data(contentsOf: destination) == originalData)
     }
 
-    func testBusinessMarkUsesFirstTwoNameComponents() {
-        XCTAssertEqual(InvoiceBrandMark.initials(for: "Mercer Care Services"), "MC")
-        XCTAssertEqual(InvoiceBrandMark.initials(for: "acme"), "A")
-        XCTAssertEqual(InvoiceBrandMark.initials(for: "NDIS 24 Seven"), "N2")
+    @Test func BusinessMarkUsesFirstTwoNameComponents() {
+        #expect(InvoiceBrandMark.initials(for: "Mercer Care Services") == "MC")
+        #expect(InvoiceBrandMark.initials(for: "acme") == "A")
+        #expect(InvoiceBrandMark.initials(for: "NDIS 24 Seven") == "N2")
     }
 
-    func testBusinessMarkHasStableFallbackForMissingSellerName() {
-        XCTAssertEqual(InvoiceBrandMark.initials(for: "  —  "), "IN")
+    @Test func BusinessMarkHasStableFallbackForMissingSellerName() {
+        #expect(InvoiceBrandMark.initials(for: "  —  ") == "IN")
     }
 
-    func testDocumentFilenamePreservesReadableSafeInvoiceNumber() {
-        XCTAssertEqual(
-            InvoiceDocumentFilename.pdf(invoiceNumber: "INV 2026-001"),
-            "Invoice-INV 2026-001.pdf"
-        )
+    @Test func DocumentFilenamePreservesReadableSafeInvoiceNumber() {
+        #expect(InvoiceDocumentFilename.pdf(invoiceNumber: "INV 2026-001") == "Invoice-INV 2026-001.pdf")
     }
 
-    func testDocumentFilenameReplacesPathAndPlatformReservedCharacters() {
-        XCTAssertEqual(
-            InvoiceDocumentFilename.pdf(invoiceNumber: "INV/2026:001\\Final?"),
-            "Invoice-INV-2026-001-Final.pdf"
-        )
+    @Test func DocumentFilenameReplacesPathAndPlatformReservedCharacters() {
+        #expect(InvoiceDocumentFilename.pdf(invoiceNumber: "INV/2026:001\\Final?") == "Invoice-INV-2026-001-Final.pdf")
     }
 
-    func testDocumentFilenameFallsBackForUnsafeEmptyValue() {
-        XCTAssertEqual(
-            InvoiceDocumentFilename.pdf(invoiceNumber: " .\n/\\: "),
-            "Invoice-Invoice.pdf"
-        )
+    @Test func DocumentFilenameFallsBackForUnsafeEmptyValue() {
+        #expect(InvoiceDocumentFilename.pdf(invoiceNumber: " .\n/\\: ") == "Invoice-Invoice.pdf")
     }
 
-    func testDocumentFilenameLimitsInvoiceNumberLength() {
+    @Test func DocumentFilenameLimitsInvoiceNumberLength() {
         let filename = InvoiceDocumentFilename.pdf(invoiceNumber: String(repeating: "A", count: 200))
 
-        XCTAssertEqual(filename.count, 96 + "Invoice-.pdf".count)
-        XCTAssertTrue(filename.hasSuffix(".pdf"))
+        #expect(filename.count == 96 + "Invoice-.pdf".count)
+        #expect(filename.hasSuffix(".pdf"))
     }
 
-    func testDocumentFilenameLimitsMultibyteValuesByFilesystemBytes() {
+    @Test func DocumentFilenameLimitsMultibyteValuesByFilesystemBytes() {
         let filename = InvoiceDocumentFilename.pdf(invoiceNumber: String(repeating: "🧾", count: 100))
 
-        XCTAssertLessThanOrEqual(filename.utf8.count, 96 + "Invoice-.pdf".utf8.count)
-        XCTAssertTrue(filename.hasSuffix(".pdf"))
+        #expect(filename.utf8.count <= 96 + "Invoice-.pdf".utf8.count)
+        #expect(filename.hasSuffix(".pdf"))
     }
 
-    func testDecimalInputRequiresCompleteLocalizedNumber() {
+    @Test func DecimalInputRequiresCompleteLocalizedNumber() {
         let locale = Locale(identifier: "en_AU")
 
-        XCTAssertEqual(InvoiceDecimalInput.parse("12.5", locale: locale), Decimal(string: "12.5"))
-        XCTAssertEqual(InvoiceDecimalInput.parse("1,234.50", locale: locale), Decimal(string: "1234.5"))
-        XCTAssertNil(InvoiceDecimalInput.parse("12x", locale: locale))
-        XCTAssertNil(InvoiceDecimalInput.parse("", locale: locale))
-        XCTAssertNil(InvoiceDecimalInput.parse("  ", locale: locale))
+        #expect(InvoiceDecimalInput.parse("12.5", locale: locale) == Decimal(string: "12.5"))
+        #expect(InvoiceDecimalInput.parse("1,234.50", locale: locale) == Decimal(string: "1234.5"))
+        #expect(InvoiceDecimalInput.parse("12x", locale: locale) == nil)
+        #expect(InvoiceDecimalInput.parse("", locale: locale) == nil)
+        #expect(InvoiceDecimalInput.parse("  ", locale: locale) == nil)
     }
 
-    func testDecimalInputRoundTripsLocalizedDisplay() {
+    @Test func DecimalInputRoundTripsLocalizedDisplay() {
         let locale = Locale(identifier: "de_DE")
         let value = Decimal(string: "1234.5")!
         let display = InvoiceDecimalInput.string(for: value, locale: locale)
 
-        XCTAssertEqual(InvoiceDecimalInput.parse(display, locale: locale), value)
+        #expect(InvoiceDecimalInput.parse(display, locale: locale) == value)
     }
 
-    func testTemplateDoubleInputRequiresCompleteInRangeLocalizedNumber() {
+    @Test func TemplateDoubleInputRequiresCompleteInRangeLocalizedNumber() {
         let locale = Locale(identifier: "en_AU")
         let range = 0.75...2.0
 
-        XCTAssertEqual(InvoiceDoubleInput.parse("1.25", in: range, locale: locale), 1.25)
-        XCTAssertNil(InvoiceDoubleInput.parse("1.2x", in: range, locale: locale))
-        XCTAssertNil(InvoiceDoubleInput.parse("0.5", in: range, locale: locale))
-        XCTAssertNil(InvoiceDoubleInput.parse("2.1", in: range, locale: locale))
-        XCTAssertNil(InvoiceDoubleInput.parse("", in: range, locale: locale))
+        #expect(InvoiceDoubleInput.parse("1.25", in: range, locale: locale) == 1.25)
+        #expect(InvoiceDoubleInput.parse("1.2x", in: range, locale: locale) == nil)
+        #expect(InvoiceDoubleInput.parse("0.5", in: range, locale: locale) == nil)
+        #expect(InvoiceDoubleInput.parse("2.1", in: range, locale: locale) == nil)
+        #expect(InvoiceDoubleInput.parse("", in: range, locale: locale) == nil)
     }
 
-    func testTemplateDoubleInputRoundTripsLocalizedDisplay() {
+    @Test func TemplateDoubleInputRoundTripsLocalizedDisplay() {
         let locale = Locale(identifier: "de_DE")
         let display = InvoiceDoubleInput.string(for: 1.25, locale: locale)
 
-        XCTAssertEqual(
-            InvoiceDoubleInput.parse(display, in: 0.5...2.0, locale: locale),
-            1.25
-        )
+        #expect(InvoiceDoubleInput.parse(display, in: 0.5...2.0, locale: locale) == 1.25)
     }
 
-    func testLatestLoadingRequestOwnsActivityCompletion() {
+    @Test func LatestLoadingRequestOwnsActivityCompletion() {
         var activity = InvoiceLatestRequestActivity()
         let first = UUID()
         let second = UUID()
@@ -312,420 +252,360 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         activity.begin(second)
         activity.finish(first)
 
-        XCTAssertTrue(activity.isActive)
-        XCTAssertEqual(activity.requestID, second)
+        #expect(activity.isActive)
+        #expect(activity.requestID == second)
 
         activity.finish(second)
-        XCTAssertFalse(activity.isActive)
+        #expect(!(activity.isActive))
     }
 
-    func testInvoiceEditorActivityStateReportsWorkBeforeSavedState() {
-        XCTAssertEqual(
-            InvoiceEditorActivityState.resolve(
+    @Test func InvoiceEditorActivityStateReportsWorkBeforeSavedState() {
+        #expect(InvoiceEditorActivityState.resolve(
                 isLoading: false,
                 isSaving: false,
                 isGeneratingDocument: true,
                 isPerformingLifecycleOperation: false,
                 hasRevisionConflict: false,
                 hasUnsavedChanges: false
-            ),
-            .preparingDocument
-        )
-        XCTAssertEqual(InvoiceEditorActivityState.preparingDocument.title, "Preparing document…")
-        XCTAssertTrue(InvoiceEditorActivityState.preparingDocument.isActive)
+            ) == .preparingDocument)
+        #expect(InvoiceEditorActivityState.preparingDocument.title == "Preparing document…")
+        #expect(InvoiceEditorActivityState.preparingDocument.isActive)
 
-        XCTAssertEqual(
-            InvoiceEditorActivityState.resolve(
+        #expect(InvoiceEditorActivityState.resolve(
                 isLoading: false,
                 isSaving: false,
                 isGeneratingDocument: false,
                 isPerformingLifecycleOperation: false,
                 hasRevisionConflict: true,
                 hasUnsavedChanges: false
-            ),
-            .conflict
-        )
-        XCTAssertEqual(InvoiceEditorActivityState.conflict.title, "Needs attention")
-        XCTAssertFalse(InvoiceEditorActivityState.conflict.isActive)
+            ) == .conflict)
+        #expect(InvoiceEditorActivityState.conflict.title == "Needs attention")
+        #expect(!(InvoiceEditorActivityState.conflict.isActive))
     }
 
-    func testInvoiceEditorActivityStateUsesDeterministicPriority() {
-        XCTAssertEqual(
-            InvoiceEditorActivityState.resolve(
+    @Test func InvoiceEditorActivityStateUsesDeterministicPriority() {
+        #expect(InvoiceEditorActivityState.resolve(
                 isLoading: true,
                 isSaving: true,
                 isGeneratingDocument: true,
                 isPerformingLifecycleOperation: true,
                 hasRevisionConflict: true,
                 hasUnsavedChanges: true
-            ),
-            .opening
-        )
-        XCTAssertEqual(
-            InvoiceEditorActivityState.resolve(
+            ) == .opening)
+        #expect(InvoiceEditorActivityState.resolve(
                 isLoading: false,
                 isSaving: false,
                 isGeneratingDocument: false,
                 isPerformingLifecycleOperation: false,
                 hasRevisionConflict: false,
                 hasUnsavedChanges: true
-            ),
-            .unsaved
-        )
+            ) == .unsaved)
     }
 
-    func testProgressPresentationKeepsTemplateAndInvoiceActivitySeparate() {
-        XCTAssertEqual(
-            InvoiceEditorProgressPresentation.resolve(
+    @Test func ProgressPresentationKeepsTemplateAndInvoiceActivitySeparate() {
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .template,
                 templateSaveState: .saving,
                 isCreatingInvoiceFromTemplate: false,
                 invoiceActivity: .saved,
                 canCancelDocumentAction: false
-            ),
-            InvoiceEditorProgressPresentation(
+            ) == InvoiceEditorProgressPresentation(
                 title: "Saving template…",
                 allowsCancellation: false
-            )
-        )
-        XCTAssertEqual(
-            InvoiceEditorProgressPresentation.resolve(
+            ))
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .template,
                 templateSaveState: .saving,
                 isCreatingInvoiceFromTemplate: true,
                 invoiceActivity: .preparingDocument,
                 canCancelDocumentAction: true
-            ),
-            InvoiceEditorProgressPresentation(
+            ) == InvoiceEditorProgressPresentation(
                 title: "Creating invoice…",
                 allowsCancellation: false
-            )
-        )
-        XCTAssertNil(
-            InvoiceEditorProgressPresentation.resolve(
+            ))
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .template,
                 templateSaveState: .saved,
                 isCreatingInvoiceFromTemplate: false,
                 invoiceActivity: .opening,
                 canCancelDocumentAction: true
-            )
-        )
+            ) == nil)
     }
 
-    func testInvoiceProgressPresentationOffersCancellationOnlyForDocumentGeneration() {
-        XCTAssertEqual(
-            InvoiceEditorProgressPresentation.resolve(
+    @Test func InvoiceProgressPresentationOffersCancellationOnlyForDocumentGeneration() {
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .invoice,
                 templateSaveState: .saving,
                 isCreatingInvoiceFromTemplate: true,
                 invoiceActivity: .opening,
                 canCancelDocumentAction: true
-            ),
-            InvoiceEditorProgressPresentation(
+            ) == InvoiceEditorProgressPresentation(
                 title: "Opening…",
                 allowsCancellation: false
-            )
-        )
-        XCTAssertEqual(
-            InvoiceEditorProgressPresentation.resolve(
+            ))
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .invoice,
                 templateSaveState: .saved,
                 isCreatingInvoiceFromTemplate: false,
                 invoiceActivity: .preparingDocument,
                 canCancelDocumentAction: true
-            ),
-            InvoiceEditorProgressPresentation(
+            ) == InvoiceEditorProgressPresentation(
                 title: "Preparing document…",
                 allowsCancellation: true
-            )
-        )
-        XCTAssertNil(
-            InvoiceEditorProgressPresentation.resolve(
+            ))
+        #expect(InvoiceEditorProgressPresentation.resolve(
                 mode: .invoice,
                 templateSaveState: .failed,
                 isCreatingInvoiceFromTemplate: false,
                 invoiceActivity: .unsaved,
                 canCancelDocumentAction: true
-            )
-        )
+            ) == nil)
     }
 
-    func testPaginationMeasurementsCollapseSubpixelLayoutNoise() {
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(100.24), 100)
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(100.26), 100.5)
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(100.49), 100.5)
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(100.51), 100.5)
+    @Test func PaginationMeasurementsCollapseSubpixelLayoutNoise() {
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(100.24) == 100)
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(100.26) == 100.5)
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(100.49) == 100.5)
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(100.51) == 100.5)
     }
 
-    func testPaginationMeasurementsRejectInvalidOrNegativeHeights() {
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(-12), 0)
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(.infinity), 0)
-        XCTAssertEqual(InvoicePaginationMeasurementStability.normalizedHeight(.nan), 0)
+    @Test func PaginationMeasurementsRejectInvalidOrNegativeHeights() {
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(-12) == 0)
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(.infinity) == 0)
+        #expect(InvoicePaginationMeasurementStability.normalizedHeight(.nan) == 0)
     }
 
-    func testPaginationMeasurementRepublishesAfterModelCacheInvalidation() {
+    @Test func PaginationMeasurementRepublishesAfterModelCacheInvalidation() {
         let (dimensions, _) = InvoicePagination.MeasuredHeights.uniformRows(
             count: 1,
             rowHeight: 44
         )
 
-        XCTAssertFalse(
-            InvoicePaginationMeasurementPublicationPolicy.shouldStage(
+        #expect(!(InvoicePaginationMeasurementPublicationPolicy.shouldStage(
                 incoming: dimensions,
                 reporterLatest: dimensions,
                 modelCurrent: dimensions
-            )
-        )
-        XCTAssertTrue(
-            InvoicePaginationMeasurementPublicationPolicy.shouldStage(
+            )))
+        #expect(InvoicePaginationMeasurementPublicationPolicy.shouldStage(
                 incoming: dimensions,
                 reporterLatest: dimensions,
                 modelCurrent: nil
-            )
-        )
+            ))
     }
 
-    func testPaginationMeasurementRejectsPreviousDocumentToken() {
-        XCTAssertTrue(
-            InvoicePaginationMeasurementPublicationPolicy.ownsCurrentContent(
+    @Test func PaginationMeasurementRejectsPreviousDocumentToken() {
+        #expect(InvoicePaginationMeasurementPublicationPolicy.ownsCurrentContent(
                 stagedContentToken: "invoice-b",
                 currentContentToken: "invoice-b"
-            )
-        )
-        XCTAssertFalse(
-            InvoicePaginationMeasurementPublicationPolicy.ownsCurrentContent(
+            ))
+        #expect(!(InvoicePaginationMeasurementPublicationPolicy.ownsCurrentContent(
                 stagedContentToken: "invoice-a",
                 currentContentToken: "invoice-b"
-            )
-        )
+            )))
     }
 
     @MainActor
-    func testPaginationSectionReporterCoalescesInputInvalidations() async throws {
+    @Test func PaginationSectionReporterCoalescesInputInvalidations() async throws {
         let reporter = InvoicePaginationSectionReporter(
             reportingDelay: .milliseconds(1)
         )
 
         reporter.invalidate()
         reporter.invalidate()
-        try await Task.sleep(for: .milliseconds(10))
-
-        XCTAssertEqual(reporter.publicationRevision, 1)
+        try await waitForPaginationPublication(reporter, expected: 1)
 
         reporter.invalidate()
-        try await Task.sleep(for: .milliseconds(10))
-
-        XCTAssertEqual(reporter.publicationRevision, 2)
-    }
-
-    func testPreviewFitScaleCollapsesSubpixelResizeNoise() {
-        XCTAssertEqual(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_41), 0.812)
-        XCTAssertEqual(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_49), 0.812)
-        XCTAssertEqual(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_51), 0.813)
-        XCTAssertEqual(InvoiceDocumentPreviewZoom.stabilizedFitScale(.nan), 1)
+        try await waitForPaginationPublication(reporter, expected: 2)
     }
 
     @MainActor
-    func testDocumentActionCancellationInvokesInstalledActionOnce() {
+    private func waitForPaginationPublication(
+        _ reporter: InvoicePaginationSectionReporter,
+        expected: Int,
+        timeout: Duration = .milliseconds(500)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while reporter.publicationRevision < expected {
+            if ContinuousClock.now >= deadline {
+                Issue.record("Expected publicationRevision \(expected), got \(reporter.publicationRevision)")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    @Test func PreviewFitScaleCollapsesSubpixelResizeNoise() {
+        #expect(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_41) == 0.812)
+        #expect(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_49) == 0.812)
+        #expect(InvoiceDocumentPreviewZoom.stabilizedFitScale(0.812_51) == 0.813)
+        #expect(InvoiceDocumentPreviewZoom.stabilizedFitScale(.nan) == 1)
+    }
+
+    @MainActor
+    @Test func DocumentActionCancellationInvokesInstalledActionOnce() {
         let cancellation = InvoiceDocumentActionCancellation()
         var invocationCount = 0
         cancellation.install { invocationCount += 1 }
 
-        XCTAssertTrue(cancellation.isInstalled)
+        #expect(cancellation.isInstalled)
         cancellation.cancel()
         cancellation.cancel()
 
-        XCTAssertEqual(invocationCount, 1)
-        XCTAssertFalse(cancellation.isInstalled)
+        #expect(invocationCount == 1)
+        #expect(!(cancellation.isInstalled))
     }
 
     @MainActor
-    func testDocumentActionCancellationCanClearWithoutInvokingAction() {
+    @Test func DocumentActionCancellationCanClearWithoutInvokingAction() {
         let cancellation = InvoiceDocumentActionCancellation()
         var wasInvoked = false
         cancellation.install { wasInvoked = true }
         cancellation.clear()
         cancellation.cancel()
 
-        XCTAssertFalse(wasInvoked)
-        XCTAssertFalse(cancellation.isInstalled)
+        #expect(!(wasInvoked))
+        #expect(!(cancellation.isInstalled))
     }
 
-    func testWorkspaceModesExposeOnlyTheirOwnedInspectorConcern() {
-        XCTAssertTrue(InvoiceEditorWorkspaceMode.invoice.usesPersistedInvoiceData)
-        XCTAssertEqual(InvoiceEditorWorkspaceMode.invoice.inspectorMode, .invoiceData)
-        XCTAssertFalse(InvoiceEditorWorkspaceMode.template.usesPersistedInvoiceData)
-        XCTAssertEqual(InvoiceEditorWorkspaceMode.template.inspectorMode, .templateFormatting)
-        XCTAssertNotEqual(
-            InvoiceEditorWorkspaceMode.invoice.inspectorSceneStorageKey,
-            InvoiceEditorWorkspaceMode.template.inspectorSceneStorageKey
-        )
+    @Test func WorkspaceModesExposeOnlyTheirOwnedInspectorConcern() {
+        #expect(InvoiceEditorWorkspaceMode.invoice.usesPersistedInvoiceData)
+        #expect(InvoiceEditorWorkspaceMode.invoice.inspectorMode == .invoiceData)
+        #expect(!(InvoiceEditorWorkspaceMode.template.usesPersistedInvoiceData))
+        #expect(InvoiceEditorWorkspaceMode.template.inspectorMode == .templateFormatting)
+        #expect(InvoiceEditorWorkspaceMode.invoice.inspectorSceneStorageKey != InvoiceEditorWorkspaceMode.template.inspectorSceneStorageKey)
     }
 
-    func testTemplateExitPersistsValidStateAroundUnfinishedExactValueDrafts() {
-        XCTAssertTrue(
-            InvoiceTemplatePersistenceIntent.leaveWorkspace.permitsPersistence(
+    @Test func TemplateExitPersistsValidStateAroundUnfinishedExactValueDrafts() {
+        #expect(InvoiceTemplatePersistenceIntent.leaveWorkspace.permitsPersistence(
                 hasInvalidInputs: true
-            )
-        )
-        XCTAssertTrue(
-            InvoiceTemplatePersistenceIntent.leaveWorkspace.permitsPersistence(
+            ))
+        #expect(InvoiceTemplatePersistenceIntent.leaveWorkspace.permitsPersistence(
                 hasInvalidInputs: false
-            )
-        )
+            ))
     }
 
-    func testTemplateCreationStillRequiresEveryExactValueToBeValid() {
-        XCTAssertFalse(
-            InvoiceTemplatePersistenceIntent.createInvoice.permitsPersistence(
+    @Test func TemplateCreationStillRequiresEveryExactValueToBeValid() {
+        #expect(!(InvoiceTemplatePersistenceIntent.createInvoice.permitsPersistence(
                 hasInvalidInputs: true
-            )
-        )
-        XCTAssertTrue(
-            InvoiceTemplatePersistenceIntent.createInvoice.permitsPersistence(
+            )))
+        #expect(InvoiceTemplatePersistenceIntent.createInvoice.permitsPersistence(
                 hasInvalidInputs: false
-            )
-        )
+            ))
     }
 
-    func testEditorCreationActivityIncludesFeatureOwnedRequests() {
-        XCTAssertFalse(
-            InvoiceEditorCreationActivityPolicy.isActive(
+    @Test func EditorCreationActivityIncludesFeatureOwnedRequests() {
+        #expect(!(InvoiceEditorCreationActivityPolicy.isActive(
                 localRequest: false,
                 featureRequest: false
-            )
-        )
-        XCTAssertTrue(
-            InvoiceEditorCreationActivityPolicy.isActive(
+            )))
+        #expect(InvoiceEditorCreationActivityPolicy.isActive(
                 localRequest: true,
                 featureRequest: false
-            )
-        )
-        XCTAssertTrue(
-            InvoiceEditorCreationActivityPolicy.isActive(
+            ))
+        #expect(InvoiceEditorCreationActivityPolicy.isActive(
                 localRequest: false,
                 featureRequest: true
-            )
-        )
+            ))
     }
 
-    func testCreationRequestStateRejectsOverlapAndIgnoresStaleCompletion() throws {
+    @Test func CreationRequestStateRejectsOverlapAndIgnoresStaleCompletion() throws {
         var state = InvoiceEditorCreationRequestState()
-        let firstRequest = try XCTUnwrap(state.begin())
+        guard let firstRequest = state.begin() else {
+            Issue.record("Expected first creation request")
+            return
+        }
 
-        XCTAssertTrue(state.isActive)
-        XCTAssertNil(state.begin())
+        #expect(state.isActive)
+        #expect(state.begin() == nil)
 
         state.invalidatePresentation()
-        XCTAssertFalse(state.isActive)
-        XCTAssertFalse(state.owns(firstRequest))
+        #expect(!(state.isActive))
+        #expect(!(state.owns(firstRequest)))
 
-        let secondRequest = try XCTUnwrap(state.begin())
+        guard let secondRequest = state.begin() else {
+            Issue.record("Expected second creation request")
+            return
+        }
         state.finish(firstRequest)
 
-        XCTAssertTrue(state.isActive)
-        XCTAssertTrue(state.owns(secondRequest))
+        #expect(state.isActive)
+        #expect(state.owns(secondRequest))
 
         state.finish(secondRequest)
-        XCTAssertFalse(state.isActive)
+        #expect(!(state.isActive))
     }
 
-    func testFailedInitialOpenKeepsRequestedSelectionAvailableForRetry() {
+    @Test func FailedInitialOpenKeepsRequestedSelectionAvailableForRetry() {
         let requestedID = UUID()
 
-        XCTAssertFalse(
-            InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
+        #expect(!(InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
                 requestedID: requestedID,
                 openedID: nil
-            )
-        )
-        XCTAssertTrue(
-            InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
+            )))
+        #expect(InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
                 requestedID: requestedID,
                 openedID: requestedID
-            )
-        )
-        XCTAssertFalse(
-            InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
+            ))
+        #expect(!(InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
                 requestedID: requestedID,
                 openedID: UUID()
-            )
-        )
-        XCTAssertTrue(
-            InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
+            )))
+        #expect(InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
                 requestedID: nil,
                 openedID: nil
-            )
-        )
-        XCTAssertTrue(
-            InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
+            ))
+        #expect(InvoiceWorkspaceOpeningPolicy.shouldPublishSelection(
                 requestedID: requestedID,
                 openedID: UUID(),
                 hasOpenDocument: true
-            )
-        )
+            ))
     }
 
-    func testOnlyCurrentExternalSelectionRequestMayReconcileListBinding() {
+    @Test func OnlyCurrentExternalSelectionRequestMayReconcileListBinding() {
         let firstRequest = UUID()
         let newerRequest = UUID()
 
-        XCTAssertFalse(
-            InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
+        #expect(!(InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
                 requestedID: firstRequest,
                 externalID: newerRequest
-            )
-        )
-        XCTAssertTrue(
-            InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
+            )))
+        #expect(InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
                 requestedID: newerRequest,
                 externalID: newerRequest
-            )
-        )
-        XCTAssertTrue(
-            InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
+            ))
+        #expect(InvoiceExternalSelectionPublicationPolicy.requestIsCurrent(
                 requestedID: nil,
                 externalID: nil
-            )
-        )
+            ))
     }
 
-    func testOpeningRecoveryRetainsOnlyFailedColdRequest() {
+    @Test func OpeningRecoveryRetainsOnlyFailedColdRequest() {
         let requestedID = UUID()
 
-        XCTAssertEqual(
-            InvoiceWorkspaceOpeningPolicy.failedRequestID(
+        #expect(InvoiceWorkspaceOpeningPolicy.failedRequestID(
                 requestedID: requestedID,
                 openedID: nil,
                 hasOpenDocument: false
-            ),
-            requestedID
-        )
-        XCTAssertNil(
-            InvoiceWorkspaceOpeningPolicy.failedRequestID(
+            ) == requestedID)
+        #expect(InvoiceWorkspaceOpeningPolicy.failedRequestID(
                 requestedID: requestedID,
                 openedID: requestedID,
                 hasOpenDocument: true
-            )
-        )
-        XCTAssertNil(
-            InvoiceWorkspaceOpeningPolicy.failedRequestID(
+            ) == nil)
+        #expect(InvoiceWorkspaceOpeningPolicy.failedRequestID(
                 requestedID: requestedID,
                 openedID: UUID(),
                 hasOpenDocument: true
-            )
-        )
-        XCTAssertNil(
-            InvoiceWorkspaceOpeningPolicy.failedRequestID(
+            ) == nil)
+        #expect(InvoiceWorkspaceOpeningPolicy.failedRequestID(
                 requestedID: nil,
                 openedID: nil,
                 hasOpenDocument: false
-            )
-        )
+            ) == nil)
     }
 
     @MainActor
-    func testTemplateCommandContextExposesInspectorAndPreviewWithoutClaimingInvoiceCommands() {
+    @Test func TemplateCommandContextExposesInspectorAndPreviewWithoutClaimingInvoiceCommands() {
         let actions = InvoiceEditorCommandActions()
         actions.updateCapabilities(
             canCreate: false,
@@ -742,19 +622,19 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             canFitWidth: false
         )
 
-        XCTAssertFalse(actions.isInvoiceContext)
-        XCTAssertFalse(actions.canCreate)
-        XCTAssertFalse(actions.canSave)
-        XCTAssertFalse(actions.canAddLineItem)
-        XCTAssertTrue(actions.canToggleInspector)
-        XCTAssertTrue(actions.canZoomIn)
-        XCTAssertTrue(actions.canZoomOut)
-        XCTAssertTrue(actions.canSetActualSize)
-        XCTAssertFalse(actions.canFitWidth)
+        #expect(!(actions.isInvoiceContext))
+        #expect(!(actions.canCreate))
+        #expect(!(actions.canSave))
+        #expect(!(actions.canAddLineItem))
+        #expect(actions.canToggleInspector)
+        #expect(actions.canZoomIn)
+        #expect(actions.canZoomOut)
+        #expect(actions.canSetActualSize)
+        #expect(!(actions.canFitWidth))
     }
 
     @MainActor
-    func testPreviewCommandClosuresRemainIndependentFromInvoiceDataCommands() {
+    @Test func PreviewCommandClosuresRemainIndependentFromInvoiceDataCommands() {
         let actions = InvoiceEditorCommandActions()
         var zoomInCount = 0
         var fitWidthCount = 0
@@ -764,14 +644,14 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         actions.zoomIn()
         actions.fitWidth()
 
-        XCTAssertEqual(zoomInCount, 1)
-        XCTAssertEqual(fitWidthCount, 1)
-        XCTAssertFalse(actions.isInvoiceContext)
-        XCTAssertFalse(actions.canSave)
+        #expect(zoomInCount == 1)
+        #expect(fitWidthCount == 1)
+        #expect(!(actions.isInvoiceContext))
+        #expect(!(actions.canSave))
     }
 
     @MainActor
-    func testFocusedEditorCanGateWorkspaceCreationWithoutOwningCreation() async {
+    @Test func FocusedEditorCanGateWorkspaceCreationWithoutOwningCreation() async {
         let actions = InvoiceEditorCommandActions()
         var preparationCount = 0
         actions.prepareForInvoiceCreation = {
@@ -780,12 +660,12 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         }
 
         let isPrepared = await actions.prepareForInvoiceCreation()
-        XCTAssertFalse(isPrepared)
-        XCTAssertEqual(preparationCount, 1)
+        #expect(!(isPrepared))
+        #expect(preparationCount == 1)
     }
 
     @MainActor
-    func testInvoiceCommandContextPublishesAddLineItemCapability() {
+    @Test func InvoiceCommandContextPublishesAddLineItemCapability() {
         let actions = InvoiceEditorCommandActions()
         actions.updateCapabilities(
             canCreate: true,
@@ -799,50 +679,50 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             canAddLineItem: true
         )
 
-        XCTAssertTrue(actions.isInvoiceContext)
-        XCTAssertTrue(actions.canAddLineItem)
+        #expect(actions.isInvoiceContext)
+        #expect(actions.canAddLineItem)
     }
 
     @MainActor
-    func testAddLineItemRequestsHaveMonotonicRevision() {
+    @Test func AddLineItemRequestsHaveMonotonicRevision() {
         let toolbarState = InvoiceEditorToolbarState()
 
-        XCTAssertEqual(toolbarState.addLineItemRequestRevision, 0)
+        #expect(toolbarState.addLineItemRequestRevision == 0)
         toolbarState.requestAddLineItem()
-        XCTAssertEqual(toolbarState.addLineItemRequestRevision, 1)
+        #expect(toolbarState.addLineItemRequestRevision == 1)
         toolbarState.requestAddLineItem()
-        XCTAssertEqual(toolbarState.addLineItemRequestRevision, 2)
+        #expect(toolbarState.addLineItemRequestRevision == 2)
     }
 
     @MainActor
-    func testInvalidTemplateRecoveryRequestsHaveMonotonicRevision() {
+    @Test func InvalidTemplateRecoveryRequestsHaveMonotonicRevision() {
         let toolbarState = InvoiceEditorToolbarState()
 
-        XCTAssertEqual(toolbarState.invalidTemplateInputRecoveryRequestRevision, 0)
+        #expect(toolbarState.invalidTemplateInputRecoveryRequestRevision == 0)
         toolbarState.requestInvalidTemplateInputRecovery()
-        XCTAssertEqual(toolbarState.invalidTemplateInputRecoveryRequestRevision, 1)
+        #expect(toolbarState.invalidTemplateInputRecoveryRequestRevision == 1)
         toolbarState.requestInvalidTemplateInputRecovery()
-        XCTAssertEqual(toolbarState.invalidTemplateInputRecoveryRequestRevision, 2)
+        #expect(toolbarState.invalidTemplateInputRecoveryRequestRevision == 2)
     }
 
     @MainActor
-    func testNumericInputResetRevisionAdvancesEvenWhenTypedBaselineIsUnchanged() {
+    @Test func NumericInputResetRevisionAdvancesEvenWhenTypedBaselineIsUnchanged() {
         let drafts = InvoiceNumericInputDraftStore()
         let toolbarState = InvoiceEditorToolbarState(numericInputDrafts: drafts)
         drafts.preserve("invalid", for: "template.page.width", baseline: "595")
 
         let clearedIDs = toolbarState.resetNumericInputDrafts()
 
-        XCTAssertEqual(Set(clearedIDs), Set(["template.page.width"]))
-        XCTAssertEqual(toolbarState.numericInputResetRevision, 1)
-        XCTAssertTrue(drafts.inputIDs.isEmpty)
+        #expect(Set(clearedIDs) == Set(["template.page.width"]))
+        #expect(toolbarState.numericInputResetRevision == 1)
+        #expect(drafts.inputIDs.isEmpty)
 
         toolbarState.resetNumericInputDraft("template.page.width")
-        XCTAssertEqual(toolbarState.numericInputResetRevision, 2)
+        #expect(toolbarState.numericInputResetRevision == 2)
     }
 
     @MainActor
-    func testTemplateNumericOverrideAppliesValueBeforeClearingInvalidDraft() {
+    @Test func TemplateNumericOverrideAppliesValueBeforeClearingInvalidDraft() {
         let inputID = "template.typographyScale"
         let drafts = InvoiceNumericInputDraftStore()
         let toolbarState = InvoiceEditorToolbarState(numericInputDrafts: drafts)
@@ -861,16 +741,16 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             }
         )
 
-        XCTAssertEqual(resolvedValue, 1.25)
-        XCTAssertTrue(drafts.inputIDs.isEmpty)
-        XCTAssertEqual(toolbarState.numericInputResetRevision, 1)
-        XCTAssertEqual(validityEvents.first?.0, inputID)
-        XCTAssertEqual(validityEvents.first?.1, false)
-        XCTAssertEqual(validityEvents.first?.2, 1.25)
+        #expect(resolvedValue == 1.25)
+        #expect(drafts.inputIDs.isEmpty)
+        #expect(toolbarState.numericInputResetRevision == 1)
+        #expect(validityEvents.first?.0 == inputID)
+        #expect(validityEvents.first?.1 == false)
+        #expect(validityEvents.first?.2 == 1.25)
     }
 
     @MainActor
-    func testLineItemUndoActionsAreRemovedWhenDocumentChanges() {
+    @Test func LineItemUndoActionsAreRemovedWhenDocumentChanges() {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: .default)
         let undoManager = UndoManager()
@@ -880,18 +760,18 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         undoManager.beginUndoGrouping()
         _ = coordinator.addLineItem(to: viewModel, undoManager: undoManager)
         undoManager.endUndoGrouping()
-        XCTAssertTrue(undoManager.canUndo)
+        #expect(undoManager.canUndo)
 
         let nextDocumentID = UUID()
         coordinator.activateDocument(id: nextDocumentID, undoManager: undoManager)
 
-        XCTAssertEqual(coordinator.activeDocumentID, nextDocumentID)
-        XCTAssertFalse(undoManager.canUndo)
-        XCTAssertFalse(undoManager.canRedo)
+        #expect(coordinator.activeDocumentID == nextDocumentID)
+        #expect(!(undoManager.canUndo))
+        #expect(!(undoManager.canRedo))
     }
 
     @MainActor
-    func testStaleLineItemUndoCannotMutateDifferentDocument() {
+    @Test func StaleLineItemUndoCannotMutateDifferentDocument() {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: .default)
         let undoManager = UndoManager()
@@ -902,68 +782,62 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         undoManager.beginUndoGrouping()
         _ = coordinator.addLineItem(to: viewModel, undoManager: undoManager)
         undoManager.endUndoGrouping()
-        XCTAssertEqual(viewModel.lineItems.count, originalCount + 1)
+        #expect(viewModel.lineItems.count == originalCount + 1)
 
         viewModel.selectedInvoiceID = UUID()
         undoManager.undo()
 
-        XCTAssertEqual(viewModel.lineItems.count, originalCount + 1)
+        #expect(viewModel.lineItems.count == originalCount + 1)
     }
 
-    func testNumericInputDraftStoreRestoresOnlyAgainstSameTypedBaseline() {
+    @Test func NumericInputDraftStoreRestoresOnlyAgainstSameTypedBaseline() {
         let store = InvoiceNumericInputDraftStore()
 
         store.preserve("not a number", for: "tax", baseline: "10")
 
-        XCTAssertEqual(
-            store.restoredText(for: "tax", baseline: "10"),
-            "not a number"
-        )
-        XCTAssertNil(store.restoredText(for: "tax", baseline: "15"))
-        XCTAssertNil(store.restoredText(for: "tax", baseline: "10"))
+        #expect(store.restoredText(for: "tax", baseline: "10") == "not a number")
+        #expect(store.restoredText(for: "tax", baseline: "15") == nil)
+        #expect(store.restoredText(for: "tax", baseline: "10") == nil)
     }
 
-    func testNumericInputDraftStoreClearsAllTrackedFields() {
+    @Test func NumericInputDraftStoreClearsAllTrackedFields() {
         let store = InvoiceNumericInputDraftStore()
         store.preserve("bad", for: "margin", baseline: "24")
         store.preserve("also bad", for: "scale", baseline: "1")
 
-        XCTAssertEqual(Set(store.clearAll()), ["margin", "scale"])
-        XCTAssertNil(store.restoredText(for: "margin", baseline: "24"))
-        XCTAssertNil(store.restoredText(for: "scale", baseline: "1"))
+        #expect(Set(store.clearAll()) == ["margin", "scale"])
+        #expect(store.restoredText(for: "margin", baseline: "24") == nil)
+        #expect(store.restoredText(for: "scale", baseline: "1") == nil)
     }
 
-    func testNumericInputDraftStoreRoundTripsSceneSnapshot() {
+    @Test func NumericInputDraftStoreRoundTripsSceneSnapshot() {
         let source = InvoiceNumericInputDraftStore()
         source.preserve("invalid", for: "spacing", baseline: "1")
 
         let restored = InvoiceNumericInputDraftStore()
         restored.restore(from: source.encodedSnapshot)
 
-        XCTAssertEqual(restored.inputIDs, ["spacing"])
-        XCTAssertEqual(
-            restored.restoredText(for: "spacing", baseline: "1"),
-            "invalid"
-        )
+        #expect(restored.inputIDs == ["spacing"])
+        #expect(restored.restoredText(for: "spacing", baseline: "1") == "invalid")
     }
 
-    func testTemplatePreferenceStoreRoundTripsConfiguration() throws {
+    @Test func TemplatePreferenceStoreRoundTripsConfiguration() throws {
         let suiteName = "InvoiceTemplatePreferenceStoreTests.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .burgundy
         configuration.headerStyle = .compact
         configuration.tableStyle = .borderless
 
-        XCTAssertTrue(InvoiceTemplatePreferenceStore.save(configuration, to: preferences))
+        #expect(InvoiceTemplatePreferenceStore.save(configuration, to: preferences) == true)
 
-        XCTAssertEqual(InvoiceTemplatePreferenceStore.load(from: preferences), configuration)
+        #expect(InvoiceTemplatePreferenceStore.load(from: preferences) == configuration)
     }
 
-    func testTemplatePreferenceStoreRoundTripsCompletePageSetup() throws {
+    @Test func TemplatePreferenceStoreRoundTripsCompletePageSetup() throws {
         let suiteName = "InvoiceTemplateDefaultsTests.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .forest
@@ -973,34 +847,34 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             configuration: configuration
         )
 
-        XCTAssertTrue(InvoiceTemplatePreferenceStore.save(defaults, to: preferences))
-        XCTAssertEqual(InvoiceTemplatePreferenceStore.loadDefaults(from: preferences), defaults)
+        #expect(InvoiceTemplatePreferenceStore.save(defaults, to: preferences) == true)
+        #expect(InvoiceTemplatePreferenceStore.loadDefaults(from: preferences) == defaults)
     }
 
-    func testTemplateSaveTrackerWritesOnlyGenuineLocalChanges() {
+    @Test func TemplateSaveTrackerWritesOnlyGenuineLocalChanges() {
         var tracker = InvoiceTemplateSaveTracker()
         let original = InvoiceTemplateDefaults()
         var edited = original
         edited.configuration.accentTheme = .forest
 
-        XCTAssertTrue(tracker.requiresSave(original))
+        #expect(tracker.requiresSave(original))
 
         tracker.markSaved(original)
-        XCTAssertFalse(tracker.requiresSave(original))
-        XCTAssertTrue(tracker.requiresSave(edited))
+        #expect(!(tracker.requiresSave(original)))
+        #expect(tracker.requiresSave(edited))
 
         tracker.markSaved(edited)
-        XCTAssertFalse(tracker.requiresSave(edited))
+        #expect(!(tracker.requiresSave(edited)))
     }
 
-    func testTemplateInvalidInputHasDistinctPersistenceFeedback() {
-        XCTAssertEqual(InvoiceTemplateSaveState.invalid.title, "Fix values")
-        XCTAssertNotEqual(InvoiceTemplateSaveState.invalid, .saved)
-        XCTAssertNotEqual(InvoiceTemplateSaveState.invalid, .saving)
-        XCTAssertNotEqual(InvoiceTemplateSaveState.invalid, .failed)
+    @Test func TemplateInvalidInputHasDistinctPersistenceFeedback() {
+        #expect(InvoiceTemplateSaveState.invalid.title == "Fix values")
+        #expect(InvoiceTemplateSaveState.invalid != .saved)
+        #expect(InvoiceTemplateSaveState.invalid != .saving)
+        #expect(InvoiceTemplateSaveState.invalid != .failed)
     }
 
-    func testEditorCommandCapabilitiesTrackWorkspaceAndViewportState() {
+    @Test func EditorCommandCapabilitiesTrackWorkspaceAndViewportState() {
         let fitWidthAtMinimum = InvoiceEditorCommandCapabilities(
             mode: .template,
             hasInvoice: false,
@@ -1012,12 +886,12 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             fitScale: InvoiceDocumentPreviewZoom.minimumScale
         )
 
-        XCTAssertFalse(fitWidthAtMinimum.isInvoiceContext)
-        XCTAssertTrue(fitWidthAtMinimum.canCreate)
-        XCTAssertFalse(fitWidthAtMinimum.canSave)
-        XCTAssertTrue(fitWidthAtMinimum.canToggleInspector)
-        XCTAssertFalse(fitWidthAtMinimum.canZoomOut)
-        XCTAssertFalse(fitWidthAtMinimum.canFitWidth)
+        #expect(!(fitWidthAtMinimum.isInvoiceContext))
+        #expect(fitWidthAtMinimum.canCreate)
+        #expect(!(fitWidthAtMinimum.canSave))
+        #expect(fitWidthAtMinimum.canToggleInspector)
+        #expect(!(fitWidthAtMinimum.canZoomOut))
+        #expect(!(fitWidthAtMinimum.canFitWidth))
 
         let invalidTemplate = InvoiceEditorCommandCapabilities(
             mode: .template,
@@ -1031,7 +905,7 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             fitScale: 0.75
         )
 
-        XCTAssertFalse(invalidTemplate.canCreate)
+        #expect(!(invalidTemplate.canCreate))
 
         let activeInvoice = InvoiceEditorCommandCapabilities(
             mode: .invoice,
@@ -1044,12 +918,12 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             fitScale: 0.75
         )
 
-        XCTAssertTrue(activeInvoice.isInvoiceContext)
-        XCTAssertTrue(activeInvoice.canCreate)
-        XCTAssertTrue(activeInvoice.canSave)
-        XCTAssertTrue(activeInvoice.canAddLineItem)
-        XCTAssertTrue(activeInvoice.canFitWidth)
-        XCTAssertFalse(activeInvoice.canSetActualSize)
+        #expect(activeInvoice.isInvoiceContext)
+        #expect(activeInvoice.canCreate)
+        #expect(activeInvoice.canSave)
+        #expect(activeInvoice.canAddLineItem)
+        #expect(activeInvoice.canFitWidth)
+        #expect(!(activeInvoice.canSetActualSize))
 
         let busyInvoice = InvoiceEditorCommandCapabilities(
             mode: .invoice,
@@ -1062,79 +936,56 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             fitScale: 0.75
         )
 
-        XCTAssertFalse(busyInvoice.canCreate)
-        XCTAssertFalse(busyInvoice.canSave)
-        XCTAssertFalse(busyInvoice.canAddLineItem)
-        XCTAssertTrue(busyInvoice.canZoomIn)
+        #expect(!(busyInvoice.canCreate))
+        #expect(!(busyInvoice.canSave))
+        #expect(!(busyInvoice.canAddLineItem))
+        #expect(busyInvoice.canZoomIn)
     }
 
-    func testTemplateSaveRecoveryAppearsOnlyForActionablePersistenceFailure() {
-        XCTAssertEqual(
-            InvoiceTemplateSaveRecoveryPolicy.issue(
+    @Test func TemplateSaveRecoveryAppearsOnlyForActionablePersistenceFailure() {
+        #expect(InvoiceTemplateSaveRecoveryPolicy.issue(
                 saveState: .failed,
                 hasInvalidInputs: true
-            ),
-            .invalidInputs
-        )
-        XCTAssertEqual(
-            InvoiceTemplateSaveRecoveryPolicy.issue(
+            ) == .invalidInputs)
+        #expect(InvoiceTemplateSaveRecoveryPolicy.issue(
                 saveState: .failed,
                 hasInvalidInputs: false
-            ),
-            .saveFailure
-        )
-        XCTAssertEqual(
-            InvoiceTemplateSaveRecoveryPolicy.issue(
+            ) == .saveFailure)
+        #expect(InvoiceTemplateSaveRecoveryPolicy.issue(
                 saveState: .saved,
                 hasInvalidInputs: true
-            ),
-            .invalidInputs
-        )
-        XCTAssertNil(
-            InvoiceTemplateSaveRecoveryPolicy.issue(
+            ) == .invalidInputs)
+        #expect(InvoiceTemplateSaveRecoveryPolicy.issue(
                 saveState: .saved,
                 hasInvalidInputs: false
-            )
-        )
+            ) == nil)
 
-        XCTAssertTrue(
-            InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
+        #expect(InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
                 saveState: .failed,
                 hasInvalidInputs: false
-            )
-        )
-        XCTAssertFalse(
-            InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
+            ))
+        #expect(!(InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
                 saveState: .failed,
                 hasInvalidInputs: true
-            )
-        )
-        XCTAssertFalse(
-            InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
+            )))
+        #expect(!(InvoiceTemplateSaveRecoveryPolicy.showsFailureRecovery(
                 saveState: .saved,
                 hasInvalidInputs: false
-            )
-        )
+            )))
 
-        XCTAssertEqual(
-            InvoiceTemplateSaveRecoveryPolicy.reconciledState(
+        #expect(InvoiceTemplateSaveRecoveryPolicy.reconciledState(
                 .failed,
                 requiresSave: false
-            ),
-            .saved
-        )
-        XCTAssertEqual(
-            InvoiceTemplateSaveRecoveryPolicy.reconciledState(
+            ) == .saved)
+        #expect(InvoiceTemplateSaveRecoveryPolicy.reconciledState(
                 .failed,
                 requiresSave: true
-            ),
-            .failed
-        )
+            ) == .failed)
     }
 
-    func testTemplatePreferenceStoreMigratesLegacyRawConfiguration() throws {
+    @Test func TemplatePreferenceStoreMigratesLegacyRawConfiguration() throws {
         let suiteName = "InvoiceTemplateLegacyDefaultsTests.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .burgundy
@@ -1145,12 +996,12 @@ final class InvoiceEditorSeparationTests: XCTestCase {
 
         let defaults = InvoiceTemplatePreferenceStore.loadDefaults(from: preferences)
 
-        XCTAssertEqual(defaults.paperSize, .default)
-        XCTAssertEqual(defaults.pageOrientation, .portrait)
-        XCTAssertEqual(defaults.configuration.accentTheme, .burgundy)
+        #expect(defaults.paperSize == .default)
+        #expect(defaults.pageOrientation == .portrait)
+        #expect(defaults.configuration.accentTheme == .burgundy)
     }
 
-    func testLegacyTemplatePayloadPreservesKnownValuesAndDefaultsMissingFields() throws {
+    @Test func LegacyTemplatePayloadPreservesKnownValuesAndDefaultsMissingFields() throws {
         let data = Data(
             #"""
             {
@@ -1167,15 +1018,15 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             from: data
         )
 
-        XCTAssertEqual(configuration.accentTheme, .burgundy)
-        XCTAssertFalse(configuration.showPaymentDetails)
-        XCTAssertEqual(configuration.customAccentColor?.opacity, 1)
-        XCTAssertFalse(configuration.columnVisibility.showDate)
-        XCTAssertTrue(configuration.columnVisibility.showRate)
-        XCTAssertEqual(configuration.headerStyle, .default)
+        #expect(configuration.accentTheme == .burgundy)
+        #expect(!(configuration.showPaymentDetails))
+        #expect(configuration.customAccentColor?.opacity == 1)
+        #expect(!(configuration.columnVisibility.showDate))
+        #expect(configuration.columnVisibility.showRate)
+        #expect(configuration.headerStyle == .default)
     }
 
-    func testMalformedTemplateFieldFallsBackWithoutDiscardingValidFields() throws {
+    @Test func MalformedTemplateFieldFallsBackWithoutDiscardingValidFields() throws {
         let data = Data(
             #"""
             {
@@ -1191,12 +1042,12 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             from: data
         )
 
-        XCTAssertEqual(configuration.accentTheme, .burgundy)
-        XCTAssertEqual(configuration.headerStyle, .default)
-        XCTAssertFalse(configuration.showPaymentTerms)
+        #expect(configuration.accentTheme == .burgundy)
+        #expect(configuration.headerStyle == .default)
+        #expect(!(configuration.showPaymentTerms))
     }
 
-    func testExtremePersistedGeometryIsClampedToLayoutSafeBounds() throws {
+    @Test func ExtremePersistedGeometryIsClampedToLayoutSafeBounds() throws {
         let data = Data(
             #"""
             {
@@ -1216,19 +1067,19 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             from: data
         )
 
-        XCTAssertEqual(configuration.customPageWidthPoints, InvoiceTemplateLayoutLimits.pageDimensionRange.upperBound)
-        XCTAssertEqual(configuration.customPageHeightPoints, InvoiceTemplateLayoutLimits.pageDimensionRange.lowerBound)
-        XCTAssertEqual(configuration.customMarginPoints, InvoiceTemplateLayoutLimits.storedMarginRange.upperBound)
-        XCTAssertEqual(configuration.customTypographyScale, InvoiceTemplateLayoutLimits.typographyScaleRange.upperBound)
-        XCTAssertEqual(configuration.customSpacingScale, InvoiceTemplateLayoutLimits.spacingScaleRange.lowerBound)
-        XCTAssertEqual(configuration.customBorderWidth, InvoiceTemplateLayoutLimits.borderWidthRange.upperBound)
-        XCTAssertEqual(configuration.customAccentColor?.red, 1)
-        XCTAssertEqual(configuration.customAccentColor?.green, 0)
-        XCTAssertEqual(configuration.customAccentColor?.opacity, 1)
+        #expect(configuration.customPageWidthPoints == InvoiceTemplateLayoutLimits.pageDimensionRange.upperBound)
+        #expect(configuration.customPageHeightPoints == InvoiceTemplateLayoutLimits.pageDimensionRange.lowerBound)
+        #expect(configuration.customMarginPoints == InvoiceTemplateLayoutLimits.storedMarginRange.upperBound)
+        #expect(configuration.customTypographyScale == InvoiceTemplateLayoutLimits.typographyScaleRange.upperBound)
+        #expect(configuration.customSpacingScale == InvoiceTemplateLayoutLimits.spacingScaleRange.lowerBound)
+        #expect(configuration.customBorderWidth == InvoiceTemplateLayoutLimits.borderWidthRange.upperBound)
+        #expect(configuration.customAccentColor?.red == 1)
+        #expect(configuration.customAccentColor?.green == 0)
+        #expect(configuration.customAccentColor?.opacity == 1)
     }
 
     @MainActor
-    func testPageGeometryAppliesPartialOverridesAndRetainsPrintableArea() throws {
+    @Test func PageGeometryAppliesPartialOverridesAndRetainsPrintableArea() throws {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: .default)
         let standardHeight = viewModel.paperSize.sizePoints(for: viewModel.pageOrientation).height
@@ -1236,104 +1087,85 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         viewModel.customPageWidthPoints = 900
         viewModel.customMarginPoints = 100_000
 
-        XCTAssertEqual(viewModel.pageSizePoints.width, 900)
-        XCTAssertEqual(viewModel.pageSizePoints.height, standardHeight)
-        XCTAssertGreaterThanOrEqual(
-            viewModel.pageSizePoints.width - (viewModel.effectiveMarginPoints * 2),
-            InvoiceTemplateLayoutLimits.minimumContentDimension
+        #expect(viewModel.pageSizePoints.width == 900)
+        #expect(viewModel.pageSizePoints.height == standardHeight)
+        #expect(viewModel.pageSizePoints.width - (viewModel.effectiveMarginPoints * 2) >= InvoiceTemplateLayoutLimits.minimumContentDimension
         )
-        XCTAssertGreaterThanOrEqual(
-            viewModel.pageSizePoints.height - (viewModel.effectiveMarginPoints * 2),
-            InvoiceTemplateLayoutLimits.minimumContentDimension
+        #expect(viewModel.pageSizePoints.height - (viewModel.effectiveMarginPoints * 2) >= InvoiceTemplateLayoutLimits.minimumContentDimension
         )
     }
 
-    func testTemplateMarginInputRangePreservesMinimumPrintableArea() {
+    @Test func TemplateMarginInputRangePreservesMinimumPrintableArea() {
         let pageSize = CGSize(width: 600, height: 900)
         let maximum = InvoiceTemplateLayoutLimits.maximumMargin(for: pageSize)
 
-        XCTAssertEqual(maximum, 264)
-        XCTAssertEqual(
-            InvoiceTemplateLayoutLimits.effectiveMargin(1_000, pageSize: pageSize),
-            264
-        )
-        XCTAssertEqual(
-            InvoiceDoubleInput.parse("264", in: 0...maximum),
-            264
-        )
-        XCTAssertNil(InvoiceDoubleInput.parse("264.1", in: 0...maximum))
+        #expect(maximum == 264)
+        #expect(InvoiceTemplateLayoutLimits.effectiveMargin(1_000, pageSize: pageSize) == 264)
+        #expect(InvoiceDoubleInput.parse("264", in: 0...maximum) == 264)
+        #expect(InvoiceDoubleInput.parse("264.1", in: 0...maximum) == nil)
     }
 
     @MainActor
-    func testCustomPageOrientationSwapsResolvedDimensionsAndUpdatesLabel() throws {
+    @Test func CustomPageOrientationSwapsResolvedDimensionsAndUpdatesLabel() throws {
         let viewModel = InvoiceEditorViewModel()
         viewModel.customPageWidthPoints = 900
         viewModel.customPageHeightPoints = 600
 
         viewModel.updatePageOrientation(.landscape)
 
-        XCTAssertEqual(viewModel.pageOrientation, .landscape)
-        XCTAssertEqual(viewModel.pageSizePoints.width, 600)
-        XCTAssertEqual(viewModel.pageSizePoints.height, 900)
-        XCTAssertEqual(viewModel.pageDimensionsLabel, "600 × 900 pt")
+        #expect(viewModel.pageOrientation == .landscape)
+        #expect(viewModel.pageSizePoints.width == 600)
+        #expect(viewModel.pageSizePoints.height == 900)
+        #expect(viewModel.pageDimensionsLabel == "600 × 900 pt")
     }
 
     @MainActor
-    func testStandardPageOrientationKeepsStandardSizingImplicit() throws {
+    @Test func StandardPageOrientationKeepsStandardSizingImplicit() throws {
         let viewModel = InvoiceEditorViewModel()
 
         viewModel.updatePageOrientation(.landscape)
 
-        XCTAssertNil(viewModel.customPageWidthPoints)
-        XCTAssertNil(viewModel.customPageHeightPoints)
-        XCTAssertEqual(viewModel.pageSizePoints, PaperSize.a4.sizePoints(for: .landscape))
-        XCTAssertEqual(viewModel.pageDimensionsLabel, "297 × 210 mm")
+        #expect(viewModel.customPageWidthPoints == nil)
+        #expect(viewModel.customPageHeightPoints == nil)
+        #expect(viewModel.pageSizePoints == PaperSize.a4.sizePoints(for: .landscape))
+        #expect(viewModel.pageDimensionsLabel == "297 × 210 mm")
     }
 
     @MainActor
-    func testTemplatePreviewDoesNotOfferInvoiceDataTargeting() {
+    @Test func TemplatePreviewDoesNotOfferInvoiceDataTargeting() {
         let interaction = InvoicePreviewInspectorInteraction(mode: .templateFormatting)
 
         interaction.select(.sellerName)
 
-        XCTAssertNil(interaction.focusRequest)
-        XCTAssertEqual(interaction.formatInspectorRevealRevision, 1)
-        XCTAssertEqual(interaction.requestedFormatSection, .content)
-        XCTAssertFalse(interaction.allowsFieldTargeting)
-        XCTAssertTrue(interaction.allowsFormatInspectorReveal)
-        XCTAssertTrue(interaction.allowsPreviewTargetSelection)
-        XCTAssertEqual(
-            interaction.accessibilityLabel(for: .sellerName),
-            "Format sender name"
-        )
-        XCTAssertEqual(
-            interaction.accessibilityHint(for: .sellerName),
-            "Opens Content format section without changing mock invoice data"
-        )
-        XCTAssertEqual(
-            interaction.helpText(for: .sellerName),
-            "Format sender name in Content"
-        )
+        #expect(interaction.focusRequest == nil)
+        #expect(interaction.formatInspectorRevealRevision == 1)
+        #expect(interaction.requestedFormatSection == .content)
+        #expect(!(interaction.allowsFieldTargeting))
+        #expect(interaction.allowsFormatInspectorReveal)
+        #expect(interaction.allowsPreviewTargetSelection)
+        #expect(interaction.accessibilityLabel(for: .sellerName) == "Format sender name")
+        #expect(interaction.accessibilityHint(for: .sellerName) == "Opens Content format section without changing mock invoice data")
+        #expect(interaction.helpText(for: .sellerName) == "Format sender name in Content")
     }
 
     @MainActor
-    func testTemplatePreviewRoutesDocumentRegionsToRelevantFormatSections() {
+    @Test func TemplatePreviewRoutesDocumentRegionsToRelevantFormatSections() {
         let interaction = InvoicePreviewInspectorInteraction(mode: .templateFormatting)
 
         interaction.select(.header)
-        XCTAssertEqual(interaction.requestedFormatSection, .template)
+        #expect(interaction.requestedFormatSection == .template)
 
         interaction.select(.lineItemDescription(UUID()))
-        XCTAssertEqual(interaction.requestedFormatSection, .lineItems)
+        #expect(interaction.requestedFormatSection == .lineItems)
 
         interaction.select(.paymentDetails)
-        XCTAssertEqual(interaction.requestedFormatSection, .content)
-        XCTAssertEqual(interaction.formatInspectorRevealRevision, 3)
-        XCTAssertNil(interaction.focusRequest)
+        #expect(interaction.requestedFormatSection == .content)
+        #expect(interaction.formatInspectorRevealRevision == 3)
+        #expect(interaction.focusRequest == nil)
     }
 
     @MainActor
-    func testRepeatedPreviewSelectionCreatesDistinctFocusRequests() {
+    @Test func RepeatedPreviewSelectionCreatesDistinctFocusRequests() {
         let interaction = InvoicePreviewInspectorInteraction()
 
         interaction.select(.invoiceNumber)
@@ -1341,32 +1173,32 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         interaction.select(.invoiceNumber)
         let secondRequest = interaction.focusRequest
 
-        XCTAssertEqual(firstRequest?.target, .invoiceNumber)
-        XCTAssertEqual(secondRequest?.target, .invoiceNumber)
-        XCTAssertNotEqual(firstRequest?.id, secondRequest?.id)
-        XCTAssertEqual(interaction.formatInspectorRevealRevision, 0)
-        XCTAssertTrue(interaction.allowsFieldTargeting)
-        XCTAssertFalse(interaction.allowsFormatInspectorReveal)
-        XCTAssertTrue(interaction.allowsPreviewTargetSelection)
+        #expect(firstRequest?.target == .invoiceNumber)
+        #expect(secondRequest?.target == .invoiceNumber)
+        #expect(firstRequest?.id != secondRequest?.id)
+        #expect(interaction.formatInspectorRevealRevision == 0)
+        #expect(interaction.allowsFieldTargeting)
+        #expect(!(interaction.allowsFormatInspectorReveal))
+        #expect(interaction.allowsPreviewTargetSelection)
     }
 
     @MainActor
-    func testCompletingSupersededPreviewFocusDoesNotClearLatestRequest() throws {
+    @Test func CompletingSupersededPreviewFocusDoesNotClearLatestRequest() throws {
         let interaction = InvoicePreviewInspectorInteraction()
 
         interaction.select(.invoiceNumber)
-        let firstRequest = try XCTUnwrap(interaction.focusRequest)
+        let firstRequest = try #require(interaction.focusRequest)
         interaction.select(.clientName)
-        let secondRequest = try XCTUnwrap(interaction.focusRequest)
+        let secondRequest = try #require(interaction.focusRequest)
 
         interaction.completeFocusRequest(id: firstRequest.id)
-        XCTAssertEqual(interaction.focusRequest, secondRequest)
+        #expect(interaction.focusRequest == secondRequest)
 
         interaction.completeFocusRequest(id: secondRequest.id)
-        XCTAssertNil(interaction.focusRequest)
+        #expect(interaction.focusRequest == nil)
     }
 
-    func testDeferredInspectorFocusLeaseRequiresMatchingDocumentAndLatestLease() {
+    @Test func DeferredInspectorFocusLeaseRequiresMatchingDocumentAndLatestLease() {
         let firstDocumentID = UUID()
         let secondDocumentID = UUID()
         let leaseID = UUID()
@@ -1375,93 +1207,63 @@ final class InvoiceEditorSeparationTests: XCTestCase {
             documentID: firstDocumentID
         )
 
-        XCTAssertTrue(
-            lease.isCurrent(
+        #expect(lease.isCurrent(
                 activeLeaseID: leaseID,
                 selectedDocumentID: firstDocumentID
-            )
-        )
-        XCTAssertFalse(
-            lease.isCurrent(
+            ))
+        #expect(!(lease.isCurrent(
                 activeLeaseID: UUID(),
                 selectedDocumentID: firstDocumentID
-            )
-        )
-        XCTAssertFalse(
-            lease.isCurrent(
+            )))
+        #expect(!(lease.isCurrent(
                 activeLeaseID: leaseID,
                 selectedDocumentID: secondDocumentID
-            )
-        )
-        XCTAssertFalse(
-            lease.isCurrent(
+            )))
+        #expect(!(lease.isCurrent(
                 activeLeaseID: nil,
                 selectedDocumentID: firstDocumentID
-            )
-        )
+            )))
     }
 
     @MainActor
-    func testStatusBannerAutoDismissesSuccessButKeepsActionableErrors() {
-        XCTAssertTrue(InvoiceEditorStatusBanner.shouldAutoDismiss("Invoice saved."))
-        XCTAssertTrue(InvoiceEditorStatusBanner.shouldAutoDismiss("Unsaved changes discarded."))
-        XCTAssertFalse(InvoiceEditorStatusBanner.shouldAutoDismiss("Failed to save invoice: unavailable"))
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldAutoDismiss(
+    @Test func StatusBannerAutoDismissesSuccessButKeepsActionableErrors() {
+        #expect(InvoiceEditorStatusBanner.shouldAutoDismiss("Invoice saved."))
+        #expect(InvoiceEditorStatusBanner.shouldAutoDismiss("Unsaved changes discarded."))
+        #expect(!(InvoiceEditorStatusBanner.shouldAutoDismiss("Failed to save invoice: unavailable")))
+        #expect(!(InvoiceEditorStatusBanner.shouldAutoDismiss(
                 "Invoice couldn't be created. Store unavailable."
-            )
-        )
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldAutoDismiss(
+            )))
+        #expect(!(InvoiceEditorStatusBanner.shouldAutoDismiss(
                 "Fix the errors in the Validation section before switching invoices."
-            )
-        )
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldAutoDismiss(
+            )))
+        #expect(!(InvoiceEditorStatusBanner.shouldAutoDismiss(
                 "This invoice was deleted in another window. Your local draft is still available."
-            )
-        )
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldAutoDismiss(
+            )))
+        #expect(!(InvoiceEditorStatusBanner.shouldAutoDismiss(
                 "Current draft could not be saved."
-            )
-        )
-        XCTAssertEqual(InvoiceEditorStatusBanner.tone(for: "Invoice saved."), .success)
-        XCTAssertEqual(InvoiceEditorStatusBanner.tone(for: "Export cancelled."), .informational)
-        XCTAssertEqual(InvoiceEditorStatusBanner.tone(for: "Unsaved changes discarded."), .informational)
-        XCTAssertEqual(
-            InvoiceEditorStatusBanner.tone(for: "Failed to save invoice: unavailable"),
-            .error
-        )
-        XCTAssertEqual(
-            InvoiceEditorStatusBanner.tone(
+            )))
+        #expect(InvoiceEditorStatusBanner.tone(for: "Invoice saved.") == .success)
+        #expect(InvoiceEditorStatusBanner.tone(for: "Export cancelled.") == .informational)
+        #expect(InvoiceEditorStatusBanner.tone(for: "Unsaved changes discarded.") == .informational)
+        #expect(InvoiceEditorStatusBanner.tone(for: "Failed to save invoice: unavailable") == .error)
+        #expect(InvoiceEditorStatusBanner.tone(
                 for: "Invoice couldn't be created. Store unavailable."
-            ),
-            .error
-        )
-        XCTAssertEqual(
-            InvoiceEditorStatusBanner.tone(
+            ) == .error)
+        #expect(InvoiceEditorStatusBanner.tone(
                 for: "This invoice was deleted in another window. Your local draft is still available."
-            ),
-            .error
-        )
-        XCTAssertNil(
-            InvoiceEditorStatusBanner.messageForPresentation(
+            ) == .error)
+        #expect(InvoiceEditorStatusBanner.messageForPresentation(
                 "Applied Modern template.",
                 whileTemplateSaveFailed: true
-            )
-        )
-        XCTAssertEqual(
-            InvoiceEditorStatusBanner.messageForPresentation(
+            ) == nil)
+        #expect(InvoiceEditorStatusBanner.messageForPresentation(
                 "Failed to load invoice: unavailable",
                 whileTemplateSaveFailed: true
-            ),
-            "Failed to load invoice: unavailable"
-        )
+            ) == "Failed to load invoice: unavailable")
     }
 
     @MainActor
-    func testStatusDismissalCannotClearNewerFeedback() {
+    @Test func StatusDismissalCannotClearNewerFeedback() {
         let viewModel = InvoiceEditorViewModel()
         viewModel.statusMessage = "Invoice saved."
         let staleMessageID = viewModel.statusMessageID
@@ -1470,41 +1272,32 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         let latestMessageID = viewModel.statusMessageID
 
         viewModel.dismissStatusMessage(id: staleMessageID)
-        XCTAssertEqual(
-            viewModel.statusMessage,
-            "Failed to save invoice: Store unavailable."
-        )
+        #expect(viewModel.statusMessage == "Failed to save invoice: Store unavailable.")
 
         viewModel.dismissStatusMessage(id: latestMessageID)
-        XCTAssertNil(viewModel.statusMessage)
+        #expect(viewModel.statusMessage == nil)
     }
 
     @MainActor
-    func testTemplateSaveFailureDiscardsOnlySuppressedNonErrorFeedback() {
-        XCTAssertTrue(
-            InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
+    @Test func TemplateSaveFailureDiscardsOnlySuppressedNonErrorFeedback() {
+        #expect(InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
                 "Applied Modern template.",
                 whenTemplateSaveFailed: true
-            )
-        )
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
+            ))
+        #expect(!(InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
                 "Failed to create invoice: Store unavailable.",
                 whenTemplateSaveFailed: true
-            )
-        )
-        XCTAssertFalse(
-            InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
+            )))
+        #expect(!(InvoiceEditorStatusBanner.shouldDiscardSuppressedMessage(
                 "Applied Modern template.",
                 whenTemplateSaveFailed: false
-            )
-        )
+            )))
     }
 
-    func testInvoiceEnvelopePreservesSemanticFieldsWithPartiallyMalformedTemplate() throws {
+    @Test func InvoiceEnvelopePreservesSemanticFieldsWithPartiallyMalformedTemplate() throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
-        let invoice = Core.Invoice(invoiceNumber: "INV-LEGACY")
+        let invoice = Invoice(invoiceNumber: "INV-LEGACY")
         invoice.invoiceEditorStateData = Data(
             #"""
             {
@@ -1522,30 +1315,26 @@ final class InvoiceEditorSeparationTests: XCTestCase {
 
         let envelope = InvoiceDocumentConfigurationEnvelope.decode(from: invoice)
 
-        XCTAssertEqual(envelope.title, "Legacy Invoice")
-        XCTAssertFalse(envelope.billParticipantDirectly)
-        XCTAssertEqual(envelope.discountAmount, 0)
-        XCTAssertEqual(envelope.template.accentTheme, .navy)
-        XCTAssertEqual(envelope.template.headerStyle, .default)
+        #expect(envelope.title == "Legacy Invoice")
+        #expect(!(envelope.billParticipantDirectly))
+        #expect(envelope.discountAmount == 0)
+        #expect(envelope.template.accentTheme == .navy)
+        #expect(envelope.template.headerStyle == .default)
     }
 
-    func testLegacyInvoiceEnvelopeMissingTemplateIgnoresCurrentTemplatePreferences() throws {
-        let preferences = UserDefaults.standard
-        let originalData = preferences.data(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
+    @Test func LegacyInvoiceEnvelopeMissingTemplateIgnoresCurrentTemplatePreferences() throws {
+        let suiteName = "InvoiceEditorSeparationTests.\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer {
-            if let originalData {
-                preferences.set(originalData, forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            } else {
-                preferences.removeObject(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            }
+            preferences.removePersistentDomain(forName: suiteName)
         }
 
         var currentTemplate = InvoiceTemplateConfiguration.default
         currentTemplate.accentTheme = .forest
         currentTemplate.headerStyle = .compact
-        XCTAssertTrue(InvoiceTemplatePreferenceStore.save(currentTemplate, to: preferences))
+        #expect(InvoiceTemplatePreferenceStore.save(currentTemplate, to: preferences) == true)
 
-        let invoice = Core.Invoice(invoiceNumber: "INV-LEGACY-NO-TEMPLATE")
+        let invoice = Invoice(invoiceNumber: "INV-LEGACY-NO-TEMPLATE")
         invoice.invoiceEditorStateData = Data(
             #"""
             {
@@ -1557,27 +1346,27 @@ final class InvoiceEditorSeparationTests: XCTestCase {
 
         let envelope = InvoiceDocumentConfigurationEnvelope.decode(from: invoice)
 
-        XCTAssertEqual(envelope.title, "Legacy Stable Invoice")
-        XCTAssertFalse(envelope.billParticipantDirectly)
-        XCTAssertEqual(envelope.template, .default)
+        #expect(envelope.title == "Legacy Stable Invoice")
+        #expect(!(envelope.billParticipantDirectly))
+        #expect(envelope.template == .default)
     }
 
-    func testMockPreviewUsesDeterministicContentAndRequestedTemplate() {
+    @Test func MockPreviewUsesDeterministicContentAndRequestedTemplate() {
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .forest
 
         let snapshot = InvoiceTemplateMockData.snapshot(template: configuration)
 
-        XCTAssertEqual(snapshot.id, UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
-        XCTAssertEqual(snapshot.invoiceNumber, "INV-DEMO-001")
-        XCTAssertEqual(snapshot.clientName, "Alex Morgan")
-        XCTAssertEqual(snapshot.currencyCode, "AUD")
-        XCTAssertEqual(snapshot.lineItems.count, 3)
-        XCTAssertEqual(snapshot.templateConfiguration, configuration)
+        #expect(snapshot.id == UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        #expect(snapshot.invoiceNumber == "INV-DEMO-001")
+        #expect(snapshot.clientName == "Alex Morgan")
+        #expect(snapshot.currencyCode == "AUD")
+        #expect(snapshot.lineItems.count == 3)
+        #expect(snapshot.templateConfiguration == configuration)
     }
 
     @MainActor
-    func testMockBootstrapAppliesCompleteTemplateDefaultsAtomically() {
+    @Test func MockBootstrapAppliesCompleteTemplateDefaultsAtomically() {
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .forest
         configuration.headerStyle = .compact
@@ -1590,14 +1379,14 @@ final class InvoiceEditorSeparationTests: XCTestCase {
 
         viewModel.bootstrapMock(defaults: defaults)
 
-        XCTAssertEqual(viewModel.paperSize, .legal)
-        XCTAssertEqual(viewModel.pageOrientation, .landscape)
-        XCTAssertEqual(viewModel.templateConfiguration, configuration)
-        XCTAssertFalse(viewModel.hasUnsavedChanges)
+        #expect(viewModel.paperSize == .legal)
+        #expect(viewModel.pageOrientation == .landscape)
+        #expect(viewModel.templateConfiguration == configuration)
+        #expect(!(viewModel.hasUnsavedChanges))
     }
 
     @MainActor
-    func testMockBootstrapDoesNotTouchPersistedInvoices() async throws {
+    @Test func MockBootstrapDoesNotTouchPersistedInvoices() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
         _ = try await actor.createInvoice()
@@ -1606,46 +1395,40 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         viewModel.bootstrapMock(template: .default)
         let persistedCount = try await actor.invoiceCount()
 
-        XCTAssertEqual(viewModel.currentInvoice?.invoiceNumber, "INV-DEMO-001")
-        XCTAssertEqual(persistedCount, 1)
+        #expect(viewModel.currentInvoice?.invoiceNumber == "INV-DEMO-001")
+        #expect(persistedCount == 1)
     }
 
     @MainActor
-    func testResetTemplateRestoresPageSetupAndFormattingDefaults() throws {
+    @Test func ResetTemplateRestoresPageSetupAndFormattingDefaults() throws {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: InvoiceTemplatePreset.modern.configuration)
         viewModel.paperSize = .legal
         viewModel.pageOrientation = .landscape
 
-        XCTAssertFalse(viewModel.isUsingDefaultTemplate)
+        #expect(!(viewModel.isUsingDefaultTemplate))
 
         viewModel.resetTemplateToDefaults()
 
-        XCTAssertEqual(viewModel.paperSize, .default)
-        XCTAssertEqual(viewModel.pageOrientation, .portrait)
-        XCTAssertEqual(viewModel.templateConfiguration, .default)
-        XCTAssertTrue(viewModel.isUsingDefaultTemplate)
+        #expect(viewModel.paperSize == .default)
+        #expect(viewModel.pageOrientation == .portrait)
+        #expect(viewModel.templateConfiguration == .default)
+        #expect(viewModel.isUsingDefaultTemplate)
     }
 
-    func testDeleteConfirmationWarnsWhenDraftWillBeDiscarded() {
-        XCTAssertEqual(
-            InvoiceEditorDeleteCopy.message(
+    @Test func DeleteConfirmationWarnsWhenDraftWillBeDiscarded() {
+        #expect(InvoiceEditorDeleteCopy.message(
                 invoiceNumber: "INV-1042",
                 discardsUnsavedChanges: true
-            ),
-            "This permanently deletes INV-1042 and all of its line items. Unsaved changes to this invoice will also be discarded."
-        )
-        XCTAssertEqual(
-            InvoiceEditorDeleteCopy.message(
+            ) == "This permanently deletes INV-1042 and all of its line items. This cannot be undone. Unsaved changes to this invoice will also be discarded.")
+        #expect(InvoiceEditorDeleteCopy.message(
                 invoiceNumber: "   ",
                 discardsUnsavedChanges: false
-            ),
-            "This permanently deletes the selected invoice and all of its line items."
-        )
+            ) == "This permanently deletes the selected invoice and all of its line items. This cannot be undone.")
     }
 
     @MainActor
-    func testCustomPageAndMarginOverridesCanReturnToSelectedPresets() throws {
+    @Test func CustomPageAndMarginOverridesCanReturnToSelectedPresets() throws {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: .default)
         viewModel.paperSize = .legal
@@ -1654,20 +1437,20 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         viewModel.customPageHeightPoints = 1_000
         viewModel.customMarginPoints = 72
 
-        XCTAssertTrue(viewModel.hasCustomPageSize)
-        XCTAssertTrue(viewModel.hasCustomMargin)
+        #expect(viewModel.hasCustomPageSize)
+        #expect(viewModel.hasCustomMargin)
 
         viewModel.useSelectedPaperSize()
         viewModel.useSelectedMarginPreset()
 
-        XCTAssertFalse(viewModel.hasCustomPageSize)
-        XCTAssertFalse(viewModel.hasCustomMargin)
-        XCTAssertEqual(viewModel.pageSizePoints, PaperSize.legal.sizePoints(for: .portrait))
-        XCTAssertEqual(viewModel.effectiveMarginPoints, InvoiceMarginPreset.wide.marginPoints)
+        #expect(!(viewModel.hasCustomPageSize))
+        #expect(!(viewModel.hasCustomMargin))
+        #expect(viewModel.pageSizePoints == PaperSize.legal.sizePoints(for: .portrait))
+        #expect(viewModel.effectiveMarginPoints == InvoiceMarginPreset.wide.marginPoints)
     }
 
     @MainActor
-    func testDirectTemplateNumericEditsClampToSafeControlRanges() throws {
+    @Test func DirectTemplateNumericEditsClampToSafeControlRanges() throws {
         let viewModel = InvoiceEditorViewModel()
         viewModel.bootstrapMock(template: .default)
 
@@ -1675,47 +1458,36 @@ final class InvoiceEditorSeparationTests: XCTestCase {
         viewModel.updateCustomSpacingScale(-20)
         viewModel.updateCustomBorderWidth(.infinity)
 
-        XCTAssertEqual(
-            viewModel.customTypographyScale,
-            InvoiceTemplateLayoutLimits.typographyScaleRange.upperBound
-        )
-        XCTAssertEqual(
-            viewModel.customSpacingScale,
-            InvoiceTemplateLayoutLimits.spacingScaleRange.lowerBound
-        )
-        XCTAssertNil(viewModel.customBorderWidth)
+        #expect(viewModel.customTypographyScale == InvoiceTemplateLayoutLimits.typographyScaleRange.upperBound)
+        #expect(viewModel.customSpacingScale == InvoiceTemplateLayoutLimits.spacingScaleRange.lowerBound)
+        #expect(viewModel.customBorderWidth == nil)
     }
 
-    func testNewInvoiceReceivesSavedTemplateDefaults() async throws {
-        let preferences = UserDefaults.standard
-        let original = preferences.data(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-        defer {
-            if let original {
-                preferences.set(original, forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            } else {
-                preferences.removeObject(forKey: InvoiceTemplatePreferenceStore.preferenceKey)
-            }
-        }
+    @Test func NewInvoiceReceivesSavedTemplateDefaults() async throws {
+        let suiteName = "NewInvoiceReceivesSavedTemplateDefaults.\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
+        defer { preferences.removePersistentDomain(forName: suiteName) }
         var configuration = InvoiceTemplateConfiguration.default
         configuration.accentTheme = .navy
         configuration.headerStyle = .compact
-        InvoiceTemplatePreferenceStore.save(
-            InvoiceTemplateDefaults(
-                paperSize: .legal,
-                pageOrientation: .landscape,
-                configuration: configuration
-            ),
-            to: preferences
+        let templateDefaults = InvoiceTemplateDefaults(
+            paperSize: .legal,
+            pageOrientation: .landscape,
+            configuration: configuration
         )
+        #expect(InvoiceTemplatePreferenceStore.save(templateDefaults, to: preferences))
 
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let actor = InvoiceModelActor(modelContainer: container)
-        let id = try await InvoiceEditorStore.createInvoice(in: container)
+        let id = try await actor.createInvoice(
+            defaults: InvoiceCreationDefaults.load(from: preferences),
+            templateDefaults: templateDefaults
+        )
         let fetchedSnapshot = try await actor.fetchInvoice(id: id)
-        let snapshot = try XCTUnwrap(fetchedSnapshot)
+        let snapshot = try #require(fetchedSnapshot)
 
-        XCTAssertEqual(snapshot.templateConfiguration, configuration)
-        XCTAssertEqual(snapshot.paperSize, .legal)
-        XCTAssertEqual(snapshot.pageOrientation, .landscape)
+        #expect(snapshot.templateConfiguration == configuration)
+        #expect(snapshot.paperSize == .legal)
+        #expect(snapshot.pageOrientation == .landscape)
     }
 }

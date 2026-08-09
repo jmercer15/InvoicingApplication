@@ -1,9 +1,11 @@
-import XCTest
+import Foundation
+import Testing
 import Core
+import PersistenceModels
 @testable import Data
 
-final class BulkClaimValidationServiceTests: XCTestCase {
-    func testInvalidRowsAreMarkedAsBlockers() async {
+@Suite struct BulkClaimValidationServiceTests {
+    @Test func InvalidRowsAreMarkedAsBlockers() async {
         let service = BulkClaimValidationService()
         let invalid = BulkClaimLine(id: UUID())
         invalid.registrationNumber = ""
@@ -24,15 +26,15 @@ final class BulkClaimValidationServiceTests: XCTestCase {
         invalid.abnOfSupportProvider = "123"
 
         let result = await service.validateAndSummarize(lines: [invalid.snapshot()])
-        XCTAssertEqual(result.summary.totalRows, 1)
-        XCTAssertEqual(result.summary.validRows, 0)
-        XCTAssertEqual(result.summary.invalidRows, 1)
-        XCTAssertTrue(result.summary.hasBlockers)
-        XCTAssertFalse(result.lines[0].isValid)
-        XCTAssertNotNil(result.lines[0].validationErrorSummary)
+        #expect(result.summary.totalRows == 1)
+        #expect(result.summary.validRows == 0)
+        #expect(result.summary.invalidRows == 1)
+        #expect(result.summary.hasBlockers)
+        #expect(!(result.lines[0].isValid))
+        #expect(result.lines[0].validationErrorSummary != nil)
     }
 
-    func testCancellationRowsRequireValidReason() async {
+    @Test func CancellationRowsRequireValidReason() async {
         let service = BulkClaimValidationService()
 
         let missingReason = BulkClaimLine(id: UUID())
@@ -72,7 +74,7 @@ final class BulkClaimValidationServiceTests: XCTestCase {
         validReason.abnOfSupportProvider = nil
 
         let validated = await service.validate(lines: [missingReason.snapshot(), validReason.snapshot()])
-        XCTAssertFalse(validated[0].isValid)
-        XCTAssertTrue(validated[1].isValid)
+        #expect(!(validated[0].isValid))
+        #expect(validated[1].isValid)
     }
 }

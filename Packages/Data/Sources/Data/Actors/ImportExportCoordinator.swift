@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 import SwiftData
 import os
 
@@ -10,6 +11,7 @@ public actor ImportExportCoordinator {
     private let catalog: ImportExportCatalogOperations
     private let bulkClaims: BulkClaimWorkspaceOperations
     private let dataWipeService: DataWipeService
+    private let modelContainer: ModelContainer
     private let logger = Logger(subsystem: "com.invoicing.import-export", category: "Coordinator")
 
     public init(
@@ -28,6 +30,7 @@ public actor ImportExportCoordinator {
             modelContainer: modelContainer
         )
         self.dataWipeService = dataWipeService
+        self.modelContainer = modelContainer
     }
 
     public func fetchAvailableEffectiveDates() async throws -> [Date] {
@@ -56,25 +59,30 @@ public actor ImportExportCoordinator {
         try await importFromFile(url: url, source: .allData)
     }
 
-    public func importAllData() async throws -> [ImportResult] {
-        try await catalog.importAllData()
-    }
-
     public func importAllData(fileData: Data, fileName: String) async throws -> ImportResult {
         try await runWithDiagnostics("importAllDataFromData", payload: fileName) {
             try await catalog.importAllData(fileData: fileData, fileName: fileName)
         }
     }
 
-    public func export(source: ImportSource, dateString: String? = nil) async throws -> (data: Data, fileName: String) {
+    public func export(
+        source: ImportSource,
+        redaction: ExportRedactionPreset,
+        dateString: String?,
+        encryption: ExportEncryptionOptions?
+    ) async throws -> (data: Data, fileName: String) {
         try await runWithDiagnostics("export", payload: source.description) {
-            try await catalog.export(source: source, dateString: dateString)
+            try await catalog.export(source: source, redaction: redaction, dateString: dateString, encryption: encryption)
         }
     }
 
-    public func exportAllData(dateString: String? = nil) async throws -> (data: Data, fileName: String) {
+    public func exportAllData(
+        redaction: ExportRedactionPreset,
+        dateString: String?,
+        encryption: ExportEncryptionOptions?
+    ) async throws -> (data: Data, fileName: String) {
         try await runWithDiagnostics("exportAllData", payload: nil) {
-            try await catalog.exportAllData(dateString: dateString)
+            try await catalog.exportAllData(redaction: redaction, dateString: dateString, encryption: encryption)
         }
     }
 
@@ -101,6 +109,42 @@ public actor ImportExportCoordinator {
             submissionStatus: submissionStatus,
             submissionRef: submissionRef,
             notes: notes
+        )
+    }
+
+    public func buildClaimBatch(
+        fromDraftIDs draftIDs: [UUID],
+        fromDate: Date,
+        toDate: Date,
+        includeTravel: Bool,
+        includeCancellations: Bool,
+        claimReferenceStrategy: String
+    ) async throws -> (batch: BulkClaimBatchSnapshot, lines: [BulkClaimLineSnapshot]) {
+        _ = includeTravel
+        _ = includeCancellations
+        return try await Self.buildClaimBatchOnMainActor(
+            container: modelContainer,
+            draftIDs: draftIDs,
+            fromDate: fromDate,
+            toDate: toDate,
+            claimReferenceStrategy: claimReferenceStrategy
+        )
+    }
+
+    @MainActor
+    private static func buildClaimBatchOnMainActor(
+        container: ModelContainer,
+        draftIDs: [UUID],
+        fromDate: Date,
+        toDate: Date,
+        claimReferenceStrategy: String
+    ) async throws -> (batch: BulkClaimBatchSnapshot, lines: [BulkClaimLineSnapshot]) {
+        let builder = ClaimBatchBuilderService(modelContext: ModelContext(container))
+        return try await builder.buildBatch(
+            fromDraftIDs: draftIDs,
+            fromDate: fromDate,
+            toDate: toDate,
+            claimReferenceStrategy: claimReferenceStrategy
         )
     }
 
@@ -141,7 +185,7 @@ public actor ImportExportCoordinator {
     ) async throws -> T {
         let startedAt = Date()
         if let payload {
-            logger.info("Starting \(operation, privacy: .public) for \(payload, privacy: .public)")
+            logger.info("Starting \(operation, privacy: .public) for \(Self.redactedDiagnosticLabel(payload), privacy: .private)")
         } else {
             logger.info("Starting \(operation, privacy: .public)")
         }
@@ -152,8 +196,14 @@ public actor ImportExportCoordinator {
             return result
         } catch {
             let elapsed = Int(Date().timeIntervalSince(startedAt) * 1000)
-            logger.error("Failed \(operation, privacy: .public) after \(elapsed, privacy: .public) ms: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed \(operation, privacy: .public) after \(elapsed, privacy: .public) ms")
             throw error
         }
+    }
+
+    private static func redactedDiagnosticLabel(_ payload: String) -> String {
+        payload.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? "payload"
     }
 }

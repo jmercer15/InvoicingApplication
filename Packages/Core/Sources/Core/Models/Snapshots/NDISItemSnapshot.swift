@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - NDISItemSnapshot
 
@@ -37,7 +36,7 @@ public struct NDISItemSnapshot: Sendable, Equatable, Hashable {
     public let unit: String?
     public let regionalPrices: [RegionalPriceSnapshot]
     /// Flat convenience price (mirrors `NDISItem.price` heuristics).
-    public let price: Double?
+    public let price: Decimal?
     public let effectiveDateRange: String
 
     public init(
@@ -66,7 +65,7 @@ public struct NDISItemSnapshot: Sendable, Equatable, Hashable {
         type: String?,
         unit: String?,
         regionalPrices: [RegionalPriceSnapshot],
-        price: Double?,
+        price: Decimal?,
         effectiveDateRange: String
     ) {
         self.itemNumber = itemNumber
@@ -121,7 +120,7 @@ public struct NDISItemSnapshot: Sendable, Equatable, Hashable {
         type: String?,
         unit: String?,
         regionalPrices: [RegionalPriceSnapshot],
-        price: Double?,
+        price: Decimal?,
         effectiveDateRange: String
     ) {
         self.init(
@@ -155,34 +154,5 @@ public struct NDISItemSnapshot: Sendable, Equatable, Hashable {
         )
     }
 
-    public init(_ item: NDISItem) {
-        self.itemNumber = item.itemNumber
-        self.name = item.name
-        self.versionIdentifier = item.versionIdentifier
-        self.id = item.id
-        self.isCurrent = item.isCurrent
-        self.category = item.category
-        self.categoryNamePACE = item.categoryNamePACE
-        self.categoryNumber = item.categoryNumber
-        self.categoryNumberPACE = item.categoryNumberPACE
-        self.effectiveStartDate = item.effectiveStartDate
-        self.effectiveEndDate = item.effectiveEndDate
-        self.features = item.features
-        self.itemDescription = item.itemDescription
-        self.ndiaRequestedReports = item.ndiaRequestedReports
-        self.nonFaceToFaceProvision = item.nonFaceToFaceProvision
-        self.providerTravel = item.providerTravel
-        self.quoteRequired = item.quoteRequired
-        self.registrationGroup = item.registrationGroup
-        self.registrationGroupNumber = item.registrationGroupNumber
-        self.shortNoticeCancellations = item.shortNoticeCancellations
-        self.irregularSILSupports = item.irregularSILSupports
-        self.status = item.status
-        self.type = item.type
-        self.unit = item.unit
-        self.regionalPrices = (item.regionalPrices ?? []).map(RegionalPriceSnapshot.init)
-        self.price = item.price
-        self.effectiveDateRange = item.effectiveDateRange
-    }
 }
 

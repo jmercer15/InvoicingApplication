@@ -1,9 +1,101 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import SwiftData
 import Core
+import PersistenceModels
 
 extension EventKitSyncService {
+
+    struct DetachedEventSavePayload: Sendable {
+        let calendarIdentifier: String
+        let remoteEventId: String?
+        let sessionSnapshot: SessionSnapshot
+        let isExisting: Bool
+        let clearRecurrenceRules: Bool
+    }
+
+    nonisolated static let eventKitSaveConcurrencyLimit = 3
+
+    nonisolated static func saveDetachedEvent(
+        payload: DetachedEventSavePayload,
+        recurrenceRuleManager: Core.RecurrenceRuleManager,
+        span: EKSpan = .thisEvent
+    ) async throws -> String {
+        try Task.checkCancellation()
+        return try await Task(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let bgStore = EKEventStore()
+            guard let bgCalendar = bgStore.calendar(withIdentifier: payload.calendarIdentifier) else {
+                throw NSError(
+                    domain: "EventKitSyncService",
+                    code: 107,
+                    userInfo: [NSLocalizedDescriptionKey: "Calendar not found in background store"]
+                )
+            }
+
+            let bgEvent: EKEvent
+            if let eventId = payload.remoteEventId, let existing = bgStore.event(withIdentifier: eventId) {
+                bgEvent = existing
+                _ = bgEvent.refresh()
+            } else {
+                bgEvent = EKEvent(eventStore: bgStore)
+                bgEvent.calendar = bgCalendar
+            }
+
+            EventKitSessionWriter.mapSessionToEvent(
+                payload.sessionSnapshot,
+                event: bgEvent,
+                preserveExistingMetadata: payload.isExisting,
+                recurrenceRuleManager: recurrenceRuleManager
+            )
+            if payload.clearRecurrenceRules {
+                bgEvent.recurrenceRules = nil
+            }
+
+            try bgStore.save(bgEvent, span: span, commit: true)
+            return bgEvent.eventIdentifier ?? ""
+        }.value
+    }
+
+    nonisolated static func saveDetachedEventsConcurrently(
+        payloads: [DetachedEventSavePayload],
+        recurrenceRuleManager: Core.RecurrenceRuleManager,
+        span: EKSpan = .thisEvent,
+        maxConcurrent: Int = eventKitSaveConcurrencyLimit
+    ) async throws -> [String] {
+        guard !payloads.isEmpty else { return [] }
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            var remaining = payloads.makeIterator()
+            var collected: [String] = []
+            collected.reserveCapacity(payloads.count)
+
+            for _ in 0..<min(maxConcurrent, payloads.count) {
+                if let payload = remaining.next() {
+                    group.addTask {
+                        try await Self.saveDetachedEvent(
+                            payload: payload,
+                            recurrenceRuleManager: recurrenceRuleManager,
+                            span: span
+                        )
+                    }
+                }
+            }
+
+            while let savedId = try await group.next() {
+                collected.append(savedId)
+                if let payload = remaining.next() {
+                    group.addTask {
+                        try await Self.saveDetachedEvent(
+                            payload: payload,
+                            recurrenceRuleManager: recurrenceRuleManager,
+                            span: span
+                        )
+                    }
+                }
+            }
+            return collected
+        }
+    }
 
     // MARK: - Outbound Sync (App → Calendar)
 
@@ -14,6 +106,7 @@ extension EventKitSyncService {
         syncProgress = 0.0
 
         guard syncEnabled else {
+            cancelActiveSyncTasks()
             error = NSError(domain: "EventKitSyncService", code: 101,
                             userInfo: [NSLocalizedDescriptionKey: "Sync is disabled or session context is missing."])
             syncStatus = .error
@@ -44,7 +137,11 @@ extension EventKitSyncService {
             return
         }
 
-        Task { @MainActor [self] in
+        activeOutboundSyncTask?.cancel()
+        activeOutboundSyncTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.activeOutboundSyncTask = nil }
+
             let remoteEvent = await self.findRemoteEvent(for: snapshot)
             let localLastModified = snapshot.lastModifiedDate ?? Date.distantPast
             let remoteLastModified = remoteEvent?.lastModifiedDate ?? Date.distantPast
@@ -145,74 +242,80 @@ extension EventKitSyncService {
             let isExisting = isExistingEvent
             let remoteEventId = remoteEvent?.eventIdentifier
             let eventTitle = snapshot.title
-            let ruleManager = self.recurrenceRuleManager
 
-            Task {
-                do {
-                    let savedId = try await Task.detached(priority: .userInitiated) {
-                        let bgStore = EKEventStore()
-                        guard let bgCalendar = bgStore.calendar(withIdentifier: calendarIdentifier) else {
-                            throw NSError(domain: "EventKitSyncService", code: 107, userInfo: [NSLocalizedDescriptionKey: "Calendar not found in background store"])
-                        }
+            do {
+                if Task.isCancelled { return }
+                let savedId = try await Self.saveDetachedEvent(
+                    payload: DetachedEventSavePayload(
+                        calendarIdentifier: calendarIdentifier,
+                        remoteEventId: remoteEventId,
+                        sessionSnapshot: snapshot,
+                        isExisting: isExisting,
+                        clearRecurrenceRules: false
+                    ),
+                    recurrenceRuleManager: self.recurrenceRuleManager,
+                    span: span
+                )
 
-                        let bgEvent: EKEvent
-                        if let eventId = remoteEventId, let existing = bgStore.event(withIdentifier: eventId) {
-                            bgEvent = existing
-                            _ = bgEvent.refresh()
-                        } else {
-                            bgEvent = EKEvent(eventStore: bgStore)
-                            bgEvent.calendar = bgCalendar
-                        }
-
-                        EventKitSessionWriter.mapSessionToEvent(
-                            snapshot,
-                            event: bgEvent,
-                            preserveExistingMetadata: isExisting,
-                            recurrenceRuleManager: ruleManager
-                        )
-
-                        try bgStore.save(bgEvent, span: span, commit: true)
-                        return bgEvent.eventIdentifier ?? ""
-                    }.value
-
-                    let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? ekEvent
-                    let mainResolvedEvent = await self.resolvePersistedEventIdentity(
-                        savedEvent: resolvedEvent,
-                        snapshot: snapshot,
-                        span: span,
-                        previousIdentifier: previousIdentifier
+                let resolvedEvent = self.eventStore.event(withIdentifier: savedId) ?? ekEvent
+                let mainResolvedEvent = await self.resolvePersistedEventIdentity(
+                    savedEvent: resolvedEvent,
+                    snapshot: snapshot,
+                    span: span,
+                    previousIdentifier: previousIdentifier
+                )
+                let resolver = EntityResolutionService(context: modelContext)
+                if let sessionModel = try? resolver.resolveSession(id: snapshot.id) {
+                    await self.applyRemoteEventToSession(
+                        remoteEvent: mainResolvedEvent,
+                        session: sessionModel,
+                        includeCoreFields: false
                     )
-                    let resolver = EntityResolutionService(context: modelContext)
-                    if let sessionModel = try? resolver.resolveSession(id: snapshot.id) {
-                        await self.applyRemoteEventToSession(
-                            remoteEvent: mainResolvedEvent,
-                            session: sessionModel,
-                            includeCoreFields: false
-                        )
-                        if previousIdentifier != sessionModel.eventIdentifier {
-                            print("[SyncService] Event identifier rebased after save span \(span): \(previousIdentifier) -> \(sessionModel.eventIdentifier)")
-                        }
+                    if previousIdentifier != sessionModel.eventIdentifier {
+                        print("[SyncService] Event identifier rebased after save span \(span): \(previousIdentifier) -> \(sessionModel.eventIdentifier)")
                     }
-                    print("[SyncService] Successfully synced session: \(eventTitle)")
-                    self.syncStatus = .idle
-                    self.lastSyncDate = Date()
-                    self.syncProgress = 1.0
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        if self.syncStatus == .idle { self.syncStatus = .idle }
-                    }
-                } catch {
-                    let msg = "Failed to save event to calendar: \(error.localizedDescription)"
-                    print("[SyncService] \(msg)")
-                    self.error = NSError(domain: "EventKitSyncService", code: 106,
-                                         userInfo: [NSLocalizedDescriptionKey: msg])
-                    self.syncStatus = .error
                 }
+                print("[SyncService] Successfully synced session: \(eventTitle)")
+                self.syncStatus = .idle
+                self.lastSyncDate = Date()
+                self.syncProgress = 1.0
+                Task { @MainActor in
+                    guard await Task.waitUnlessCancelled(nanoseconds: 2_000_000_000) else { return }
+                    if self.syncStatus == .idle { self.syncStatus = .idle }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                let msg = "Failed to save event to calendar: \(error.localizedDescription)"
+                print("[SyncService] \(msg)")
+                self.error = NSError(domain: "EventKitSyncService", code: 106,
+                                     userInfo: [NSLocalizedDescriptionKey: msg])
+                self.syncStatus = .error
             }
         }
     }
 
     // MARK: - Delete
+
+    enum DeleteEventResult: Sendable {
+        case deleted
+        case notFound
+    }
+
+    nonisolated static func deleteEventOffMainThread(
+        syncIdentifier: String,
+        span: EKSpan
+    ) async throws -> DeleteEventResult {
+        try await Task(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let bgStore = EKEventStore()
+            guard let event = bgStore.event(withIdentifier: syncIdentifier) else {
+                return .notFound
+            }
+            try bgStore.remove(event, span: span, commit: true)
+            return .deleted
+        }.value
+    }
 
     public func delete(syncIdentifier: String, span: EKSpan = .thisEvent) {
         guard syncEnabled else {
@@ -225,30 +328,33 @@ extension EventKitSyncService {
                             userInfo: [NSLocalizedDescriptionKey: "Full Calendar access is required for two-way calendar sync."])
             return
         }
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            let bgStore = EKEventStore()
-            guard let event = bgStore.event(withIdentifier: syncIdentifier) else {
-                let msg = "Event not found in calendar. It may have already been deleted."
-                Task { @MainActor in
+
+        activeDeleteTask?.cancel()
+        activeDeleteTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.activeDeleteTask = nil }
+
+            do {
+                let result = try await Self.deleteEventOffMainThread(
+                    syncIdentifier: syncIdentifier,
+                    span: span
+                )
+                switch result {
+                case .deleted:
+                    print("[SyncService] Successfully deleted event from calendar.")
+                    self.error = nil
+                case .notFound:
+                    let msg = "Event not found in calendar. It may have already been deleted."
                     self.error = NSError(domain: "EventKitSyncService", code: 108,
                                          userInfo: [NSLocalizedDescriptionKey: msg])
                 }
+            } catch is CancellationError {
                 return
-            }
-            do {
-                try bgStore.remove(event, span: span, commit: true)
-                print("[SyncService] Successfully deleted event from calendar.")
-                Task { @MainActor in
-                    self.error = nil
-                }
             } catch {
                 let msg = "Error deleting event: \(error.localizedDescription)"
                 print("[SyncService] \(msg)")
-                Task { @MainActor in
-                    self.error = NSError(domain: "EventKitSyncService", code: 109,
-                                         userInfo: [NSLocalizedDescriptionKey: msg])
-                }
+                self.error = NSError(domain: "EventKitSyncService", code: 109,
+                                     userInfo: [NSLocalizedDescriptionKey: msg])
             }
         }
     }

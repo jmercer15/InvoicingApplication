@@ -128,6 +128,8 @@ Feature container VMs (`InvoicesContainerViewModel`, `RelationshipsContainerView
 
 ## SwiftData & Concurrency
 
+- **Manual-save everywhere:** All app `ModelContext`s keep `autosaveEnabled = false` — workspace/tool scene environments (via `manualSaveModelContext()`), Settings (`AppDatabase.makeMainContext()`), and ephemeral billing/worker contexts (`ModelContainerFactory.makeEphemeralContext(from:)`). Explicit `save()` is the commit API.
+
 - Core boundary DTOs (`*Snapshot` types) live in `Packages/Core/Sources/Core/Models/Snapshots/` (one file per type). **`EntitySnapshots.swift` is deliberately empty** — a stable navigation anchor only (do not add types back there); edit the matching `Snapshots/<TypeName>.swift` when changing a snapshot.
 
 - Prefer query-driven UI (`@Query` / bounded `FetchDescriptor`) over fetch-all + in-memory filtering.
@@ -170,3 +172,42 @@ Feature container VMs (`InvoicesContainerViewModel`, `RelationshipsContainerView
 - After deleting SwiftPM sources, if you see “missing inputs” errors, run:
   - `swift package clean`
   - then rebuild the package.
+
+## Export & sensitive file threat model
+
+- **Settings JSON / CSV exports** — User picks the destination via the system save panel. Exports are **plaintext** JSON or CSV containing client PII, NDIS catalogue rows, invoice totals, and claim-line identifiers. The Import/Export UI shows a standing sensitivity notice, requires explicit consent before PII-heavy exports, and offers an optional **Omit bank & NDIS IDs** redaction preset (`ExportRedactionPreset.omitBankAndNDISIdentifiers`) for generic backups. Operators must still store files on encrypted volumes and limit sharing; redaction is not encryption.
+- **Accepted residual risk (exports)** — Full exports remain plaintext by design (local-first backup/transfer). Field redaction omits bank and participant NDIS identifiers only; names, emails, addresses, and support-item codes may remain. Claim CSV exports always include participant identifiers required for NDIA submission.
+- **Invoice PDF temp files — lifecycle**
+  - **Creation:** `InvoicePDFRenderer.temporaryPDF` renders to `NSTemporaryDirectory()/com.invoicing.invoice-pdf/<uuid>/` via `InvoiceTemporaryPDFWorkspace.makeDirectory()` with `0700` directory / `0600` file permissions and `isExcludedFromBackup`.
+  - **Ownership:** `InvoiceTemporaryPDF` holds the workspace URL; callers must invoke `discard()` (or hold a type that does so in `deinit`).
+  - **Success paths:** Mail share (`BillingHubMailComposer.finish` / `deinit`), bulk PDF workflows (`defer { pdf.discard() }` in Invoices/Billing Hub), editor preview flows, and integration tests.
+  - **Error paths:** If `PDFDocument.write(to:)` fails, `InvoicePDFRenderer` removes the workspace directory before rethrowing. Attribute application failures propagate without leaving an orphaned workspace when write never succeeded.
+  - **Retention:** Temp PDFs are not retained across app relaunch; macOS may purge `NSTemporaryDirectory()` independently. User-chosen Save Panel / export paths are operator-controlled plaintext (same trust model as Mail attachments).
+  - **Secure delete:** `InvoiceTemporaryPDFWorkspace.securelyDeleteWorkspace` zero-fills before unlink (SEC-4); `InvoiceTemporaryPDF.discard()` on all success/error paths.
+- **Keychain scaffold** — `KeychainStoring` + `KeychainStore` in Core provide generic-password storage (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, add-or-update). No production call sites yet; adopt when persisting API keys or mail tokens outside SwiftData.
+- **FormatStyle** — UI currency, date, and measurement labels use `CurrencyFormatting`, `DateFormatting`, and `MeasurementFormatting` in SharedUI. Fixed-pattern export filenames use `MachineFormatting`. Reserve C-style `String(format:)` for machine tokens (claim codes, checksums, coordinate literals, CSV quantity columns).
+
+## Phase 8 — App Intents + remaining P3 (audit program)
+
+### App Intents (minimal surface)
+
+- **`OpenWorkspaceTabIntent`** and **`OpenClientIntent`** live in `Packages/AppShell/Sources/AppShell/App/Intents/` with **`InvoicingAppShortcuts`** (`AppShortcutsProvider`).
+- **`AppIntentModelAccess`** holds the shared `ModelContainer` (Sendable). Registered in `AppIntentBootstrap.registerSharedDependencies()` from `InvoicingApplicationApp.init()` so headless Shortcuts launches see dependencies. **`AppSession.bootstrap()`** calls `AppIntentBootstrap.adoptModelContainer(_:)` when runtime is ready.
+- Intents enqueue navigation on **`WorkspaceIntentDeliveryCenter`**; **`WorkspaceWindowRoot`** consumes pending navigation via `AppNavigationManager`. No `ModelContext` in intent `perform()`.
+- Shortcuts phrases include `\(.applicationName)` per App Intents requirements.
+
+### P3 backlog disposition
+
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| MigrationOrchestrator store-scoped cache | **Done** | Applied-migration cache keyed by migration-history file path (store-scoped). |
+| SupportLog fetch batching / `sessionId` | **Done** | Denormalized `SupportLog.sessionId`, migration `backfill_supportlog_session_id_v1`, `BulkClaimBuilderActor` fetches by session id set. |
+| BillableDraft plan-type denormalize | **Done** | `BackfillBillableDraftPlanType_v1` migration; clientId-scoped `@Query` + in-memory plan filter at current volume |
+| Predicate optional-date cleanup | **Done** | `BillableDraftSessionPickerList` uses optional binding in `#Predicate` (no `startTime!`). |
+| `foregroundColor` → `foregroundStyle` (high-traffic) | **Done** | AppShell sidebar/sync indicator, Billing Hub shell status rows, startup loading. Remaining feature files deferred (cosmetic; no behavior change). |
+| SessionPhaseRoot Dynamic Type | **Done** | Startup icon uses `@ScaledMetric(relativeTo: .largeTitle)`. |
+| UserDefaults Sendable cleanup | **Done** | Removed unused `UserDefaultsObservationHandle`. `observedValue` is `@MainActor`; KVO observer uses `nonisolated(unsafe)` for teardown only. `UserDefaultsKeyObserver` keeps `@unchecked Sendable` at KVO boundary. |
+
+### Audit closeout (Phase 7 — zero waive)
+
+All A0–A8 findings closed as **fix** with build/test evidence. See [audit-closeout-evidence.md](./docs/audit-closeout-evidence.md) — waiver register empty; 154/154 fix; 725 SPM tests PASS (2026-07-29).

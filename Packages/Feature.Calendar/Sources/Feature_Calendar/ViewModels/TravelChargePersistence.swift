@@ -1,32 +1,34 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
+import SharedUI
 
 @MainActor
 struct TravelChargePersistence {
     let modelContext: ModelContext
 
-    func saveTravelCharges(form: TravelChargeFormState) {
+    func saveTravelCharges(form: TravelChargeFormState) throws {
         guard form.canSave else { return }
 
         if form.chargeType == .standard {
             if form.includeLabour, let service = form.labourService {
-                createTimeBasedSessions(form: form, service: service)
+                try createTimeBasedSessions(form: form, service: service)
             }
             if form.includeNonLabour, let service = form.nonLabourService {
-                createEventBasedSessions(form: form, service: service)
+                try createEventBasedSessions(form: form, service: service)
             }
         } else if let service = form.labourService {
-            createActivityBasedSessions(form: form, service: service)
+            try createActivityBasedSessions(form: form, service: service)
         }
     }
 
-    private func createTimeBasedSessions(form: TravelChargeFormState, service: ClientService) {
+    private func createTimeBasedSessions(form: TravelChargeFormState, service: ClientService) throws {
         let currentTravelTime = form.travelDirection == .before ? form.travelTimeBefore : form.travelTimeAfter
         let breakdown = Core.NDISTravelChargeCalculator.calculate(
             providerType: form.providerType,
-            hourlyRate: Double(service.rate),
+            hourlyRate: NSDecimalNumber(decimal: service.rate).doubleValue,
             mmmZoneDescriptor: form.mmmZone.rawValue,
             minutesTravelled: currentTravelTime,
             kilometresTravelled: 0,
@@ -38,19 +40,19 @@ struct TravelChargePersistence {
         Labour travel charge.
         Provider type: \(form.providerType.rawValue)
         Hourly rate: \(service.rate.formatted(.currency(code: "AUD")))/hr
-        Travel factor: \(String(format: "%.2f", form.providerType.travelFactor))
-        Billable time: \(String(format: "%.1f", clampedTime)) min
+        Travel factor: \(MeasurementFormatting.decimal(form.providerType.travelFactor, fractionDigits: 2))
+        Billable time: \(MeasurementFormatting.minutes(clampedTime, fractionDigits: 1))
         Amount per participant: \(breakdown.labourPerParticipant.formatted(.currency(code: "AUD")))
         Participants: \(form.effectiveParticipantCount)
         """
 
         if form.travelDirection == .before && !form.hasExistingTravelBefore {
-            createSession(
+            try createSession(
                 form: form,
                 startTime: form.effectiveStartTime.addingTimeInterval(-clampedTime * 60),
                 endTime: form.effectiveStartTime,
                 service: service,
-                amount: breakdown.labourPerParticipant,
+                amount: Decimal(breakdown.labourPerParticipant),
                 distance: 0,
                 duration: clampedTime,
                 chargeType: "labour",
@@ -59,12 +61,12 @@ struct TravelChargePersistence {
             )
         }
         if form.travelDirection == .after && !form.hasExistingTravelAfter {
-            createSession(
+            try createSession(
                 form: form,
                 startTime: form.effectiveEndTime,
                 endTime: form.effectiveEndTime.addingTimeInterval(clampedTime * 60),
                 service: service,
-                amount: breakdown.labourPerParticipant,
+                amount: Decimal(breakdown.labourPerParticipant),
                 distance: 0,
                 duration: clampedTime,
                 chargeType: "labour",
@@ -74,10 +76,10 @@ struct TravelChargePersistence {
         }
     }
 
-    private func createEventBasedSessions(form: TravelChargeFormState, service: ClientService) {
+    private func createEventBasedSessions(form: TravelChargeFormState, service: ClientService) throws {
         let breakdown = Core.NDISTravelChargeCalculator.calculate(
             providerType: form.providerType,
-            hourlyRate: Double(service.rate),
+            hourlyRate: NSDecimalNumber(decimal: service.rate).doubleValue,
             mmmZoneDescriptor: form.mmmZone.rawValue,
             minutesTravelled: 0,
             kilometresTravelled: form.distance,
@@ -86,19 +88,19 @@ struct TravelChargePersistence {
         )
         let notes = """
         Non-labour travel charge.
-        Kilometres: \(String(format: "%.1f", form.distance)) km @ \(Core.NDISTravelChargeCalculator.vehicleRatePerKilometre.formatted(.currency(code: "AUD")))/km
+        Kilometres: \(MeasurementFormatting.kilometers(form.distance)) @ \(Core.NDISTravelChargeCalculator.vehicleRatePerKilometre.formatted(.currency(code: "AUD")))/km
         Ancillary costs: \((form.parking + form.tolls).formatted(.currency(code: "AUD")))
         Amount per participant: \(breakdown.nonLabourPerParticipant.formatted(.currency(code: "AUD")))
         Participants: \(form.effectiveParticipantCount)
         """
 
         if form.travelDirection == .before && !form.hasExistingTravelBefore {
-            createSession(
+            try createSession(
                 form: form,
                 startTime: form.effectiveStartTime,
                 endTime: form.effectiveStartTime,
                 service: service,
-                amount: breakdown.nonLabourPerParticipant,
+                amount: Decimal(breakdown.nonLabourPerParticipant),
                 distance: form.distance,
                 duration: 0,
                 chargeType: "non-labour",
@@ -108,12 +110,12 @@ struct TravelChargePersistence {
             )
         }
         if form.travelDirection == .after && !form.hasExistingTravelAfter {
-            createSession(
+            try createSession(
                 form: form,
                 startTime: form.effectiveEndTime,
                 endTime: form.effectiveEndTime,
                 service: service,
-                amount: breakdown.nonLabourPerParticipant,
+                amount: Decimal(breakdown.nonLabourPerParticipant),
                 distance: form.distance,
                 duration: 0,
                 chargeType: "non-labour",
@@ -124,21 +126,22 @@ struct TravelChargePersistence {
         }
     }
 
-    private func createActivityBasedSessions(form: TravelChargeFormState, service: ClientService) {
+    private func createActivityBasedSessions(form: TravelChargeFormState, service: ClientService) throws {
         let requestedTime = form.travelDirection == .before ? form.travelTimeBefore : form.travelTimeAfter
         let maxMinutes = Core.NDISTravelChargeCalculator.maxBillableMinutes(forMMMDescriptor: form.mmmZone.rawValue)
         let billableMinutes = maxMinutes.isInfinite ? requestedTime : min(requestedTime, maxMinutes)
-        let timeCost = (billableMinutes / 60.0) * service.rate
-        let vehicleCost = form.distance * form.vehicleType.rate
-        let totalCost = (timeCost + vehicleCost + form.parking + form.tolls) / Double(form.effectiveParticipantCount)
+        let participantCount = Decimal(form.effectiveParticipantCount)
+        let timeCost = (Decimal(billableMinutes) / 60) * service.rate
+        let vehicleCost = Decimal(form.distance) * Decimal(form.vehicleType.rate)
+        let totalCost = (timeCost + vehicleCost + Decimal(form.parking) + Decimal(form.tolls)) / participantCount
 
         let notes = """
         Activity-Based Transport Breakdown:
-        - Billable time: \(String(format: "%.1f", billableMinutes)) mins
-        - Time: \((timeCost / Double(form.effectiveParticipantCount)).formatted(.currency(code: "AUD")))
-        - Vehicle: \((vehicleCost / Double(form.effectiveParticipantCount)).formatted(.currency(code: "AUD")))
-        - Parking: \((form.parking / Double(form.effectiveParticipantCount)).formatted(.currency(code: "AUD")))
-        - Tolls: \((form.tolls / Double(form.effectiveParticipantCount)).formatted(.currency(code: "AUD")))
+        - Billable time: \(MeasurementFormatting.minutes(billableMinutes, fractionDigits: 1))
+        - Time: \((timeCost / participantCount).formatted(.currency(code: "AUD")))
+        - Vehicle: \((vehicleCost / participantCount).formatted(.currency(code: "AUD")))
+        - Parking: \((Decimal(form.parking) / participantCount).formatted(.currency(code: "AUD")))
+        - Tolls: \((Decimal(form.tolls) / participantCount).formatted(.currency(code: "AUD")))
         - TOTAL PER PARTICIPANT: \(totalCost.formatted(.currency(code: "AUD")))
         """
 
@@ -149,7 +152,7 @@ struct TravelChargePersistence {
             ? form.effectiveStartTime
             : form.effectiveEndTime.addingTimeInterval(Double(billableMinutes) * 60)
 
-        createSession(
+        try createSession(
             form: form,
             startTime: startTime,
             endTime: endTime,
@@ -161,8 +164,8 @@ struct TravelChargePersistence {
             travelDirection: form.travelDirection == .before ? "before" : "after",
             notes: notes,
             vehicleType: form.vehicleType.rawValue,
-            parkingCost: form.parking,
-            tollCost: form.tolls
+            parkingCost: Decimal(form.parking),
+            tollCost: Decimal(form.tolls)
         )
     }
 
@@ -171,7 +174,7 @@ struct TravelChargePersistence {
         startTime: Date,
         endTime _: Date,
         service: ClientService,
-        amount: Double,
+        amount: Decimal,
         distance: Double,
         duration: Double,
         chargeType: String,
@@ -179,9 +182,9 @@ struct TravelChargePersistence {
         notes: String,
         isAllDay _: Bool = false,
         vehicleType: String? = nil,
-        parkingCost: Double = 0.0,
-        tollCost: Double = 0.0
-    ) {
+        parkingCost: Decimal = 0,
+        tollCost: Decimal = 0
+    ) throws {
         let travelCharge = TravelCharge(
             id: UUID(),
             chargeAmount: amount,
@@ -204,10 +207,6 @@ struct TravelChargePersistence {
         travelCharge.linkedSession = form.mainSession
         travelCharge.service = service
         modelContext.insert(travelCharge)
-        do {
-            try modelContext.save()
-        } catch {
-            print("TravelChargePersistence: Failed to save travel charge: \(error)")
-        }
+        try modelContext.save()
     }
 }

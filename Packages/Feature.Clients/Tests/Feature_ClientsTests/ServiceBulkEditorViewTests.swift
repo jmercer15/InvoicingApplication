@@ -1,17 +1,18 @@
-import XCTest
+import Testing
 import Core
+import PersistenceModels
 import SwiftUI
 @testable import Feature_Clients
 
 @MainActor
-final class ServiceBulkEditorViewTests: XCTestCase {
+@Suite struct ServiceBulkEditorViewTests {
     
     @MainActor
     final class TestState {
         var templates: [ClientServiceTemplate] = []
     }
     
-    func testClientServiceTemplateInitializationWithRegionalPrices() {
+    @Test func ClientServiceTemplateInitializationWithRegionalPrices() {
         let ndisItem = NDISItem(itemNumber: "01_001_0107_1_1", name: "Standard Therapy", unit: "hour")
         let regionalPrice1 = RegionalPrice()
         regionalPrice1.amount = 193.99
@@ -25,29 +26,29 @@ final class ServiceBulkEditorViewTests: XCTestCase {
         
         let template = ClientServiceTemplate(from: ndisItem)
         
-        XCTAssertEqual(template.serviceName, "Standard Therapy")
-        XCTAssertEqual(template.ndisCode, "01_001_0107_1_1")
-        XCTAssertEqual(template.unit, "hour")
-        XCTAssertEqual(template.priceMode, .ndis)
-        XCTAssertEqual(template.availableNdisPrices["National"], 193.99)
-        XCTAssertEqual(template.availableNdisPrices["Remote"], 220.00)
-        XCTAssertEqual(template.selectedNdisPriceKey, "National")
-        XCTAssertEqual(template.rate, 193.99)
+        #expect(template.serviceName == "Standard Therapy")
+        #expect(template.ndisCode == "01_001_0107_1_1")
+        #expect(template.unit == "hour")
+        #expect(template.priceMode == .ndis)
+        #expect(template.availableNdisPrices["National"] == 193.99)
+        #expect(template.availableNdisPrices["Remote"] == 220.00)
+        #expect(template.selectedNdisPriceKey == "National")
+        #expect(template.rate == 193.99)
     }
     
-    func testClientServiceTemplateInitializationWithoutRegionalPrices() {
+    @Test func ClientServiceTemplateInitializationWithoutRegionalPrices() {
         let ndisItem = NDISItem(itemNumber: "01_002_0107_1_1", name: "Custom Service", unit: "session")
         
         let template = ClientServiceTemplate(from: ndisItem)
         
-        XCTAssertEqual(template.serviceName, "Custom Service")
-        XCTAssertEqual(template.ndisCode, "01_002_0107_1_1")
-        XCTAssertEqual(template.unit, "session")
-        XCTAssertEqual(template.priceMode, .custom)
-        XCTAssertEqual(template.rate, 0.0)
+        #expect(template.serviceName == "Custom Service")
+        #expect(template.ndisCode == "01_002_0107_1_1")
+        #expect(template.unit == "session")
+        #expect(template.priceMode == .custom)
+        #expect(template.rate == 0.0)
     }
     
-    func testServiceBulkEditorViewEmptyStateRendering() {
+    @Test func ServiceBulkEditorViewEmptyStateRendering() {
         let state = TestState()
         var saveCalled = false
         var backCalled = false
@@ -59,14 +60,14 @@ final class ServiceBulkEditorViewTests: XCTestCase {
         )
         
         let body = view.body
-        XCTAssertNotNil(body)
-        XCTAssertTrue(state.templates.isEmpty)
+        #expect(body != nil)
+        #expect(state.templates.isEmpty)
         
         // Manually trigger and verify callbacks are wired correctly
         view.onSave([])
         view.onBackToServiceSelection()
         
-        XCTAssertTrue(saveCalled)
-        XCTAssertTrue(backCalled)
+        #expect(saveCalled)
+        #expect(backCalled)
     }
 }

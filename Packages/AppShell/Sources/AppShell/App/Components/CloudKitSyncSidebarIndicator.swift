@@ -7,6 +7,7 @@ import Observation
 /// at the bottom of a sidebar.
 public struct CloudKitSyncSidebarIndicator: View {
     @Bindable public var monitor: CloudKitSyncMonitor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var presentedSyncError: CloudKitSyncError?
 
@@ -22,6 +23,44 @@ public struct CloudKitSyncSidebarIndicator: View {
     }
 
     public var body: some View {
+        Group {
+            if monitor.syncState.isError {
+                Button {
+                    if let error = monitor.lastError {
+                        presentedSyncError = error
+                    }
+                } label: {
+                    indicatorContent
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityText)
+                .accessibilityHint("Shows sync error details and retry options.")
+            } else {
+                indicatorContent
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(accessibilityText)
+            }
+        }
+        .confirmationDialog(
+            "CloudKit Sync Issue",
+            isPresented: isSyncErrorPresented,
+            titleVisibility: .visible,
+            presenting: presentedSyncError,
+            actions: { _ in
+                Button("Retry") {
+                    monitor.refreshAccountStatus()
+                }
+                Button("Dismiss", role: .cancel) {
+                    monitor.dismissError()
+                }
+            },
+            message: { error in
+                Text(error.message)
+            }
+        )
+    }
+
+    private var indicatorContent: some View {
         HStack(spacing: StyleGuide.Dimensions.paddingMedium) {
             icon
 
@@ -42,43 +81,18 @@ public struct CloudKitSyncSidebarIndicator: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if let error = monitor.lastError {
-                presentedSyncError = error
-            }
-        }
-        .confirmationDialog(
-            "CloudKit Sync Issue",
-            isPresented: isSyncErrorPresented,
-            titleVisibility: .visible,
-            presenting: presentedSyncError,
-            actions: { _ in
-                Button("Retry") {
-                    monitor.refreshAccountStatus()
-                }
-                Button("Dismiss", role: .cancel) {
-                    monitor.dismissError()
-                }
-            },
-            message: { error in
-                Text(error.message)
-            }
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(monitor.syncState.isError ? [.isButton] : [])
     }
 
     @ViewBuilder
     private var icon: some View {
         if monitor.syncState.isActive {
             Image(systemName: "arrow.triangle.2.circlepath.icloud")
-                .symbolEffect(.rotate, isActive: true)
-                .foregroundColor(ColorSystem.Status.info)
+                .symbolEffect(.rotate, isActive: !reduceMotion)
+                .foregroundStyle(ColorSystem.Status.info)
                 .imageScale(.medium)
         } else if monitor.syncState.isError {
             Image(systemName: "exclamationmark.icloud.fill")
-                .foregroundColor(ColorSystem.Status.error)
+                .foregroundStyle(ColorSystem.Status.error)
                 .imageScale(.medium)
         } else if monitor.accountStatus.isAvailable {
             Image(systemName: "checkmark.icloud")

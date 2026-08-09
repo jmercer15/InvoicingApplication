@@ -159,17 +159,26 @@ public struct NavigationContext: Equatable {
     public var targetEntityType: EntityType?
     public var targetDate: Date?
     public var searchQuery: String?
+    /// Tab the user left when opening this target (e.g. Billing Hub → Invoice).
+    /// Used for "Back to …" chips; not part of workspace route identity.
+    public var sourceTab: AppTab?
+    /// Optional Hub card / selection id to restore when returning via `sourceTab`.
+    public var sourceFocusID: UUID?
 
     public init(
         targetEntity: UUID? = nil,
         targetEntityType: EntityType? = nil,
         targetDate: Date? = nil,
-        searchQuery: String? = nil
+        searchQuery: String? = nil,
+        sourceTab: AppTab? = nil,
+        sourceFocusID: UUID? = nil
     ) {
         self.targetEntity = targetEntity
         self.targetEntityType = targetEntityType
         self.targetDate = targetDate
         self.searchQuery = searchQuery
+        self.sourceTab = sourceTab
+        self.sourceFocusID = sourceFocusID
     }
     
     public enum EntityType: Equatable {

@@ -1,36 +1,21 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 /// Unit tests for NDIS price handling business logic
 /// Tests that all business logic properly handles cases where NDISItem.price is nil
 @MainActor
-final class NDISPriceHandlingTests: XCTestCase {
+@Suite struct NDISPriceHandlingTests {
     
-    private var modelContext: ModelContext!
-    
-    override func setUp() async throws {
-        try await super.setUp()
-        
-        // Create in-memory model context for testing
-        let models: [any PersistentModel.Type] = [
-            NDISItem.self,
-            RegionalPrice.self,
-            ServiceAgreement.self,
-            SupportLog.self,
-            BulkClaimBatch.self,
-            BulkClaimLine.self
-        ]
-        let (_, context) = try ModelContainerFactory.makeInMemoryContext(models: models)
-        modelContext = context
+    private let modelContext: ModelContext
+
+    init() throws {
+        let (_, context) = try ModelContainerFactory.makeInMemoryContext()
+        self.modelContext = context
     }
-    
-    override func tearDown() async throws {
-        modelContext = nil
-        try await super.tearDown()
-    }
-    
     // MARK: - Test Data Setup
     
     private func createNDISItemWithPrices(itemNumber: String, prices: [(region: String, amount: Double)]) -> NDISItem {
@@ -46,7 +31,7 @@ final class NDISPriceHandlingTests: XCTestCase {
         for (region, amount) in prices {
             let priceEntity = RegionalPrice(id: UUID())
             priceEntity.regionIdentifier = region
-            priceEntity.amount = amount
+            priceEntity.amount = Decimal(amount)
             priceEntity.ndisItem = entity
             modelContext.insert(priceEntity)
         }
@@ -72,7 +57,7 @@ final class NDISPriceHandlingTests: XCTestCase {
     
     // MARK: - NDISPriceUtilities Tests
     
-    func testSafePriceWithValidPrice() {
+    @Test func SafePriceWithValidPrice() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
@@ -81,10 +66,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = NDISPriceUtilities.safePrice(from: ndisItem, fallbackPrice: 0)
         
         // Then
-        XCTAssertEqual(price, Decimal(50))
+        #expect(price == Decimal(50))
     }
     
-    func testSafePriceWithNilPrice() {
+    @Test func SafePriceWithNilPrice() {
         // Given
         let entity = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let ndisItem = entity
@@ -93,10 +78,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = NDISPriceUtilities.safePrice(from: ndisItem, fallbackPrice: Decimal(25))
         
         // Then
-        XCTAssertEqual(price, Decimal(25))
+        #expect(price == Decimal(25))
     }
     
-    func testHasValidPriceWithValidPrice() {
+    @Test func HasValidPriceWithValidPrice() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
@@ -105,10 +90,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let hasValidPrice = NDISPriceUtilities.hasValidPrice(ndisItem)
         
         // Then
-        XCTAssertTrue(hasValidPrice)
+        #expect(hasValidPrice)
     }
     
-    func testHasValidPriceWithNilPrice() {
+    @Test func HasValidPriceWithNilPrice() {
         // Given
         let entity = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let ndisItem = entity
@@ -117,10 +102,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let hasValidPrice = NDISPriceUtilities.hasValidPrice(ndisItem)
         
         // Then
-        XCTAssertFalse(hasValidPrice)
+        #expect(!(hasValidPrice))
     }
     
-    func testValidatedPriceWithValidPrice() throws {
+    @Test func ValidatedPriceWithValidPrice() throws {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
@@ -129,28 +114,28 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test")
         
         // Then
-        XCTAssertEqual(price, Decimal(50))
+        #expect(price == Decimal(50))
     }
     
-    func testValidatedPriceWithNilPrice() {
+    @Test func ValidatedPriceWithNilPrice() {
         // Given
         let entity = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let ndisItem = entity
         
         // Then
-        XCTAssertThrowsError(try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test"))
+        #expect(throws: (any Error).self) { try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test") }
     }
     
-    func testValidatedPriceWithInvalidPrice() {
+    @Test func ValidatedPriceWithInvalidPrice() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", -10.0)])
         let ndisItem = entity
         
         // Then
-        XCTAssertThrowsError(try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test"))
+        #expect(throws: (any Error).self) { try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test") }
     }
     
-    func testCompareByPriceWithValidPrices() {
+    @Test func CompareByPriceWithValidPrices() {
         // Given
         let entity1 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let entity2 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_2", prices: [("National", 75.0)])
@@ -161,10 +146,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let result = NDISPriceUtilities.compareByPrice(item1, item2)
         
         // Then
-        XCTAssertEqual(result, .orderedAscending)
+        #expect(result == .orderedAscending)
     }
     
-    func testCompareByPriceWithNilPrices() {
+    @Test func CompareByPriceWithNilPrices() {
         // Given
         let entity1 = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let entity2 = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_2")
@@ -175,10 +160,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let result = NDISPriceUtilities.compareByPrice(item1, item2, nilPriceValue: 0)
         
         // Then
-        XCTAssertEqual(result, .orderedSame)
+        #expect(result == .orderedSame)
     }
     
-    func testMinimumPriceWithMixedPrices() {
+    @Test func MinimumPriceWithMixedPrices() {
         // Given
         let entity1 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let entity2 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_2", prices: [("National", 75.0)])
@@ -189,10 +174,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let minPrice = NDISPriceUtilities.minimumPrice(from: items, includeNilPrices: false)
         
         // Then
-        XCTAssertEqual(minPrice, Decimal(50))
+        #expect(minPrice == Decimal(50))
     }
     
-    func testMaximumPriceWithMixedPrices() {
+    @Test func MaximumPriceWithMixedPrices() {
         // Given
         let entity1 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let entity2 = createNDISItemWithPrices(itemNumber: "01_001_0107_1_2", prices: [("National", 75.0)])
@@ -203,10 +188,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let maxPrice = NDISPriceUtilities.maximumPrice(from: items, includeNilPrices: false)
         
         // Then
-        XCTAssertEqual(maxPrice, Decimal(75))
+        #expect(maxPrice == Decimal(75))
     }
     
-    func testFormatPriceWithValidPrice() {
+    @Test func FormatPriceWithValidPrice() {
         // Given
         let price = Decimal(50)
         
@@ -214,18 +199,18 @@ final class NDISPriceHandlingTests: XCTestCase {
         let formatted = NDISPriceUtilities.formatPrice(price)
         
         // Then
-        XCTAssertTrue(formatted.contains("50.00"))
+        #expect(formatted.contains("50.00"))
     }
     
-    func testFormatPriceWithNilPrice() {
+    @Test func FormatPriceWithNilPrice() {
         // When
         let formatted = NDISPriceUtilities.formatPriceRange(minPrice: nil, maxPrice: nil)
         
         // Then
-        XCTAssertEqual(formatted, "Price not available")
+        #expect(formatted == "Price not available")
     }
     
-    func testFormatPriceRangeWithValidPrices() {
+    @Test func FormatPriceRangeWithValidPrices() {
         // Given
         let minPrice: Decimal? = Decimal(50)
         let maxPrice: Decimal? = Decimal(75)
@@ -234,11 +219,11 @@ final class NDISPriceHandlingTests: XCTestCase {
         let formatted = NDISPriceUtilities.formatPriceRange(minPrice: minPrice, maxPrice: maxPrice)
         
         // Then
-        XCTAssertTrue(formatted.contains("50.00"))
-        XCTAssertTrue(formatted.contains("75.00"))
+        #expect(formatted.contains("50.00"))
+        #expect(formatted.contains("75.00"))
     }
     
-    func testFormatPriceRangeWithNilPrices() {
+    @Test func FormatPriceRangeWithNilPrices() {
         // Given
         let minPrice: Decimal? = nil
         let maxPrice: Decimal? = nil
@@ -247,12 +232,12 @@ final class NDISPriceHandlingTests: XCTestCase {
         let formatted = NDISPriceUtilities.formatPriceRange(minPrice: minPrice, maxPrice: maxPrice)
         
         // Then
-        XCTAssertEqual(formatted, "Price not available")
+        #expect(formatted == "Price not available")
     }
     
     // MARK: - Extension Tests
     
-    func testNDISItemSafePriceExtension() {
+    @Test func NDISItemSafePriceExtension() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
@@ -261,10 +246,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = NDISPriceUtilities.safePrice(from: ndisItem, fallbackPrice: Decimal(25))
         
         // Then
-        XCTAssertEqual(price, Decimal(50))
+        #expect(price == Decimal(50))
     }
     
-    func testNDISItemHasValidPriceExtension() {
+    @Test func NDISItemHasValidPriceExtension() {
         // Given
         let entity = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let ndisItem = entity
@@ -273,24 +258,24 @@ final class NDISPriceHandlingTests: XCTestCase {
         let hasValidPrice = NDISPriceUtilities.hasValidPrice(ndisItem)
         
         // Then
-        XCTAssertFalse(hasValidPrice)
+        #expect(!(hasValidPrice))
     }
     
-    func testNDISItemFormattedPriceExtension() {
+    @Test func NDISItemFormattedPriceExtension() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
         
         // When
-        let formatted = NDISPriceUtilities.formatPrice(Decimal(ndisItem.price ?? 0))
+        let formatted = NDISPriceUtilities.formatPrice(ndisItem.price ?? 0)
         
         // Then
-        XCTAssertTrue(formatted.contains("50.00"))
+        #expect(formatted.contains("50.00"))
     }
     
     // MARK: - Business Logic Integration Tests
     
-    func testServiceBulkEditorHandlesNilPrice() {
+    @Test func ServiceBulkEditorHandlesNilPrice() {
         // Given
         let entity = createNDISItemWithoutPrices(itemNumber: "01_001_0107_1_1")
         let ndisItem = entity
@@ -299,10 +284,10 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = NDISPriceUtilities.safePrice(from: ndisItem, fallbackPrice: 0)
         
         // Then
-        XCTAssertEqual(price, Decimal(0))
+        #expect(price == Decimal(0))
     }
     
-    func testServiceBulkEditorHandlesValidPrice() {
+    @Test func ServiceBulkEditorHandlesValidPrice() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 50.0)])
         let ndisItem = entity
@@ -311,30 +296,30 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = NDISPriceUtilities.safePrice(from: ndisItem, fallbackPrice: 0)
         
         // Then
-        XCTAssertEqual(price, Decimal(50))
+        #expect(price == Decimal(50))
     }
     
     // MARK: - Edge Cases
     
-    func testPriceExtractionWithZeroAmount() {
+    @Test func PriceExtractionWithZeroAmount() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", 0.0)])
         let ndisItem = entity
         
         // Then
-        XCTAssertEqual(ndisItem.price, 0)
+        #expect(ndisItem.price == 0)
     }
     
-    func testPriceExtractionWithNegativeAmount() {
+    @Test func PriceExtractionWithNegativeAmount() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [("National", -10.0)])
         let ndisItem = entity
         
         // Then
-        XCTAssertThrowsError(try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test"))
+        #expect(throws: (any Error).self) { try NDISPriceUtilities.validatedPrice(from: ndisItem, context: "test") }
     }
     
-    func testPriceExtractionWithMultipleRegions() {
+    @Test func PriceExtractionWithMultipleRegions() {
         // Given
         let entity = createNDISItemWithPrices(itemNumber: "01_001_0107_1_1", prices: [
             ("NSW", 45.0),
@@ -347,7 +332,7 @@ final class NDISPriceHandlingTests: XCTestCase {
         let price = ndisItem.price
         
         // Then
-        XCTAssertEqual(price, 55.0) // Should use NATIONAL price (highest priority)
+        #expect(price == 55.0) // Should use NATIONAL price (highest priority)
     }
 }
 
@@ -373,7 +358,7 @@ extension NDISPriceHandlingTests {
         for (region, amount) in prices {
             let priceEntity = RegionalPrice(id: UUID())
             priceEntity.regionIdentifier = region
-            priceEntity.amount = amount
+            priceEntity.amount = Decimal(amount)
             priceEntity.ndisItem = entity
             modelContext.insert(priceEntity)
         }
@@ -391,6 +376,7 @@ extension NDISPriceHandlingTests {
         line: UInt = #line
     ) {
         let ndisItem = entity
-        XCTAssertEqual(ndisItem.price, expectedPrice, file: file, line: line)
+        let expected = expectedPrice.map { Decimal($0) }
+        #expect(ndisItem.price == expected)
     }
 }

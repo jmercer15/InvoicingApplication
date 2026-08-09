@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -35,7 +36,7 @@ actor InvoiceModelActor {
     }
 
     func invoiceCount() throws -> Int {
-        try modelContext.fetchCount(FetchDescriptor<Core.Invoice>())
+        try modelContext.fetchCount(FetchDescriptor<Invoice>())
     }
 
     func fetchInvoice(id: UUID) throws -> InvoiceSnapshot? {
@@ -44,8 +45,8 @@ actor InvoiceModelActor {
     }
 
     func fetchClientOptions() throws -> [InvoiceClientOption] {
-        var descriptor = FetchDescriptor<Core.Client>(
-            sortBy: [SortDescriptor(\Core.Client.fullName, order: .forward)]
+        var descriptor = FetchDescriptor<Client>(
+            sortBy: [SortDescriptor(\Client.fullName, order: .forward)]
         )
         descriptor.relationshipKeyPathsForPrefetching = [\.address, \.payee, \.planManager]
         return try modelContext.fetch(descriptor).map(InvoiceClientOption.init)
@@ -58,7 +59,7 @@ actor InvoiceModelActor {
         let number = defaults.autoGeneratesInvoiceNumbers
             ? InvoiceNumberGenerator.nextNumber(existingNumbers: try existingNumbers())
             : ""
-        let invoice = Core.Invoice(invoiceNumber: number)
+        let invoice = Invoice(invoiceNumber: number)
         invoice.issueDate = .now
         invoice.date = invoice.issueDate
         invoice.dueDate = Calendar.current.date(
@@ -66,16 +67,16 @@ actor InvoiceModelActor {
             value: defaults.paymentTermsDays,
             to: invoice.issueDate
         )
-        invoice.taxRate = defaults.taxRate
+        invoice.taxRate = Decimal(defaults.taxRate)
         invoice.paymentTerms = defaults.paymentTermsText.nilIfEmpty
         invoice.notes = defaults.notes.nilIfEmpty
         invoice.effectiveStatus = .reviewDraft
         modelContext.insert(invoice)
 
-        let item = Core.InvoiceItem(itemDescription: "")
+        let item = InvoiceItem(itemDescription: "")
         item.position = 0
         item.quantity = 1
-        item.taxRate = defaults.taxRate
+        item.taxRate = Decimal(defaults.taxRate)
         item.invoice = invoice
         modelContext.insert(item)
         invoice.items = [item]
@@ -104,7 +105,7 @@ actor InvoiceModelActor {
             issueDate: draft.issueDate
         )
         draft.invoiceNumber = number
-        let invoice = Core.Invoice(invoiceNumber: number)
+        let invoice = Invoice(invoiceNumber: number)
         modelContext.insert(invoice)
         try apply(draft, to: invoice)
         syncLineItems(invoice: invoice, snapshots: draft.lineItems)
@@ -129,7 +130,7 @@ actor InvoiceModelActor {
 
         let number = InvoiceNumberGenerator.nextNumber(existingNumbers: try existingNumbers())
         draft.invoiceNumber = number
-        let copy = Core.Invoice(invoiceNumber: number)
+        let copy = Invoice(invoiceNumber: number)
         modelContext.insert(copy)
         try apply(draft, to: copy)
         syncLineItems(invoice: copy, snapshots: draft.lineItems)
@@ -194,31 +195,31 @@ actor InvoiceModelActor {
     }
 
     private func existingNumbers() throws -> [String] {
-        try modelContext.fetch(FetchDescriptor<Core.Invoice>()).map(\.invoiceNumber)
+        try modelContext.fetch(FetchDescriptor<Invoice>()).map(\.invoiceNumber)
     }
 
     private func invoiceNumberExists(_ number: String, excluding id: UUID) throws -> Bool {
         let normalized = number.trimmingCharacters(in: .whitespacesAndNewlines)
-        return try modelContext.fetch(FetchDescriptor<Core.Invoice>()).contains { invoice in
+        return try modelContext.fetch(FetchDescriptor<Invoice>()).contains { invoice in
             invoice.id != id && invoice.invoiceNumber.caseInsensitiveCompare(normalized) == .orderedSame
         }
     }
 
-    private func fetchInvoiceModel(id: UUID) throws -> Core.Invoice? {
-        var descriptor = FetchDescriptor<Core.Invoice>(predicate: #Predicate { $0.id == id })
+    private func fetchInvoiceModel(id: UUID) throws -> Invoice? {
+        var descriptor = FetchDescriptor<Invoice>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         descriptor.relationshipKeyPathsForPrefetching = [\.items]
         return try modelContext.fetch(descriptor).first
     }
 
-    private func fetchClientModel(id: UUID?) throws -> Core.Client? {
+    private func fetchClientModel(id: UUID?) throws -> Client? {
         guard let id else { return nil }
-        var descriptor = FetchDescriptor<Core.Client>(predicate: #Predicate { $0.id == id })
+        var descriptor = FetchDescriptor<Client>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first
     }
 
-    private func apply(_ draft: InvoiceDraft, to invoice: Core.Invoice) throws {
+    private func apply(_ draft: InvoiceDraft, to invoice: Invoice) throws {
         invoice.client = try fetchClientModel(id: draft.clientID)
         invoice.payee = draft.billing.authority == Core.BillingAuthority.parentGuardian.rawValue
             ? invoice.client?.payee
@@ -234,11 +235,11 @@ actor InvoiceModelActor {
             applyStatusDates(for: nextStatus, to: invoice)
         }
         invoice.currencyCode = InvoiceCurrencyCode.normalizedOrDefault(draft.currencyCode)
-        invoice.taxRate = draft.defaultTaxRate.doubleValue
+        invoice.taxRate = draft.defaultTaxRate
         invoice.paymentTerms = draft.paymentTerms.nilIfEmpty
         invoice.notes = draft.notes.nilIfEmpty
-        invoice.discount = draft.adjustments.discountPercent.doubleValue
-        invoice.creditApplied = draft.adjustments.creditApplied.doubleValue
+        invoice.discount = draft.adjustments.discountPercent
+        invoice.creditApplied = draft.adjustments.creditApplied
 
         invoice.businessName = draft.seller.name.nilIfEmpty
         invoice.businessAddressSnapshot = addressSnapshot(draft.seller.address)
@@ -271,7 +272,7 @@ actor InvoiceModelActor {
             discountPercent: draft.adjustments.discountPercent,
             creditApplied: draft.adjustments.creditApplied
         )
-        invoice.totalAmount = totals.grandTotal.doubleValue
+        invoice.totalAmount = totals.grandTotal
         invoice.invoiceEditorStateData = try InvoiceDocumentConfigurationEnvelope(
             title: draft.title,
             billParticipantDirectly: draft.billing.billsParticipantDirectly,
@@ -284,8 +285,8 @@ actor InvoiceModelActor {
         ).encoded()
     }
 
-    private func syncLineItems(invoice: Core.Invoice, snapshots: [InvoiceLineItemSnapshot]) {
-        var existing: [UUID: Core.InvoiceItem] = [:]
+    private func syncLineItems(invoice: Invoice, snapshots: [InvoiceLineItemSnapshot]) {
+        var existing: [UUID: InvoiceItem] = [:]
         for item in invoice.items ?? [] {
             if existing[item.id] == nil {
                 existing[item.id] = item
@@ -295,9 +296,9 @@ actor InvoiceModelActor {
         }
 
         var retained = Set<UUID>()
-        var ordered: [Core.InvoiceItem] = []
+        var ordered: [InvoiceItem] = []
         for (index, snapshot) in snapshots.enumerated() {
-            let item = existing[snapshot.id] ?? Core.InvoiceItem(
+            let item = existing[snapshot.id] ?? InvoiceItem(
                 id: snapshot.id,
                 itemDescription: snapshot.itemDescription
             )
@@ -305,12 +306,24 @@ actor InvoiceModelActor {
             item.itemDescription = snapshot.itemDescription
             item.serviceDate = snapshot.serviceDate
             item.ndisItemNumber = snapshot.itemCode.nilIfEmpty
-            item.quantity = snapshot.quantity.doubleValue
+            item.quantity = snapshot.quantity
             item.unit = snapshot.unit.nilIfEmpty
-            item.rate = snapshot.unitPrice.doubleValue
-            item.taxRate = snapshot.taxRate.doubleValue
+            item.rate = snapshot.unitPrice
+            item.taxRate = snapshot.taxRate
             item.gstCode = snapshot.gstCode.nilIfEmpty
             item.invoice = invoice
+            // Preserve NDIS lineage when the editor snapshot carries it (create, update, duplicate).
+            if let claimType = snapshot.claimType {
+                item.claimType = claimType
+            }
+            if let sessionID = snapshot.sessionID,
+               let session = fetchSessionModel(id: sessionID) {
+                item.session = session
+            }
+            if let clientServiceID = snapshot.clientServiceID,
+               let clientService = fetchClientServiceModel(id: clientServiceID) {
+                item.clientService = clientService
+            }
             if existing[snapshot.id] == nil { modelContext.insert(item) }
             retained.insert(snapshot.id)
             ordered.append(item)
@@ -322,7 +335,19 @@ actor InvoiceModelActor {
         invoice.items = ordered
     }
 
-    private func applyStatusDates(for status: Core.InvoiceStatus, to invoice: Core.Invoice) {
+    private func fetchSessionModel(id: UUID) -> Session? {
+        var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func fetchClientServiceModel(id: UUID) -> ClientService? {
+        var descriptor = FetchDescriptor<ClientService>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func applyStatusDates(for status: Core.InvoiceStatus, to invoice: Invoice) {
         switch status {
         case .reviewDraft:
             invoice.sentDate = nil

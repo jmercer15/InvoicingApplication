@@ -1,10 +1,10 @@
 @testable import Data
 import Core
 import Foundation
-import XCTest
-
-final class EventKitAliasSetTests: XCTestCase {
-    func testAliasMergeDeduplicatesAndNormalizes() {
+import Testing
+import PersistenceModels
+@Suite struct EventKitAliasSetTests {
+    @Test func AliasMergeDeduplicatesAndNormalizes() {
         var aliases = EventKitAliasSet()
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -38,15 +38,15 @@ final class EventKitAliasSetTests: XCTestCase {
             isAllDay: false
         )
 
-        XCTAssertEqual(aliases.eventIdentifiers, ["evt-1"])
-        XCTAssertEqual(aliases.externalIdentifiers, ["ext-1"])
-        XCTAssertEqual(aliases.calendarIdentifiers, ["cal-1"])
-        XCTAssertEqual(aliases.sourceIdentifiers, ["src-1"])
-        XCTAssertEqual(aliases.occurrenceAnchors.count, 1)
-        XCTAssertEqual(aliases.token, "tok-1")
+        #expect(aliases.eventIdentifiers == ["evt-1"])
+        #expect(aliases.externalIdentifiers == ["ext-1"])
+        #expect(aliases.calendarIdentifiers == ["cal-1"])
+        #expect(aliases.sourceIdentifiers == ["src-1"])
+        #expect(aliases.occurrenceAnchors.count == 1)
+        #expect(aliases.token == "tok-1")
     }
 
-    func testDisambiguationRankingPrefersStrongestCandidate() {
+    @Test func DisambiguationRankingPrefersStrongestCandidate() {
         var aliases = EventKitAliasSet()
         let anchor = Date(timeIntervalSinceReferenceDate: 20_000)
         aliases.merge(
@@ -87,10 +87,10 @@ final class EventKitAliasSetTests: XCTestCase {
         ]
 
         let bestIndex = aliases.bestCandidateIndex(in: candidates, isAllDay: false)
-        XCTAssertEqual(bestIndex, 1)
+        #expect(bestIndex == 1)
     }
 
-    func testRecurrenceOccurrenceKeyBehavior() {
+    @Test func RecurrenceOccurrenceKeyBehavior() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
@@ -110,7 +110,7 @@ final class EventKitAliasSetTests: XCTestCase {
             isAllDay: false,
             calendar: calendar
         )
-        XCTAssertEqual(timedKeyA, timedKeyB)
+        #expect(timedKeyA == timedKeyB)
 
         let allDayA = makeDate(year: 2026, month: 2, day: 17, hour: 1, minute: 0, second: 0, calendar: calendar)
         let allDayB = makeDate(year: 2026, month: 2, day: 17, hour: 23, minute: 59, second: 59, calendar: calendar)
@@ -128,10 +128,10 @@ final class EventKitAliasSetTests: XCTestCase {
             isAllDay: true,
             calendar: calendar
         )
-        XCTAssertEqual(allDayKeyA, allDayKeyB)
+        #expect(allDayKeyA == allDayKeyB)
     }
 
-    func testDisambiguationPrefersTokenConfirmedCandidate() {
+    @Test func DisambiguationPrefersTokenConfirmedCandidate() {
         var aliases = EventKitAliasSet()
         aliases.merge(
             eventIdentifier: nil,
@@ -165,7 +165,7 @@ final class EventKitAliasSetTests: XCTestCase {
         ]
 
         let bestIndex = aliases.bestCandidateIndex(in: candidates, isAllDay: false)
-        XCTAssertEqual(bestIndex, 1)
+        #expect(bestIndex == 1)
     }
 
     private func makeDate(

@@ -2,7 +2,7 @@ import SwiftUI
 import SharedUI
 
 struct BillingHubGroupedSessionItemRow: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let session: KanbanCardData
     @Binding var selectedCardID: UUID?
     let interactionState: BillingHubBoardInteractionState
@@ -26,7 +26,7 @@ struct BillingHubGroupedSessionItemRow: View {
     var body: some View {
         VStack(spacing: 0) {
             BillingHubGroupedSessionItemView(
-                viewModel: viewModel,
+                cardActions: cardActions,
                 session: session,
                 selectedCardID: $selectedCardID,
                 isDropTargeted: acceptsCurrentDrop && isDragTargeted,
@@ -59,7 +59,7 @@ struct BillingHubGroupedSessionItemRow: View {
 }
 
 struct BillingHubGroupedSessionItemView: View {
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let session: KanbanCardData
     @Binding var selectedCardID: UUID?
     let isDropTargeted: Bool
@@ -77,9 +77,9 @@ struct BillingHubGroupedSessionItemView: View {
 
     var body: some View {
         KanbanCardView(
-            viewModel: viewModel,
+            cardActions: cardActions,
             card: session,
-            isSelected: .constant(selectedCardID == session.id),
+            isSelected: selectedCardID == session.id,
             onTap: {
                 selectedCardID = session.id
             },

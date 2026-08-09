@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import DataInterfaces
 import SharedUI
 import WorkspaceUI
 import Observation
@@ -66,7 +66,7 @@ public struct SettingsDetailColumn: View {
     }
 
     @ViewBuilder
-    private func settingsDetailView(for section: SettingsView.SettingsSection, services: SettingsServices) -> some View {
+    private func settingsDetailView(for section: SettingsView.SettingsSection, services: any SettingsServicesProviding) -> some View {
         switch section {
         case .profile:
             ProfileSectionView()
@@ -75,20 +75,13 @@ public struct SettingsDetailColumn: View {
         case .invoice: InvoiceSettingsView()
         case .ndisBilling: NDISBillingSettingsView()
         case .calendar:
-            CalendarSectionView()
+            CalendarSectionView(sessionWiper: services.calendarSessionWiper)
         case .importExport:
-            ImportExportSectionView(
-                modelContext: modelContext,
-                importExportCoordinator: services.importExportCoordinator
-            )
+            ImportExportSectionView(services: services)
         case .travelChargeTest:
-            TravelChargeTestSectionView(
-                automationActor: services.travelChargeAutomationActor
-            )
+            TravelChargeTestSectionView(automation: services.travelChargeAutomation)
         case .travelChargeReview:
-            TravelChargeReviewSectionView(
-                automationActor: services.travelChargeAutomationActor
-            )
+            TravelChargeReviewSectionView(automation: services.travelChargeAutomation)
         case .systemHealth: SystemHealthView()
         }
     }
@@ -103,17 +96,17 @@ private struct ProfileSectionView: View {
 }
 
 private struct CompanySectionView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.businessPersisting) private var businessPersisting
     @Environment(\.geocodingService) private var geocodingService
 
     var body: some View {
-        if let geo = geocodingService {
-            CompanySectionLoaded(modelContext: modelContext, geocodingService: geo)
+        if let persistence = businessPersisting, let geo = geocodingService {
+            CompanySectionLoaded(businessPersisting: persistence, geocodingService: geo)
         } else {
             EmptyStateView(
-                icon: "mappin.slash",
-                title: "Geocoding unavailable",
-                message: "The geocoding service is not configured for this window."
+                icon: "building.2.crop.circle",
+                title: "Company settings unavailable",
+                message: "Business persistence or geocoding is not configured for this window."
             )
         }
     }
@@ -122,9 +115,9 @@ private struct CompanySectionView: View {
 private struct CompanySectionLoaded: View {
     @State private var viewModel: CompanyViewModel
 
-    init(modelContext: ModelContext, geocodingService: any Core.GeocodingServiceProtocol) {
+    init(businessPersisting: any BusinessPersisting, geocodingService: any Core.GeocodingServiceProtocol) {
         _viewModel = State(initialValue: CompanyViewModel(
-            modelContext: modelContext,
+            businessPersisting: businessPersisting,
             geocodingService: geocodingService
         ))
     }
@@ -135,16 +128,17 @@ private struct CompanySectionLoaded: View {
 }
 
 private struct CalendarSectionView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.calendarPreferencesStore) private var calendarPreferencesStore
     @Environment(\.eventKitSyncService) private var eventKitSyncService
+
+    let sessionWiper: any CalendarSessionWiping
 
     var body: some View {
         if let store = calendarPreferencesStore, let eventKit = eventKitSyncService {
             CalendarSectionLoaded(
-                modelContext: modelContext,
                 preferencesStore: store,
-                eventKitService: eventKit
+                eventKitService: eventKit,
+                sessionWiper: sessionWiper
             )
         } else {
             EmptyStateView(
@@ -160,14 +154,14 @@ private struct CalendarSectionLoaded: View {
     @State private var viewModel: CalendarSettingsViewModel
 
     init(
-        modelContext: ModelContext,
         preferencesStore: CalendarPreferencesStore,
-        eventKitService: EventKitSyncService
+        eventKitService: any CalendarIntegrationService,
+        sessionWiper: any CalendarSessionWiping
     ) {
         _viewModel = State(initialValue: CalendarSettingsViewModel(
-            modelContext: modelContext,
             preferencesStore: preferencesStore,
-            eventKitService: eventKitService
+            eventKitService: eventKitService,
+            sessionWiper: sessionWiper
         ))
     }
 
@@ -179,13 +173,11 @@ private struct CalendarSectionLoaded: View {
 private struct ImportExportSectionView: View {
     @State private var viewModel: ImportExportViewModel
 
-    init(
-        modelContext: ModelContext,
-        importExportCoordinator: ImportExportCoordinator
-    ) {
+    init(services: any SettingsServicesProviding) {
         _viewModel = State(initialValue: ImportExportViewModel(
-            modelContext: modelContext,
-            importExportCoordinator: importExportCoordinator
+            claimPersistence: services.importExportClaimPersistence,
+            importExportCoordinator: services.importExportCoordinator,
+            bulkClaimExportHashVerifier: services.bulkClaimExportHashVerifier
         ))
     }
 
@@ -199,23 +191,28 @@ private struct TravelChargeTestSectionView: View {
     @Environment(\.geocodingService) private var geocodingService
     @Environment(\.mmmZoneLookup) private var mmmZoneLookup
     @Environment(\.recurrenceRuleManager) private var recurrenceRuleManager
+    @Environment(\.travelChargeReviewFetching) private var travelChargeReviewFetching
 
-    let automationActor: TravelChargeAutomationActor
+    let automation: any TravelChargeAutomating
 
     var body: some View {
-        if let geo = geocodingService, let mmm = mmmZoneLookup, let recurrence = recurrenceRuleManager {
+        if let geo = geocodingService,
+           let mmm = mmmZoneLookup,
+           let recurrence = recurrenceRuleManager,
+           let reviewFetching = travelChargeReviewFetching {
             TravelChargeTestSectionLoaded(
                 modelContext: modelContext,
-                automationActor: automationActor,
+                automation: automation,
                 geocodingService: geo,
                 mmmZoneLookup: mmm,
-                recurrenceRuleManager: recurrence
+                recurrenceRuleManager: recurrence,
+                reviewFetching: reviewFetching
             )
         } else {
             EmptyStateView(
                 icon: "road.lanes",
                 title: "Travel automation prerequisites missing",
-                message: "Geocoding, MMM lookup, or recurrence services are not configured for this window."
+                message: "Geocoding, MMM lookup, recurrence, or review fetching is not configured for this window."
             )
         }
     }
@@ -227,24 +224,24 @@ private struct TravelChargeTestSectionLoaded: View {
 
     init(
         modelContext: ModelContext,
-        automationActor: TravelChargeAutomationActor,
+        automation: any TravelChargeAutomating,
         geocodingService: any Core.GeocodingServiceProtocol,
         mmmZoneLookup: any Core.MMMZoneLookupProtocol,
-        recurrenceRuleManager: RecurrenceRuleManager
+        recurrenceRuleManager: RecurrenceRuleManager,
+        reviewFetching: any TravelChargeReviewFetching
     ) {
         _automationViewModel = State(initialValue: TravelChargeAutomationViewModel(
             modelContext: modelContext,
-            automationActor: automationActor,
+            automationActor: automation,
             geocodingService: geocodingService,
             mmmZoneLookup: mmmZoneLookup,
             recurrenceRuleManager: recurrenceRuleManager
         ))
         _reviewViewModel = State(initialValue: TravelChargeReviewViewModel(
-            automationActor: automationActor,
+            automationActor: automation,
             mmmZoneLookup: mmmZoneLookup,
             recurrenceRuleManager: recurrenceRuleManager,
-            modelContext: modelContext,
-            modelContainer: modelContext.container
+            reviewFetching: reviewFetching
         ))
     }
 
@@ -257,25 +254,27 @@ private struct TravelChargeTestSectionLoaded: View {
 }
 
 private struct TravelChargeReviewSectionView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.travelChargeReviewFetching) private var travelChargeReviewFetching
     @Environment(\.mmmZoneLookup) private var mmmZoneLookup
     @Environment(\.recurrenceRuleManager) private var recurrenceRuleManager
 
-    let automationActor: TravelChargeAutomationActor
+    let automation: any TravelChargeAutomating
 
     var body: some View {
-        if let mmm = mmmZoneLookup, let recurrence = recurrenceRuleManager {
+        if let reviewFetching = travelChargeReviewFetching,
+           let mmm = mmmZoneLookup,
+           let recurrence = recurrenceRuleManager {
             TravelChargeReviewSectionLoaded(
-                modelContext: modelContext,
-                automationActor: automationActor,
+                automation: automation,
                 mmmZoneLookup: mmm,
-                recurrenceRuleManager: recurrence
+                recurrenceRuleManager: recurrence,
+                reviewFetching: reviewFetching
             )
         } else {
             EmptyStateView(
                 icon: "road.lanes",
                 title: "Travel review prerequisites missing",
-                message: "MMM lookup or recurrence services are not configured for this window."
+                message: "Review fetching, MMM lookup, or recurrence services are not configured for this window."
             )
         }
     }
@@ -285,17 +284,16 @@ private struct TravelChargeReviewSectionLoaded: View {
     @State private var viewModel: TravelChargeReviewViewModel
 
     init(
-        modelContext: ModelContext,
-        automationActor: TravelChargeAutomationActor,
+        automation: any TravelChargeAutomating,
         mmmZoneLookup: any Core.MMMZoneLookupProtocol,
-        recurrenceRuleManager: RecurrenceRuleManager
+        recurrenceRuleManager: RecurrenceRuleManager,
+        reviewFetching: any TravelChargeReviewFetching
     ) {
         _viewModel = State(initialValue: TravelChargeReviewViewModel(
-            automationActor: automationActor,
+            automationActor: automation,
             mmmZoneLookup: mmmZoneLookup,
             recurrenceRuleManager: recurrenceRuleManager,
-            modelContext: modelContext,
-            modelContainer: modelContext.container
+            reviewFetching: reviewFetching
         ))
     }
 

@@ -1,5 +1,4 @@
 import Foundation
-import Core
 
 /// Standard session JSON format
 struct SessionJSON: Codable {

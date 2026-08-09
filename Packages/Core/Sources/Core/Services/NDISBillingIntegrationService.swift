@@ -10,17 +10,31 @@ public struct NDISBillingReport: Sendable {
     public let processedSessionsCount: Int
     public let successfulSessionsCount: Int
     public let failedSessions: [NDISBillingIssue]
+    /// Non-blocking honesty signals (e.g. geo billed at 1.0× with no address).
+    public let warnings: [String]
 
     public init(
         invoice: InvoiceSnapshot?,
         processedSessionsCount: Int,
         successfulSessionsCount: Int,
-        failedSessions: [NDISBillingIssue]
+        failedSessions: [NDISBillingIssue],
+        warnings: [String] = []
     ) {
         self.invoice = invoice
         self.processedSessionsCount = processedSessionsCount
         self.successfulSessionsCount = successfulSessionsCount
         self.failedSessions = failedSessions
+        self.warnings = warnings
+    }
+
+    public static var empty: NDISBillingReport {
+        NDISBillingReport(
+            invoice: nil,
+            processedSessionsCount: 0,
+            successfulSessionsCount: 0,
+            failedSessions: [],
+            warnings: []
+        )
     }
 }
 

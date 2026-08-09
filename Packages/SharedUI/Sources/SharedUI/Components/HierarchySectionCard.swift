@@ -118,25 +118,22 @@ public struct HierarchySectionCard<Content: View>: View {
             )
             .glassEffect(headerGlassStyle, in: .rect(cornerRadius: cornerRadius))
             .glassEffectTransition(.materialize)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard isCollapsible else { return }
-                toggle()
-            }
-            .pointerStyle(.link)
 
-        if let style = headerStyle {
-            headerBase
-                .font(style.font)
-                .foregroundColor(style.color)
-                .opacity(style.opacity)
-                .tracking(style.letterSpacing)
-                .baselineOffset(style.baselineOffset)
-        } else {
-            headerBase
-                .font(StyleGuide.Typography.breadcrumb)
-                .foregroundColor(Color.primary)
+        Group {
+            if isCollapsible {
+                Button(action: toggle) {
+                    headerBase
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .accessibilityLabel("\(title), \(isExpanded ? "expanded" : "collapsed")")
+                .accessibilityHint("Collapses or expands this section.")
+                .accessibilityAddTraits(.isButton)
+            } else {
+                headerBase
+            }
         }
+        .applyHierarchyHeaderStyle(headerStyle)
     }
 
     private var defaultCornerRadius: CGFloat { cornerRadius }
@@ -153,6 +150,24 @@ public struct HierarchySectionCard<Content: View>: View {
             } else {
                 onCollapse?()
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applyHierarchyHeaderStyle(_ style: HierarchyHeaderStyle?) -> some View {
+        if let style {
+            self
+                .font(style.font)
+                .foregroundColor(style.color)
+                .opacity(style.opacity)
+                .tracking(style.letterSpacing)
+                .baselineOffset(style.baselineOffset)
+        } else {
+            self
+                .font(StyleGuide.Typography.breadcrumb)
+                .foregroundColor(Color.primary)
         }
     }
 }

@@ -3,40 +3,6 @@ import PDFKit
 import UniformTypeIdentifiers
 import SwiftData
 
-// MARK: - Date Formatters
-public extension DateFormatter {
-    static let shortDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .none
-        return formatter
-    }()
-
-    static let mediumDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-
-    static let timeOnly: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }()
-}
-
-// MARK: - Number Formatters
-public extension NumberFormatter {
-    static let currency: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "AUD"  // Set default currency
-        return formatter
-    }()
-}
-
 // MARK: - Date Extensions
 public extension Date {
     var startOfDay: Date {
@@ -76,10 +42,10 @@ public extension Date {
     }
 
     func formattedTime() -> String {
-        DateFormatter.timeOnly.string(from: self)
+        DateFormatting.timeOnly(self)
     }
 
     func formattedMediumDate() -> String {
-        DateFormatter.mediumDate.string(from: self)
+        DateFormatting.mediumDate(self)
     }
 }

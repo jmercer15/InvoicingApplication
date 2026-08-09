@@ -13,10 +13,10 @@ enum InvoiceStatus: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .draft: "Draft"
+        case .draft: "Review Draft"
         case .readyToSend: "Ready to Send"
         case .sent: "Sent"
-        case .paid: "Paid"
+        case .paid: "Payment Received"
         case .overdue: "Overdue"
         case .cancelled: "Cancelled"
         case .voided: "Voided"
@@ -1031,25 +1031,11 @@ struct LineItemColumnVisibility: Equatable, Codable {
 
     static let allVisible = LineItemColumnVisibility()
 
-    func isVisible(_ column: LineItemTableColumn) -> Bool {
-        switch column {
-        case .date: showDate
-        case .description: true
-        case .qty: showQty
-        case .unit: showUnit
-        case .rate: showRate
-        case .total: true
-        }
-    }
-
     /// Grid columns spanned by totals labels (qty + unit + rate region).
     var totalsLabelColumnSpan: Int {
         [showQty, showUnit, showRate].filter { $0 }.count
     }
 
-    func columnWidth(_ column: LineItemTableColumn, in widths: LineItemTableColumnWidths) -> CGFloat {
-        isVisible(column) ? widths[column] : 0
-    }
 }
 
 extension LineItemColumnVisibility {

@@ -1,5 +1,3 @@
-import Core
-import Data
 import SharedUI
 import SwiftData
 import SwiftUI

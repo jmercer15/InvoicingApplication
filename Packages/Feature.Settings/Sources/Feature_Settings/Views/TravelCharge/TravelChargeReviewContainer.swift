@@ -30,7 +30,7 @@ struct TravelChargeReviewContainer: View {
                 .frame(minWidth: StyleGuide.Dimensions.settingsSheetLargeMinWidth, minHeight: StyleGuide.Dimensions.settingsTravelReviewMinHeight)
                 .task {
                     // Small delay to let the sheet presentation animation finish smoothly
-                    try? await Task.sleep(for: .milliseconds(150))
+                    guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
                     withAnimation(.easeOut(duration: 0.15)) {
                         isLoaded = true
                     }

@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 
 public struct BulkClaimExportHashVerificationResult: Sendable, Equatable {
     public let expectedSHA256: String

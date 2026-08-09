@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - TravelChargeReviewSnapshot
 
@@ -61,22 +60,5 @@ public struct TravelChargeReviewSnapshot: Sendable, Equatable, Hashable {
         self.sessionId = sessionId
     }
 
-    public init(_ item: TravelChargeReviewItem) {
-        self.id = item.id
-        self.reason = item.reason
-        self.timestamp = item.timestamp
-        self.status = item.status
-        self.overrideReason = item.overrideReason
-        self.overrideType = item.overrideType
-        self.resolutionNotes = item.resolutionNotes
-        self.sessionID = item.sessionID
-        self.sessionTitle = item.sessionTitle
-        self.clientName = item.clientName
-        self.violations = item.violations
-        self.violationDetails = item.violationDetails
-        self.suggestedActions = item.suggestedActions
-        self.overrideOptions = item.overrideOptions
-        self.sessionId = item.session?.id
-    }
 }
 

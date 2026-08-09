@@ -1,26 +1,19 @@
-import XCTest
+import Testing
 @testable import Data
 import Core
+import PersistenceModels
 
-final class EventKitSyncIdentityKeysTests: XCTestCase {
-    func testIdentityStringsPrefixesEventAndExternalIdentifiers() {
-        XCTAssertEqual(
-            EventKitSyncIdentityKeys.identityStrings(
+@Suite struct EventKitSyncIdentityKeysTests {
+    @Test func IdentityStringsPrefixesEventAndExternalIdentifiers() {
+        #expect(EventKitSyncIdentityKeys.identityStrings(
                 eventIdentifier: "ek-id",
                 externalIdentifier: "external-id"
-            ),
-            ["event:ek-id", "external:external-id"]
-        )
+            ) == ["event:ek-id", "external:external-id"])
     }
 
-    func testIdentityStringsSkipsEmptyFragments() {
-        XCTAssertTrue(
-            EventKitSyncIdentityKeys.identityStrings(eventIdentifier: "", externalIdentifier: nil).isEmpty
-        )
+    @Test func IdentityStringsSkipsEmptyFragments() {
+        #expect(EventKitSyncIdentityKeys.identityStrings(eventIdentifier: "", externalIdentifier: nil).isEmpty)
 
-        XCTAssertEqual(
-            EventKitSyncIdentityKeys.identityStrings(eventIdentifier: nil, externalIdentifier: "only-external"),
-            ["external:only-external"]
-        )
+        #expect(EventKitSyncIdentityKeys.identityStrings(eventIdentifier: nil, externalIdentifier: "only-external") == ["external:only-external"])
     }
 }

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - TravelChargeAuditLogSnapshot
 
@@ -34,13 +33,5 @@ public struct TravelChargeAuditLogSnapshot: Sendable, Equatable, Hashable {
         self.travelChargeId = travelChargeId
     }
 
-    public init(_ log: TravelChargeAuditLog) {
-        self.id = log.id
-        self.timestamp = log.timestamp
-        self.summary = log.summary
-        self.action = log.action
-        self.details = log.details
-        self.travelChargeId = log.charge?.id
-    }
 }
 

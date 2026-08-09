@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import CoreLocation
 import EventKit
 import Foundation
@@ -49,7 +50,9 @@ struct EventKitSessionWriter {
         session.eventExternalIdentifier = remoteEvent.calendarItemExternalIdentifier
         session.calendarIdentifier = remoteEvent.calendar.calendarIdentifier
         session.calendarSourceIdentifier = remoteEvent.calendar.source?.sourceIdentifier
-        session.lastModifiedDate = remoteEvent.lastModifiedDate
+        if includeCoreFields {
+            session.lastModifiedDate = remoteEvent.lastModifiedDate
+        }
         session.lastSyncTag = encodeSyncTag(remoteEvent.lastModifiedDate ?? Date())
         session.ekCreationDate = remoteEvent.creationDate
         session.ekEventAvailabilityRaw = Int16(remoteEvent.availability.rawValue)
@@ -64,23 +67,24 @@ struct EventKitSessionWriter {
         session.hasEKAlarms = !(remoteEvent.alarms?.isEmpty ?? true)
         session.alarmsData = serializeAlarms(remoteEvent.alarms)
 
-        if let rules = remoteEvent.recurrenceRules, let firstRule = rules.first {
-            session.recurrenceRuleData = recurrenceRuleManager.serialize(firstRule)
-            session.ekRecurrenceRuleDescription = rules.map(\.description).joined(separator: "\n")
-        } else {
-            session.recurrenceRuleData = nil
-            session.ekRecurrenceRuleDescription = nil
-        }
-
-        if resolvedLocation.hasCoordinates {
-            session.sessionLatitude = resolvedLocation.latitude
-            session.sessionLongitude = resolvedLocation.longitude
-        } else if includeCoreFields {
-            session.sessionLatitude = 0
-            session.sessionLongitude = 0
+        if includeCoreFields {
+            if let rules = remoteEvent.recurrenceRules, let firstRule = rules.first {
+                session.recurrenceRuleData = recurrenceRuleManager.serialize(firstRule)
+                session.ekRecurrenceRuleDescription = rules.map(\.description).joined(separator: "\n")
+            } else {
+                session.recurrenceRuleData = nil
+                session.ekRecurrenceRuleDescription = nil
+            }
         }
 
         if includeCoreFields {
+            if resolvedLocation.hasCoordinates {
+                session.sessionLatitude = resolvedLocation.latitude
+                session.sessionLongitude = resolvedLocation.longitude
+            } else {
+                session.sessionLatitude = 0
+                session.sessionLongitude = 0
+            }
             applyParsedAddressToSession(resolvedLocation, session)
         }
     }

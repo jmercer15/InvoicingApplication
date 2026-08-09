@@ -1,5 +1,5 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import CoreLocation
 
 extension EventKitSyncService {

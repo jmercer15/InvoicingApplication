@@ -1,5 +1,4 @@
 import Foundation
-import Core
 
 /// JSON model for the student-payee relationship format
 struct ClientPayeeImportJSON: Codable {

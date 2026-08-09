@@ -100,11 +100,9 @@ struct NDISCatalogueNavigationNodeCard: View {
 
 struct NDISCatalogueCard: View, Equatable {
     nonisolated static func == (lhs: NDISCatalogueCard, rhs: NDISCatalogueCard) -> Bool {
-        MainActor.assumeIsolated {
-            lhs.item.id == rhs.item.id &&
-            lhs.preferredRegion == rhs.preferredRegion &&
-            lhs.isSelected == rhs.isSelected
-        }
+        lhs.item.id == rhs.item.id &&
+        lhs.preferredRegion == rhs.preferredRegion &&
+        lhs.isSelected == rhs.isSelected
     }
 
     let item: NDISItemSnapshot
@@ -126,11 +124,11 @@ struct NDISCatalogueCard: View, Equatable {
            let regionalPrice = price(forNormalizedRegion: region) {
             let raw = regionalPrice.regionIdentifier ?? ""
             let regionLabel = (!raw.isEmpty) ? raw : preferredRegion ?? region
-            return .regional(regionalPrice.amount, regionLabel)
+            return .regional(legacyDouble(from: regionalPrice.amount), regionLabel)
         }
 
         if let nationalPrice = price(forNormalizedRegion: "NATIONAL")?.amount {
-            return .national(nationalPrice)
+            return .national(legacyDouble(from: nationalPrice))
         }
 
         let meaningfulPrices = item.regionalPrices.filter { !(($0.regionIdentifier ?? "").isEmpty) && $0.amount > 0 }
@@ -139,7 +137,7 @@ struct NDISCatalogueCard: View, Equatable {
         if let price = (meaningfulPrices.isEmpty ? fallbackPrices : meaningfulPrices)
             .min(by: { $0.amount < $1.amount }) {
             let region = !((price.regionIdentifier ?? "").isEmpty) ? (price.regionIdentifier ?? "") : "Regional"
-            return .regional(price.amount, region)
+            return .regional(legacyDouble(from: price.amount), region)
         }
 
         if item.quoteRequired == true {
@@ -163,6 +161,10 @@ struct NDISCatalogueCard: View, Equatable {
         }
     }
 
+    private func legacyDouble(from amount: Decimal) -> Double {
+        NSDecimalNumber(decimal: amount).doubleValue
+    }
+
     private func normalizedRegionIdentifier(_ value: String?) -> String? {
         guard let value = value, !value.isEmpty else { return nil }
         let scalars = value.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
@@ -173,12 +175,9 @@ struct NDISCatalogueCard: View, Equatable {
     private var priceText: String {
         switch pricingState {
         case .national(let amount):
-            return NumberFormatter.currency.string(from: NSNumber(value: amount))
-                ?? "$\(String(format: "%.2f", amount))"
+            return CurrencyFormatting.display(amount)
         case .regional(let amount, let region):
-            let formatted = NumberFormatter.currency.string(from: NSNumber(value: amount))
-                ?? "$\(String(format: "%.2f", amount))"
-            return "\(region): \(formatted)"
+            return "\(region): \(CurrencyFormatting.display(amount))"
         case .quoteRequired:
             return "Quote Required"
         case .unavailable:

@@ -1,22 +1,21 @@
-import XCTest
+import Foundation
+import Testing
 import Core
 
-final class TravelChargeDuplicatePolicyTests: XCTestCase {
-    func testEmptyExistingChargesReturnsFalse() {
+@Suite struct TravelChargeDuplicatePolicyTests {
+    @Test func EmptyExistingChargesReturnsFalse() {
         let sessionId = UUID()
         let clientId = UUID()
-        XCTAssertFalse(
-            TravelChargeDuplicatePolicy.hasExistingCharge(
+        #expect(!(TravelChargeDuplicatePolicy.hasExistingCharge(
                 sessionId: sessionId,
                 clientId: clientId,
                 chargeType: "labour",
                 direction: .before,
                 existing: []
-            )
-        )
+            )))
     }
 
-    func testDetectsDuplicateMatchingSessionClientTypeDirection() {
+    @Test func DetectsDuplicateMatchingSessionClientTypeDirection() {
         let sessionId = UUID()
         let clientId = UUID()
         let existing = TravelChargeSnapshot(
@@ -26,18 +25,16 @@ final class TravelChargeDuplicatePolicyTests: XCTestCase {
             sessionId: sessionId,
             clientId: clientId
         )
-        XCTAssertTrue(
-            TravelChargeDuplicatePolicy.hasExistingCharge(
+        #expect(TravelChargeDuplicatePolicy.hasExistingCharge(
                 sessionId: sessionId,
                 clientId: clientId,
                 chargeType: "LABOUR",
                 direction: .before,
                 existing: [existing]
-            )
-        )
+            ))
     }
 
-    func testDifferentSessionIsNotDuplicate() {
+    @Test func DifferentSessionIsNotDuplicate() {
         let sessionId = UUID()
         let otherSessionId = UUID()
         let clientId = UUID()
@@ -48,18 +45,16 @@ final class TravelChargeDuplicatePolicyTests: XCTestCase {
             sessionId: otherSessionId,
             clientId: clientId
         )
-        XCTAssertFalse(
-            TravelChargeDuplicatePolicy.hasExistingCharge(
+        #expect(!(TravelChargeDuplicatePolicy.hasExistingCharge(
                 sessionId: sessionId,
                 clientId: clientId,
                 chargeType: "labour",
                 direction: .before,
                 existing: [existing]
-            )
-        )
+            )))
     }
 
-    func testDifferentDirectionIsNotDuplicate() {
+    @Test func DifferentDirectionIsNotDuplicate() {
         let sessionId = UUID()
         let clientId = UUID()
         let existing = TravelChargeSnapshot(
@@ -69,18 +64,16 @@ final class TravelChargeDuplicatePolicyTests: XCTestCase {
             sessionId: sessionId,
             clientId: clientId
         )
-        XCTAssertFalse(
-            TravelChargeDuplicatePolicy.hasExistingCharge(
+        #expect(!(TravelChargeDuplicatePolicy.hasExistingCharge(
                 sessionId: sessionId,
                 clientId: clientId,
                 chargeType: "labour",
                 direction: .after,
                 existing: [existing]
-            )
-        )
+            )))
     }
 
-    func testDifferentChargeTypeIsNotDuplicate() {
+    @Test func DifferentChargeTypeIsNotDuplicate() {
         let sessionId = UUID()
         let clientId = UUID()
         let existing = TravelChargeSnapshot(
@@ -90,14 +83,12 @@ final class TravelChargeDuplicatePolicyTests: XCTestCase {
             sessionId: sessionId,
             clientId: clientId
         )
-        XCTAssertFalse(
-            TravelChargeDuplicatePolicy.hasExistingCharge(
+        #expect(!(TravelChargeDuplicatePolicy.hasExistingCharge(
                 sessionId: sessionId,
                 clientId: clientId,
                 chargeType: "non-labour",
                 direction: .before,
                 existing: [existing]
-            )
-        )
+            )))
     }
 }

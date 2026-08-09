@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData // Import SwiftData
-import Data
 import Core
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -130,7 +130,7 @@ struct NDISChangesSummaryView: View {
                     NDISChangesSummaryCard(
                         title: "Items with Changes",
                         value: "\(summary.itemsWithChanges)",
-                        subtitle: String(format: "%.1f%% of items", summary.changesPercentage),
+                        subtitle: "\((summary.changesPercentage / 100).formatted(.percent.precision(.fractionLength(1)))) of items",
                         color: ColorSystem.Status.error
                     )
                     

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 extension NDISItemImport {
     
@@ -159,18 +160,22 @@ extension NDISItemImport {
             endDate: endDate
         )
         
-        // Check if this specific version already exists using composite key
-        let fetchDescriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> {
-            $0.itemNumber == itemNumber && $0.name == itemName && $0.versionIdentifier == versionId
-        })
-        
-        let ndisItem = (try? context.fetch(fetchDescriptor).first) ?? NDISItem(id: UUID(), itemNumber: itemNumber, name: itemName, versionIdentifier: versionId)
+        let ndisItem = try resolveExistingItem(
+            itemNumber: itemNumber,
+            itemName: itemName,
+            versionIdentifier: versionId,
+            effectiveStartDate: startDate,
+            effectiveEndDate: endDate,
+            context: context
+        )
+            ?? NDISItem(id: UUID(), itemNumber: itemNumber, name: itemName, versionIdentifier: versionId)
         if ndisItem.modelContext == nil { // If it's a new entity, insert it
             context.insert(ndisItem)
         }
         
         // Set up basic item properties
         ndisItem.itemNumber = itemNumber
+        ndisItem.name = itemName
         ndisItem.versionIdentifier = versionId
         ndisItem.effectiveStartDate = startDate
         ndisItem.effectiveEndDate = endDate
@@ -221,16 +226,9 @@ extension NDISItemImport {
             ndisItem.irregularSILSupports = parseBooleanField(row["Irregular SIL Supports"])
         }
         
-        // Clear existing regional prices for this item before adding new ones
-        let currentPrices = ndisItem.regionalPrices ?? []
-        for priceObject in currentPrices {
-            context.delete(priceObject)
-        }
-        ndisItem.regionalPrices = []
-        
         // Handle regional pricing with flexible mapping
         let regionalFields: [NDISColumnMapper.StandardField] = [.act, .nsw, .nt, .qld, .sa, .tas, .vic, .wa, .remote, .veryRemote]
-        
+        var incomingPrices: [String: Double] = [:]
         for field in regionalFields {
             let region = field.rawValue
             let priceValue: String?
@@ -242,12 +240,9 @@ extension NDISItemImport {
             }
             
             if let priceStr = priceValue, let priceVal = Double(priceStr) {
-                let regionalPrice = RegionalPrice(id: UUID())
-                regionalPrice.regionIdentifier = region
-                regionalPrice.amount = priceVal
-                regionalPrice.ndisItem = ndisItem // Link to parent NDISItem
-                context.insert(regionalPrice)
+                incomingPrices[region] = priceVal
             }
         }
+        replaceRegionalPrices(incomingPrices, for: ndisItem, context: context)
     }
 }

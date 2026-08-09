@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -12,20 +13,6 @@ public actor DataImporterActor: ModelActor {
         let context = ModelContext(modelContainer)
         context.autosaveEnabled = false
         self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
-    }
-    
-    /// Imports all data from the standard JSON files found in the bundle
-    public func importAllData() async throws -> [ImportResult] {
-        try withAutosaveDisabled { context in
-            return try UnifiedImportService.importAllData(context: context)
-        }
-    }
-    
-    /// Imports all data from the "AllData-Export" JSON file
-    public func importAllDataFromExport() async throws -> [ImportResult] {
-        try withAutosaveDisabled { context in
-            return try UnifiedImportService.importAllDataFromExport(context: context)
-        }
     }
     
     /// Imports specific data type from provided data

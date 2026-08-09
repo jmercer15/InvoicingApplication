@@ -1,6 +1,5 @@
 import SwiftUI
 import Core
-import Data
 import SharedUI
 
 struct NativeSessionFormSupportLogSection: View {
@@ -51,7 +50,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Participant:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Participant name", text: supportLogBinding(\.participantName))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -59,7 +58,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("NDIS #:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Participant NDIS number", text: supportLogBinding(\.participantNdisNumber))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -67,7 +66,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Item #:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Support item number", text: supportLogBinding(\.supportItemNumber))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -75,7 +74,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Description:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Service description", text: supportLogBinding(\.serviceDescription))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -91,7 +90,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Delivered:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             DatePicker(
                                 "",
                                 selection: supportLogBinding(\.deliveredFrom),
@@ -109,7 +108,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Delivered by:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Staff name", text: supportLogBinding(\.deliveredBy))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -117,7 +116,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Attested by:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Attested by", text: supportLogBinding(\.attestedBy))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -125,7 +124,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Attested at:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             DatePicker(
                                 "",
                                 selection: supportLogBinding(\.attestedAt),
@@ -137,7 +136,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Location:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField("Location", text: supportLogBinding(\.location))
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -153,7 +152,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Method:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             Picker("", selection: Binding(
                                 get: { viewModel.formModel.supportLogDraft.signatureMethod ?? SignatureMethod.attestation.rawValue },
                                 set: { newValue in
@@ -173,7 +172,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Signed by:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField(
                                 "Participant/nominee signature",
                                 text: Binding(
@@ -192,7 +191,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Cancel code:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField(
                                 "NSDH / NSDF / NSDT / NSDO",
                                 text: Binding(
@@ -211,7 +210,7 @@ struct NativeSessionFormSupportLogSection: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Notes:")
                                 .frame(width: StyleGuide.Dimensions.formSupportLabelWidth, alignment: .trailing)
-                                .foregroundColor(StyleGuide.Colors.text)
+                                .foregroundStyle(StyleGuide.Colors.text)
                             TextField(
                                 "Optional notes",
                                 text: Binding(

@@ -2,7 +2,7 @@ import Foundation
 
 public enum TravelDirection: String, Sendable { case before, after }
 
-public struct BusinessRules {
+public struct BusinessRules: Sendable {
     public var nonBillableStatuses: Set<String> = ["cancelled", "non-billable"]
     public var maxTravelDistance: Double? = 200.0
     public var maxTravelTime: Double? = 120.0 // minutes
@@ -14,7 +14,7 @@ public struct BusinessRules {
     public init() {}
 }
 
-public struct UserPreferences {
+public struct UserPreferences: Sendable {
     public var averageSpeed: Double? = 50.0 // km/h
     public var preferredVehicleType: String?
     public var preferredParkingCost: Double? // User's preferred parking cost
@@ -22,4 +22,3 @@ public struct UserPreferences {
 
     public init() {}
 }
-

@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import Data
 import SwiftUI
 import SharedUI
 import UniformTypeIdentifiers
@@ -94,7 +93,7 @@ public struct ReconcileBPRFImportView: View {
             Task {
                 do {
                     let vm = viewModel
-                    let (data, lines) = try await Task.detached(priority: .userInitiated) {
+                    let (data, lines) = try await Task(priority: .userInitiated) {
                         let data = try Data(contentsOf: url)
                         let lines = try vm.parseBPRF(data: data)
                         return (data, lines)

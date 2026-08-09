@@ -1,4 +1,5 @@
 import Foundation
+import PersistenceModels
 
 struct AllDataImportPayload {
     enum EntityName: String, CaseIterable {

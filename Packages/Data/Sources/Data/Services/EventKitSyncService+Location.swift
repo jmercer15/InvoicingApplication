@@ -1,7 +1,8 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import CoreLocation
 import Core
+import PersistenceModels
 
 extension EventKitSyncService {
 

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 import Core
 import Data
@@ -27,6 +28,7 @@ final class WorkspaceSceneSession {
         }
     }
 
+    let id = UUID()
     let navigationState: WorkspaceSceneNavigationState
     let features: WorkspaceFeatureRegistries
 

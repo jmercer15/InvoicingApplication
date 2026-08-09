@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -6,36 +7,27 @@ import SwiftData
 struct SessionImport {
     static func importSessions(data: Data, fileName: String, context: ModelContext) throws -> ImportResult {
         let decoder = JSONDecoder()
-        
-        do {
-            let newFormatSessions = try decoder.decode([SessionImportJSON].self, from: data)
-            let convertedSessions = newFormatSessions.map { $0.toSessionJSON() }
-            return try processSessions(convertedSessions, fileName: fileName, context: context)
-        } catch {
-            do {
-                let newFormatSession = try decoder.decode(SessionImportJSON.self, from: data)
-                return try processSessions([newFormatSession.toSessionJSON()], fileName: fileName, context: context)
-            } catch {
-                do {
-                    let sessions = try decoder.decode([SessionJSON].self, from: data)
-                    return try processSessions(sessions, fileName: fileName, context: context)
-                } catch {
-                    do {
-                        let session = try decoder.decode(SessionJSON.self, from: data)
-                        return try processSessions([session], fileName: fileName, context: context)
-                    } catch {
-                        throw NSError(
-                            domain: "JSONImportError",
-                            code: 1001,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "Failed to parse session data: \(error.localizedDescription)",
-                                NSLocalizedFailureReasonErrorKey: "The JSON structure doesn't match any of the expected formats for sessions."
-                            ]
-                        )
-                    }
-                }
-            }
+        if let sessions = try? decoder.decode([SessionImportJSON].self, from: data) {
+            return try processSessions(sessions.map { $0.toSessionJSON() }, fileName: fileName, context: context)
         }
+        if let session = try? decoder.decode(SessionImportJSON.self, from: data) {
+            return try processSessions([session.toSessionJSON()], fileName: fileName, context: context)
+        }
+        if let sessions = try? decoder.decode([SessionJSON].self, from: data) {
+            return try processSessions(sessions, fileName: fileName, context: context)
+        }
+        if let session = try? decoder.decode(SessionJSON.self, from: data) {
+            return try processSessions([session], fileName: fileName, context: context)
+        }
+
+        throw NSError(
+            domain: "JSONImportError",
+            code: 1001,
+            userInfo: [
+                NSLocalizedDescriptionKey: "Failed to parse session data.",
+                NSLocalizedFailureReasonErrorKey: "The JSON structure doesn't match any of the expected formats for sessions."
+            ]
+        )
     }
     
     private static func processSessions(_ sessions: [SessionJSON], fileName: String, context: ModelContext) throws -> ImportResult {
@@ -51,6 +43,34 @@ struct SessionImport {
         
         let clientFetchDescriptor = FetchDescriptor<Client>()
         let allClients = try context.fetch(clientFetchDescriptor)
+        let clientsByName = Dictionary(
+            allClients.map { ($0.fullName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let candidateStartTimes = sessions.compactMap { session -> Date? in
+            guard let date = dateFormatter.date(from: session.date),
+                  let time = timeFormatter.date(from: session.startTime)
+            else { return nil }
+            let components = Calendar.current.dateComponents([.hour, .minute], from: time)
+            return Calendar.current.date(
+                bySettingHour: components.hour ?? 0,
+                minute: components.minute ?? 0,
+                second: 0,
+                of: date
+            )
+        }
+        let existingSessions = try fetchExistingSessions(
+            between: candidateStartTimes.min(),
+            and: candidateStartTimes.max(),
+            context: context
+        )
+        var sessionsByClientAndStart = Dictionary(
+            existingSessions.compactMap { session -> (SessionImportKey, Session)? in
+                guard let clientID = session.client?.id, let startTime = session.startTime else { return nil }
+                return (SessionImportKey(clientID: clientID, startTime: startTime), session)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         
         for session in sessions {
             do {
@@ -87,36 +107,22 @@ struct SessionImport {
                     }
                 }
                 
-                let matchingClient = allClients.first { client in
-                    return client.fullName.caseInsensitiveCompare(session.clientName) == .orderedSame
-                }
+                let matchingClient = clientsByName[session.clientName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
                 
                 guard let client = matchingClient else {
                     throw NSError(domain: "ValidationError", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Client '\(session.clientName)' not found"])
                 }
                 
-                let sessionFetchDescriptor = FetchDescriptor<Session>(predicate: #Predicate<Session> {
-                    $0.startTime != nil
-                })
-                let possibleSessions = try context.fetch(sessionFetchDescriptor)
-                let existingSessions = possibleSessions.filter { ($0.startTime ?? Date.distantPast) == startDateTime && $0.client?.id == client.id }
-                
-                if let _ = existingSessions.first {
+                let key = SessionImportKey(clientID: client.id, startTime: startDateTime)
+                let finalEndTime = endDateTime ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDateTime) ?? startDateTime
+                if let existingSession = sessionsByClientAndStart[key] {
+                    apply(session, to: existingSession, client: client, startTime: startDateTime, endTime: finalEndTime)
                     messages.append("Updated session: \(session.title) for \(session.clientName) on \(session.date)")
                 } else {
-                    let finalEndTime = endDateTime ?? Calendar.current.date(byAdding: .hour, value: 1, to: startDateTime) ?? startDateTime
-                    
                     let newSession = Session(id: UUID())
-                    newSession.title = session.title
-                    newSession.startTime = startDateTime
-                    newSession.endTime = finalEndTime
-                    newSession.client = client
-                    newSession.location = session.location
-                    newSession.notes = session.notes
-                    let statusToken = canonicalSessionStatusToken(session.status) ?? SessionStatus.scheduled.rawValue
-                    newSession.status = SessionStatus(normalized: statusToken) ?? .scheduled
-                    
+                    apply(session, to: newSession, client: client, startTime: startDateTime, endTime: finalEndTime)
                     context.insert(newSession)
+                    sessionsByClientAndStart[key] = newSession
                     messages.append("Created session: \(session.title) for \(session.clientName) on \(session.date)")
                 }
                 
@@ -136,6 +142,42 @@ struct SessionImport {
             messages: messages,
             fileName: fileName
         )
+    }
+
+    private static func fetchExistingSessions(
+        between earliest: Date?,
+        and latest: Date?,
+        context: ModelContext
+    ) throws -> [Session] {
+        guard let earliest, let latest else { return [] }
+        let nilStartFallback = Date.distantPast
+        let descriptor = FetchDescriptor<Session>(predicate: #Predicate<Session> { session in
+            (session.startTime ?? nilStartFallback) >= earliest
+                && (session.startTime ?? nilStartFallback) <= latest
+        })
+        return try context.fetch(descriptor)
+    }
+
+    private static func apply(
+        _ imported: SessionJSON,
+        to session: Session,
+        client: Client,
+        startTime: Date,
+        endTime: Date
+    ) {
+        session.title = imported.title
+        session.startTime = startTime
+        session.endTime = endTime
+        session.client = client
+        session.location = imported.location
+        session.notes = imported.notes
+        let statusToken = canonicalSessionStatusToken(imported.status) ?? SessionStatus.scheduled.rawValue
+        session.status = SessionStatus(normalized: statusToken) ?? .scheduled
+    }
+
+    private struct SessionImportKey: Hashable {
+        let clientID: UUID
+        let startTime: Date
     }
 
     private static func canonicalSessionStatusToken(_ rawStatus: String?) -> String? {

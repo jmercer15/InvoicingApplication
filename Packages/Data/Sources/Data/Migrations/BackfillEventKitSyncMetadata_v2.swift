@@ -1,4 +1,4 @@
-import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 

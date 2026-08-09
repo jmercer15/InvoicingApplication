@@ -1,46 +1,47 @@
-import XCTest
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
-final class AppDatabaseBootstrapTests: XCTestCase {
-    func testBootstrapPoliciesExposeExpectedStorageAndSyncFlags() {
-        XCTAssertTrue(PersistenceBootstrapPolicy.productionSyncRequired.cloudSyncEnabled)
-        XCTAssertFalse(PersistenceBootstrapPolicy.productionSyncRequired.isStoredInMemoryOnly)
+@Suite struct AppDatabaseBootstrapTests {
+    @Test func BootstrapPoliciesExposeExpectedStorageAndSyncFlags() {
+        #expect(PersistenceBootstrapPolicy.productionSyncRequired.cloudSyncEnabled)
+        #expect(!(PersistenceBootstrapPolicy.productionSyncRequired.isStoredInMemoryOnly))
 
-        XCTAssertFalse(PersistenceBootstrapPolicy.localOnly.cloudSyncEnabled)
-        XCTAssertFalse(PersistenceBootstrapPolicy.localOnly.isStoredInMemoryOnly)
+        #expect(!(PersistenceBootstrapPolicy.localOnly.cloudSyncEnabled))
+        #expect(!(PersistenceBootstrapPolicy.localOnly.isStoredInMemoryOnly))
 
-        XCTAssertFalse(PersistenceBootstrapPolicy.inMemory.cloudSyncEnabled)
-        XCTAssertTrue(PersistenceBootstrapPolicy.inMemory.isStoredInMemoryOnly)
+        #expect(!(PersistenceBootstrapPolicy.inMemory.cloudSyncEnabled))
+        #expect(PersistenceBootstrapPolicy.inMemory.isStoredInMemoryOnly)
     }
 
     @MainActor
-    func testInMemoryBootstrapSucceedsAndMainContextDisablesAutosave() async throws {
+    @Test func InMemoryBootstrapSucceedsAndMainContextDisablesAutosave() async throws {
         let database = try await AppDatabase.bootstrap(policy: .inMemory)
         let context = database.makeMainContext()
 
-        XCTAssertFalse(context.autosaveEnabled)
+        #expect(!(context.autosaveEnabled))
     }
 
     /// Two workspace windows must each receive an independent `ModelContext` so that staged changes
     /// in one window's UI do not leak into another window's UI before save. They must, however,
     /// share the same underlying `ModelContainer` so persisted state stays coherent.
     @MainActor
-    func testMakeMainContextReturnsIndependentManualSaveContextsSharingTheSameContainer() async throws {
+    @Test func MakeMainContextReturnsIndependentManualSaveContextsSharingTheSameContainer() async throws {
         let database = try await AppDatabase.bootstrap(policy: .inMemory)
         let firstContext = database.makeMainContext()
         let secondContext = database.makeMainContext()
 
-        XCTAssertFalse(firstContext.autosaveEnabled)
-        XCTAssertFalse(secondContext.autosaveEnabled)
-        XCTAssertFalse(firstContext === secondContext)
-        XCTAssertTrue(firstContext.container === secondContext.container)
-        XCTAssertTrue(firstContext.container === database.container)
+        #expect(!(firstContext.autosaveEnabled))
+        #expect(!(secondContext.autosaveEnabled))
+        #expect(!(firstContext === secondContext))
+        #expect(firstContext.container === secondContext.container)
+        #expect(firstContext.container === database.container)
     }
 
     @MainActor
-    func testUnsavedChangesDoNotLeakBetweenWorkspaceContexts() async throws {
+    @Test func UnsavedChangesDoNotLeakBetweenWorkspaceContexts() async throws {
         let database = try await AppDatabase.bootstrap(policy: .inMemory)
         let firstContext = database.makeMainContext()
         let secondContext = database.makeMainContext()
@@ -48,15 +49,14 @@ final class AppDatabaseBootstrapTests: XCTestCase {
 
         firstContext.insert(Client(fullName: clientName))
 
-        var descriptor = FetchDescriptor<Client>(
-            predicate: #Predicate { $0.fullName == clientName }
-        )
-        descriptor.fetchLimit = 1
+        func matchingClients(in context: ModelContext) throws -> [Client] {
+            try context.fetch(FetchDescriptor<Client>()).filter { $0.fullName == clientName }
+        }
 
-        XCTAssertTrue(try secondContext.fetch(descriptor).isEmpty)
+        #expect(try matchingClients(in: secondContext).isEmpty)
 
         try firstContext.save()
 
-        XCTAssertEqual(try secondContext.fetch(descriptor).count, 1)
+        #expect(try matchingClients(in: secondContext).count == 1)
     }
 }

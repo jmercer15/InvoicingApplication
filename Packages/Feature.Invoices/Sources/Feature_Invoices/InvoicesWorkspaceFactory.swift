@@ -1,16 +1,15 @@
 import SwiftData
-import Core
-import Data
+import DataInterfaces
 
 @MainActor
 public enum InvoicesWorkspaceFactory {
     public struct Dependencies {
         public let modelContext: ModelContext
-        public let storeChangeMonitor: SwiftDataStoreChangeMonitor?
+        public let storeChangeMonitor: (any StoreChangeMonitoring)?
 
         public init(
             modelContext: ModelContext,
-            storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+            storeChangeMonitor: (any StoreChangeMonitoring)? = nil
         ) {
             self.modelContext = modelContext
             self.storeChangeMonitor = storeChangeMonitor

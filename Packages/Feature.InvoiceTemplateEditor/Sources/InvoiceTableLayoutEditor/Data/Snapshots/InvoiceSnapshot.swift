@@ -1,3 +1,4 @@
+import Core
 import Foundation
 
 struct InvoicePartyDraft: Equatable {
@@ -84,6 +85,10 @@ struct InvoiceLineItemSnapshot: Equatable, Identifiable {
     var unitPrice: Decimal
     var taxRate: Decimal
     var gstCode: String
+    /// NDIS claim lineage; preserved across editor save so claim batching still sees travel/etc.
+    var claimType: NDISClaimType?
+    var sessionID: UUID?
+    var clientServiceID: UUID?
 
     var lineSubtotal: Decimal {
         InvoiceCalculations.lineSubtotal(quantity: quantity, unitPrice: unitPrice)
@@ -115,7 +120,10 @@ struct InvoiceLineItemSnapshot: Equatable, Identifiable {
             unit: unit,
             unitPrice: unitPrice,
             taxRate: taxRate,
-            gstCode: gstCode
+            gstCode: gstCode,
+            claimType: claimType,
+            sessionID: sessionID,
+            clientServiceID: clientServiceID
         )
     }
 
@@ -130,6 +138,9 @@ struct InvoiceLineItemSnapshot: Equatable, Identifiable {
         unitPrice = item.unitPrice
         taxRate = item.taxRate
         gstCode = item.gstCode
+        claimType = item.claimType
+        sessionID = item.sessionID
+        clientServiceID = item.clientServiceID
     }
 
     /// Builds a snapshot from field values (tests and layout measurement).
@@ -143,7 +154,10 @@ struct InvoiceLineItemSnapshot: Equatable, Identifiable {
         unit: String = "",
         unitPrice: Decimal,
         taxRate: Decimal,
-        gstCode: String = ""
+        gstCode: String = "",
+        claimType: NDISClaimType? = nil,
+        sessionID: UUID? = nil,
+        clientServiceID: UUID? = nil
     ) {
         self.id = id
         self.sortOrder = sortOrder
@@ -155,6 +169,9 @@ struct InvoiceLineItemSnapshot: Equatable, Identifiable {
         self.unitPrice = unitPrice
         self.taxRate = taxRate
         self.gstCode = gstCode
+        self.claimType = claimType
+        self.sessionID = sessionID
+        self.clientServiceID = clientServiceID
     }
 }
 

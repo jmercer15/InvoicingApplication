@@ -1,5 +1,5 @@
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import SwiftData
 import SwiftUI
@@ -42,18 +42,18 @@ public struct BillableDraftDetailView: View {
             if let d = draft {
                 Section("Status") {
                     Text(d.draftStatus)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                 }
             }
             Section("Issues") {
                 if issues.isEmpty {
                     Text("No issues")
-                        .foregroundColor(StyleGuide.Colors.textSecondary.opacity(0.6))
+                        .foregroundStyle(StyleGuide.Colors.textSecondary.opacity(0.6))
                 } else {
                     ForEach(issues, id: \.id) { issue in
                         HStack {
                             Image(systemName: issue.severity == .blocking ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundColor(issue.severity == .blocking ? ColorSystem.Status.error : ColorSystem.Status.warning)
+                                .foregroundStyle(issue.severity == .blocking ? ColorSystem.Status.error : ColorSystem.Status.warning)
                             Text(issue.message)
                         }
                     }
@@ -115,7 +115,7 @@ public struct BillableDraftDetailView: View {
             if let msg = errorMessage {
                 Text(msg)
                     .font(.caption)
-                    .foregroundColor(ColorSystem.Status.error)
+                    .foregroundStyle(ColorSystem.Status.error)
                     .padding(StyleGuide.Dimensions.paddingMedium)
             }
         }

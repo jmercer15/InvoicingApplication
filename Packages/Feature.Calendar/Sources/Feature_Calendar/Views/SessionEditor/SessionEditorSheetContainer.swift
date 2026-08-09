@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
+import PersistenceModels
 import SharedUI
 
 struct SessionEditorSheetContainer: View {
@@ -58,7 +59,7 @@ struct SessionEditorSheetContainer: View {
                 .frame(minWidth: StyleGuide.Dimensions.sessionSheetMinWidth, minHeight: StyleGuide.Dimensions.sessionSheetMinHeight)
                 .task {
                     // Small delay to let the sheet presentation animation finish smoothly
-                    try? await Task.sleep(for: .milliseconds(150))
+                    guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
                     let vm = viewModel.makeNewSessionViewModel(
                         session: sessionInfo.session,
                         instanceDate: sessionInfo.instanceStart,

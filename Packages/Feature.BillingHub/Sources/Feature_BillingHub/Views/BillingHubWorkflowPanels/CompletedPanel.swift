@@ -4,47 +4,41 @@ import SharedUI
 struct CompletedPanel: View {
     let card: KanbanCardData
     let viewModel: BillingHubViewModel
-    @State private var flagged: Bool = false
-    @State private var tags: String = ""
     @Environment(\.dismiss) var dismiss
+    @State private var isMoving = false
 
     var body: some View {
         Group {
             Section {
-                Text("This session is marked Completed. You can optionally tag or flag it before grouping.")
+                Text("This session is marked Completed. Move it to Grouped to prepare it for a draft invoice.")
                     .font(StyleGuide.Typography.bodyMedium)
                     .foregroundStyle(BillingHubTheme.Palette.textSecondary)
-
-                Toggle("Flag for follow-up", isOn: $flagged)
-                    .toggleStyle(.switch)
-                    .help("Mark this session as needing special attention or further review")
-                TextField("Tags (comma-separated)", text: $tags, prompt: Text("urgent, home-visit"))
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
             }
 
-            Button("Move to Grouped") {
+            Button {
+                guard !isMoving else { return }
+                isMoving = true
                 Task {
-                    viewModel.moveSessionToGrouped(sessionID: card.id)
-                    dismiss()
+                    let result = await viewModel.moveSession(card.id, to: .grouped)
+                    isMoving = false
+                    if result?.isSuccess == true {
+                        dismiss()
+                    }
+                }
+            } label: {
+                if isMoving {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Move to Grouped", systemImage: "rectangle.stack.badge.plus")
+                        .frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
+            .disabled(isMoving)
             .help("Move this completed session to the grouping stage")
             .accessibilityLabel("Move to grouped")
             .accessibilityHint("Prepares the session for inclusion in a draft invoice.")
-
-            Button("Clear Flags") {
-                flagged = false
-                tags = ""
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .help("Reset tags and follow-up flags")
-            .accessibilityLabel("Clear flags and tags")
         }
     }
 }

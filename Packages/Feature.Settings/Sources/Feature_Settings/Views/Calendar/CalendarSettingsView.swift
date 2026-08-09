@@ -1,6 +1,6 @@
 import SwiftUI
 import EventKit
-import Data
+import Core
 import SharedUI
 
 // MARK: - Main View

@@ -1,11 +1,11 @@
 import Core
+import PersistenceModels
 @testable import Data
 import Foundation
 import SwiftData
-import XCTest
-
-final class SwiftDataExportServiceTests: XCTestCase {
-    func testExportAllEntitiesToJSONReturnsExpectedStructure() throws {
+import Testing
+@Suite struct SwiftDataExportServiceTests {
+    @Test func ExportAllEntitiesToJSONReturnsExpectedStructure() throws {
         let (container, _) = try ModelContainerFactory.makeInMemoryContext()
         let modelContext = ModelContext(container)
         let client = Client(ndisNumber: "C-001", fullName: "Test Client")
@@ -16,14 +16,14 @@ final class SwiftDataExportServiceTests: XCTestCase {
         let payload = try JSONSerialization.jsonObject(with: exportedData) as? [String: Any]
         
         let clientRecords = payload?["Client"] as? [[String: Any]]
-        XCTAssertNotNil(payload)
-        XCTAssertNotNil(clientRecords)
-        XCTAssertEqual(clientRecords?.count, 1)
-        XCTAssertEqual(clientRecords?.first?["fullName"] as? String, "Test Client")
-        XCTAssertEqual(clientRecords?.first?["ndisNumber"] as? String, "C-001")
+        #expect(payload != nil)
+        #expect(clientRecords != nil)
+        #expect(clientRecords?.count == 1)
+        #expect(clientRecords?.first?["fullName"] as? String == "Test Client")
+        #expect(clientRecords?.first?["ndisNumber"] as? String == "C-001")
     }
     
-    func testExportAllEntitiesToJSONHasRuntimeDiagnosticSignal() throws {
+    @Test func ExportAllEntitiesToJSONHasRuntimeDiagnosticSignal() throws {
         let (container, _) = try ModelContainerFactory.makeInMemoryContext()
         let modelContext = ModelContext(container)
         (0..<10).forEach { index in

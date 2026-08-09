@@ -1,5 +1,6 @@
 import Core
-import Data
+import PersistenceModels
+import DataInterfaces
 import Foundation
 import SharedUI
 import SwiftData
@@ -17,12 +18,12 @@ public final class BillableDraftsViewModel {
     public var errorMessage: String?
 
     private let persistence: any BillableDraftMainContextPersisting
-    private let draftBuilder: BillingDraftBuilderService
+    private let draftBuilder: any BillingDraftBuilding
     private let modelContext: ModelContext
 
     public init(
         modelContext: ModelContext,
-        draftBuilder: BillingDraftBuilderService
+        draftBuilder: any BillingDraftBuilding
     ) {
         self.modelContext = modelContext
         self.draftBuilder = draftBuilder
@@ -36,6 +37,11 @@ public final class BillableDraftsViewModel {
     /// Applies sessions materialized by a view-scoped `@Query` window (no VM-owned range fetch).
     public func applySessionsWithoutDraft(_ sessions: [Session]) {
         sessionsWithoutDraft = sessions
+    }
+
+    /// Drops live Session refs after CloudKit HistoryExpired / store revision bumps.
+    public func clearSessionsWithoutDraft() {
+        sessionsWithoutDraft = []
     }
 
     public func buildDraft(
@@ -60,32 +66,25 @@ public final class BillableDraftsViewModel {
         try persistence.updateDraftStatus(draft, status: .locked)
     }
 
-    /// Builds billable drafts for the given session models (e.g. rows from `sessionsWithoutDraft`). Uses relationship navigation first; falls back to a single-row fetch only when a fault is missing.
+    /// Builds billable drafts for sessions identified by the given models.
+    /// Uses session IDs only — never faults relationships on possibly-invalidated live models.
     public func generateDrafts(for sessions: [Session]) async throws -> Int {
-        var requests: [BillingDraftBuildRequest] = []
-        requests.reserveCapacity(sessions.count)
+        let sessionIDs = sessions.map(\.id)
+        return try await generateDrafts(forSessionIDs: sessionIDs)
+    }
 
-        for sessionModel in sessions {
+    public func generateDrafts(forSessionIDs sessionIDs: [UUID]) async throws -> Int {
+        var requests: [BillingDraftBuildRequest] = []
+        requests.reserveCapacity(sessionIDs.count)
+
+        for sessionID in sessionIDs {
+            guard let sessionModel = try persistence.fetchSession(id: sessionID) else { continue }
             guard let clientId = sessionModel.clientId,
                   let serviceId = sessionModel.clientServiceId
             else { continue }
 
-            let clientModel: Client?
-            if let client = sessionModel.client {
-                clientModel = client
-            } else {
-                clientModel = try persistence.fetchClient(id: clientId)
-            }
-
-            let serviceModel: ClientService?
-            if let service = sessionModel.clientService {
-                serviceModel = service
-            } else {
-                serviceModel = try persistence.fetchClientService(id: serviceId)
-            }
-
-            guard let clientModel,
-                  let serviceModel
+            guard let clientModel = try persistence.fetchClient(id: clientId),
+                  let serviceModel = try persistence.fetchClientService(id: serviceId)
             else { continue }
 
             let context = billingContext(from: sessionModel, service: serviceModel)
@@ -109,8 +108,8 @@ public final class BillableDraftsViewModel {
         ctx.travelDistance = session.travelDistanceKM ?? 0
         ctx.travelTime = session.travelTimeMinutes ?? 0
         let travelCharges = session.travelCharges ?? []
-        ctx.travelTolls = session.travelTollsAmount ?? travelCharges.reduce(0) { $0 + ($1.tollCost ?? 0) }
-        ctx.travelParking = travelCharges.reduce(0) { $0 + ($1.parkingCost ?? 0) }
+        ctx.travelTolls = session.travelTollsAmount ?? travelCharges.reduce(0) { $0 + NSDecimalNumber(decimal: $1.tollCost ?? 0).doubleValue }
+        ctx.travelParking = travelCharges.reduce(0) { $0 + NSDecimalNumber(decimal: $1.parkingCost ?? 0).doubleValue }
         ctx.isProviderTravel = (session.travelDistanceKM ?? 0) > 0 || (session.travelTimeMinutes ?? 0) > 0
         return ctx
     }

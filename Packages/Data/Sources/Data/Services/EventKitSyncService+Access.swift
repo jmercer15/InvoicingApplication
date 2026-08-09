@@ -1,5 +1,5 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import SwiftData
 import CoreGraphics
 import Core
@@ -36,7 +36,9 @@ extension EventKitSyncService {
     /// Request full-access permission to the user's calendars.
     public func requestAccess() async -> Bool {
         print("[EventKitSyncService] Requesting calendar access...")
-        return await withCheckedContinuation { continuation in
+        let session = EventKitAuthorizationSession()
+        return await withTaskCancellationHandler {
+            await session.wait {
             if #available(iOS 17.0, macOS 14.0, *) {
                 print("[EventKitSyncService] Using requestFullAccessToEvents (iOS 17+/macOS 14+)")
                 eventStore.requestFullAccessToEvents { [weak self] granted, error in
@@ -51,7 +53,7 @@ extension EventKitSyncService {
                             self?.accessGranted = false
                             self?.availableCalendars = []
                         }
-                        continuation.resume(returning: granted)
+                        session.finish(granted)
                     }
                 }
             } else {
@@ -68,10 +70,13 @@ extension EventKitSyncService {
                             self?.accessGranted = false
                             self?.availableCalendars = []
                         }
-                        continuation.resume(returning: granted)
+                        session.finish(granted)
                     }
                 }
             }
+            }
+        } onCancel: {
+            Task { @MainActor in session.finish(false) }
         }
     }
 
@@ -85,19 +90,17 @@ extension EventKitSyncService {
         let calendars = allCalendars.filter { $0.allowsContentModifications }
         print("[EventKitSyncService] Writable calendars found: \(calendars.count)")
 
-        await MainActor.run {
-            self.availableCalendars = calendars
-            if calendars.isEmpty {
-                print("[EventKitSyncService] No writable calendars found")
-                self.error = NSError(
-                    domain: "EventKitSyncService",
-                    code: 100,
-                    userInfo: [NSLocalizedDescriptionKey: "No writable calendars found. Please check your calendar accounts and permissions."]
-                )
-            } else {
-                print("[EventKitSyncService] Successfully loaded \(calendars.count) writable calendars")
-                self.error = nil
-            }
+        self.availableCalendars = calendars
+        if calendars.isEmpty {
+            print("[EventKitSyncService] No writable calendars found")
+            self.error = NSError(
+                domain: "EventKitSyncService",
+                code: 100,
+                userInfo: [NSLocalizedDescriptionKey: "No writable calendars found. Please check your calendar accounts and permissions."]
+            )
+        } else {
+            print("[EventKitSyncService] Successfully loaded \(calendars.count) writable calendars")
+            self.error = nil
         }
     }
 
@@ -106,22 +109,18 @@ extension EventKitSyncService {
         let defaultSourceType = eventStore.defaultCalendarForNewEvents?.source?.sourceType
         let defaultSourceId = eventStore.defaultCalendarForNewEvents?.source?.sourceIdentifier
 
-        try await Task.detached(priority: .userInitiated) {
-            let bgStore = EKEventStore()
-            let newCalendar = EKCalendar(for: .event, eventStore: bgStore)
-            newCalendar.title = title
-            if let color = color {
-                newCalendar.cgColor = color
-            }
+        let newCalendar = EKCalendar(for: .event, eventStore: eventStore)
+        newCalendar.title = title
+        if let color {
+            newCalendar.cgColor = color
+        }
 
-            let sources = bgStore.sources
-            let resolvedSource = sources.first { $0.sourceIdentifier == defaultSourceId }
-                ?? sources.first { $0.sourceType == defaultSourceType }
-                ?? sources.first { [.local, .calDAV, .exchange, .subscribed, .mobileMe].contains($0.sourceType) }
+        let resolvedSource = eventStore.sources.first { $0.sourceIdentifier == defaultSourceId }
+            ?? eventStore.sources.first { $0.sourceType == defaultSourceType }
+            ?? eventStore.sources.first { [.local, .calDAV, .exchange, .subscribed, .mobileMe].contains($0.sourceType) }
 
-            newCalendar.source = resolvedSource
-            try bgStore.saveCalendar(newCalendar, commit: true)
-        }.value
+        newCalendar.source = resolvedSource
+        try eventStore.saveCalendar(newCalendar, commit: true)
 
         await fetchAvailableCalendars()
     }
@@ -129,5 +128,30 @@ extension EventKitSyncService {
     /// Convenience alias used by views that hold a reference to `availableCalendars`.
     public func getCalendars() -> [EKCalendar] {
         availableCalendars
+    }
+}
+
+@MainActor
+private final class EventKitAuthorizationSession {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var isFinished = false
+
+    func wait(start: () -> Void) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard !isFinished else {
+                continuation.resume(returning: false)
+                return
+            }
+            self.continuation = continuation
+            start()
+        }
+    }
+
+    func finish(_ granted: Bool) {
+        guard !isFinished else { return }
+        isFinished = true
+        let continuation = continuation
+        self.continuation = nil
+        continuation?.resume(returning: granted)
     }
 }

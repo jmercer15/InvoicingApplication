@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
-import Data
 import Core
+import PersistenceModels
 import UniformTypeIdentifiers
 import os
 
@@ -144,7 +144,7 @@ extension ImportExportViewModel {
 
         let hashVerifier = bulkClaimExportHashVerifier
 
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let rows = ImportExportClaimBatchHistory.buildRows(
                 batches: batches,
@@ -154,13 +154,11 @@ extension ImportExportViewModel {
                 exportHashVerifier: hashVerifier
             )
 
-            await MainActor.run {
-                self.claimBatchHistoryRows = rows
-                self.claimHistoryStatusMessage = rows.isEmpty
-                    ? "No batches found."
-                    : "Loaded \(rows.count) batch(es)."
-                self.isRefreshingClaimHistory = false
-            }
+            self.claimBatchHistoryRows = rows
+            self.claimHistoryStatusMessage = rows.isEmpty
+                ? "No batches found."
+                : "Loaded \(rows.count) batch(es)."
+            self.isRefreshingClaimHistory = false
         }
     }
 
@@ -305,7 +303,7 @@ extension ImportExportViewModel {
                     }
                     return
                 }
-                let preparedExport = try await importExportCoordinator.prepareClaimBatchCSVExport(batchId: batch.id)
+                let preparedExport = try await importExportCoordinator.prepareClaimBatchCSVExport(batchId: batch.id, dateString: nil)
                 logBatchValidationSummary(
                     action: "export_batch_prepared",
                     batchId: batch.id,

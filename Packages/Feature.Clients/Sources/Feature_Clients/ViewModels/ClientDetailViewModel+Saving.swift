@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 
 extension ClientDetailViewModel {
@@ -19,7 +20,7 @@ extension ClientDetailViewModel {
         client.email               = emailValidator.isValid  ? emailValidator.email         : client.email
         client.notes               = editableNotes.isEmpty   ? nil                          : editableNotes
         client.phone               = phoneFormatter.isValid  ? phoneFormatter.phoneNumber   : client.phone
-        client.creditAmount        = Double(editableCreditAmountString) ?? client.creditAmount
+        client.creditAmount        = Decimal(string: editableCreditAmountString) ?? client.creditAmount
         client.isMinor             = editableIsMinor
         client.hasNdisPlan         = editableHasNdisPlan
         client.planManagementType  = editablePlanManagementType
@@ -100,7 +101,7 @@ extension ClientDetailViewModel {
         client.email               = emailValidator.isValid ? emailValidator.email   : nil
         client.notes               = editableNotes.isEmpty  ? nil                    : editableNotes
         client.phone               = phoneFormatter.isValid ? phoneFormatter.phoneNumber : nil
-        client.creditAmount        = Double(editableCreditAmountString) ?? 0.0
+        client.creditAmount        = Decimal(string: editableCreditAmountString) ?? 0
         client.isMinor             = editableIsMinor
         client.hasNdisPlan         = editableHasNdisPlan
         client.planManagementType  = editablePlanManagementType

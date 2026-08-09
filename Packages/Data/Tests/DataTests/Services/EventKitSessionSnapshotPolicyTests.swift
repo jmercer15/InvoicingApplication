@@ -1,38 +1,39 @@
 @testable import Data
 import Core
-import XCTest
-
-final class EventKitSessionSnapshotPolicyTests: XCTestCase {
-    func testTwoPassStalePolicy() {
+import Foundation
+import Testing
+import PersistenceModels
+@Suite struct EventKitSessionSnapshotPolicyTests {
+    @Test func TwoPassStalePolicy() {
         let firstMiss = EventKitSyncPolicy.staleMissOutcome(
             currentMisses: 0,
             hasWindowMatch: false,
             hasResolvedMatch: false
         )
-        XCTAssertEqual(firstMiss.nextMisses, 1)
-        XCTAssertFalse(firstMiss.shouldMarkStale)
+        #expect(firstMiss.nextMisses == 1)
+        #expect(!(firstMiss.shouldMarkStale))
 
         let secondMiss = EventKitSyncPolicy.staleMissOutcome(
             currentMisses: firstMiss.nextMisses,
             hasWindowMatch: false,
             hasResolvedMatch: false
         )
-        XCTAssertEqual(secondMiss.nextMisses, 2)
-        XCTAssertTrue(secondMiss.shouldMarkStale)
+        #expect(secondMiss.nextMisses == 2)
+        #expect(secondMiss.shouldMarkStale)
     }
 
-    func testReattachResetsConsecutiveMisses() {
+    @Test func ReattachResetsConsecutiveMisses() {
         let reset = EventKitSyncPolicy.staleMissOutcome(
             currentMisses: 2,
             hasWindowMatch: false,
             hasResolvedMatch: true
         )
 
-        XCTAssertEqual(reset.nextMisses, 0)
-        XCTAssertFalse(reset.shouldMarkStale)
+        #expect(reset.nextMisses == 0)
+        #expect(!(reset.shouldMarkStale))
     }
 
-    func testNilRemoteModifiedWithStableFingerprintIsUnknownNotChanged() {
+    @Test func NilRemoteModifiedWithStableFingerprintIsUnknownNotChanged() {
         let state = EventKitSyncWatermark.classifyRemoteFreshness(
             remoteLastModified: nil,
             watermark: Date(timeIntervalSinceReferenceDate: 5_000),
@@ -41,6 +42,6 @@ final class EventKitSessionSnapshotPolicyTests: XCTestCase {
             currentFingerprint: "stable"
         )
 
-        XCTAssertEqual(state, .unknown)
+        #expect(state == .unknown)
     }
 }

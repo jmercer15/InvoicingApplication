@@ -30,11 +30,6 @@ struct CalendarTimelineMetrics {
         return hourFraction * hourHeight
     }
 
-    // Y offset for a fractional hour value
-    func yOffset(forHourFraction hourFraction: CGFloat) -> CGFloat {
-        hourFraction * hourHeight
-    }
-
     // Height for a duration in seconds
     func height(forDuration duration: TimeInterval) -> CGFloat {
         let hours = CGFloat(duration / 3600.0)

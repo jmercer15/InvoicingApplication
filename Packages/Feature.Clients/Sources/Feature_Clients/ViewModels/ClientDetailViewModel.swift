@@ -3,6 +3,7 @@ import AppKit
 import MapKit
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 import SharedUI
 import Observation
@@ -51,6 +52,9 @@ public class ClientDetailViewModel {
 
     // Services Management (Domain Models)
     var clientServices: [ClientService] = []
+    var clientServiceToEdit: ClientService?
+    var isPresentingClientServiceSheet: Bool = false
+    var clientServiceValidationError: String?
     var serviceAgreements: [ServiceAgreement] = []
     var serviceAgreementToEdit: ServiceAgreement?
     var isPresentingServiceAgreementSheet: Bool = false
@@ -66,6 +70,18 @@ public class ClientDetailViewModel {
 
     // Bulk Editing
     var serviceTemplates: [ClientServiceTemplate] = []
+
+    // Detail list sorting (kept in the view model so detail cards do not resort in view bodies).
+    var servicesSortOrder: ServicesSortOrder = .nameAsc
+    var invoicesSortOrder: InvoicesSortOrder = .dateDesc
+
+    var sortedServices: [ClientService] {
+        clientServices.sorted(using: servicesSortOrder)
+    }
+
+    var sortedInvoices: [Invoice] {
+        relatedInvoices.sorted(using: invoicesSortOrder)
+    }
     
     /// Latest relationship pickers from `@Query` (used to resolve selection by id without ad-hoc fetches).
     var payeeCatalogue: [Payee] = []

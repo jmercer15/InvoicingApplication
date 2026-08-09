@@ -26,12 +26,12 @@ struct RecurringScopePickerSheet: View {
                          ? "Choose how broadly this delete should apply."
                          : "Choose how broadly these changes should apply.")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(Color.secondary)
                 }
 
                 if orderedOptions.isEmpty {
                     Text("No available actions")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Color.secondary)
                 } else {
                     ForEach(orderedOptions, id: \.self) { mode in
                         Button(role: isDestructive ? .destructive : nil) {
@@ -42,7 +42,7 @@ struct RecurringScopePickerSheet: View {
                         } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: mode.iconName)
-                                    .foregroundColor(isDestructive ? ColorSystem.Status.error : .accentColor)
+                                    .foregroundStyle(isDestructive ? ColorSystem.Status.error : Color.accentColor)
                                     .padding(.top, 2)
                                 VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                                     HStack(spacing: 6) {
@@ -50,12 +50,12 @@ struct RecurringScopePickerSheet: View {
                                         if recommended == mode {
                                             Text("Recommended")
                                                 .font(StyleGuide.Typography.nano)
-                                                .foregroundColor(.secondary)
+                                                .foregroundStyle(Color.secondary)
                                         }
                                     }
                                     Text(detail(mode))
                                         .font(StyleGuide.Typography.itemSubtitle)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(Color.secondary)
                                 }
                                 Spacer()
                             }

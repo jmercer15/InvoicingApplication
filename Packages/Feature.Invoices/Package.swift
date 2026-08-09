@@ -13,7 +13,9 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
         .package(path: "../Data"),
+        .package(path: "../DataInterfaces"),
         .package(path: "../SharedUI"),
         .package(path: "../Feature.InvoiceTemplateEditor")
     ],
@@ -22,7 +24,9 @@ let package = Package(
             name: "Feature_Invoices",
             dependencies: [
                 "Core",
+                "PersistenceModels",
                 "Data",
+                "DataInterfaces",
                 "SharedUI",
                 .product(
                     name: "InvoiceTableLayoutEditor",
@@ -36,6 +40,7 @@ let package = Package(
             dependencies: [
                 "Feature_Invoices",
                 "Core",
+                "PersistenceModels",
                 "Data"
             ],
             swiftSettings: strictConcurrencySettings

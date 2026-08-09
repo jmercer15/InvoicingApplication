@@ -1,13 +1,14 @@
 import Core
 import Data
+import PersistenceModels
 import SharedUI
 @testable import AppShell
 import SwiftData
-import XCTest
-
+import Foundation
+import Testing
 @MainActor
-final class WorkspaceNavigationRestorationTests: XCTestCase {
-    func testSanitizedPathTruncatesAtFirstMissingEntity() throws {
+@Suite struct WorkspaceNavigationRestorationTests {
+    @Test func SanitizedPathTruncatesAtFirstMissingEntity() throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let invoice = Invoice(invoiceNumber: "TEST-1")
@@ -19,10 +20,10 @@ final class WorkspaceNavigationRestorationTests: XCTestCase {
 
         let sanitized = WorkspaceNavigationRestoration.sanitizedPath(path, modelContext: context)
 
-        XCTAssertEqual(sanitized, [.invoice(invoice.id)])
+        #expect(sanitized == [.invoice(invoice.id)])
     }
 
-    func testSanitizedSelectionReturnsNilForDeletedEntity() throws {
+    @Test func SanitizedSelectionReturnsNilForDeletedEntity() throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -31,6 +32,6 @@ final class WorkspaceNavigationRestorationTests: XCTestCase {
             modelContext: context
         )
 
-        XCTAssertNil(selection)
+        #expect(selection == nil)
     }
 }

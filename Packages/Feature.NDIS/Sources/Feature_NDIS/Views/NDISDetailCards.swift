@@ -52,7 +52,7 @@ struct ModernCombinedPricingCard: View {
     private var sortedPricesByValue: [(region: String, price: Double)] {
         return allPrices.compactMap { price in
             guard let region = price.regionIdentifier, !region.isEmpty, price.amount > 0 else { return nil }
-            return (region: region, price: price.amount)
+            return (region: region, price: NSDecimalNumber(decimal: price.amount).doubleValue)
         }.sorted { $0.price > $1.price }
     }
 }
@@ -390,6 +390,6 @@ struct ModernFeatureChip: View {
 
 private extension Double {
     var currencyString: String {
-        "$\(String(format: "%.2f", self))"
+        CurrencyFormatting.display(self)
     }
 }

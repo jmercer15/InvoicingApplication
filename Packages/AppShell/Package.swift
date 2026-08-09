@@ -13,7 +13,9 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
         .package(path: "../Data"),
+        .package(path: "../DataInterfaces"),
         .package(path: "../SharedUI"),
         .package(path: "../WorkspaceUI"),
         .package(path: "../Feature.Settings"),
@@ -29,7 +31,9 @@ let package = Package(
             name: "AppShell",
             dependencies: [
                 "Core",
+                "PersistenceModels",
                 "Data",
+                "DataInterfaces",
                 "SharedUI",
                 "WorkspaceUI",
                 .product(name: "Feature_Settings", package: "Feature.Settings"),

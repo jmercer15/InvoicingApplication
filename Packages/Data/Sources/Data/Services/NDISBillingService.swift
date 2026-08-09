@@ -10,6 +10,7 @@ import SwiftData
 import CoreLocation
 import os
 import Core
+import PersistenceModels
 
 // MARK: - NDIS Billing Service
 
@@ -25,16 +26,36 @@ public class NDISBillingService {
         self.configService = configService
     }
     
+    static let establishmentFeeSoftSkipWarning =
+        "Establishment fee skipped — MMM zone unresolved"
+    static let centreCapitalSoftSkipWarning =
+        "Centre capital cost skipped — MMM zone unresolved"
+    static let activityTravelNotEligibleReason =
+        "Travel charges present but support item is not eligible for activity transport"
+    static let providerTravelNotEligibleReason =
+        "Travel charges present but support item is not eligible for provider travel"
+
     /// Main entry point for calculating billable amounts
     public func calculateBillableAmount(context: NDISBillingInputVector) async throws -> [NDISClaimableLineItem] {
+        try await calculateBillableAmountWithWarnings(context: context).lines
+    }
+
+    /// Same as `calculateBillableAmount` but surfaces soft-skip Hub warnings.
+    func calculateBillableAmountWithWarnings(
+        context: NDISBillingInputVector
+    ) async throws -> (lines: [NDISClaimableLineItem], warnings: [String]) {
         logger.info("Starting billable amount calculation for support item: \(context.service.supportItemNumber)")
         var claimList: [NDISClaimableLineItem] = []
+        var warnings: [String] = []
         
         // SECTION 1.1: PRIMARY LOGICAL FORK: PLAN MANAGEMENT TYPE
         if context.participant.planManagementType == "Self-Managed" {
             let selfManagedClaim = try createSelfManagedClaim(context)
             claimList.append(selfManagedClaim)
-            return claimList
+            // Still attach travel as invoice lines (claimType preserved for PDF). Not a PACE claim path.
+            let travelLines = try await selfManagedTravelLines(context)
+            claimList.append(contentsOf: travelLines)
+            return (claimList, warnings)
         } else if context.participant.planManagementType == "Agency-Managed" {
             // Check provider registration
             if !isProviderRegistered() {
@@ -47,29 +68,29 @@ public class NDISBillingService {
             if handlePrepayment(context) {
                 let prepaymentClaim = try createPrepaymentClaim(context)
                 claimList.append(prepaymentClaim)
-                return claimList
+                return (claimList, warnings)
             } else {
-                return []
+                return ([], warnings)
             }
         }
         
         if context.context.isSubscriptionClaim {
             let subscriptionClaims = try calculateSubscriptionClaim(context)
             claimList.append(contentsOf: subscriptionClaims)
-            return claimList
+            return (claimList, warnings)
         }
         
         if context.context.isBereavementClaim {
             let bereavementClaim = try calculateBereavementClaim(context)
             claimList.append(bereavementClaim)
-            return claimList
+            return (claimList, warnings)
         }
         
         // HANDLE INTERRUPTING CONDITIONAL EVENTS
         if context.context.isCancellation {
             let cancellationClaims = try calculateCancellation(context)
             claimList.append(contentsOf: cancellationClaims)
-            return claimList
+            return (claimList, warnings)
         }
         
         // LOOKUP SUPPORT ITEM PROPERTIES
@@ -92,11 +113,11 @@ public class NDISBillingService {
         if supportItem.quoteRequired == true {
             let quotableClaim = try createQuotableClaim(context)
             claimList.append(quotableClaim)
-            return claimList
+            return (claimList, warnings)
         } else if supportItem.price == nil { // hasPriceLimit is essentially check for existence of price cap
             let noLimitClaim = try await createNoLimitClaim(context)
             claimList.append(noLimitClaim)
-            return claimList
+            return (claimList, warnings)
         } else {
             // Price-Controlled supports engage the full calculation engine
             var primarySupportRateLimit: Double = 0
@@ -140,36 +161,51 @@ public class NDISBillingService {
                         )
                         
                         if context.context.coPaymentAmount > 0 {
-                            primaryClaim = applyCoPayment(primaryClaim, context.context.coPaymentAmount)
+                            primaryClaim = applyCoPayment(primaryClaim, Decimal(context.context.coPaymentAmount))
                         }
                         
                         claimList.append(primaryClaim)
                     } else {
-                        return [] // Cannot claim due to Program of Support rules
+                        return ([], warnings) // Cannot claim due to Program of Support rules
                     }
                 }
             }
             
             // STEP 2: CALCULATE ANCILLARY AND ADDITIONAL LINE ITEMS
-            if isEligibleForProviderTravel(supportItem) && context.context.isProviderTravel {
-                let travelClaims = try calculateProviderTravel(context, primarySupportRateLimit, supportItem)
-                claimList.append(contentsOf: travelClaims)
-            }
-            
-            if isEligibleForActivityTransport(supportItem) && context.context.isActivityTransport {
-                if let transportClaim = try calculateActivityTransport(context) {
-                    claimList.append(transportClaim)
+            // Activity transport XOR provider travel — never emit both from the same inputs.
+            // Eligibility miss with travel money → fail loud (do not omit silently).
+            if context.context.isActivityTransport {
+                if isEligibleForActivityTransport(supportItem) {
+                    if let transportClaim = try calculateActivityTransport(context) {
+                        claimList.append(transportClaim)
+                    }
+                } else if hasTravelMoney(context) {
+                    throw NDISBillingError.travelNotEligible(Self.activityTravelNotEligibleReason)
+                }
+            } else if context.context.isProviderTravel {
+                if isEligibleForProviderTravel(supportItem) {
+                    let travelClaims = try calculateProviderTravel(context, primarySupportRateLimit, supportItem)
+                    claimList.append(contentsOf: travelClaims)
+                } else if hasTravelMoney(context) {
+                    throw NDISBillingError.travelNotEligible(Self.providerTravelNotEligibleReason)
                 }
             }
             
+            // Soft-skip centre capital / establishment when MMM unresolved (do not fail session).
             if isEligibleForCentreCapitalCost(supportItem, context) {
-                let centreCapitalClaim = try calculateCentreCapitalCost(context)
-                claimList.append(centreCapitalClaim)
+                if let centreCapitalClaim = try calculateCentreCapitalCost(context) {
+                    claimList.append(centreCapitalClaim)
+                } else {
+                    warnings.append(Self.centreCapitalSoftSkipWarning)
+                }
             }
             
             if isEligibleForEstablishmentFee(context) {
-                let establishmentFeeClaim = try calculateEstablishmentFee(context)
-                claimList.append(establishmentFeeClaim)
+                if let establishmentFeeClaim = try calculateEstablishmentFee(context) {
+                    claimList.append(establishmentFeeClaim)
+                } else {
+                    warnings.append(Self.establishmentFeeSoftSkipWarning)
+                }
             }
             
             if isEligibleForNonFaceToFace(supportItem) && context.context.isNonFaceToFace {
@@ -184,18 +220,20 @@ public class NDISBillingService {
                 }
             }
             
-            return claimList
+            return (claimList, warnings)
         }
     }
 
     // MARK: - Shared Utilities (used across extensions)
 
     func createLineItem(supportItemNumber: String, quantity: Double, unitPrice: Double, claimType: String) throws -> NDISClaimableLineItem {
-        NDISClaimableLineItem(
+        let roundedQuantity = InvoiceFinancialCalculator.currencyRounded(Decimal(quantity))
+        let roundedUnitPrice = InvoiceFinancialCalculator.currencyRounded(Decimal(unitPrice))
+        return NDISClaimableLineItem(
             supportItemNumber: supportItemNumber,
-            quantity: quantity,
-            unitPrice: unitPrice,
-            totalAmount: quantity * unitPrice,
+            quantity: roundedQuantity,
+            unitPrice: roundedUnitPrice,
+            totalAmount: InvoiceFinancialCalculator.currencyRounded(roundedQuantity * roundedUnitPrice),
             claimType: claimType
         )
     }
@@ -245,9 +283,9 @@ public class NDISBillingService {
     }
 
     func getNotionalPrice(_ supportItem: NDISItemSnapshot) -> Double {
-        if let price = supportItem.price, price > 0 { return price }
+        if let price = supportItem.price, price > 0 { return NSDecimalNumber(decimal: price).doubleValue }
         let regionalPrices = supportItem.regionalPrices.map { $0.amount }.filter { $0 > 0 }
-        return regionalPrices.max() ?? 0
+        return NSDecimalNumber(decimal: regionalPrices.max() ?? 0).doubleValue
     }
 
     func isProviderRegistered() -> Bool {

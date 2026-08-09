@@ -13,17 +13,21 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
-        .package(path: "../Data")
+        .package(path: "../PersistenceModels"),
+        .package(path: "../Data"),
+        .package(path: "../SharedUI")
     ],
     targets: [
         .target(
             name: "InvoiceTableLayoutEditor",
-            dependencies: ["Core"],
+            dependencies: [
+                "Core",
+                "PersistenceModels", "SharedUI"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "InvoiceTableLayoutEditorTests",
-            dependencies: ["InvoiceTableLayoutEditor", "Core", "Data"],
+            dependencies: ["InvoiceTableLayoutEditor", "Core", "PersistenceModels", "Data"],
             swiftSettings: strictConcurrencySettings
         )
     ]

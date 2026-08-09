@@ -1,27 +1,22 @@
 import Foundation
 import Core
-import Data
+import DataInterfaces
 import Observation
 import SwiftData
 
 @Observable
 @MainActor
 public final class TravelChargeReviewViewModel {
-    // MARK: - Dependencies
-    // MARK: - Dependencies
-    private let automationActor: TravelChargeAutomationActor
+    private let automationActor: any TravelChargeAutomating
     private let mmmZoneLookup: any Core.MMMZoneLookupProtocol
     private let recurrenceRuleManager: RecurrenceRuleManager
-    private let modelContext: ModelContext
-    private let workflow: ReferenceDataWorkflowActor
-    
-    // MARK: - Published Properties
-    // MARK: - Published Properties
+    private let reviewFetching: any TravelChargeReviewFetching
+
     var filterStatus: ReviewStatusFilter = .all
     var isLoading: Bool = false
     var isProcessing: Bool = false
-    public private(set) var reviewItemEntities: [TravelChargeReviewItem] = []
-    
+    public private(set) var reviewItemEntities: [TravelChargeReviewRow] = []
+
     public enum ReviewStatusFilter: String, CaseIterable {
         case all = "All"
         case pending = "Pending"
@@ -29,27 +24,22 @@ public final class TravelChargeReviewViewModel {
         case overridden = "Overridden"
         case skipped = "Skipped"
     }
-    
-    // MARK: - Initialization
+
     public init(
-        automationActor: TravelChargeAutomationActor,
+        automationActor: any TravelChargeAutomating,
         mmmZoneLookup: any Core.MMMZoneLookupProtocol,
         recurrenceRuleManager: RecurrenceRuleManager,
-        modelContext: ModelContext,
-        modelContainer: ModelContainer
+        reviewFetching: any TravelChargeReviewFetching
     ) {
         self.automationActor = automationActor
         self.mmmZoneLookup = mmmZoneLookup
         self.recurrenceRuleManager = recurrenceRuleManager
-        self.modelContext = modelContext
-        self.workflow = ReferenceDataWorkflowActor(modelContainer: modelContainer)
+        self.reviewFetching = reviewFetching
     }
 
     public func refreshReviews() async {
         do {
-            let descriptor = FetchDescriptor<TravelChargeReviewItem>()
-            let reviews = try modelContext.fetch(descriptor)
-            self.reviewItemEntities = reviews
+            reviewItemEntities = try reviewFetching.fetchAllReviewItems()
         } catch {
             print("❌ [TravelChargeReviewViewModel] Error fetching reviews: \(error)")
         }
@@ -58,7 +48,7 @@ public final class TravelChargeReviewViewModel {
     func resolveWithOverride(reviewModelID: PersistentIdentifier, overrideType: String, reason: String?) async {
         isProcessing = true
         defer { isProcessing = false }
-        
+
         do {
             try await automationActor.resolveReviewWithOverride(
                 reviewModelID: reviewModelID,
@@ -76,9 +66,9 @@ public final class TravelChargeReviewViewModel {
     func resolveBySkipping(reviewModelID: PersistentIdentifier) async {
         isProcessing = true
         defer { isProcessing = false }
-        
+
         do {
-            try await automationActor.resolveReviewBySkipping(reviewModelID: reviewModelID)
+            try await automationActor.resolveReviewBySkipping(reviewModelID: reviewModelID, reason: nil)
             await refreshReviews()
         } catch {
             print("❌ [TravelChargeReviewViewModel] Error skipping review: \(error)")

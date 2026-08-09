@@ -1,11 +1,11 @@
 import Core
 import SwiftData
 @testable import Data
-import XCTest
-
+import Testing
+import PersistenceModels
 @MainActor
-final class EntityResolutionServiceTests: XCTestCase {
-    func testPersistentIdentifierResolutionReturnsNilAfterDeletion() throws {
+@Suite struct EntityResolutionServiceTests {
+    @Test func PersistentIdentifierResolutionReturnsNilAfterDeletion() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let session = Session(title: "Deleted session")
         context.insert(session)
@@ -17,6 +17,6 @@ final class EntityResolutionServiceTests: XCTestCase {
         let resolver = EntityResolutionService(context: context)
         let resolved: Session? = resolver.resolve(persistentModelID: deletedModelID)
 
-        XCTAssertNil(resolved)
+        #expect(resolved == nil)
     }
 }

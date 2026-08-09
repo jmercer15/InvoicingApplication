@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - BusinessSnapshot
 
@@ -27,22 +26,39 @@ public struct BusinessSnapshot: Sendable, Equatable, Hashable {
     public let defaultGstCode: String
     public let address: AddressSnapshot?
 
-    public init(_ business: Business) {
-        self.abn = business.abn
-        self.name = business.name
-        self.email = business.email
-        self.phone = business.phone
-        self.id = business.id
-        self.logo = business.logo
-        self.bankAccountName = business.bankAccountName
-        self.bankAccountNumber = business.bankAccountNumber
-        self.bankBSB = business.bankBSB
-        self.bankName = business.bankName
-        self.accountingMethod = business.accountingMethod
-        self.ndiaOrganisationID = business.ndiaOrganisationID
-        self.isRegisteredProvider = business.isRegisteredProvider
-        self.defaultGstCode = business.defaultGstCode
-        self.address = business.address.map(AddressSnapshot.init)
-    }
-}
 
+    public init(
+        abn: String,
+        name: String,
+        email: String,
+        phone: String,
+        id: UUID,
+        logo: Data?,
+        bankAccountName: String?,
+        bankAccountNumber: String?,
+        bankBSB: String?,
+        bankName: String?,
+        accountingMethod: String,
+        ndiaOrganisationID: String?,
+        isRegisteredProvider: Bool,
+        defaultGstCode: String,
+        address: AddressSnapshot?
+    ) {
+        self.abn = abn
+        self.name = name
+        self.email = email
+        self.phone = phone
+        self.id = id
+        self.logo = logo
+        self.bankAccountName = bankAccountName
+        self.bankAccountNumber = bankAccountNumber
+        self.bankBSB = bankBSB
+        self.bankName = bankName
+        self.accountingMethod = accountingMethod
+        self.ndiaOrganisationID = ndiaOrganisationID
+        self.isRegisteredProvider = isRegisteredProvider
+        self.defaultGstCode = defaultGstCode
+        self.address = address
+    }
+
+}

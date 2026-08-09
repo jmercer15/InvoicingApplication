@@ -6,17 +6,16 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - InvoiceSnapshot
 
 public struct InvoiceSnapshot: Sendable, Equatable, Hashable {
     public let invoiceNumber: String
     public let id: UUID
-    public let totalAmount: Double
-    public let taxRate: Double
-    public let creditApplied: Double
-    public let discount: Double
+    public let totalAmount: Decimal
+    public let taxRate: Decimal
+    public let creditApplied: Decimal
+    public let discount: Decimal
     public let date: Date
     public let dueDate: Date?
     public let issueDate: Date
@@ -59,65 +58,14 @@ public struct InvoiceSnapshot: Sendable, Equatable, Hashable {
     public let businessId: UUID?
     public let sessionIds: [UUID]
 
-    public init(_ invoice: Invoice) {
-        self.init(
-            invoiceNumber: invoice.invoiceNumber,
-            id: invoice.id,
-            totalAmount: invoice.totalAmount,
-            taxRate: invoice.taxRate,
-            creditApplied: invoice.creditApplied,
-            discount: invoice.discount,
-            date: invoice.date,
-            dueDate: invoice.dueDate,
-            issueDate: invoice.issueDate,
-            notes: invoice.notes,
-            paidDate: invoice.paidDate,
-            paymentTerms: invoice.paymentTerms,
-            effectiveStatus: invoice.effectiveStatus,
-            sentDate: invoice.sentDate,
-            currencyCode: invoice.currencyCode,
-            isNDIAUploaded: invoice.isNDIAUploaded,
-            ndiaUploadDate: invoice.ndiaUploadDate,
-            isBulkClaimed: invoice.isBulkClaimed,
-            businessName: invoice.businessName,
-            businessABN: invoice.businessABN,
-            businessEmail: invoice.businessEmail,
-            businessAddressSnapshot: invoice.businessAddressSnapshot,
-            businessPhone: invoice.businessPhone,
-            clientName: invoice.clientName,
-            clientNDISNumber: invoice.clientNDISNumber,
-            clientEmail: invoice.clientEmail,
-            clientPhone: invoice.clientPhone,
-            clientAddressSnapshot: invoice.clientAddressSnapshot,
-            billingAuthority: invoice.billingAuthority,
-            billToName: invoice.billToName,
-            billToEmail: invoice.billToEmail,
-            billToAddressSnapshot: invoice.billToAddressSnapshot,
-            payeeName: invoice.payeeName,
-            payeeEmail: invoice.payeeEmail,
-            payeePhone: invoice.payeePhone,
-            payeeAddressSnapshot: invoice.payeeAddressSnapshot,
-            bankName: invoice.bankName,
-            bankAccountName: invoice.bankAccountName,
-            bankBSB: invoice.bankBSB,
-            bankAccountNumber: invoice.bankAccountNumber,
-            invoiceEditorStateData: invoice.invoiceEditorStateData,
-            invoiceEditorRevision: invoice.invoiceEditorRevision,
-            itemSnapshots: invoice.itemsArray.map(InvoiceItemSnapshot.init),
-            clientId: invoice.client?.id,
-            payeeId: invoice.payee?.id,
-            businessId: invoice.business?.id,
-            sessionIds: invoice.sessions?.map(\.id) ?? []
-        )
-    }
 
     public init(
         invoiceNumber: String,
         id: UUID,
-        totalAmount: Double,
-        taxRate: Double,
-        creditApplied: Double,
-        discount: Double,
+        totalAmount: Decimal,
+        taxRate: Decimal,
+        creditApplied: Decimal,
+        discount: Decimal,
         date: Date,
         dueDate: Date?,
         issueDate: Date,

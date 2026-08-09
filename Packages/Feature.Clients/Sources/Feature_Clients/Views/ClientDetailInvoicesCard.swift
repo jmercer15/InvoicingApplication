@@ -1,6 +1,6 @@
 import SwiftUI
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 struct ClientDetailInvoicesCard: View {

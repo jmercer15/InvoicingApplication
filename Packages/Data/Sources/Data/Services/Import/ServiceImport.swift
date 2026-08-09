@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -84,7 +85,7 @@ struct ServiceImport {
                 }
                 
                 if let parsedRate = Double(item.rate.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) {
-                    clientService.rate = parsedRate
+                    clientService.rate = MoneyDecimalImport.decimal(from: parsedRate)
                 }
                 clientService.unit = item.unit.isEmpty ? clientService.unit : item.unit
                 clientService.status = "Active"

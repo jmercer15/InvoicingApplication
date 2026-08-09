@@ -1,7 +1,9 @@
 import SwiftUI
 import SwiftData
-import Data
+import DataInterfaces
 import Core
+import PersistenceModels
+import PersistenceModels
 import UniformTypeIdentifiers
 import os
 import Observation
@@ -13,8 +15,8 @@ public final class ImportExportViewModel {
 
     // MARK: - Dependencies
     let claimPersistence: any ImportExportClaimPersisting
-    let importExportCoordinator: ImportExportCoordinator
-    let bulkClaimExportHashVerifier: BulkClaimExportHashVerifier
+    let importExportCoordinator: any ImportExportCoordinating
+    let bulkClaimExportHashVerifier: any BulkClaimExportHashVerifying
     let claimLogger = Logger(subsystem: "com.invoicing.compliance", category: "ClaimsExport")
     
     // MARK: - Published Properties
@@ -36,6 +38,13 @@ public final class ImportExportViewModel {
     
     public var exportData: Data?
     public var exportFileName: String = ""
+    public var exportRedactionPreset: ExportRedactionPreset = .none
+    public var exportUseEncryption = false
+    public var exportPassphrase = ""
+    public var exportPassphraseConfirmation = ""
+    public var exportEncryptionValidationMessage: String?
+    public var pendingExportKind: ExportConsentKind?
+    public var showingExportConsentAlert = false
     public var allDataExport: Data? = nil
     public var allDataExportFileName: String = ""
     public var allDataImportResult: String? = nil
@@ -82,12 +91,13 @@ public final class ImportExportViewModel {
     public var showingClaimCSVExporter = false
 
     public init(
-        modelContext: ModelContext,
-        importExportCoordinator: ImportExportCoordinator,
+        claimPersistence: any ImportExportClaimPersisting,
+        importExportCoordinator: any ImportExportCoordinating,
+        bulkClaimExportHashVerifier: any BulkClaimExportHashVerifying
     ) {
-        self.claimPersistence = SwiftDataImportExportClaimPersistence(modelContext: modelContext)
+        self.claimPersistence = claimPersistence
         self.importExportCoordinator = importExportCoordinator
-        self.bulkClaimExportHashVerifier = BulkClaimExportHashVerifier(csvWriter: BPRCSVWriter())
+        self.bulkClaimExportHashVerifier = bulkClaimExportHashVerifier
         self.claimsExportEnabled = UserDefaults.standard.bool(forKey: Self.claimsExportFeatureFlagKey)
         
         NotificationCenter.default.addObserver(
@@ -117,7 +127,7 @@ public final class ImportExportViewModel {
                 selectedEffectiveDates.insert(firstDate)
             }
         } catch {
-            print("Failed to fetch NDIS item effective dates: \(error)")
+            claimLogger.error("Failed to fetch NDIS item effective dates")
         }
     }
     
@@ -140,7 +150,7 @@ public final class ImportExportViewModel {
                 self.importResults = ImportExportImportResultMapping.make(result)
                 self.isShowingResults = true
             } onFailure: { error in
-                print("Error processing file: \(error)")
+                self.claimLogger.error("Import file processing failed")
                 self.importResults = ImportExportImportResultMapping.make(
                     from: error,
                     source: self.selectedImportSource,
@@ -149,51 +159,12 @@ public final class ImportExportViewModel {
                 self.isShowingResults = true
             }
         case .failure(let error):
-            print("Error selecting file: \(error)")
             importResults = ImportExportImportResultMapping.makeFailure(
                 source: selectedImportSource,
                 fileName: "File selection",
                 message: "File selection failed: \(error.localizedDescription)"
             )
             isShowingResults = true
-        }
-    }
-    
-    public func importNDISCatalogueFromResources() {
-        runTask(\.isImportingNDISCatalogue, priority: .userInitiated) {
-            let result = try await self.importExportCoordinator.importAllData()
-            self.importResults = ImportExportImportResultMapping.makePreferredSourceResult(
-                from: result,
-                preferredSource: .ndisItems,
-                fileName: "App Resources"
-            )
-            self.isShowingResults = true
-        } onFailure: { error in
-            self.importResults = ImportExportImportResultMapping.makeFailure(
-                source: .ndisItems,
-                fileName: "App Resources",
-                message: "Failed to import NDIS Catalogue: \(error.localizedDescription)"
-            )
-            self.isShowingResults = true
-        }
-    }
-    
-    public func importAllJSONData() {
-        runTask(\.isLoading, priority: .userInitiated) {
-            let results = try await self.importExportCoordinator.importAllData()
-            self.importResults = ImportExportImportResultMapping.makeAllDataSummary(
-                from: results,
-                source: .allData,
-                fileName: "Internal Resource Bundle"
-            )
-            self.isShowingResults = true
-        } onFailure: { error in
-            self.importResults = ImportExportImportResultMapping.makeFailure(
-                source: .allData,
-                fileName: "Internal Resource Bundle",
-                message: "Failed to import JSON data: \(error.localizedDescription)"
-            )
-            self.isShowingResults = true
         }
     }
     
@@ -231,7 +202,6 @@ public final class ImportExportViewModel {
             }
             
         case .failure(let error):
-            print("Error selecting file for all data import: \(error)")
             isLoading = false
             importResults = ImportExportImportResultMapping.makeFailure(
                 source: .allData,
@@ -243,9 +213,57 @@ public final class ImportExportViewModel {
         }
     }
     
+    public func requestPrepareExport() {
+        if ExportSensitivity.requiresConsent(for: selectedExportSource) {
+            pendingExportKind = .single(selectedExportSource)
+            showingExportConsentAlert = true
+            return
+        }
+        prepareExport()
+    }
+
+    public func requestExportAllData() {
+        pendingExportKind = .allData
+        showingExportConsentAlert = true
+    }
+
+    public func confirmPendingExport() {
+        guard validateExportEncryption() else { return }
+        guard let kind = pendingExportKind else { return }
+        pendingExportKind = nil
+        switch kind {
+        case .single:
+            prepareExport()
+        case .allData:
+            exportAllData()
+        }
+    }
+
+    public func cancelPendingExport() {
+        pendingExportKind = nil
+    }
+
+    public var pendingExportConsentTitle: String {
+        guard let kind = pendingExportKind else { return "Export data?" }
+        return ExportSensitivity.consentTitle(for: kind)
+    }
+
+    public var pendingExportConsentMessage: String {
+        guard let kind = pendingExportKind else {
+            return ExportSensitivity.consentMessage(for: .allData, preset: exportRedactionPreset)
+        }
+        return ExportSensitivity.consentMessage(for: kind, preset: exportRedactionPreset)
+    }
+
     public func prepareExport() {
+        guard validateExportEncryption() else { return }
         runTask(\.isLoading) {
-            let result = try await self.importExportCoordinator.export(source: self.selectedExportSource)
+            let result = try await self.importExportCoordinator.export(
+                source: self.selectedExportSource,
+                redaction: self.exportRedactionPreset,
+                dateString: nil,
+                encryption: self.resolvedExportEncryption()
+            )
             self.exportData = result.data
             self.exportFileName = result.fileName
             self.showingFileExporter = true
@@ -260,8 +278,13 @@ public final class ImportExportViewModel {
     }
     
     public func exportAllData() {
+        guard validateExportEncryption() else { return }
         runTask(\.isLoading) {
-            let result = try await self.importExportCoordinator.exportAllData()
+            let result = try await self.importExportCoordinator.exportAllData(
+                redaction: self.exportRedactionPreset,
+                dateString: nil,
+                encryption: self.resolvedExportEncryption()
+            )
             self.allDataExport = result.data
             self.allDataExportFileName = result.fileName
             self.showingAllDataFileExporter = true
@@ -373,6 +396,30 @@ public final class ImportExportViewModel {
     }
 
     // MARK: - Claims Export & History (moved to ImportExportViewModel+Claims.swift)
+
+    func resolvedExportEncryption() -> ExportEncryptionOptions? {
+        guard exportUseEncryption else { return nil }
+        return ExportEncryptionOptions(passphrase: exportPassphrase)
+    }
+
+    var exportUsesEncryptedContainer: Bool {
+        exportUseEncryption
+    }
+
+    @discardableResult
+    func validateExportEncryption() -> Bool {
+        exportEncryptionValidationMessage = nil
+        guard exportUseEncryption else { return true }
+        guard exportPassphrase.count >= 8 else {
+            exportEncryptionValidationMessage = "Passphrase must be at least 8 characters."
+            return false
+        }
+        guard exportPassphrase == exportPassphraseConfirmation else {
+            exportEncryptionValidationMessage = "Passphrase and confirmation do not match."
+            return false
+        }
+        return true
+    }
     
     private func runTask(
         _ busyFlag: ReferenceWritableKeyPath<ImportExportViewModel, Bool>,

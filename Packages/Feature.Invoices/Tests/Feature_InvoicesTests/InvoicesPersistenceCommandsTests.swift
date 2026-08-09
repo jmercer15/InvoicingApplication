@@ -1,13 +1,13 @@
 import Core
+import PersistenceModels
 import Data
 import Foundation
 import SwiftData
 @testable import Feature_Invoices
-import XCTest
-
+import Testing
 @MainActor
-final class InvoicesPersistenceCommandsTests: XCTestCase {
-    func testFetchByUUIDPreservesRequestedOrderAndSkipsDeletedRows() throws {
+@Suite struct InvoicesPersistenceCommandsTests {
+    @Test func FetchByUUIDPreservesRequestedOrderAndSkipsDeletedRows() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let first = Invoice(invoiceNumber: "INV-FIRST")
         let deleted = Invoice(invoiceNumber: "INV-DELETED")
@@ -23,10 +23,10 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         let commands = InvoicesPersistenceCommands(modelContext: context)
         let fetched = try commands.fetchInvoices(ids: [last.id, deletedID, first.id])
 
-        XCTAssertEqual(fetched.map(\.id), [last.id, first.id])
+        #expect(fetched.map(\.id) == [last.id, first.id])
     }
 
-    func testClearListFiltersRestoresUnfilteredState() throws {
+    @Test func ClearListFiltersRestoresUnfilteredState() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
         viewModel.invoiceSearchText = "Acme"
@@ -37,37 +37,37 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         viewModel.filterMaxAmount = 100
         viewModel.filterClients = ["Acme"]
 
-        XCTAssertTrue(viewModel.hasActiveListFilters)
-        XCTAssertEqual(viewModel.filterInputResetRevision, 0)
+        #expect(viewModel.hasActiveListFilters)
+        #expect(viewModel.filterInputResetRevision == 0)
 
         viewModel.clearListFilters()
 
-        XCTAssertFalse(viewModel.hasActiveListFilters)
-        XCTAssertTrue(viewModel.invoiceSearchText.isEmpty)
-        XCTAssertTrue(viewModel.invoiceFilterStatus.isEmpty)
-        XCTAssertNil(viewModel.filterStartDate)
-        XCTAssertNil(viewModel.filterEndDate)
-        XCTAssertNil(viewModel.filterMinAmount)
-        XCTAssertNil(viewModel.filterMaxAmount)
-        XCTAssertTrue(viewModel.filterClients.isEmpty)
-        XCTAssertEqual(viewModel.filterInputResetRevision, 1)
+        #expect(!(viewModel.hasActiveListFilters))
+        #expect(viewModel.invoiceSearchText.isEmpty)
+        #expect(viewModel.invoiceFilterStatus.isEmpty)
+        #expect(viewModel.filterStartDate == nil)
+        #expect(viewModel.filterEndDate == nil)
+        #expect(viewModel.filterMinAmount == nil)
+        #expect(viewModel.filterMaxAmount == nil)
+        #expect(viewModel.filterClients.isEmpty)
+        #expect(viewModel.filterInputResetRevision == 1)
     }
 
-    func testFilterResetRevisionAdvancesWhenNumericBindingsAlreadyMatchBaseline() throws {
+    @Test func FilterResetRevisionAdvancesWhenNumericBindingsAlreadyMatchBaseline() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
-        XCTAssertNil(viewModel.filterMinAmount)
-        XCTAssertNil(viewModel.filterMaxAmount)
+        #expect(viewModel.filterMinAmount == nil)
+        #expect(viewModel.filterMaxAmount == nil)
 
         viewModel.clearAmountFilters()
-        XCTAssertEqual(viewModel.filterInputResetRevision, 1)
+        #expect(viewModel.filterInputResetRevision == 1)
 
         viewModel.clearListFilters()
-        XCTAssertEqual(viewModel.filterInputResetRevision, 2)
+        #expect(viewModel.filterInputResetRevision == 2)
     }
 
-    func testFilterEndpointsStayOrderedAsUserEditsEitherBound() throws {
+    @Test func FilterEndpointsStayOrderedAsUserEditsEitherBound() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
         let early = Date(timeIntervalSince1970: 1_000)
@@ -75,25 +75,25 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.updateFilterEndDate(early)
         viewModel.updateFilterStartDate(late)
-        XCTAssertEqual(viewModel.filterStartDate, late)
-        XCTAssertEqual(viewModel.filterEndDate, late)
+        #expect(viewModel.filterStartDate == late)
+        #expect(viewModel.filterEndDate == late)
 
         viewModel.updateFilterMinimumAmount(200)
         viewModel.updateFilterMaximumAmount(50)
-        XCTAssertEqual(viewModel.filterMinAmount, 50)
-        XCTAssertEqual(viewModel.filterMaxAmount, 50)
+        #expect(viewModel.filterMinAmount == 50)
+        #expect(viewModel.filterMaxAmount == 50)
 
         viewModel.updateFilterMaximumAmount(.infinity)
-        XCTAssertNil(viewModel.filterMaxAmount)
+        #expect(viewModel.filterMaxAmount == nil)
 
         viewModel.updateFilterMinimumAmount(-1)
-        XCTAssertNil(viewModel.filterMinAmount)
+        #expect(viewModel.filterMinAmount == nil)
 
         viewModel.updateFilterMaximumAmount(.nan)
-        XCTAssertNil(viewModel.filterMaxAmount)
+        #expect(viewModel.filterMaxAmount == nil)
     }
 
-    func testOnlyNewestListLoadCanFinishLoadingState() throws {
+    @Test func OnlyNewestListLoadCanFinishLoadingState() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
@@ -101,14 +101,14 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         let newestRequest = viewModel.beginListLoad()
         viewModel.finishListLoad(olderRequest)
 
-        XCTAssertTrue(viewModel.isLoading)
+        #expect(viewModel.isLoading)
 
         viewModel.finishListLoad(newestRequest)
 
-        XCTAssertFalse(viewModel.isLoading)
+        #expect(!(viewModel.isLoading))
     }
 
-    func testOlderReloadCannotOverwriteNewerPublishedRows() async throws {
+    @Test func OlderReloadCannotOverwriteNewerPublishedRows() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let olderInvoice = Invoice(invoiceNumber: "INV-OLDER-QUERY")
         let newerInvoice = Invoice(invoiceNumber: "INV-NEWER-QUERY")
@@ -132,20 +132,20 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         await fetcher.waitUntilOlderRequestIsSuspended()
 
         let newerOutcome = await viewModel.reloadInvoices(matching: FetchDescriptor<Invoice>())
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [newerInvoice.id])
+        #expect(viewModel.invoiceEntities.map(\.id) == [newerInvoice.id])
 
         await fetcher.resumeOlderRequest()
         let olderOutcome = await olderReload.value
 
-        XCTAssertEqual(newerOutcome, .published)
-        XCTAssertEqual(olderOutcome, .superseded)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [newerInvoice.id])
-        XCTAssertEqual(viewModel.totalInvoiceCount, 2)
-        XCTAssertNil(viewModel.listLoadError)
-        XCTAssertFalse(viewModel.isLoading)
+        #expect(newerOutcome == .published)
+        #expect(olderOutcome == .superseded)
+        #expect(viewModel.invoiceEntities.map(\.id) == [newerInvoice.id])
+        #expect(viewModel.totalInvoiceCount == 2)
+        #expect(viewModel.listLoadError == nil)
+        #expect(!(viewModel.isLoading))
     }
 
-    func testDeepLinkRevealSupersedesOlderFilteredReload() async throws {
+    @Test func DeepLinkRevealSupersedesOlderFilteredReload() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let staleInvoice = Invoice(invoiceNumber: "INV-STALE-FILTER")
         let destination = Invoice(invoiceNumber: "INV-DEEP-LINK")
@@ -170,19 +170,19 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         await fetcher.waitUntilOlderRequestIsSuspended()
 
         viewModel.selectInvoiceForDeepLink(id: destination.id)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [destination.id])
-        XCTAssertEqual(viewModel.selectedInvoice?.id, destination.id)
+        #expect(viewModel.invoiceEntities.map(\.id) == [destination.id])
+        #expect(viewModel.selectedInvoice?.id == destination.id)
 
         await fetcher.resumeOlderRequest()
         let staleOutcome = await staleReload.value
 
-        XCTAssertEqual(staleOutcome, .superseded)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [destination.id])
-        XCTAssertEqual(viewModel.selectedInvoice?.id, destination.id)
-        XCTAssertFalse(viewModel.hasActiveListFilters)
+        #expect(staleOutcome == .superseded)
+        #expect(viewModel.invoiceEntities.map(\.id) == [destination.id])
+        #expect(viewModel.selectedInvoice?.id == destination.id)
+        #expect(!(viewModel.hasActiveListFilters))
     }
 
-    func testDeleteByStableIDsClearsActiveSelectionAndPreservesOtherInvoices() async throws {
+    @Test func DeleteByStableIDsClearsActiveSelectionAndPreservesOtherInvoices() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let deletedInvoice = Invoice(invoiceNumber: "INV-DELETE")
         let preservedInvoice = Invoice(invoiceNumber: "INV-KEEP")
@@ -198,26 +198,26 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         let deletedCount = try await viewModel.deleteInvoices(ids: [deletedID])
 
         let remaining = try context.fetch(FetchDescriptor<Invoice>())
-        XCTAssertEqual(deletedCount, 1)
-        XCTAssertNil(viewModel.selectedInvoice)
-        XCTAssertEqual(remaining.map(\.id), [preservedID])
+        #expect(deletedCount == 1)
+        #expect(viewModel.selectedInvoice == nil)
+        #expect(remaining.map(\.id) == [preservedID])
     }
 
-    func testFeatureOwnedCreationMaterializesAndSelectsNewInvoice() async throws {
+    @Test func FeatureOwnedCreationMaterializesAndSelectsNewInvoice() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
         let id = try await viewModel.createInvoice()
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, id)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [id])
-        XCTAssertEqual(viewModel.loadedInvoicesByID[id]?.id, id)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
-        XCTAssertNil(viewModel.actionErrorMessage)
-        XCTAssertFalse(viewModel.isCreatingInvoice)
+        #expect(viewModel.selectedInvoice?.id == id)
+        #expect(viewModel.invoiceEntities.map(\.id) == [id])
+        #expect(viewModel.loadedInvoicesByID[id]?.id == id)
+        #expect(viewModel.totalInvoiceCount == 1)
+        #expect(viewModel.actionErrorMessage == nil)
+        #expect(!(viewModel.isCreatingInvoice))
     }
 
-    func testFeatureOwnedDuplicateUsesCanonicalActorSemanticsAndRevealsCopy() async throws {
+    @Test func FeatureOwnedDuplicateUsesCanonicalActorSemanticsAndRevealsCopy() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let source = Invoice(invoiceNumber: "INV-SOURCE")
         source.clientName = "Acme"
@@ -241,24 +241,24 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         let duplicateID = try await viewModel.duplicateInvoice(source)
 
-        XCTAssertNotEqual(duplicateID, source.id)
-        XCTAssertFalse(viewModel.hasActiveListFilters)
-        XCTAssertEqual(viewModel.selectedInvoice?.id, duplicateID)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [duplicateID])
-        XCTAssertEqual(viewModel.totalInvoiceCount, 2)
-        XCTAssertNil(viewModel.actionErrorMessage)
-        XCTAssertFalse(viewModel.isCreatingInvoice)
+        #expect(duplicateID != source.id)
+        #expect(!(viewModel.hasActiveListFilters))
+        #expect(viewModel.selectedInvoice?.id == duplicateID)
+        #expect(viewModel.invoiceEntities.map(\.id) == [duplicateID])
+        #expect(viewModel.totalInvoiceCount == 2)
+        #expect(viewModel.actionErrorMessage == nil)
+        #expect(!(viewModel.isCreatingInvoice))
 
-        let duplicate = try XCTUnwrap(viewModel.loadedInvoicesByID[duplicateID])
-        XCTAssertEqual(duplicate.effectiveStatus, .reviewDraft)
-        XCTAssertTrue(duplicate.invoiceNumber != source.invoiceNumber)
-        XCTAssertEqual(duplicate.clientName, "Acme")
-        XCTAssertEqual(duplicate.itemsArray.count, 1)
-        XCTAssertEqual(duplicate.itemsArray.first?.itemDescription, "Support")
-        XCTAssertNotEqual(duplicate.itemsArray.first?.id, item.id)
+        let duplicate = try try #require(viewModel.loadedInvoicesByID[duplicateID])
+        #expect(duplicate.effectiveStatus == .reviewDraft)
+        #expect(duplicate.invoiceNumber != source.invoiceNumber)
+        #expect(duplicate.clientName == "Acme")
+        #expect(duplicate.itemsArray.count == 1)
+        #expect(duplicate.itemsArray.first?.itemDescription == "Support")
+        #expect(duplicate.itemsArray.first?.id != item.id)
     }
 
-    func testFeatureOwnedCreationDoesNotInsertWhenCurrentDraftCannotBePrepared() async throws {
+    @Test func FeatureOwnedCreationDoesNotInsertWhenCurrentDraftCannotBePrepared() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         var preparationCount = 0
         let viewModel = InvoicesContainerViewModel(
@@ -271,36 +271,39 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         do {
             _ = try await viewModel.createInvoice()
-            XCTFail("Creation should stop when current draft cannot be prepared")
+            Issue.record("Creation should stop when current draft cannot be prepared")
         } catch {
-            XCTAssertEqual(error as? InvoicesFeatureError, .currentInvoiceCouldNotBePrepared)
+            #expect(error as? InvoicesFeatureError == .currentInvoiceCouldNotBePrepared)
         }
 
-        XCTAssertEqual(preparationCount, 1)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Invoice>()), 0)
-        XCTAssertTrue(viewModel.invoiceEntities.isEmpty)
-        XCTAssertNil(viewModel.selectedInvoice)
-        XCTAssertEqual(viewModel.invoiceCreationPhase, .idle)
-        XCTAssertFalse(viewModel.isCreatingInvoice)
+        #expect(preparationCount == 1)
+        #expect(try context.fetchCount(FetchDescriptor<Invoice>()) == 0)
+        #expect(viewModel.invoiceEntities.isEmpty)
+        #expect(viewModel.selectedInvoice == nil)
+        #expect(viewModel.invoiceCreationPhase == .idle)
+        #expect(!(viewModel.isCreatingInvoice))
     }
 
-    func testInvoiceCreationGateRejectsOverlappingRequestsAndRecovers() throws {
+    @Test func InvoiceCreationGateRejectsOverlappingRequestsAndRecovers() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
         try viewModel.beginInvoiceCreation()
-        XCTAssertTrue(viewModel.isCreatingInvoice)
-        XCTAssertThrowsError(try viewModel.beginInvoiceCreation()) { error in
-            XCTAssertEqual(error as? InvoicesFeatureError, .creationAlreadyInProgress)
+        #expect(viewModel.isCreatingInvoice)
+        do {
+            try viewModel.beginInvoiceCreation()
+            Issue.record("Expected overlapping creation to throw")
+        } catch {
+            #expect(error as? InvoicesFeatureError == .creationAlreadyInProgress)
         }
 
         viewModel.finishInvoiceCreation()
-        XCTAssertFalse(viewModel.isCreatingInvoice)
-        XCTAssertNoThrow(try viewModel.beginInvoiceCreation())
+        #expect(!(viewModel.isCreatingInvoice))
+        #expect(throws: Never.self) { try viewModel.beginInvoiceCreation() }
         viewModel.finishInvoiceCreation()
     }
 
-    func testFeatureOwnedCreationIncrementsKnownStoreTotalForFilteredList() async throws {
+    @Test func FeatureOwnedCreationIncrementsKnownStoreTotalForFilteredList() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         for index in 1...10 {
             context.insert(Invoice(invoiceNumber: "INV-\(index)"))
@@ -314,13 +317,13 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         let id = try await viewModel.createInvoice()
 
-        XCTAssertFalse(viewModel.hasActiveListFilters)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 11)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [id])
-        XCTAssertEqual(viewModel.selectedInvoice?.id, id)
+        #expect(!(viewModel.hasActiveListFilters))
+        #expect(viewModel.totalInvoiceCount == 11)
+        #expect(viewModel.invoiceEntities.map(\.id) == [id])
+        #expect(viewModel.selectedInvoice?.id == id)
     }
 
-    func testEditorMutationsReconcileRowsTotalsAndSelectionSymmetrically() async throws {
+    @Test func EditorMutationsReconcileRowsTotalsAndSelectionSymmetrically() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let first = Invoice(invoiceNumber: "INV-FIRST")
         context.insert(first)
@@ -328,31 +331,31 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
         await viewModel.reconcileEditorMutation(.inserted(first.id))
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
-        XCTAssertEqual(viewModel.selectedInvoice?.id, first.id)
+        #expect(viewModel.totalInvoiceCount == 1)
+        #expect(viewModel.selectedInvoice?.id == first.id)
 
         first.invoiceNumber = "INV-FIRST-UPDATED"
         try context.save()
         await viewModel.reconcileEditorMutation(.updated(first.id))
-        XCTAssertEqual(viewModel.invoiceEntities.first?.invoiceNumber, "INV-FIRST-UPDATED")
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
+        #expect(viewModel.invoiceEntities.first?.invoiceNumber == "INV-FIRST-UPDATED")
+        #expect(viewModel.totalInvoiceCount == 1)
 
         let second = Invoice(invoiceNumber: "INV-SECOND")
         context.insert(second)
         try context.save()
         await viewModel.reconcileEditorMutation(.inserted(second.id))
-        XCTAssertEqual(viewModel.totalInvoiceCount, 2)
-        XCTAssertEqual(viewModel.selectedInvoice?.id, second.id)
+        #expect(viewModel.totalInvoiceCount == 2)
+        #expect(viewModel.selectedInvoice?.id == second.id)
 
         context.delete(second)
         try context.save()
         await viewModel.reconcileEditorMutation(.deleted(second.id))
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [first.id])
-        XCTAssertNil(viewModel.selectedInvoice)
+        #expect(viewModel.totalInvoiceCount == 1)
+        #expect(viewModel.invoiceEntities.map(\.id) == [first.id])
+        #expect(viewModel.selectedInvoice == nil)
     }
 
-    func testEditorUpdateReappliesActivePersistenceFilters() async throws {
+    @Test func EditorUpdateReappliesActivePersistenceFilters() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-FILTERED")
         invoice.effectiveStatus = .received
@@ -364,17 +367,17 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         await viewModel.reloadInvoices(
             matching: InvoicesListQueryEngine.buildPersistenceDescriptor(from: viewModel.listQuerySpec)
         )
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [invoice.id])
+        #expect(viewModel.invoiceEntities.map(\.id) == [invoice.id])
 
         invoice.effectiveStatus = .reviewDraft
         try context.save()
         await viewModel.reconcileEditorMutation(.updated(invoice.id))
 
-        XCTAssertTrue(viewModel.invoiceEntities.isEmpty)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
+        #expect(viewModel.invoiceEntities.isEmpty)
+        #expect(viewModel.totalInvoiceCount == 1)
     }
 
-    func testEditorInsertionClearsFiltersBeforeRevealingCreatedInvoice() async throws {
+    @Test func EditorInsertionClearsFiltersBeforeRevealingCreatedInvoice() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-NEW")
         context.insert(invoice)
@@ -386,35 +389,35 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         await viewModel.reconcileEditorMutation(.inserted(invoice.id))
 
-        XCTAssertFalse(viewModel.hasActiveListFilters)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [invoice.id])
-        XCTAssertEqual(viewModel.selectedInvoice?.id, invoice.id)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
+        #expect(!(viewModel.hasActiveListFilters))
+        #expect(viewModel.invoiceEntities.map(\.id) == [invoice.id])
+        #expect(viewModel.selectedInvoice?.id == invoice.id)
+        #expect(viewModel.totalInvoiceCount == 1)
     }
 
-    func testActiveFilterDescriptionsAndSummaryFormatting() throws {
+    @Test func ActiveFilterDescriptionsAndSummaryFormatting() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(modelContext: context)
 
-        XCTAssertTrue(viewModel.activeFilterDescriptions.isEmpty)
-        XCTAssertEqual(viewModel.activeFilterSummaryText, "")
+        #expect(viewModel.activeFilterDescriptions.isEmpty)
+        #expect(viewModel.activeFilterSummaryText == "")
 
         viewModel.invoiceSearchText = "Acme"
         viewModel.invoiceFilterStatus = [InvoiceStatus.received.rawValue]
         viewModel.updateFilterMinimumAmount(100.0)
         viewModel.updateFilterMaximumAmount(500.0)
 
-        XCTAssertFalse(viewModel.activeFilterDescriptions.isEmpty)
-        XCTAssertTrue(viewModel.activeFilterSummaryText.contains("Search \"Acme\""))
-        XCTAssertTrue(viewModel.activeFilterSummaryText.contains("Status: Received"))
-        XCTAssertTrue(viewModel.activeFilterSummaryText.contains("Amount: 100.00 – 500.00"))
+        #expect(!(viewModel.activeFilterDescriptions.isEmpty))
+        #expect(viewModel.activeFilterSummaryText.contains("Search \"Acme\""))
+        #expect(viewModel.activeFilterSummaryText.contains("Status: Received"))
+        #expect(viewModel.activeFilterSummaryText.contains("Amount: 100.00 – 500.00"))
 
         viewModel.clearListFilters()
-        XCTAssertTrue(viewModel.activeFilterDescriptions.isEmpty)
-        XCTAssertEqual(viewModel.activeFilterSummaryText, "")
+        #expect(viewModel.activeFilterDescriptions.isEmpty)
+        #expect(viewModel.activeFilterSummaryText == "")
     }
 
-    func testReloadTracksStoreTotalSeparatelyFromMatchingRows() async throws {
+    @Test func ReloadTracksStoreTotalSeparatelyFromMatchingRows() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         context.insert(Invoice(invoiceNumber: "INV-MATCH"))
         context.insert(Invoice(invoiceNumber: "INV-OTHER"))
@@ -427,11 +430,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         await viewModel.reloadInvoices(matching: descriptor)
 
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.invoiceNumber), ["INV-MATCH"])
-        XCTAssertEqual(viewModel.totalInvoiceCount, 2)
+        #expect(viewModel.invoiceEntities.map(\.invoiceNumber) == ["INV-MATCH"])
+        #expect(viewModel.totalInvoiceCount == 2)
     }
 
-    func testTransientReloadFailurePreservesLastGoodRowsAndSelection() async throws {
+    @Test func TransientReloadFailurePreservesLastGoodRowsAndSelection() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-PRESERVED")
         context.insert(invoice)
@@ -445,27 +448,27 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
             listFetcher: fetcher
         )
 
-        XCTAssertFalse(viewModel.hasCompletedSuccessfulListLoad)
+        #expect(!(viewModel.hasCompletedSuccessfulListLoad))
         await viewModel.reloadInvoices(matching: FetchDescriptor<Invoice>())
         viewModel.requestSelectInvoice(invoice)
-        XCTAssertTrue(viewModel.canProjectCurrentListSpec)
+        #expect(viewModel.canProjectCurrentListSpec)
 
         viewModel.invoiceFilterStatus = [InvoiceStatus.pending.rawValue]
-        XCTAssertTrue(viewModel.isShowingPreviousQueryResults)
+        #expect(viewModel.isShowingPreviousQueryResults)
         await fetcher.failSubsequentRequests()
 
         await viewModel.reloadInvoices(matching: FetchDescriptor<Invoice>())
 
-        XCTAssertTrue(viewModel.hasCompletedSuccessfulListLoad)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [invoice.id])
-        XCTAssertEqual(viewModel.loadedInvoicesByID[invoice.id]?.id, invoice.id)
-        XCTAssertEqual(viewModel.selectedInvoice?.id, invoice.id)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
-        XCTAssertNotNil(viewModel.listLoadError)
-        XCTAssertTrue(viewModel.isShowingPreviousQueryResults)
+        #expect(viewModel.hasCompletedSuccessfulListLoad)
+        #expect(viewModel.invoiceEntities.map(\.id) == [invoice.id])
+        #expect(viewModel.loadedInvoicesByID[invoice.id]?.id == invoice.id)
+        #expect(viewModel.selectedInvoice?.id == invoice.id)
+        #expect(viewModel.totalInvoiceCount == 1)
+        #expect(viewModel.listLoadError != nil)
+        #expect(viewModel.isShowingPreviousQueryResults)
     }
 
-    func testOpaqueSwiftDataReloadFailureUsesActionableListCopy() async throws {
+    @Test func OpaqueSwiftDataReloadFailureUsesActionableListCopy() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let viewModel = InvoicesContainerViewModel(
             modelContext: context,
@@ -476,14 +479,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
             matching: FetchDescriptor<Invoice>()
         )
 
-        XCTAssertEqual(outcome, .failed)
-        XCTAssertEqual(
-            viewModel.listLoadError,
-            "Invoice data could not be refreshed. Try again."
-        )
+        #expect(outcome == .failed)
+        #expect(viewModel.listLoadError == "Invoice data could not be refreshed. Try again.")
     }
 
-    func testReloadAdvancesProjectionRevisionWhenRowCountIsUnchanged() async throws {
+    @Test func ReloadAdvancesProjectionRevisionWhenRowCountIsUnchanged() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-BEFORE")
         context.insert(invoice)
@@ -497,11 +497,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         try context.save()
         await viewModel.reloadInvoices(matching: descriptor)
 
-        XCTAssertGreaterThan(viewModel.listContentRevision, firstRevision)
-        XCTAssertEqual(viewModel.invoiceEntities.first?.invoiceNumber, "INV-AFTER")
+        #expect(viewModel.listContentRevision > firstRevision)
+        #expect(viewModel.invoiceEntities.first?.invoiceNumber == "INV-AFTER")
     }
 
-    func testReloadSeesInvoiceEditsSavedFromIndependentContext() async throws {
+    @Test func ReloadSeesInvoiceEditsSavedFromIndependentContext() async throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
         let workspaceContext = ModelContext(container)
         let invoice = Invoice(invoiceNumber: "INV-BEFORE")
@@ -515,16 +515,16 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
         let editorDescriptor = FetchDescriptor<Invoice>(
             predicate: #Predicate<Invoice> { $0.id == invoiceID }
         )
-        let editorInvoice = try XCTUnwrap(editorContext.fetch(editorDescriptor).first)
+        let editorInvoice = try try #require(editorContext.fetch(editorDescriptor).first)
         editorInvoice.invoiceNumber = "INV-AFTER"
         try editorContext.save()
 
         await viewModel.reloadInvoices(matching: FetchDescriptor<Invoice>())
 
-        XCTAssertEqual(viewModel.invoiceEntities.first?.invoiceNumber, "INV-AFTER")
+        #expect(viewModel.invoiceEntities.first?.invoiceNumber == "INV-AFTER")
     }
 
-    func testStoreRevisionParticipatesInReloadTaskIdentity() {
+    @Test func StoreRevisionParticipatesInReloadTaskIdentity() {
         let spec = InvoicePersistenceQuerySpec(
             statuses: [InvoiceStatus.pending.rawValue],
             filterStartDate: .distantPast,
@@ -535,13 +535,10 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
             sortDirection: .descending
         )
 
-        XCTAssertNotEqual(
-            InvoicesReloadTaskID(persistenceSpec: spec, storeRevision: 1),
-            InvoicesReloadTaskID(persistenceSpec: spec, storeRevision: 2)
-        )
+        #expect(InvoicesReloadTaskID(persistenceSpec: spec, storeRevision: 1) != InvoicesReloadTaskID(persistenceSpec: spec, storeRevision: 2))
     }
 
-    func testPersistenceQueryKeepsAllClientsAvailableForFacetExpansion() async throws {
+    @Test func PersistenceQueryKeepsAllClientsAvailableForFacetExpansion() async throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let acme = Invoice(invoiceNumber: "INV-ACME")
         acme.clientName = "Acme"
@@ -561,11 +558,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
             spec: viewModel.listQuerySpec
         )
 
-        XCTAssertEqual(projection.availableClientNames, ["Acme", "North"])
-        XCTAssertEqual(projection.filteredInvoices.map(\.invoiceNumber), ["INV-ACME"])
+        #expect(projection.availableClientNames == ["Acme", "North"])
+        #expect(projection.filteredInvoices.map(\.invoiceNumber) == ["INV-ACME"])
     }
 
-    func testDeepLinkClearsFiltersWhenDestinationIsOutsideCurrentRows() throws {
+    @Test func DeepLinkClearsFiltersWhenDestinationIsOutsideCurrentRows() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let destination = Invoice(invoiceNumber: "INV-DESTINATION")
         context.insert(destination)
@@ -577,11 +574,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.selectInvoiceForDeepLink(id: destination.id)
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, destination.id)
-        XCTAssertFalse(viewModel.hasActiveListFilters)
+        #expect(viewModel.selectedInvoice?.id == destination.id)
+        #expect(!(viewModel.hasActiveListFilters))
     }
 
-    func testDeepLinkMaterializesDestinationIntoListImmediately() throws {
+    @Test func DeepLinkMaterializesDestinationIntoListImmediately() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let destination = Invoice(invoiceNumber: "INV-NEW-ROUTE")
         context.insert(destination)
@@ -590,13 +587,13 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.selectInvoiceForDeepLink(id: destination.id)
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, destination.id)
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [destination.id])
-        XCTAssertEqual(viewModel.loadedInvoicesByID[destination.id]?.id, destination.id)
-        XCTAssertEqual(viewModel.totalInvoiceCount, 1)
+        #expect(viewModel.selectedInvoice?.id == destination.id)
+        #expect(viewModel.invoiceEntities.map(\.id) == [destination.id])
+        #expect(viewModel.loadedInvoicesByID[destination.id]?.id == destination.id)
+        #expect(viewModel.totalInvoiceCount == 1)
     }
 
-    func testMissingDeepLinkPreservesListContextAndReportsActionError() throws {
+    @Test func MissingDeepLinkPreservesListContextAndReportsActionError() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let visibleInvoice = Invoice(invoiceNumber: "INV-VISIBLE")
         context.insert(visibleInvoice)
@@ -609,18 +606,15 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.selectInvoiceForDeepLink(id: UUID())
 
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [visibleInvoice.id])
-        XCTAssertNil(viewModel.selectedInvoice)
-        XCTAssertEqual(viewModel.invoiceSearchText, "Current search")
-        XCTAssertTrue(viewModel.hasActiveListFilters)
-        XCTAssertNil(viewModel.listLoadError)
-        XCTAssertEqual(
-            viewModel.actionErrorMessage,
-            "Invoice couldn't be opened because it no longer exists."
-        )
+        #expect(viewModel.invoiceEntities.map(\.id) == [visibleInvoice.id])
+        #expect(viewModel.selectedInvoice == nil)
+        #expect(viewModel.invoiceSearchText == "Current search")
+        #expect(viewModel.hasActiveListFilters)
+        #expect(viewModel.listLoadError == nil)
+        #expect(viewModel.actionErrorMessage == "Invoice couldn't be opened because it no longer exists.")
     }
 
-    func testActionErrorDoesNotReplaceListLoadState() throws {
+    @Test func ActionErrorDoesNotReplaceListLoadState() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-STAYS-VISIBLE")
         context.insert(invoice)
@@ -630,15 +624,15 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.reportActionError("New invoice could not be created.")
 
-        XCTAssertEqual(viewModel.invoiceEntities.map(\.id), [invoice.id])
-        XCTAssertNil(viewModel.listLoadError)
-        XCTAssertEqual(viewModel.actionErrorMessage, "New invoice could not be created.")
+        #expect(viewModel.invoiceEntities.map(\.id) == [invoice.id])
+        #expect(viewModel.listLoadError == nil)
+        #expect(viewModel.actionErrorMessage == "New invoice could not be created.")
 
         viewModel.dismissActionError()
-        XCTAssertNil(viewModel.actionErrorMessage)
+        #expect(viewModel.actionErrorMessage == nil)
     }
 
-    func testSuccessfulInvoiceSelectionDismissesStaleActionError() throws {
+    @Test func SuccessfulInvoiceSelectionDismissesStaleActionError() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let invoice = Invoice(invoiceNumber: "INV-RECOVERED")
         context.insert(invoice)
@@ -648,11 +642,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.requestSelectInvoice(invoice)
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, invoice.id)
-        XCTAssertNil(viewModel.actionErrorMessage)
+        #expect(viewModel.selectedInvoice?.id == invoice.id)
+        #expect(viewModel.actionErrorMessage == nil)
     }
 
-    func testDeepLinkClearsClientFilterWhenDestinationIsAlreadyLoaded() throws {
+    @Test func DeepLinkClearsClientFilterWhenDestinationIsAlreadyLoaded() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let destination = Invoice(invoiceNumber: "INV-NORTH")
         destination.clientName = "North"
@@ -665,11 +659,11 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.selectInvoiceForDeepLink(id: destination.id)
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, destination.id)
-        XCTAssertFalse(viewModel.hasActiveListFilters)
+        #expect(viewModel.selectedInvoice?.id == destination.id)
+        #expect(!(viewModel.hasActiveListFilters))
     }
 
-    func testSelectionReconciliationClosesFilteredOutInvoice() throws {
+    @Test func SelectionReconciliationClosesFilteredOutInvoice() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let selected = Invoice(invoiceNumber: "INV-SELECTED")
         context.insert(selected)
@@ -680,10 +674,10 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.reconcileSelection(visibleInvoiceIDs: [])
 
-        XCTAssertNil(viewModel.selectedInvoice)
+        #expect(viewModel.selectedInvoice == nil)
     }
 
-    func testSelectionReconciliationPreservesInvoiceHiddenByFilters() throws {
+    @Test func SelectionReconciliationPreservesInvoiceHiddenByFilters() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
         let selected = Invoice(invoiceNumber: "INV-SELECTED")
         context.insert(selected)
@@ -695,10 +689,10 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
 
         viewModel.reconcileSelection(visibleInvoiceIDs: [])
 
-        XCTAssertEqual(viewModel.selectedInvoice?.id, selected.id)
+        #expect(viewModel.selectedInvoice?.id == selected.id)
     }
 
-    func testBulkExportDestinationPreservesExistingPDFs() throws {
+    @Test func BulkExportDestinationPreservesExistingPDFs() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("InvoiceBulkExportNamingTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -711,7 +705,7 @@ final class InvoicesPersistenceCommandsTests: XCTestCase {
             preferredFilename: "Invoice-001.pdf"
         )
 
-        XCTAssertEqual(destination.lastPathComponent, "Invoice-001 3.pdf")
+        #expect(destination.lastPathComponent == "Invoice-001 3.pdf")
     }
 }
 

@@ -1,24 +1,20 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 @testable import Data
 import Core
+import PersistenceModels
 
 @MainActor
-final class AddComplianceFoundationFieldsMigrationTests: XCTestCase {
-    private var modelContext: ModelContext!
+@Suite struct AddComplianceFoundationFieldsMigrationTests {
+    private let modelContext: ModelContext
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContext = context
+        self.modelContext = context
     }
 
-    override func tearDown() async throws {
-        modelContext = nil
-        try await super.tearDown()
-    }
-
-    func testMigrationSetsDefaultsAndNormalizesBlankOrgID() throws {
+    @Test func MigrationSetsDefaultsAndNormalizesBlankOrgID() throws {
         let business = Business(id: UUID(), abn: "53004085616")
         business.defaultGstCode = ""
         business.ndiaOrganisationID = "   "
@@ -28,12 +24,12 @@ final class AddComplianceFoundationFieldsMigrationTests: XCTestCase {
         try AddComplianceFoundationFields_v1.execute(modelContext: modelContext)
 
         let fetched = try modelContext.fetch(FetchDescriptor<Business>())
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertEqual(fetched.first?.defaultGstCode, "P2")
-        XCTAssertNil(fetched.first?.ndiaOrganisationID)
+        #expect(fetched.count == 1)
+        #expect(fetched.first?.defaultGstCode == "P2")
+        #expect(fetched.first?.ndiaOrganisationID == nil)
     }
 
-    func testMigrationIsIdempotentAndPreservesConfiguredValues() throws {
+    @Test func MigrationIsIdempotentAndPreservesConfiguredValues() throws {
         let business = Business(id: UUID(), abn: "53004085617")
         business.defaultGstCode = "P1"
         business.ndiaOrganisationID = "123456789"
@@ -45,9 +41,9 @@ final class AddComplianceFoundationFieldsMigrationTests: XCTestCase {
         try AddComplianceFoundationFields_v1.execute(modelContext: modelContext)
 
         let fetched = try modelContext.fetch(FetchDescriptor<Business>())
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertEqual(fetched.first?.defaultGstCode, "P1")
-        XCTAssertEqual(fetched.first?.ndiaOrganisationID, "123456789")
-        XCTAssertEqual(fetched.first?.isRegisteredProvider, true)
+        #expect(fetched.count == 1)
+        #expect(fetched.first?.defaultGstCode == "P1")
+        #expect(fetched.first?.ndiaOrganisationID == "123456789")
+        #expect(fetched.first?.isRegisteredProvider == true)
     }
 }

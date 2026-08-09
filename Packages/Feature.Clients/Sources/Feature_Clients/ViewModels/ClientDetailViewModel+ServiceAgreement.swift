@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 
 extension ClientDetailViewModel {
@@ -93,6 +94,51 @@ extension ClientDetailViewModel {
         }
     }
 
+    // MARK: - Client Service Edit
+
+    func prepareToEditClientService(_ service: ClientService) {
+        clientServiceValidationError = nil
+        clientServiceToEdit = service
+        isPresentingClientServiceSheet = true
+    }
+
+    func cancelClientServiceEdit() {
+        clientServiceValidationError = nil
+        clientServiceToEdit = nil
+        isPresentingClientServiceSheet = false
+    }
+
+    func saveClientService() {
+        guard let service = clientServiceToEdit else { return }
+        clientServiceValidationError = nil
+
+        let trimmedName = service.serviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            clientServiceValidationError = "Service name is required."
+            return
+        }
+        service.serviceName = trimmedName
+        if let months = service.consecutiveMonths {
+            service.consecutiveMonths = min(max(months, 1), 24)
+        }
+
+        Task {
+            do {
+                try modelContext.save()
+                await MainActor.run {
+                    self.clientServiceToEdit = nil
+                    self.isPresentingClientServiceSheet = false
+                    self.clientServiceValidationError = nil
+                    self.loadAllDetails()
+                }
+            } catch {
+                await MainActor.run {
+                    self.clientServiceValidationError = error.localizedDescription
+                }
+            }
+        }
+    }
+
     // MARK: - Bulk Service Creation
 
     func prepareForBulkServiceCreation(from ndisItems: [NDISItem]) {
@@ -121,6 +167,7 @@ extension ClientDetailViewModel {
                     newService.status    = nil
                     newService.ndisCode  = template.ndisCode
                     newService.ndisItem  = template.sourceNdisItem
+                    newService.consecutiveMonths = template.consecutiveMonths
                     modelContext.insert(newService)
                 }
                 try modelContext.save()

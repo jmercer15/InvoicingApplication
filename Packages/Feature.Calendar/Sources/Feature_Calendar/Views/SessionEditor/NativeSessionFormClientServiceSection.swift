@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
-import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 struct NativeSessionFormClientServiceSection: View {
@@ -19,7 +18,7 @@ struct NativeSessionFormClientServiceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Client:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     Picker("", selection: clientPickerSelection) {
                         Text("Select a client").tag(nil as UUID?)
@@ -37,7 +36,7 @@ struct NativeSessionFormClientServiceSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Service:")
                         .frame(width: StyleGuide.Dimensions.formLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     if viewModel.formModel.selectedClientID != nil {
                         Picker("", selection: servicePickerSelection) {
@@ -54,10 +53,10 @@ struct NativeSessionFormClientServiceSection: View {
                     } else {
                         HStack {
                             Text("Select a client first")
-                                .foregroundColor(StyleGuide.Colors.textSecondary)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
                             Spacer()
                             Image(systemName: "chevron.down")
-                                .foregroundColor(StyleGuide.Colors.textSecondary)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
                         }
                         .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
                         .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)

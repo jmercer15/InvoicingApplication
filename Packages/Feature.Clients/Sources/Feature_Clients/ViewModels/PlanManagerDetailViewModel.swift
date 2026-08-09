@@ -3,7 +3,7 @@ import AppKit
 import MapKit
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -79,9 +79,13 @@ public class PlanManagerDetailViewModel {
         loadAddressFields(from: planManager.address)
     }
 
-    func refreshRelatedInvoices(using workflowActor: ReferenceDataWorkflowActor) async {
+    func refreshRelatedInvoices() async {
         await MainActor.run { self.isLoading = true }
         defer { Task { @MainActor in self.isLoading = false } }
+
+        relatedInvoices = []
+        linkedClients = []
+        lastAllInvoices = []
 
         let managerID = planManager.id
         let linkedClients = (try? modelContext.fetch(FetchDescriptor<Client>(
@@ -137,9 +141,7 @@ public class PlanManagerDetailViewModel {
 
             try modelContext.save()
             
-            // Re-fetch using actor
-            let actor = ReferenceDataWorkflowActor(modelContainer: modelContext.container)
-            await refreshRelatedInvoices(using: actor)
+            await refreshRelatedInvoices()
         } catch {
             let nsError = error as NSError
             alertTitle = "Save Error"
@@ -183,10 +185,6 @@ public class PlanManagerDetailViewModel {
     
     func formattedAddressString(from address: Address) -> String {
         return address.fullFormattedAddress
-    }
-
-    private func managedClientsForPlanManager() -> [Client] {
-        return self.linkedClients
     }
 
     // MARK: - Helpers

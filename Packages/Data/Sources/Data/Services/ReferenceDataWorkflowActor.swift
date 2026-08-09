@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import Core
+import PersistenceModels
 
 /// A background actor dedicated to fetching references (PersistentIdentifiers) of core data
 /// so that ViewModels can populate pickers and drop-downs asynchronously without

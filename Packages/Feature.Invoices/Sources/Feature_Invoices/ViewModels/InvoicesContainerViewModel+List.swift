@@ -3,6 +3,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 import InvoiceTableLayoutEditor
 
@@ -105,6 +106,10 @@ extension InvoicesContainerViewModel {
             invoiceEntities = invoices
             totalInvoiceCount = totalCount
             updateLoadedInvoices(invoices)
+            if let selectedID = selectedInvoice?.id,
+               let refreshedSelection = loadedInvoicesByID[selectedID] {
+                applySelection(refreshedSelection)
+            }
             hasCompletedSuccessfulListLoad = true
             listLoadError = nil
             return .published
@@ -112,8 +117,9 @@ extension InvoicesContainerViewModel {
             return .superseded
         } catch {
             guard isCurrentListLoad(requestID) else { return .superseded }
-            // Preserve last successful projection and selection during transient store failures.
-            // Presentation keeps those rows interactive and adds a nonblocking retry banner.
+            // Keep last successful rows for transient query failures. Store-history
+            // invalidation is handled before reload by `handleStoreRevision(_:)`, which
+            // drops live SwiftData models when CloudKit advances or expires history.
             listLoadError = InvoiceOperationErrorPresentation.detail(
                 for: error,
                 fallback: "Invoice data could not be refreshed. Try again."

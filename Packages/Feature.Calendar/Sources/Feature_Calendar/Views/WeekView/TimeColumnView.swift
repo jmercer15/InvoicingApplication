@@ -28,7 +28,7 @@ struct TimeColumnView: View {
                 // Note: Canvas resolves SwiftUI Text
                 let text = Text(textStr)
                     .font(CalendarTypography.timeLabel(size: textFontSize, isMajor: isMajor))
-                    .foregroundColor(isMajor ? StyleGuide.Colors.text : StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(isMajor ? StyleGuide.Colors.text : StyleGuide.Colors.textSecondary)
                 
                 let resolved = context.resolve(text)
                 let textSize = resolved.measure(in: CGSize(width: w - rightPadding, height: h))
@@ -60,17 +60,8 @@ struct TimeColumnView: View {
 
     private static let timeLabels: [Int: String] = {
         var labels: [Int: String] = [:]
-        let f = DateFormatter()
-        f.dateFormat = "h a"
-        let calendar = Calendar.current
         for hour in 0...23 {
-            var comp = DateComponents()
-            comp.hour = hour
-            if let date = calendar.date(from: comp) {
-                labels[hour] = f.string(from: date)
-            } else {
-                labels[hour] = "\(hour)"
-            }
+            labels[hour] = DateFormatting.hourMeridiemLabel(forHour: hour)
         }
         return labels
     }()

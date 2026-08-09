@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 import os
@@ -97,7 +98,7 @@ public actor BillingDraftBuilderService: ModelActor {
         let now = Date()
         let defaultGST = GSTCode.p2.rawValue
 
-        var issues: [DraftIssue] = []
+        var issues: [DraftIssueSnapshot] = []
         let timeLimitRule = ClaimTimeLimitRule(referenceDate: now)
         if let issue = timeLimitRule.evaluate(supportStartDate: supportStart, draftId: draftId) {
             issues.append(issue)
@@ -147,7 +148,7 @@ public actor BillingDraftBuilderService: ModelActor {
                 supportItemNumber: item.supportItemNumber,
                 serviceFrom: serviceFrom,
                 serviceTo: serviceTo,
-                quantityDecimal: quantityDecimal.map { NSDecimalNumber(decimal: $0).doubleValue },
+                quantity: quantityDecimal,
                 hoursHHHMM: hoursHHHMM,
                 unitPrice: item.unitPrice,
                 gstCode: defaultGST,
@@ -179,7 +180,7 @@ public actor BillingDraftBuilderService: ModelActor {
         return createdDraftIDs
     }
 
-    private func resolveDraftStatus(issues: [DraftIssue]) -> DraftStatus {
+    private func resolveDraftStatus(issues: [DraftIssueSnapshot]) -> DraftStatus {
         let hasBlocking = issues.contains { $0.severity == .blocking }
         let hasWarning = issues.contains { $0.severity == .warning }
         if hasBlocking { return .needsInfo }
@@ -192,7 +193,7 @@ public actor BillingDraftBuilderService: ModelActor {
         if unit == "hour" {
             return (nil, formatHours(quantity: item.quantity))
         }
-        return (Decimal(item.quantity), nil)
+        return (item.quantity, nil)
     }
 
     private func unitForClaimType(_ claimType: String) -> String {
@@ -202,11 +203,8 @@ public actor BillingDraftBuilderService: ModelActor {
         return "hour"
     }
 
-    private func formatHours(quantity: Double) -> String {
-        let totalMinutes = max(Int((quantity * 60).rounded()), 0)
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        return String(format: "%03d:%02d", hours, minutes)
+    private func formatHours(quantity: Decimal) -> String {
+        ExportMachineFormatting.claimHoursToken(fromHourQuantity: quantity)
     }
 }
 
@@ -214,7 +212,7 @@ public actor BillingDraftBuilderService: ModelActor {
 
 private extension BillingDraftBuilderService {
     func fetchDraftSnapshot(id: UUID) throws -> BillableDraftSnapshot? {
-        let descriptor = FetchDescriptor<BillableDraft>(predicate: #Predicate { $0.id == id })
+        let descriptor = FetchDescriptor<BillableDraft>(predicate: EntityPredicateBuilders.billableDraft(id: id))
         return try modelContext.fetch(descriptor).first?.snapshot()
     }
 
@@ -235,16 +233,17 @@ private extension BillingDraftBuilderService {
         let clientId = snapshot.clientId
         let serviceId = snapshot.serviceId
 
-        model.session = try modelContext.fetch(FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })).first
-        model.client = try modelContext.fetch(FetchDescriptor<Client>(predicate: #Predicate { $0.id == clientId })).first
-        model.service = try modelContext.fetch(FetchDescriptor<ClientService>(predicate: #Predicate { $0.id == serviceId })).first
+        model.session = try modelContext.fetch(FetchDescriptor<Session>(predicate: EntityPredicateBuilders.session(id: sessionId))).first
+        model.client = try modelContext.fetch(FetchDescriptor<Client>(predicate: EntityPredicateBuilders.client(id: clientId))).first
+        model.service = try modelContext.fetch(FetchDescriptor<ClientService>(predicate: EntityPredicateBuilders.clientService(id: serviceId))).first
+        model.clientPlanManagementType = model.client?.planManagementType ?? ""
 
         modelContext.insert(model)
         if modelContext.hasChanges { try modelContext.save() }
         return model.snapshot()
     }
 
-    func persistIssues(_ issues: [DraftIssue], draftId: UUID) throws {
+    func persistIssues(_ issues: [DraftIssueSnapshot], draftId: UUID) throws {
         let draftDescriptor = FetchDescriptor<BillableDraft>(predicate: #Predicate { $0.id == draftId })
         let draftModel = try modelContext.fetch(draftDescriptor).first
 
@@ -277,7 +276,7 @@ private extension BillingDraftBuilderService {
                 supportItemNumber: line.supportItemNumber,
                 serviceFrom: line.serviceFrom,
                 serviceTo: line.serviceTo,
-                quantityDecimal: line.quantityDecimal,
+                quantity: line.quantity,
                 hoursHHHMM: line.hoursHHHMM,
                 unitPrice: line.unitPrice,
                 gstCode: line.gstCode,

@@ -1,8 +1,7 @@
 import Core
-import XCTest
-
-final class InvoiceFinancialCalculatorTests: XCTestCase {
-    func testMixedLineTaxPercentageDiscountAndCreditUseCanonicalRounding() {
+import Testing
+@Suite struct InvoiceFinancialCalculatorTests {
+    @Test func MixedLineTaxPercentageDiscountAndCreditUseCanonicalRounding() {
         let totals = InvoiceFinancialCalculator.calculate(
             lineItems: [
                 .init(quantity: 2, unitPrice: 100, taxRate: 10),
@@ -12,21 +11,21 @@ final class InvoiceFinancialCalculatorTests: XCTestCase {
             creditApplied: 5
         )
 
-        XCTAssertEqual(totals.subtotal, 250)
-        XCTAssertEqual(totals.discount, 25)
-        XCTAssertEqual(totals.taxTotal, 18)
-        XCTAssertEqual(totals.grandTotal, 238)
+        #expect(totals.subtotal == 250)
+        #expect(totals.discount == 25)
+        #expect(totals.taxTotal == 18)
+        #expect(totals.grandTotal == 238)
     }
 
-    func testFixedDiscountIsCappedAndGrandTotalCannotBecomeNegative() {
+    @Test func FixedDiscountIsCappedAndGrandTotalCannotBecomeNegative() {
         let totals = InvoiceFinancialCalculator.calculate(
             lineItems: [.init(quantity: 1, unitPrice: 10, taxRate: 10)],
             fixedDiscount: 100,
             creditApplied: 100
         )
 
-        XCTAssertEqual(totals.discount, 10)
-        XCTAssertEqual(totals.taxTotal, 0)
-        XCTAssertEqual(totals.grandTotal, 0)
+        #expect(totals.discount == 10)
+        #expect(totals.taxTotal == 0)
+        #expect(totals.grandTotal == 0)
     }
 }

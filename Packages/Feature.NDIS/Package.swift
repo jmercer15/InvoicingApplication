@@ -13,18 +13,21 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
-        .package(path: "../Data"),
+        .package(path: "../PersistenceModels"),
+        .package(path: "../DataInterfaces"),
         .package(path: "../SharedUI")
     ],
     targets: [
         .target(
             name: "Feature_NDIS",
-            dependencies: ["Core", "Data", "SharedUI"],
+            dependencies: [
+                "Core",
+                "PersistenceModels", "DataInterfaces", "SharedUI"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "Feature_NDISTests",
-            dependencies: ["Feature_NDIS", "Core"],
+            dependencies: ["Feature_NDIS", "Core", "DataInterfaces"],
             swiftSettings: strictConcurrencySettings
         )
     ]

@@ -10,11 +10,11 @@ struct NativeSessionFormHeaderView: View {
                 Text(isEditing ? "Edit Session" : "New Session")
                     .font(StyleGuide.Typography.sectionTitle)
                     .fontWeight(.semibold)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
 
                 Text(isEditing ? "Modify the session details" : "Create a new session for your calendar")
                     .font(StyleGuide.Typography.bodyMedium)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
 
             Spacer()

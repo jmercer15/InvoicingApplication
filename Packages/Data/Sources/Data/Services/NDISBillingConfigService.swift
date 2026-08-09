@@ -58,9 +58,9 @@ public class NDISBillingConfigService {
         configValues["TimeModifier.Nurse.Night"] = 1.5
         configValues["TimeModifier.Nurse.Evening"] = 1.25
         
-        // Travel Rates
+        // Travel Rates — keep aligned with `NDISTravelChargeCalculator` (source of truth).
         configValues["TravelRate.TherapyModifier"] = 0.5
-        configValues["TravelRate.NonLabourPerKm"] = 0.85
+        configValues["TravelRate.NonLabourPerKm"] = NDISTravelChargeCalculator.vehicleRatePerKilometre
         
         // Sleepover Configuration
         configValues["Sleepover.IncludedActiveHours"] = 8.0
@@ -104,28 +104,38 @@ public class NDISBillingConfigService {
         configValues["EstablishmentFee.Rate.MMM6"] = 350.0
         configValues["EstablishmentFee.Rate.MMM7"] = 400.0
         
-        // Transport Rates
-        configValues["TransportRate.StandardVehicle"] = 0.85
-        configValues["TransportRate.ModifiedVehicle"] = 1.20
+        // Transport Rates — keep aligned with `NDISTravelChargeCalculator` (source of truth).
+        configValues["TransportRate.StandardVehicle"] = NDISTravelChargeCalculator.vehicleRatePerKilometre
+        configValues["TransportRate.ModifiedVehicle"] = NDISTravelChargeCalculator.modifiedVehicleRatePerKilometre
     }
     
     // MARK: - MMM Zone Lookup
     
-    /// Gets the MMM rating for a location using coordinates only.
+    /// Gets the MMM rating for a location.
+    /// Prefers coordinates; when only postcode/address fields exist, polygon lookup cannot run
+    /// until callers geocode those fields into coordinates (see IntegrationService).
     func getMmmRating(for location: NDISLocation) -> Int? {
-        guard let lat = location.latitude, let lon = location.longitude else {
-            logger.warning("MMM lookup skipped because no coordinates were provided")
-            return nil
+        if let lat = location.latitude, let lon = location.longitude {
+            return mmmZoneLookup.mmm(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
         }
 
-        return mmmZoneLookup.mmm(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+        let hasAddressFields = !location.postcode.isEmpty
+            || !(location.suburb?.isEmpty ?? true)
+            || !(location.state?.isEmpty ?? true)
+        if hasAddressFields {
+            logger.info("MMM lookup skipped: postcode/address present but no coordinates (caller should geocode first)")
+        } else {
+            logger.warning("MMM lookup skipped because no coordinates or address were provided")
+        }
+        return nil
     }
     
-    /// Gets the geographic multiplier for a location
-    func getGeoMultiplier(for location: NDISLocation) -> Double? {
+    /// Geographic loading multiplier. Unresolved MMM (missing coords / failed lookup) → `1.0`.
+    /// Callers with address/postcode must fail upstream when MMM stays unresolved (see IntegrationService).
+    func getGeoMultiplier(for location: NDISLocation) -> Double {
         guard let mmmRating = getMmmRating(for: location) else {
-            logger.warning("Geographic multiplier requires a resolved MMM zone")
-            return nil
+            logger.info("Geographic multiplier defaulting to 1.0 (MMM unresolved)")
+            return 1.0
         }
         logger.debug("Applying geographic multiplier for MMM\(mmmRating)")
         switch mmmRating {
@@ -160,8 +170,9 @@ public class NDISBillingConfigService {
         return getConfigValue(key)
     }
     
-    /// Gets the time modifier for a date and provider type
-    func getTimeModifier(for date: Date, providerType: String = "DSW") -> Double {
+    /// Gets the time modifier for a date and provider type (`DSW` / `Therapist` / `Nurse`).
+    /// Weekday evening/night loadings apply only to DSW and Nurse — not Therapist.
+    func getTimeModifier(for date: Date, providerType: String = TravelChargeProviderType.dsw.rawValue) -> Double {
         if isPublicHoliday(date) {
             return getConfigValue("TimeModifier.PublicHoliday")
         }
@@ -176,19 +187,21 @@ public class NDISBillingConfigService {
         }
         
         let hour = calendar.component(.hour, from: date)
-        if providerType == "Nurse" {
+        let normalized = providerType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.caseInsensitiveCompare("Nurse") == .orderedSame {
             if hour >= 20 || hour < 6 {
                 return getConfigValue("TimeModifier.Nurse.Night")
             } else if hour >= 16 {
                 return getConfigValue("TimeModifier.Nurse.Evening")
             }
-        } else {
+        } else if normalized.caseInsensitiveCompare(TravelChargeProviderType.dsw.rawValue) == .orderedSame {
             if hour >= 20 || hour < 6 {
                 return getConfigValue("TimeModifier.DSW.Night")
             } else if hour >= 16 {
                 return getConfigValue("TimeModifier.DSW.Evening")
             }
         }
+        // Therapist (and other non-DSW weekday): no evening/night loading.
         
         return 1.0
     }
@@ -204,11 +217,11 @@ public class NDISBillingConfigService {
     }
     
     func getTravelRatePerKm() -> Double {
-        return getConfigValue("TravelRate.NonLabourPerKm")
+        NDISTravelChargeCalculator.vehicleRatePerKilometre
     }
     
     func getTransportRate(isModified: Bool) -> Double {
-        return isModified ? getConfigValue("TransportRate.ModifiedVehicle") : getConfigValue("TransportRate.StandardVehicle")
+        NDISTravelChargeCalculator.vehicleRatePerKilometre(isModified: isModified)
     }
     
     // MARK: - Holiday Calendar

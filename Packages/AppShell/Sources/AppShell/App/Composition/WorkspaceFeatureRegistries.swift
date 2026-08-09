@@ -6,6 +6,7 @@ import Feature_Calendar
 import Feature_Clients
 import Feature_Invoices
 import Feature_NDIS
+import InvoiceTableLayoutEditor
 
 /// Strangler facade over workspace-scoped feature VMs. Owns concrete feature wrappers directly and
 /// exposes stable feature outputs to scene consumers.
@@ -53,10 +54,11 @@ final class WorkspaceFeatureRegistries {
         )
         self.relationshipsFeature = RelationshipsFeature(
             context: dependencies.context,
+            relationshipDeleter: SwiftDataClientRelationshipDeleter(modelContext: dependencies.context),
             storeChangeMonitor: dependencies.services.storeChangeMonitor
         )
         self.ndisFeature = NDISFeature(
-            context: dependencies.context,
+            catalogueFetching: dependencies.services.ndisCatalogueFetching,
             storeChangeMonitor: dependencies.services.storeChangeMonitor
         )
         self.invoicesFeature = InvoicesFeature(
@@ -66,7 +68,14 @@ final class WorkspaceFeatureRegistries {
     }
 
     func calendarViewModel() -> CalendarViewModel { calendarFeature.viewModel() }
-    func billingHubViewModel() -> BillingHubViewModel { billingHubFeature.viewModel() }
+    func billingHubViewModel() -> BillingHubViewModel {
+        let hub = billingHubFeature.viewModel()
+        // Prefer live editor draft PDFs when that invoice is open in Invoices.
+        if hub.invoiceEditorSession == nil {
+            hub.invoiceEditorSession = invoicesFeature.viewModel().editorSession
+        }
+        return hub
+    }
     func relationshipsViewModel() -> RelationshipsContainerViewModel { relationshipsFeature.viewModel() }
     func ndisCatalogueViewModel() -> NDISContainerViewModel { ndisFeature.viewModel() }
     func invoicesViewModel() -> InvoicesContainerViewModel { invoicesFeature.viewModel() }

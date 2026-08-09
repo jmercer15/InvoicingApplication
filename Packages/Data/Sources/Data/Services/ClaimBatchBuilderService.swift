@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -76,7 +77,7 @@ public struct ClaimBatchBuilderService: Sendable {
                     supportsDeliveredTo: line.serviceTo,
                     supportNumber: line.supportItemNumber,
                     claimReference: claimRef,
-                    quantity: line.quantityDecimal,
+                    quantity: line.quantity,
                     hours: line.hoursHHHMM,
                     unitPrice: line.unitPrice,
                     gstCode: line.gstCode,
@@ -141,15 +142,7 @@ public struct ClaimBatchBuilderService: Sendable {
     }
 
     private func mapClaimTypeCode(_ claimType: String) -> String? {
-        switch claimType {
-        case "ProviderTravel", "ProviderTravelLabour": return BPRClaimTypeCode.tran.rawValue
-        case "NonFaceToFace": return BPRClaimTypeCode.nf2f.rawValue
-        case "Telehealth": return BPRClaimTypeCode.thlt.rawValue
-        case "Cancellation": return BPRClaimTypeCode.canc.rawValue
-        case "NDIAReport": return BPRClaimTypeCode.repw.rawValue
-        case "IrregularSILSupport": return BPRClaimTypeCode.irss.rawValue
-        default: return nil
-        }
+        NDISClaimType.bprClaimTypeCode(fromRaw: claimType)?.rawValue
     }
     private func normalizeABN(_ value: String?) -> String? {
         guard let value else { return nil }

@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
-import Data
 import Core
+import PersistenceModels
+import DataInterfaces
 
 // MARK: - History UI models
 
@@ -57,7 +58,7 @@ public enum ImportExportClaimBatchHistory {
         allLines: [BulkClaimLineSnapshot],
         clientNames: [UUID: String],
         invoiceClientIds: [UUID: UUID],
-        exportHashVerifier: BulkClaimExportHashVerifier
+        exportHashVerifier: any BulkClaimExportHashVerifying
     ) -> [ClaimBatchHistoryRow] {
         guard !batches.isEmpty else { return [] }
 

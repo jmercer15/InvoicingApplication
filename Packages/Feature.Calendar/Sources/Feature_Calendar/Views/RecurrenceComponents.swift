@@ -25,7 +25,7 @@ struct MonthDayGridView: View {
                             Circle()
                                 .fill(selectedDays.contains(day) ? Color.accentColor : Color.clear)
                         )
-                        .foregroundColor(selectedDays.contains(day) ? .white : .primary)
+                        .foregroundStyle(selectedDays.contains(day) ? Color.white : Color.primary)
                         .overlay(
                             Circle()
                                 .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)

@@ -1,19 +1,19 @@
 @testable import Data
 import Core
 import Foundation
-import XCTest
-
-final class EventKitSyncWatermarkTests: XCTestCase {
-    func testTimestampToleranceTwoSeconds() {
+import Testing
+import PersistenceModels
+@Suite struct EventKitSyncWatermarkTests {
+    @Test func TimestampToleranceTwoSeconds() {
         let baseline = Date(timeIntervalSinceReferenceDate: 100_000)
         let withinTolerance = baseline.addingTimeInterval(1.5)
         let beyondTolerance = baseline.addingTimeInterval(2.1)
 
-        XCTAssertFalse(EventKitSyncWatermark.isTimestampNewer(withinTolerance, than: baseline))
-        XCTAssertTrue(EventKitSyncWatermark.isTimestampNewer(beyondTolerance, than: baseline))
+        #expect(!(EventKitSyncWatermark.isTimestampNewer(withinTolerance, than: baseline)))
+        #expect(EventKitSyncWatermark.isTimestampNewer(beyondTolerance, than: baseline))
     }
 
-    func testNilRemoteModifiedWithUnchangedFingerprint() {
+    @Test func NilRemoteModifiedWithUnchangedFingerprint() {
         let changed = EventKitSyncWatermark.didRemoteChange(
             remoteLastModified: nil,
             watermark: Date(timeIntervalSinceReferenceDate: 100),
@@ -21,10 +21,10 @@ final class EventKitSyncWatermarkTests: XCTestCase {
             currentFingerprint: "fp-1"
         )
 
-        XCTAssertFalse(changed)
+        #expect(!(changed))
     }
 
-    func testNilRemoteModifiedWithChangedFingerprint() {
+    @Test func NilRemoteModifiedWithChangedFingerprint() {
         let changed = EventKitSyncWatermark.didRemoteChange(
             remoteLastModified: nil,
             watermark: Date(timeIntervalSinceReferenceDate: 100),
@@ -32,10 +32,10 @@ final class EventKitSyncWatermarkTests: XCTestCase {
             currentFingerprint: "fp-2"
         )
 
-        XCTAssertTrue(changed)
+        #expect(changed)
     }
 
-    func testRemoteFreshnessUnknownWhenModifiedIsNilAndFingerprintUnchanged() {
+    @Test func RemoteFreshnessUnknownWhenModifiedIsNilAndFingerprintUnchanged() {
         let state = EventKitSyncWatermark.classifyRemoteFreshness(
             remoteLastModified: nil,
             watermark: Date(timeIntervalSinceReferenceDate: 1_000),
@@ -44,6 +44,6 @@ final class EventKitSyncWatermarkTests: XCTestCase {
             currentFingerprint: "fp-1"
         )
 
-        XCTAssertEqual(state, .unknown)
+        #expect(state == .unknown)
     }
 }

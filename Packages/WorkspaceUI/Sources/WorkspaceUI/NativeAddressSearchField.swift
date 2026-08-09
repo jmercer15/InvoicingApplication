@@ -143,7 +143,9 @@ public struct NativeAddressSearchField: View {
             state: state,
             postcode: postcode,
             country: country,
-            poBox: poBox
+            poBox: poBox,
+            latitude: parsed.latitude,
+            longitude: parsed.longitude
         )
 
         setSearchTextWithoutTriggeringSearch("")
@@ -206,16 +208,31 @@ public struct NativeAddressSearchField: View {
 
 // MARK: - Search Results List
 
+/// Stable identity for MapKit completer rows (the completer type is not Identifiable).
+private struct AddressSearchResultRow: Identifiable {
+    let id: String
+    let result: MKLocalSearchCompletion
+
+    init(result: MKLocalSearchCompletion) {
+        self.result = result
+        self.id = "\(result.title)|\(result.subtitle)"
+    }
+}
+
 /// Immutable snapshot of completer results for safe `ForEach` iteration.
 private struct AddressSearchResultsList: View {
     let results: [MKLocalSearchCompletion]
     let onSelect: (MKLocalSearchCompletion) -> Void
 
+    private var rows: [AddressSearchResultRow] {
+        results.map(AddressSearchResultRow.init(result:))
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(results.indices, id: \.self) { index in
-                    let result = results[index]
+                ForEach(rows) { row in
+                    let result = row.result
                     Button(action: {
                         onSelect(result)
                     }) {
@@ -245,7 +262,7 @@ private struct AddressSearchResultsList: View {
                     .background(Color("Black30", bundle: .sharedUI))
                     .contentShape(Rectangle())
 
-                    if index < results.count - 1 {
+                    if row.id != rows.last?.id {
                         Divider()
                             .background(Color("White10", bundle: .sharedUI))
                             .padding(.horizontal, StyleGuide.Dimensions.paddingMediumLarge)

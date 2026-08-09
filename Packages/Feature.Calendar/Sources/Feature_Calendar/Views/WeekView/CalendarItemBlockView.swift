@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import EventKit
 import AppKit // Added for NSWorkspace
 import SharedUI
@@ -65,32 +66,68 @@ enum CalendarColorProvider {
     }
 }
 
+struct CalendarItemBlockEquatableState: Equatable, Sendable {
+    let itemID: String
+    let title: String
+    let actualStartDate: Date?
+    let actualEndDate: Date?
+    let sessionStatusRaw: String?
+    let clientId: UUID?
+    let clientServiceId: UUID?
+    let location: String?
+    let googleColorId: String?
+    let hasInvoice: Bool
+    let eventLocation: String?
+    let isBulkSelectionMode: Bool
+    let isItemSelected: Bool
+    let isSelected: Bool
+    let isBeingResized: Bool
+    let hourHeight: CGFloat
+    let slotWidth: CGFloat
+
+    @MainActor
+    static func make(
+        item: DisplayableCalendarItem,
+        viewModel: CalendarViewModel,
+        interactionHandler: CalendarInteractionHandler,
+        hourHeight: CGFloat,
+        slotWidth: CGFloat
+    ) -> CalendarItemBlockEquatableState {
+        let session = item.underlyingSession
+        let selectedSession = viewModel.selectedSessionInfo?.session
+        let selectedSessionID = selectedSession?.id
+        let isSelected = {
+            guard let session, let selectedSessionID else { return false }
+            return selectedSessionID == session.id
+        }()
+        return CalendarItemBlockEquatableState(
+            itemID: item.id,
+            title: item.title,
+            actualStartDate: item.actualStartDate,
+            actualEndDate: item.actualEndDate,
+            sessionStatusRaw: session?.status?.rawValue,
+            clientId: session?.clientId,
+            clientServiceId: session?.clientServiceId,
+            location: session?.location,
+            googleColorId: session?.googleColorId,
+            hasInvoice: session?.invoice != nil,
+            eventLocation: item.underlyingEvent?.location,
+            isBulkSelectionMode: viewModel.isBulkSelectionMode,
+            isItemSelected: viewModel.isItemSelected(item),
+            isSelected: isSelected,
+            isBeingResized: interactionHandler.resizingSessionInfo?.instanceID == item.id,
+            hourHeight: hourHeight,
+            slotWidth: slotWidth
+        )
+    }
+}
+
 struct CalendarItemBlockView: View, Equatable {
     nonisolated static func == (lhs: CalendarItemBlockView, rhs: CalendarItemBlockView) -> Bool {
-        MainActor.assumeIsolated {
-            if lhs.hourHeight != rhs.hourHeight || lhs.slotWidth != rhs.slotWidth { return false }
-            
-            if lhs.viewModel.isBulkSelectionMode != rhs.viewModel.isBulkSelectionMode ||
-               lhs.viewModel.isItemSelected(lhs.item) != rhs.viewModel.isItemSelected(rhs.item) ||
-               lhs.isSelected != rhs.isSelected { return false }
-               
-            if lhs.isBeingResized != rhs.isBeingResized { return false }
-            
-            if lhs.item.id != rhs.item.id ||
-               lhs.item.title != rhs.item.title ||
-               lhs.item.actualStartDate != rhs.item.actualStartDate ||
-               lhs.item.actualEndDate != rhs.item.actualEndDate ||
-               lhs.item.underlyingSession?.status != rhs.item.underlyingSession?.status ||
-               lhs.item.underlyingSession?.clientId != rhs.item.underlyingSession?.clientId ||
-               lhs.item.underlyingSession?.clientServiceId != rhs.item.underlyingSession?.clientServiceId ||
-               lhs.item.underlyingSession?.location != rhs.item.underlyingSession?.location ||
-               lhs.item.underlyingSession?.googleColorId != rhs.item.underlyingSession?.googleColorId ||
-               lhs.item.underlyingEvent?.location != rhs.item.underlyingEvent?.location { return false }
-               
-            return true
-        }
+        lhs.equatableState == rhs.equatableState
     }
 
+    let equatableState: CalendarItemBlockEquatableState
 
     private static let leadingColumnPadding: CGFloat = 1
     private static let trailingColumnPadding: CGFloat = 1
@@ -125,20 +162,15 @@ struct CalendarItemBlockView: View, Equatable {
             return statusColor
         }
     }
-    private var startHour: CGFloat { item.startHour }
     private var durationHours: CGFloat { item.durationHours }
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        return f
-    }()
+    private static let timeFormatter: Date.FormatStyle = .dateTime.hour().minute()
 
     private var timeRangeText: String {
         guard let startTime = item.actualStartDate, let endTime = item.actualEndDate else { return "Unknown time" }
-        return "\(Self.timeFormatter.string(from: startTime)) - \(Self.timeFormatter.string(from: endTime))"
+        return "\(startTime.formatted(Self.timeFormatter)) - \(endTime.formatted(Self.timeFormatter))"
     }
     private var contentTextColor: Color {
-        colorScheme == .dark ? .white : .black
+        colorScheme == .dark ? Color.white : .black
     }
 
     // --- Type-specific computed properties ---
@@ -302,7 +334,7 @@ struct CalendarItemBlockView: View, Equatable {
 
             let provider = DragItemProvider()
             provider.onDeinit = {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     if interactionHandler.draggingSessionInfo?.sessionID == payload.sessionID {
                         interactionHandler.draggingSessionInfo = nil
                         interactionHandler.dropTargetTime = nil
@@ -394,17 +426,17 @@ struct CalendarItemBlockView: View, Equatable {
             HStack(alignment: .top, spacing: 4) {
                 Text(item.title)
                     .font(CalendarTypography.blockTitle(size: titleFontSize))
-                    .foregroundColor(contentTextColor)
+                    .foregroundStyle(contentTextColor)
                     .lineLimit(showSecondaryDetailLine ? 2 : 1)
                     .multilineTextAlignment(.leading)
 
                 Spacer(minLength: 2)
-                
+
                 // Status / selection checkmark
                 if viewModel.isBulkSelectionMode, item.underlyingSession != nil {
                     Image(systemName: viewModel.isItemSelected(item) ? "checkmark.circle.fill" : "circle")
                         .font(StyleGuide.Typography.caption.weight(.semibold))
-                        .foregroundColor(viewModel.isItemSelected(item) ? .accentColor : contentTextColor.opacity(0.6))
+                        .foregroundStyle(viewModel.isItemSelected(item) ? Color.accentColor : contentTextColor.opacity(0.6))
                 } else if let session = item.underlyingSession, slotWidth >= 50 {
                     statusBadge(for: session)
                 }
@@ -413,7 +445,7 @@ struct CalendarItemBlockView: View, Equatable {
                 if shouldShowResizeControls {
                     Image(systemName: "arrow.up.and.down")
                         .font(StyleGuide.Typography.gridSubtext)
-                        .foregroundColor(contentTextColor)
+                        .foregroundStyle(contentTextColor)
                         .opacity(StyleGuide.Opacity.strong)
                 }
             }
@@ -464,10 +496,10 @@ struct CalendarItemBlockView: View, Equatable {
         HStack(alignment: .top, spacing: 4) {
             Image(systemName: icon)
                 .font(StyleGuide.Typography.gridSubtext)
-                .foregroundColor(contentTextColor)
+                .foregroundStyle(contentTextColor)
             Text(text)
                 .font(StyleGuide.Typography.nanoMedium)
-                .foregroundColor(contentTextColor)
+                .foregroundStyle(contentTextColor)
                 .lineLimit(allowsTruncation ? 1 : nil)
                 .fixedSize(horizontal: false, vertical: !allowsTruncation)
                 .multilineTextAlignment(.leading)
@@ -477,27 +509,37 @@ struct CalendarItemBlockView: View, Equatable {
     @ViewBuilder
     private func statusBadge(for session: Session) -> some View {
         let statusToken = Core.SessionStatus(normalized: session.status?.rawValue ?? "")?.token
+        let isInvoiced = session.invoice != nil
         
-        if let token = statusToken {
-            let (icon, badgeColor): (String, Color) = {
-                switch token {
-                case Core.SessionStatus.completed.token:
-                    return ("checkmark.circle.fill", ColorSystem.Status.success)
-                case Core.SessionStatus.cancelled.token:
-                    return ("xmark.circle.fill", ColorSystem.Status.error)
-                case Core.SessionStatus.scheduled.token:
-                    return ("calendar.circle.fill", ColorSystem.Status.info)
-                case Core.SessionStatus.noShow.token:
-                    return ("exclamationmark.circle.fill", ColorSystem.Status.warning)
-                default:
-                    return ("", .clear)
-                }
-            }()
-            
-            if !icon.isEmpty {
-                Image(systemName: icon)
+        HStack(spacing: 2) {
+            if isInvoiced {
+                Image(systemName: "doc.text.fill")
                     .font(StyleGuide.Typography.micro.weight(.semibold))
-                    .foregroundColor(badgeColor)
+                    .foregroundStyle(ColorSystem.Status.info)
+                    .help("Linked to an invoice")
+            }
+
+            if let token = statusToken {
+                let (icon, badgeColor, badgeHelp): (String, Color, String?) = {
+                    switch token {
+                    case Core.SessionStatus.completed.token:
+                        return ("checkmark.circle.fill", ColorSystem.Status.success, "Completed — ready in Billing Hub")
+                    case Core.SessionStatus.cancelled.token:
+                        return ("xmark.circle.fill", ColorSystem.Status.error, "Cancelled")
+                    case Core.SessionStatus.scheduled.token:
+                        return ("calendar.circle.fill", ColorSystem.Status.info, "Scheduled")
+                    case Core.SessionStatus.noShow.token:
+                        return ("exclamationmark.circle.fill", ColorSystem.Status.warning, "No show")
+                    default:
+                        return ("", .clear, nil)
+                    }
+                }()
+                if !icon.isEmpty {
+                    Image(systemName: icon)
+                        .font(StyleGuide.Typography.micro.weight(.semibold))
+                        .foregroundStyle(badgeColor)
+                        .help(badgeHelp ?? "")
+                }
             }
         }
     }
@@ -623,7 +665,7 @@ struct ResizeHandleView: View {
                     .padding(.horizontal, paddingXSmall)
                     .padding(.vertical, paddingXSmall)
                     .background(Color.accentColor)
-                    .foregroundColor(.white)
+                    .foregroundStyle(Color.white)
                     .cornerRadius(cornerRadiusXSmall)
                     .offset(y: edge == .top ? -20 : 20)
                     .zIndex(1)

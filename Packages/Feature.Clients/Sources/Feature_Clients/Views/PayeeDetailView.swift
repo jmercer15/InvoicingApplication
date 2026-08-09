@@ -3,7 +3,7 @@ import AppKit // For NSColor, NSPasteboard
 import MapKit // For address map view
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import WorkspaceUI
 import Observation
@@ -17,24 +17,30 @@ struct PayeeDetailView: View {
     @State private var viewModel: PayeeDetailViewModel
 
     // UI state only
-    @State private var showingMapSheet: Bool = false
-    @State private var showingAddressEditingSheet: Bool = false
-    
+    @State private var activeSheet: PayeeDetailSheet?
+
+    private enum PayeeDetailSheet: Identifiable {
+        case map
+        case addressEditing
+
+        var id: Self { self }
+    }
+
     // Sorting state
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
-    
+
     // Computed properties from ViewModel
     private var linkedClients: [Client] {
         viewModel.linkedClients
     }
-    
+
     private var filteredInvoices: [Invoice] {
         viewModel.relatedInvoices
     }
-    
+
     // MARK: - Computed Properties
-    
+
     private var sortedClients: [Client] {
         linkedClients.sorted(using: clientsSortOrder)
     }
@@ -98,8 +104,8 @@ struct PayeeDetailView: View {
                     maxLabelWidth: maxLabelWidth,
                     hasAddressData: viewModel.payee.address != nil,
                     addressText: payeeAddressText,
-                    showingMapSheet: $showingMapSheet,
-                    showingAddressEditingSheet: $showingAddressEditingSheet
+                    showingMapSheet: mapSheetBinding,
+                    showingAddressEditingSheet: addressEditingSheetBinding
                 )
                 PayeeDetailLinkedClientsCard(
                     clients: sortedClients,
@@ -116,8 +122,7 @@ struct PayeeDetailView: View {
         }
         .foregroundColor(StyleGuide.Colors.text)
         .task(id: viewModel.payee.id) {
-            let actor = ReferenceDataWorkflowActor(modelContainer: viewModel.modelContext.container)
-            await viewModel.refreshRelatedInvoices(using: actor)
+            await viewModel.refreshRelatedInvoices()
         }
         .alert(viewModel.alertTitle, isPresented: $viewModel.showAlert) {
             Button("OK") {}
@@ -125,18 +130,34 @@ struct PayeeDetailView: View {
         } message: {
             Text(viewModel.alertMessage)
         }
-        .sheet(isPresented: $showingMapSheet) {
-            if let address = viewModel.payee.address {
-                InteractiveMapView(address: viewModel.formattedAddressString(from: address))
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .map:
+                if let address = viewModel.payee.address {
+                    InteractiveMapView(address: viewModel.formattedAddressString(from: address))
+                }
+            case .addressEditing:
+                PayeeAddressEditingSheetView(viewModel: viewModel, isPresented: addressEditingSheetBinding)
             }
         }
-        .sheet(isPresented: $showingAddressEditingSheet) {
-            PayeeAddressEditingSheetView(viewModel: viewModel, isPresented: $showingAddressEditingSheet)
-        }
     }
-    
+
+    private var mapSheetBinding: Binding<Bool> {
+        Binding(
+            get: { activeSheet == .map },
+            set: { activeSheet = $0 ? .map : nil }
+        )
+    }
+
+    private var addressEditingSheetBinding: Binding<Bool> {
+        Binding(
+            get: { activeSheet == .addressEditing },
+            set: { activeSheet = $0 ? .addressEditing : nil }
+        )
+    }
+
     // MARK: - Helper Functions
-    
+
     private var maxLabelWidth: CGFloat {
         RelationshipDetailLabelMetrics.maxWidth(for: [
             "Name:",

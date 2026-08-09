@@ -12,7 +12,8 @@ extension SwiftDataStoreChangeMonitor {
             return
         }
 
-        final class LegacyRevisionTracker: @unchecked Sendable {
+        @MainActor
+        final class LegacyRevisionTracker {
             var revision = 0
         }
         let tracker = LegacyRevisionTracker()

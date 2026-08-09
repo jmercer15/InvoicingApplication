@@ -22,11 +22,21 @@ struct WeekView: View {
     // ════════════════════════════════════════════════════════
 
     var body: some View {
-        HStack(spacing: 0) {
-            weekGrid()
-                .layoutPriority(1)
+        GeometryReader { gridGeo in
+            let layout = WeekViewLayoutMetrics(
+                gridSize: gridGeo.size,
+                timeColumnWidth: timeColumnWidth,
+                headerHeight: headerHeight,
+                allDayStripHeight: viewModel.display.allDayStripHeight,
+                configuredHourHeight: viewModel.hourHeight
+            )
+
+            HStack(spacing: 0) {
+                weekGrid(layout: layout)
+                    .layoutPriority(1)
+            }
+            .clipped()
         }
-        .clipped()
     }
 
     // ════════════════════════════════════════════════════════
@@ -34,42 +44,54 @@ struct WeekView: View {
     // ════════════════════════════════════════════════════════
 
     @ViewBuilder
-    private func weekGrid() -> some View {
-        GeometryReader { gridGeo in
-            let timeW = timeColumnWidth
-            let availW = max(0, gridGeo.size.width) // Clamp to non-negative
-            let colW = max(50, (availW - timeW) / 7)
-            
-            // Calculate effective hour height
-            let allDayStripHeight = viewModel.allDayStripHeight
-            let scrollableAreaHeight = max(0, gridGeo.size.height - headerHeight - allDayStripHeight) // Account for header and all-day strip
-            let minHourHeight = scrollableAreaHeight / 24.0
-            let effectiveHourHeight = max(viewModel.hourHeight, minHourHeight)
-            // Ensure effectiveHourHeight is at least a sensible minimum (e.g., 10) to avoid visual glitches
-            let finalEffectiveHourHeight = max(10, effectiveHourHeight)
+    private func weekGrid(layout: WeekViewLayoutMetrics) -> some View {
+        VStack(spacing: 0) {
+            WeekHeaderView(viewModel: viewModel, timeColumnWidth: layout.timeColumnWidth, dayColumnWidth: layout.dayColumnWidth)
+            AllDayStripView(
+                viewModel: viewModel,
+                interactionHandler: interactionHandler,
+                timeColumnWidth: layout.timeColumnWidth,
+                dayColumnWidth: layout.dayColumnWidth
+            )
 
-            VStack(spacing: 0) {
-                WeekHeaderView(viewModel: viewModel, timeColumnWidth: timeW, dayColumnWidth: colW)
-                AllDayStripView(
-                    viewModel: viewModel,
-                    interactionHandler: interactionHandler,
-                    timeColumnWidth: timeW,
-                    dayColumnWidth: colW
-                )
-
-                ScrollableWeekGrid(
-                    viewModel: viewModel,
-                    interactionHandler: interactionHandler,
-                    timeColumnWidth: timeW,
-                    dayColumnWidth: colW,
-                    availW: availW,
-                    scrollableAreaHeight: scrollableAreaHeight,
-                    finalEffectiveHourHeight: finalEffectiveHourHeight,
-                    indicatorCircleSize: indicatorCircleSize
-                )
-            }
-            .clipShape(RoundedRectangle(cornerRadius: gridCornerRadius))
+            ScrollableWeekGrid(
+                viewModel: viewModel,
+                interactionHandler: interactionHandler,
+                timeColumnWidth: layout.timeColumnWidth,
+                dayColumnWidth: layout.dayColumnWidth,
+                availW: layout.availableWidth,
+                scrollableAreaHeight: layout.scrollableAreaHeight,
+                finalEffectiveHourHeight: layout.finalEffectiveHourHeight,
+                indicatorCircleSize: indicatorCircleSize
+            )
         }
+        .clipShape(RoundedRectangle(cornerRadius: gridCornerRadius))
+    }
+}
+
+private struct WeekViewLayoutMetrics {
+    let timeColumnWidth: CGFloat
+    let dayColumnWidth: CGFloat
+    let availableWidth: CGFloat
+    let scrollableAreaHeight: CGFloat
+    let finalEffectiveHourHeight: CGFloat
+
+    init(
+        gridSize: CGSize,
+        timeColumnWidth: CGFloat,
+        headerHeight: CGFloat,
+        allDayStripHeight: CGFloat,
+        configuredHourHeight: CGFloat
+    ) {
+        self.timeColumnWidth = timeColumnWidth
+        availableWidth = max(0, gridSize.width)
+        dayColumnWidth = max(50, (availableWidth - timeColumnWidth) / 7)
+
+        let scrollableHeight = max(0, gridSize.height - headerHeight - allDayStripHeight)
+        scrollableAreaHeight = scrollableHeight
+        let minHourHeight = scrollableHeight / 24.0
+        let effectiveHourHeight = max(configuredHourHeight, minHourHeight)
+        finalEffectiveHourHeight = max(10, effectiveHourHeight)
     }
 }
 
@@ -90,8 +112,9 @@ private struct ScrollableWeekGrid: View {
             ScrollView([.vertical], showsIndicators: false) {
                 VStack(spacing: 0) {
                     let currentDate = Date()
-                    let showIndicator = viewModel.currentWeekDays.contains { day in
-                        Calendar.current.isDate(day, inSameDayAs: currentDate)
+                    let weekIdentities = viewModel.currentWeekDayIdentities
+                    let showIndicator = weekIdentities.contains { identity in
+                        Calendar.current.isDate(identity.resolvedDate(), inSameDayAs: currentDate)
                     }
                     
                     // Use finalEffectiveHourHeight for calculations
@@ -107,7 +130,8 @@ private struct ScrollableWeekGrid: View {
                             GlobalHourGridView(effectiveHourHeight: finalEffectiveHourHeight, width: dayColumnWidth * 7)
                                 .allowsHitTesting(false)
                             HStack(spacing: 0) {
-                                ForEach(viewModel.currentWeekDays, id: \.self) { day in
+                                ForEach(weekIdentities) { identity in
+                                    let day = identity.resolvedDate()
                                     // Pass finalEffectiveHourHeight down
                                     DayColumnView(
                                         day: day,
@@ -142,25 +166,21 @@ private struct ScrollableWeekGrid: View {
                         }
                     }
                 }
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ScrollOffsetPreferenceKey.self,
-                            value: geo.frame(in: .named("CalendarScrollView")).minY
-                        )
-                    }
-                )
             }
-            .coordinateSpace(name: "CalendarScrollView")
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { minY in
-                let topY = -minY
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, contentOffsetY in
+                // ScrollGeometry reports a positive content offset while scrolling down.
+                // Keep timeline coordinates in that same space so items below midnight
+                // remain in the visible range.
+                let topY = max(0, contentOffsetY)
                 let bottomY = topY + scrollableAreaHeight
                 let startHour = max(0, topY / finalEffectiveHourHeight)
                 let endHour = min(24, bottomY / finalEffectiveHourHeight)
-                
+
                 let buffer: CGFloat = 2.0
                 let newRange = max(0, startHour - buffer)...min(24, endHour + buffer)
-                if abs(newRange.lowerBound - visibleHourRange.lowerBound) > 1 || 
+                if abs(newRange.lowerBound - visibleHourRange.lowerBound) > 1 ||
                    abs(newRange.upperBound - visibleHourRange.upperBound) > 1 {
                     visibleHourRange = newRange
                 }
@@ -170,7 +190,7 @@ private struct ScrollableWeekGrid: View {
             .onAppear {
                 let currentHour = Calendar.current.component(.hour, from: Date())
                 let scrollTarget = max(0, currentHour - 2)
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     proxy.scrollTo(scrollTarget, anchor: .top)
                 }
             }
@@ -217,12 +237,5 @@ struct GlobalHourGridView: View {
         }
         .frame(width: width, height: 24 * effectiveHourHeight)
         .allowsHitTesting(false)
-    }
-}
-
-private struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat { 0 }
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }

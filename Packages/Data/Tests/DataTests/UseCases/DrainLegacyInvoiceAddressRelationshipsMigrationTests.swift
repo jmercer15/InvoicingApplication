@@ -1,27 +1,22 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
+import PersistenceModels
 @testable import Data
 @testable import Core
 
 @MainActor
-final class DrainLegacyInvoiceAddressRelationshipsMigrationTests: XCTestCase {
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
+@Suite struct DrainLegacyInvoiceAddressRelationshipsMigrationTests {
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
+        self.modelContainer = container
+        self.modelContext = context
     }
 
-    override func tearDown() async throws {
-        modelContext = nil
-        modelContainer = nil
-        try await super.tearDown()
-    }
-
-    func testExecuteBackfillsMissingSnapshotsAndClearsLegacyRelationships() throws {
+    @Test func ExecuteBackfillsMissingSnapshotsAndClearsLegacyRelationships() throws {
         let invoice = Invoice(invoiceNumber: "INV-003")
         invoice.businessAddress = makeAddress(streetNumber: "10", streetName: "Queen St", city: "Brisbane", state: "QLD", postcode: "4000")
         invoice.clientAddress = makeAddress(streetNumber: "11", streetName: "George St", city: "Sydney", state: "NSW", postcode: "2000")
@@ -33,17 +28,17 @@ final class DrainLegacyInvoiceAddressRelationshipsMigrationTests: XCTestCase {
 
         try DrainLegacyInvoiceAddressRelationships_v1.execute(modelContext: modelContext)
 
-        XCTAssertEqual(invoice.businessAddressSnapshot?.streetName, "Queen St")
-        XCTAssertEqual(invoice.clientAddressSnapshot?.city, "Sydney")
-        XCTAssertEqual(invoice.billToAddressSnapshot?.state, "VIC")
-        XCTAssertEqual(invoice.payeeAddressSnapshot?.postcode, "6000")
-        XCTAssertNil(invoice.businessAddress)
-        XCTAssertNil(invoice.clientAddress)
-        XCTAssertNil(invoice.billToAddress)
-        XCTAssertNil(invoice.payeeAddress)
+        #expect(invoice.businessAddressSnapshot?.streetName == "Queen St")
+        #expect(invoice.clientAddressSnapshot?.city == "Sydney")
+        #expect(invoice.billToAddressSnapshot?.state == "VIC")
+        #expect(invoice.payeeAddressSnapshot?.postcode == "6000")
+        #expect(invoice.businessAddress == nil)
+        #expect(invoice.clientAddress == nil)
+        #expect(invoice.billToAddress == nil)
+        #expect(invoice.payeeAddress == nil)
     }
 
-    func testExecutePreservesExistingSnapshotsWhileClearingLegacyRelationships() throws {
+    @Test func ExecutePreservesExistingSnapshotsWhileClearingLegacyRelationships() throws {
         let invoice = Invoice(invoiceNumber: "INV-004")
         invoice.businessAddress = makeAddress(streetNumber: "20", streetName: "Legacy Ln", city: "Brisbane", state: "QLD", postcode: "4000")
         invoice.businessAddressSnapshot = AddressSnapshot(
@@ -67,9 +62,9 @@ final class DrainLegacyInvoiceAddressRelationshipsMigrationTests: XCTestCase {
 
         try DrainLegacyInvoiceAddressRelationships_v1.execute(modelContext: modelContext)
 
-        XCTAssertEqual(invoice.businessAddressSnapshot?.streetName, "Snapshot Rd")
-        XCTAssertEqual(invoice.businessAddressSnapshot?.state, "ACT")
-        XCTAssertNil(invoice.businessAddress)
+        #expect(invoice.businessAddressSnapshot?.streetName == "Snapshot Rd")
+        #expect(invoice.businessAddressSnapshot?.state == "ACT")
+        #expect(invoice.businessAddress == nil)
     }
 
     private func makeAddress(

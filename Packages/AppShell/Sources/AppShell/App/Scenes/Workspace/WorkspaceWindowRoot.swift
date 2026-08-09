@@ -13,6 +13,7 @@ struct WorkspaceWindowRoot: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ApplicationWorkspaceContext.self) private var workspaceContext
+    @Environment(WorkspaceIntentDeliveryCenter.self) private var intentDelivery
     @State private var sceneSession: WorkspaceSceneSession?
     @State private var appDependencies: AppDependencies
 
@@ -47,14 +48,32 @@ struct WorkspaceWindowRoot: View {
             )
             sceneSession = session
             workspaceContext.activate(session)
+            WorkspaceIntentNavigationDelivery.applyPendingIfNeeded(
+                delivery: intentDelivery,
+                sceneSession: session,
+                workspaceContext: workspaceContext
+            )
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, let sceneSession else { return }
             workspaceContext.activate(sceneSession)
+            WorkspaceIntentNavigationDelivery.applyPendingIfNeeded(
+                delivery: intentDelivery,
+                sceneSession: sceneSession,
+                workspaceContext: workspaceContext
+            )
         }
         .onDisappear {
             guard let sceneSession else { return }
             workspaceContext.release(sceneSession)
+        }
+        .onChange(of: intentDelivery.pendingNavigation) { _, pending in
+            guard pending != nil, let sceneSession else { return }
+            WorkspaceIntentNavigationDelivery.applyPendingIfNeeded(
+                delivery: intentDelivery,
+                sceneSession: sceneSession,
+                workspaceContext: workspaceContext
+            )
         }
     }
 }

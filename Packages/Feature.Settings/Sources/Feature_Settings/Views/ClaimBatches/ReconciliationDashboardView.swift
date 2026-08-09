@@ -1,5 +1,6 @@
 import Core
-import Data
+import PersistenceModels
+import SharedUI
 import SwiftData
 import SwiftUI
 import Observation
@@ -39,14 +40,14 @@ public struct ReconciliationDashboardView: View {
         return Group {
             if filtered.isEmpty {
                 Text("No \(selectedTab.rawValue.lowercased()) lines.")
-                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(filtered) {
                     TableColumn("Reference") { line in Text(line.claimReference ?? "-") }
                     TableColumn("Support") { line in Text(line.supportNumber) }
                     TableColumn("Status") { line in Text(line.submissionStatus ?? "-") }
-                    TableColumn("Paid") { line in Text(line.ndiaPaidAmount.map { String(format: "%.2f", $0) } ?? "-") }
+                    TableColumn("Paid") { line in Text(line.ndiaPaidAmount.map { CurrencyFormatting.display($0) } ?? "-") }
                     TableColumn("Error") { line in Text(line.ndiaErrorCode ?? line.ndiaErrorMessage ?? "-") }
                     TableColumn("") { line in
                         if let draftLineId = line.draftLineId, onOpenDraft != nil {

@@ -1,17 +1,16 @@
-import SwiftData
-import Data
+import DataInterfaces
 
 @MainActor
 public enum NDISWorkspaceFactory {
     public struct Dependencies {
-        public let modelContext: ModelContext
-        public let storeChangeMonitor: SwiftDataStoreChangeMonitor?
+        public let catalogueFetching: any NDISCatalogueFetching
+        public let storeChangeMonitor: (any StoreChangeMonitoring)?
 
         public init(
-            modelContext: ModelContext,
-            storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+            catalogueFetching: any NDISCatalogueFetching,
+            storeChangeMonitor: (any StoreChangeMonitoring)? = nil
         ) {
-            self.modelContext = modelContext
+            self.catalogueFetching = catalogueFetching
             self.storeChangeMonitor = storeChangeMonitor
         }
     }
@@ -20,7 +19,7 @@ public enum NDISWorkspaceFactory {
         _ dependencies: Dependencies
     ) -> NDISContainerViewModel {
         NDISContainerViewModel(
-            modelContext: dependencies.modelContext,
+            catalogueFetching: dependencies.catalogueFetching,
             storeChangeMonitor: dependencies.storeChangeMonitor
         )
     }

@@ -1,5 +1,4 @@
 import SwiftUI
-import Core
 import SharedUI
 
 extension EditingPanel {
@@ -13,10 +12,9 @@ extension EditingPanel {
         }
     }
     
-    // MARK: - Priority Status Content
-    internal var priorityStatusContent: some View {
+    // MARK: - Status Content (session)
+    internal var sessionStatusContent: some View {
         Group {
-            priorityLevelSection
             currentStatusSection
             sessionInfoCard
         }
@@ -38,13 +36,12 @@ extension EditingPanel {
                 HStack {
                     Text("Current Status")
                         .font(StyleGuide.Typography.bodyMedium)
-                        .fontWeight(.medium)
                         .foregroundStyle(BillingHubTheme.Palette.textSecondary)
                     Spacer()
                     StatusIndicator(
                         color: data.accentColor,
                         label: "", // Label managed by HStack
-                        count: data.workflowStatus.rawValue.capitalized
+                        count: statusText(for: data.workflowStatus)
                     )
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -54,7 +51,7 @@ extension EditingPanel {
                     Text(data.date)
                 } label: {
                     Text("Date")
-                        .fontWeight(.medium)
+                        .font(StyleGuide.Typography.bodyMedium)
                 }
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -69,7 +66,7 @@ extension EditingPanel {
                              .monospacedDigit()
                     } label: {
                         Text("Overdue")
-                            .fontWeight(.medium)
+                            .font(StyleGuide.Typography.bodyMedium)
                     }
                 }
             }
@@ -83,7 +80,7 @@ extension EditingPanel {
                 .truncationMode(.tail)
         } label: {
             Text("Current Status")
-                .fontWeight(.medium)
+                .font(StyleGuide.Typography.bodyMedium)
         }
         .help("View the current position of this record in the billing workflow")
     }
@@ -97,7 +94,7 @@ extension EditingPanel {
                         .truncationMode(.tail)
                 } label: {
                     Text("Date")
-                        .fontWeight(.medium)
+                        .font(StyleGuide.Typography.bodyMedium)
                 }
                 
                 LabeledContent {
@@ -106,7 +103,7 @@ extension EditingPanel {
                         .lineLimit(1)
                 } label: {
                     Text("Start Time")
-                        .fontWeight(.medium)
+                        .font(StyleGuide.Typography.bodyMedium)
                 }
                 
                 LabeledContent {
@@ -115,7 +112,7 @@ extension EditingPanel {
                         .lineLimit(1)
                 } label: {
                     Text("End Time")
-                        .fontWeight(.medium)
+                        .font(StyleGuide.Typography.bodyMedium)
                 }
             }
         }

@@ -1,11 +1,11 @@
 import Core
 import SwiftData
 @testable import Data
-import XCTest
-
+import Testing
+import PersistenceModels
 @MainActor
-final class BackfillModelActorTests: XCTestCase {
-    func testBackfillCompletesBeforeStatusTokenQueriesRun() async throws {
+@Suite struct BackfillModelActorTests {
+    @Test func BackfillCompletesBeforeStatusTokenQueriesRun() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let session = Session(title: "Completed session", status: .completed)
         session.statusToken = ""
@@ -19,9 +19,9 @@ final class BackfillModelActorTests: XCTestCase {
         let actor = BackfillModelActor(modelContainer: container)
         try await actor.backfillStatusTokensIfNeeded()
 
-        let refreshedSession = try XCTUnwrap(context.fetch(FetchDescriptor<Session>()).first)
-        let refreshedInvoice = try XCTUnwrap(context.fetch(FetchDescriptor<Invoice>()).first)
-        XCTAssertEqual(refreshedSession.statusToken, SessionStatus.completed.rawValue)
-        XCTAssertEqual(refreshedInvoice.statusToken, InvoiceStatus.readyToSend.rawValue)
+        let refreshedSession = try try #require(context.fetch(FetchDescriptor<Session>()).first)
+        let refreshedInvoice = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        #expect(refreshedSession.statusToken == SessionStatus.completed.rawValue)
+        #expect(refreshedInvoice.statusToken == InvoiceStatus.readyToSend.rawValue)
     }
 }

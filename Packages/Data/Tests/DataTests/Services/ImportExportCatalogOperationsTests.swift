@@ -2,11 +2,11 @@ import Core
 @testable import Data
 import SwiftData
 import Foundation
-import XCTest
-
+import Testing
+import PersistenceModels
 @MainActor
-final class ImportExportCatalogOperationsTests: XCTestCase {
-    func testImportSpecificDataFromFileRejectsUnsupportedSourceCombination() async throws {
+@Suite struct ImportExportCatalogOperationsTests {
+    @Test func ImportSpecificDataFromFileRejectsUnsupportedSourceCombination() async throws {
         let (container, _) = try ModelContainerFactory.makeInMemoryContext()
         let importer = DataImporterActor(modelContainer: container)
         let exporter = DataExporterActor(modelContainer: container)
@@ -16,22 +16,23 @@ final class ImportExportCatalogOperationsTests: XCTestCase {
         
         do {
             _ = try await catalog.importSpecificDataFromFile(url: tempURL, source: .allData)
-            XCTFail("Expected unsupported file type error.")
+            Issue.record("Expected unsupported file type error.")
         } catch {
             guard let catalogError = error as? ImportExportCatalogError else {
-                return XCTFail("Expected ImportExportCatalogError.")
+                Issue.record("Expected ImportExportCatalogError.")
+                return
             }
             if case let .unsupportedFileExtension(source, fileExtension, supportedExtensions) = catalogError {
-                XCTAssertEqual(source, .allData)
-                XCTAssertEqual(fileExtension, tempURL.pathExtension.lowercased())
-                XCTAssertEqual(supportedExtensions.sorted(), ["json"])
+                #expect(source == .allData)
+                #expect(fileExtension == tempURL.pathExtension.lowercased())
+                #expect(supportedExtensions.sorted() == ["json"])
             } else {
-                XCTFail("Expected unsupported file extension error.")
+                Issue.record("Expected unsupported file extension error.")
             }
         }
     }
     
-    func testImportSpecificDataFromFileAllowsCsvForNDISImport() async throws {
+    @Test func ImportSpecificDataFromFileAllowsCsvForNDISImport() async throws {
         let (container, _) = try ModelContainerFactory.makeInMemoryContext()
         let importer = DataImporterActor(modelContainer: container)
         let exporter = DataExporterActor(modelContainer: container)
@@ -41,22 +42,23 @@ final class ImportExportCatalogOperationsTests: XCTestCase {
         
         do {
             _ = try await catalog.importSpecificDataFromFile(url: tempURL, source: .ndisItems)
-            XCTFail("Expected unsupported file type error for NDIS import.")
+            Issue.record("Expected unsupported file type error for NDIS import.")
         } catch {
             guard let catalogError = error as? ImportExportCatalogError else {
-                return XCTFail("Expected ImportExportCatalogError.")
+                Issue.record("Expected ImportExportCatalogError.")
+                return
             }
             if case let .unsupportedFileExtension(source, fileExtension, supportedExtensions) = catalogError {
-                XCTAssertEqual(source, .ndisItems)
-                XCTAssertEqual(fileExtension, tempURL.pathExtension.lowercased())
-                XCTAssertEqual(Set(supportedExtensions), ["csv", "xls", "xlsx"])
+                #expect(source == .ndisItems)
+                #expect(fileExtension == tempURL.pathExtension.lowercased())
+                #expect(Set(supportedExtensions) == ["csv", "xls", "xlsx"])
             } else {
-                XCTFail("Expected unsupported file extension error.")
+                Issue.record("Expected unsupported file extension error.")
             }
         }
     }
 
-    func testImportSpecificDataFromFileImportsVersionedNDISCSVRows() async throws {
+    @Test func ImportSpecificDataFromFileImportsVersionedNDISCSVRows() async throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
         let importer = DataImporterActor(modelContainer: container)
         let exporter = DataExporterActor(modelContainer: container)
@@ -76,11 +78,11 @@ Support Item Number,Support Item Name,Unit,Start date,End Date
         let uniqueVersionIdentifiers = Set(items.map(\.versionIdentifier))
         let importedRows = items.filter { $0.itemNumber == "100001" && $0.name == "Support item A" }
 
-        XCTAssertEqual(result.source, .ndisItems)
-        XCTAssertEqual(result.successful, 2)
-        XCTAssertEqual(result.failed, 0)
-        XCTAssertEqual(uniqueVersionIdentifiers.count, 2)
-        XCTAssertEqual(importedRows.count, 2)
+        #expect(result.source == .ndisItems)
+        #expect(result.successful == 2)
+        #expect(result.failed == 0)
+        #expect(uniqueVersionIdentifiers.count == 2)
+        #expect(importedRows.count == 2)
     }
     
     private func makeTemporaryFileURL(fileName: String = "incompatible-import.txt") -> URL {

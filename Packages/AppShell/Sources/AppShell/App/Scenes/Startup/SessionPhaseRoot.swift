@@ -1,9 +1,11 @@
 import SwiftUI
+import Data
 import SharedUI
 
 struct SessionPhaseRoot<ReadyContent: View, LoadingContent: View>: View {
     let phase: AppSession.Phase
     let retry: () async -> Void
+    let startFresh: () async -> Void
     @ViewBuilder let loading: () -> LoadingContent
     @ViewBuilder let ready: (AppRuntime) -> ReadyContent
 
@@ -14,16 +16,18 @@ struct SessionPhaseRoot<ReadyContent: View, LoadingContent: View>: View {
         case .starting:
             loading()
         case .failed(let error):
-            StartupFailureView(error: error, retry: retry)
+            StartupFailureView(error: error, retry: retry, startFresh: startFresh)
         }
     }
 }
 
 struct WorkspaceStartupLoadingView: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 40
+
     var body: some View {
         VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
             Image(systemName: "doc.text.fill")
-                .font(.system(size: 40))
+                .font(.system(size: iconSize))
                 .foregroundStyle(StyleGuide.Colors.primary)
             
             ProgressView("Loading Application...")
@@ -52,6 +56,7 @@ struct SettingsStartupLoadingView: View {
 struct StartupFailureView: View {
     let error: AppStartupError
     let retry: () async -> Void
+    let startFresh: () async -> Void
 
     var body: some View {
         VStack {
@@ -79,6 +84,13 @@ struct StartupFailureView: View {
                     Text("Retry")
                 }
                 .buttonStyle(.borderedProminent)
+
+                if canStartFresh {
+                    Button("Start Fresh", role: .destructive) {
+                        Task { await startFresh() }
+                    }
+                    .accessibilityHint("Archives incompatible app data without deleting it, then creates an empty store.")
+                }
             }
             .standardCardStyle()
             .frame(maxWidth: 400)
@@ -95,5 +107,13 @@ struct StartupFailureView: View {
             text += ". \(suggestion)"
         }
         return text
+    }
+
+    private var canStartFresh: Bool {
+        if let bootstrapError = error.underlyingError as? AppDatabase.BootstrapError,
+           case .existingStoreRequiresFreshStart = bootstrapError {
+            return true
+        }
+        return false
     }
 }

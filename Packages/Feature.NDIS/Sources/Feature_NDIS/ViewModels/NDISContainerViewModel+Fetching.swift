@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import PersistenceModels
+import DataInterfaces
 
 extension NDISContainerViewModel {
 
@@ -42,9 +43,7 @@ extension NDISContainerViewModel {
         defer { isAnalyzingChanges = false }
         
         do {
-            let container = modelContext.container
-            let actor = NDISVersioningActor(modelContainer: container)
-            let summary = try await actor.getChangesSummary()
+            let summary = try await catalogueFetching.getChangesSummary()
             self.changesSummary = summary
             self.changesError = nil
         } catch {
@@ -59,9 +58,7 @@ extension NDISContainerViewModel {
         defer { isAnalyzingChanges = false }
         
         do {
-            let container = modelContext.container
-            let actor = NDISVersioningActor(modelContainer: container)
-            let changes = try await actor.analyzeItemChanges(itemNumber: itemNumber)
+            let changes = try await catalogueFetching.analyzeItemChanges(itemNumber: itemNumber)
             self.itemChanges = changes
         } catch {
             print("Error loading item history for \(itemNumber): \(error)")

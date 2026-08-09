@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -14,6 +15,7 @@ public struct RelationshipsDetailColumn: View {
     @Query(sort: \PlanManager.name) private var planManagers: [PlanManager]
 
     @State private var showingDeleteAlert: Bool = false
+    @State private var showingClientCascadeDeleteConfirmation: Bool = false
     @State private var deleteAlertTitle: String = ""
     @State private var deleteAlertMessage: String = ""
     @State private var deleteAction: (() -> Void)?
@@ -40,6 +42,27 @@ public struct RelationshipsDetailColumn: View {
             } message: {
                 Text(deleteAlertMessage)
             }
+            .confirmationDialog(
+                "Delete Client and Sessions",
+                isPresented: $showingClientCascadeDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Client and All Sessions", role: .destructive) {
+                    performDeleteClient(deleteSessions: true)
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text(clientCascadeDeleteMessage)
+            }
+    }
+
+    private var clientCascadeDeleteMessage: String {
+        guard let client = resolvedClient else {
+            return "This client has linked sessions. Deleting the client and all sessions cannot be undone."
+        }
+        let count = client.sessions?.count ?? 0
+        let noun = count == 1 ? "session" : "sessions"
+        return "This client has \(count) linked \(noun). Deleting the client and all sessions cannot be undone."
     }
 
     @ViewBuilder
@@ -59,7 +82,7 @@ public struct RelationshipsDetailColumn: View {
                     modelContext: swiftDataContext,
                     onOpenInvoice: onOpenInvoice
                 )
-                    .id("client_\(objectID)")
+                    .id("client_\(objectID)_\(viewModel.dataRevision)")
             }
         case .payee(let objectID):
             RelationshipResolvedDetailView(
@@ -76,7 +99,7 @@ public struct RelationshipsDetailColumn: View {
                     onOpenInvoice: onOpenInvoice,
                     onOpenClient: onOpenClient
                 )
-                    .id("payee_\(objectID)")
+                    .id("payee_\(objectID)_\(viewModel.dataRevision)")
             }
         case .planManager(let objectID):
             RelationshipResolvedDetailView(
@@ -93,7 +116,7 @@ public struct RelationshipsDetailColumn: View {
                     onOpenInvoice: onOpenInvoice,
                     onOpenClient: onOpenClient
                 )
-                    .id("planManager_\(objectID)")
+                    .id("planManager_\(objectID)_\(viewModel.dataRevision)")
             }
         case .newClient:
             ClientDetailView(modelContext: swiftDataContext) { viewModel.detailState = .none }
@@ -156,25 +179,36 @@ public struct RelationshipsDetailColumn: View {
     }
 
     private func confirmDeleteClient(with id: UUID) {
+        guard let entity = resolvedClient, entity.id == id else { return }
+        let sessionCount = entity.sessions?.count ?? 0
+        if sessionCount > 0 {
+            showingClientCascadeDeleteConfirmation = true
+            return
+        }
+
         deleteAlertTitle = "Delete Client"
         deleteAlertMessage = "Are you sure you want to delete this client? This action cannot be undone."
         deleteAction = {
-            Task {
-                do {
-                    guard let entity = resolvedClient, entity.id == id else {
-                        print("❌ Error deleting client: resolved model missing")
-                        return
-                    }
-                    try await viewModel.deleteClient(entity)
-                    await MainActor.run {
-                        viewModel.detailState = .none
-                    }
-                } catch {
-                    print("❌ Error deleting client: \(error)")
-                }
-            }
+            performDeleteClient(deleteSessions: false)
         }
         showingDeleteAlert = true
+    }
+
+    private func performDeleteClient(deleteSessions: Bool) {
+        Task {
+            do {
+                guard let entity = resolvedClient else {
+                    print("❌ Error deleting client: resolved model missing")
+                    return
+                }
+                try await viewModel.deleteClient(entity, deleteSessions: deleteSessions)
+                await MainActor.run {
+                    viewModel.detailState = .none
+                }
+            } catch {
+                print("❌ Error deleting client: \(error)")
+            }
+        }
     }
 
     private func confirmDeletePayee(with id: UUID) {

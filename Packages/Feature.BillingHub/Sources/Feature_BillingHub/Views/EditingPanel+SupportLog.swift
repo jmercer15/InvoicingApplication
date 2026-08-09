@@ -1,9 +1,33 @@
 import SwiftUI
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 
 extension EditingPanel {
+
+    internal var supportLogDisclosureSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isSupportLogExpanded) {
+                supportLogContent
+            } label: {
+                VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingTiny) {
+                    Label("Support Log", systemImage: "checklist")
+                        .font(StyleGuide.Typography.bodyMedium)
+                    Text(supportLogDisclosureSummary)
+                        .font(StyleGuide.Typography.itemSubtitle)
+                        .foregroundStyle(BillingHubTheme.Palette.textSecondary)
+                }
+            }
+        }
+    }
+
+    private var supportLogDisclosureSummary: String {
+        let hasExistingContent = !supportLogDraft.participantName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !supportLogDraft.serviceDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasExistingContent
+            ? "Existing service evidence — expand to review or update."
+            : "Optional service evidence and participant attestation."
+    }
     
     @ViewBuilder
     internal var supportLogContent: some View {
@@ -15,6 +39,13 @@ extension EditingPanel {
             TextField(text: $supportLogDraft.location) { Text("Location") }
             DatePicker("Delivered from", selection: $supportLogDraft.deliveredFrom, displayedComponents: [.date, .hourAndMinute])
             DatePicker("Delivered to", selection: $supportLogDraft.deliveredTo, displayedComponents: [.date, .hourAndMinute])
+            Stepper(
+                "Quantity (hours): \(supportLogDraft.quantityHours.formatted(.number.precision(.fractionLength(0...2))))",
+                value: $supportLogDraft.quantityHours,
+                in: 0.25...24,
+                step: 0.25
+            )
+            .help("Billable quantity in hours for this support log")
             TextField(text: $supportLogDraft.deliveredBy) { Text("Delivered by") }
             TextField(text: $supportLogDraft.attestedBy) { Text("Attested by") }
             DatePicker("Attested at", selection: $supportLogDraft.attestedAt, displayedComponents: [.date, .hourAndMinute])
@@ -59,8 +90,11 @@ extension EditingPanel {
 
     internal func saveSupportLog(for sessionId: UUID) async {
         do {
-            _ = try await viewModel.upsertSupportLog(sessionId: sessionId, draft: supportLogDraft)
-            supportLogError = nil
+            let saved = try await viewModel.upsertSupportLog(sessionId: sessionId, draft: supportLogDraft)
+            if saved {
+                supportLogError = nil
+            }
+            // Soft-lock returns false and stages a confirm — leave the form open / uncleared.
         } catch {
             supportLogError = error.localizedDescription
         }

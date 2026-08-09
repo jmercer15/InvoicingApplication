@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import Core
+import PersistenceModels
 import DataInterfaces
 
 /// Read-only invoice aggregates on the SwiftData model-actor executor (e.g. numbering without scanning on the UI context).

@@ -12,12 +12,13 @@ let package = Package(
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        .package(path: "../Core")
+        .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
     ],
     targets: [
         .target(
             name: "SharedUI",
-            dependencies: ["Core"],
+            dependencies: ["Core", "PersistenceModels"],
             resources: [
                 .process("Assets")
             ],

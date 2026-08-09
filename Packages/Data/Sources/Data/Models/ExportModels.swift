@@ -119,7 +119,7 @@ public struct ExportModels {
         public var description: String
         public var unit: String
         public var rate: String?
-        public var rateValue: Double?
+        public var rateValue: Decimal?
         public var ndisCode: String?
         
         enum CodingKeys: String, CodingKey {
@@ -131,7 +131,7 @@ public struct ExportModels {
             case ndisCode = "ndis_code"
         }
         
-        public init(name: String, description: String, unit: String, rate: String?, rateValue: Double?, ndisCode: String?) {
+        public init(name: String, description: String, unit: String, rate: String?, rateValue: Decimal?, ndisCode: String?) {
             self.name = name
             self.description = description
             self.unit = unit
@@ -145,12 +145,12 @@ public struct ExportModels {
         public let itemNumber: String
         public let description: String?
         public let rate: String?
-        public let rateValue: Double?
+        public let rateValue: Decimal?
         public let unit: String?
         public let category: String?
         public let status: String?
         
-        public init(itemNumber: String, description: String?, rate: String?, rateValue: Double?, unit: String?, category: String?, status: String?) {
+        public init(itemNumber: String, description: String?, rate: String?, rateValue: Decimal?, unit: String?, category: String?, status: String?) {
             self.itemNumber = itemNumber
             self.description = description
             self.rate = rate
@@ -167,10 +167,10 @@ public struct ExportModels {
         public let itemDescription: String
         public let serviceDate: Date
         public let itemCode: String?
-        public let quantity: Double
+        public let quantity: Decimal
         public let unit: String?
-        public let unitPrice: Double
-        public let taxRate: Double
+        public let unitPrice: Decimal
+        public let taxRate: Decimal
         public let gstCode: String?
     }
 
@@ -180,14 +180,14 @@ public struct ExportModels {
         public let dateIssuedString: String?
         public let dateDue: Date?
         public let dateDueString: String?
-        public let totalAmount: Double?
+        public let totalAmount: Decimal?
         public let totalAmountString: String?
         public let status: String?
         public let clientName: String?
         public let currencyCode: String
-        public let taxRate: Double
-        public let discount: Double
-        public let creditApplied: Double
+        public let taxRate: Decimal
+        public let discount: Decimal
+        public let creditApplied: Decimal
         public let paymentTerms: String?
         public let notes: String?
         public let paidDate: Date?
@@ -230,14 +230,14 @@ public struct ExportModels {
             dateIssuedString: String?,
             dateDue: Date?,
             dateDueString: String?,
-            totalAmount: Double?,
+            totalAmount: Decimal?,
             totalAmountString: String?,
             status: String?,
             clientName: String?,
             currencyCode: String,
-            taxRate: Double,
-            discount: Double,
-            creditApplied: Double,
+            taxRate: Decimal,
+            discount: Decimal,
+            creditApplied: Decimal,
             paymentTerms: String?,
             notes: String?,
             paidDate: Date?,
@@ -307,14 +307,14 @@ public struct ExportModels {
             dateIssuedString = try container.decodeIfPresent(String.self, forKey: .dateIssuedString)
             dateDue = try container.decodeIfPresent(Date.self, forKey: .dateDue)
             dateDueString = try container.decodeIfPresent(String.self, forKey: .dateDueString)
-            totalAmount = try container.decodeIfPresent(Double.self, forKey: .totalAmount)
+            totalAmount = Self.decodeOptionalLegacyDecimal(from: container, forKey: .totalAmount)
             totalAmountString = try container.decodeIfPresent(String.self, forKey: .totalAmountString)
             status = try container.decodeIfPresent(String.self, forKey: .status)
             clientName = try container.decodeIfPresent(String.self, forKey: .clientName)
             currencyCode = try container.decodeIfPresent(String.self, forKey: .currencyCode) ?? "AUD"
-            taxRate = try container.decodeIfPresent(Double.self, forKey: .taxRate) ?? 0
-            discount = try container.decodeIfPresent(Double.self, forKey: .discount) ?? 0
-            creditApplied = try container.decodeIfPresent(Double.self, forKey: .creditApplied) ?? 0
+            taxRate = Self.decodeLegacyDecimal(from: container, forKey: .taxRate)
+            discount = Self.decodeLegacyDecimal(from: container, forKey: .discount)
+            creditApplied = Self.decodeLegacyDecimal(from: container, forKey: .creditApplied)
             paymentTerms = try container.decodeIfPresent(String.self, forKey: .paymentTerms)
             notes = try container.decodeIfPresent(String.self, forKey: .notes)
             paidDate = try container.decodeIfPresent(Date.self, forKey: .paidDate)
@@ -338,6 +338,30 @@ public struct ExportModels {
             bankAccountNumber = try container.decodeIfPresent(String.self, forKey: .bankAccountNumber)
             editorConfiguration = try container.decodeIfPresent(Data.self, forKey: .editorConfiguration)
             items = try container.decodeIfPresent([InvoiceItemJSON].self, forKey: .items) ?? []
+        }
+
+        private static func decodeLegacyDecimal(
+            from container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys
+        ) -> Decimal {
+            if let decimal = try? container.decodeIfPresent(Decimal.self, forKey: key) {
+                return decimal
+            }
+            let legacy = (try? container.decodeIfPresent(Double.self, forKey: key)) ?? nil
+            return Decimal(legacy ?? 0)
+        }
+
+        private static func decodeOptionalLegacyDecimal(
+            from container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys
+        ) -> Decimal? {
+            if let decimal = try? container.decodeIfPresent(Decimal.self, forKey: key) {
+                return decimal
+            }
+            if let legacy = try? container.decodeIfPresent(Double.self, forKey: key) {
+                return Decimal(legacy)
+            }
+            return nil
         }
     }
     

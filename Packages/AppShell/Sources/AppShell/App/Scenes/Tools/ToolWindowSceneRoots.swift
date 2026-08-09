@@ -61,11 +61,13 @@ struct ActivitySceneRoot: View {
     let runtime: AppRuntime
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
     @Environment(ApplicationWorkspaceContext.self) private var workspaceContext
     @Environment(ToolWindowPresenceRegistry.self) private var toolWindowPresence
     @State private var fallbackSession: WorkspaceSceneSession?
     @State private var toolWindowContext = ToolWindowContext(kind: .activityMonitor)
     @State private var appDependencies: AppDependencies
+    @State private var pendingCrossFeatureNavigation: ActivityCrossFeatureNavigation.Destination?
 
     init(runtime: AppRuntime) {
         self.runtime = runtime
@@ -74,16 +76,18 @@ struct ActivitySceneRoot: View {
 
     @ViewBuilder
     var body: some View {
-        let session = workspaceContext.activeWorkspaceSceneSession ?? fallbackSession
+        // Display may use fallback for in-window Activity UI; cross-feature jumps must not.
+        let displaySession = workspaceContext.activeWorkspaceSceneSession ?? fallbackSession
         Group {
-            if let session {
-                let entityNavigation = makeWorkspaceEntityNavigationHandlers(
-                    navigationManager: session.navigationManager
-                )
+            if let displaySession {
                 ActivityPlaceholderView(
-                    billingHubViewModel: session.features.billingHub,
-                    openInvoice: entityNavigation.openInvoice,
-                    openSession: entityNavigation.openSession
+                    billingHubViewModel: displaySession.features.billingHub,
+                    openInvoice: { id in
+                        navigateCrossFeature(.invoice(id))
+                    },
+                    openSession: { id in
+                        navigateCrossFeature(.session(id))
+                    }
                 )
                 .withAppDependencies(appDependencies, includeCloudKitSyncMonitor: true)
             } else {
@@ -99,6 +103,9 @@ struct ActivitySceneRoot: View {
             toolWindowContext.isOpen = false
             toolWindowPresence.setActivityMonitorOpen(false)
         }
+        .onChange(of: workspaceContext.activeWorkspaceSceneSession?.id) { _, _ in
+            flushPendingCrossFeatureNavigationIfPossible()
+        }
         .task {
             guard fallbackSession == nil else { return }
             await Task.yield()
@@ -111,5 +118,27 @@ struct ActivitySceneRoot: View {
                 )
             )
         }
+    }
+
+    private func navigateCrossFeature(_ destination: ActivityCrossFeatureNavigation.Destination) {
+        if let navigationManager = ActivityCrossFeatureNavigation.navigationManager(
+            for: workspaceContext.activeWorkspaceSceneSession
+        ) {
+            ActivityCrossFeatureNavigation.apply(destination, on: navigationManager)
+            return
+        }
+        pendingCrossFeatureNavigation = destination
+        openWindow(id: AppSceneID.workspace.rawValue)
+    }
+
+    private func flushPendingCrossFeatureNavigationIfPossible() {
+        guard let pending = pendingCrossFeatureNavigation,
+              let navigationManager = ActivityCrossFeatureNavigation.navigationManager(
+                for: workspaceContext.activeWorkspaceSceneSession
+              ) else {
+            return
+        }
+        pendingCrossFeatureNavigation = nil
+        ActivityCrossFeatureNavigation.apply(pending, on: navigationManager)
     }
 }

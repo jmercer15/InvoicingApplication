@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import SharedUI
 import Core
-import Data
+import PersistenceModels
 import Observation
 
 public struct InvoicesContentColumn: View {

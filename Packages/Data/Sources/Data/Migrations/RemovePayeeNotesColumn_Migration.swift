@@ -9,7 +9,7 @@
 //  architectural guidelines and has been removed from entity definitions.
 //
 
-import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 

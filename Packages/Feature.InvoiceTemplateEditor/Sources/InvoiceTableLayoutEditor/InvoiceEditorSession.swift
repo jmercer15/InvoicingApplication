@@ -93,11 +93,15 @@ public final class InvoiceEditorSession {
 
     /// Generates through active editor when requested invoice is open, so bulk workflows never
     /// export stale persisted data. Other invoices use isolated actor-backed document generation.
-    public func temporaryPDF(invoiceID: UUID) async throws -> InvoiceTemporaryPDF {
+    public func temporaryPDF(
+        invoiceID: UUID,
+        presentation: InvoicePDFPresentation = .invoice
+    ) async throws -> InvoiceTemporaryPDF {
         guard viewModel.selectedInvoiceID == invoiceID else {
             return try await InvoiceEditorStore.temporaryPDF(
                 invoiceID: invoiceID,
-                in: modelContainer
+                in: modelContainer,
+                presentation: presentation
             )
         }
 

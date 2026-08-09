@@ -13,19 +13,23 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
         .package(path: "../Data"),
+        .package(path: "../DataInterfaces"),
         .package(path: "../SharedUI"),
         .package(path: "../WorkspaceUI")
     ],
     targets: [
         .target(
             name: "Feature_Clients",
-            dependencies: ["Core", "Data", "SharedUI", "WorkspaceUI"],
+            dependencies: [
+                "Core",
+                "PersistenceModels", "Data", "DataInterfaces", "SharedUI", "WorkspaceUI"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "Feature_ClientsTests",
-            dependencies: ["Feature_Clients", "Core", "Data", "SharedUI", "WorkspaceUI"],
+            dependencies: ["Feature_Clients", "Core", "PersistenceModels", "Data", "SharedUI", "WorkspaceUI"],
             swiftSettings: strictConcurrencySettings
         )
     ]

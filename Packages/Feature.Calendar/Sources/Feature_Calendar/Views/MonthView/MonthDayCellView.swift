@@ -1,7 +1,7 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import EventKit
-import Data
 import SharedUI
 import Observation
 
@@ -15,18 +15,6 @@ private struct MonthDayIndicatorLayout {
 }
 
 struct MonthDayCellView: View {
-    private static let dayNumberFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter
-    }()
-
-    private static let accessibilityDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .full
-        return formatter
-    }()
-
     let date: Date
     @Bindable var viewModel: CalendarViewModel
     let weekIndex: Int
@@ -49,7 +37,7 @@ struct MonthDayCellView: View {
         return weekday == 1 || weekday == 7 // Sunday or Saturday
     }
     private var dayNumber: String {
-        Self.dayNumberFormatter.string(from: date)
+        DateFormatting.dayNumber(date)
     }
     // --- Dynamic Colors --- 
     private var gridBorderColor: Color {
@@ -85,7 +73,7 @@ struct MonthDayCellView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Select \(date, formatter: Self.accessibilityDateFormatter)")
+                .accessibilityLabel("Select \(DateFormatting.fullAccessibilityDate(date))")
                 
                 // Foreground Content
                 VStack(alignment: .center, spacing: 2) {
@@ -106,28 +94,28 @@ struct MonthDayCellView: View {
                 // Top border (only for first row)
                 weekIndex == 0 ? Rectangle()
                     .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
-                    .foregroundColor(gridBorderColor) : nil,
+                    .foregroundStyle(gridBorderColor) : nil,
                 alignment: .top
             )
             .overlay(
                 // Left border (only for first column)
                 dayIndex == 0 ? Rectangle()
                     .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
-                    .foregroundColor(gridBorderColor) : nil,
+                    .foregroundStyle(gridBorderColor) : nil,
                 alignment: .leading
             )
             .overlay(
                 // Right border (for all columns to complete grid)
                 Rectangle()
                     .frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil)
-                    .foregroundColor(gridBorderColor),
+                    .foregroundStyle(gridBorderColor),
                 alignment: .trailing
             )
             .overlay(
                 // Bottom border (for all rows to complete grid)
                 Rectangle()
                     .frame(width: nil, height: StyleGuide.Dimensions.hairlineWidth)
-                    .foregroundColor(gridBorderColor),
+                    .foregroundStyle(gridBorderColor),
                 alignment: .bottom
             )
             .task(id: dayItemsTaskID) {
@@ -156,7 +144,7 @@ struct MonthDayCellView: View {
             Spacer()
             Text(dayNumber)
                 .font(StyleGuide.Typography.gridDayNumber.weight(isToday ? .bold : (isSelected ? .semibold : (isCurrentMonth ? .medium : .regular))))
-                .foregroundColor(isToday ? .white : (isSelected ? .accentColor : dayNumberTextColor))
+                .foregroundStyle(isToday ? Color.white : (isSelected ? Color.accentColor : dayNumberTextColor))
                 .frame(width: StyleGuide.Dimensions.calendarDayCellSize, height: StyleGuide.Dimensions.calendarDayCellSize)
                 .background {
                     if isToday {
@@ -240,7 +228,7 @@ struct MonthDayCellView: View {
                         Spacer()
                         Text("+\(indicatorLayout.moreCount) more")
                             .font(StyleGuide.Typography.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                             .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
                             .padding(.vertical, StyleGuide.Dimensions.calendarBadgeVerticalPadding)
                             .background(Color.accentColor.opacity(StyleGuide.Opacity.faint))
@@ -351,7 +339,7 @@ struct MonthSessionItemView: View {
                 if viewModel.isBulkSelectionMode {
                     Image(systemName: viewModel.bulkSelectedSessionIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(viewModel.bulkSelectedSessionIDs.contains(session.id) ? .accentColor : StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(viewModel.bulkSelectedSessionIDs.contains(session.id) ? Color.accentColor : StyleGuide.Colors.textSecondary)
                 } else {
                     Rectangle()
                          .fill(clientColor)
@@ -361,7 +349,7 @@ struct MonthSessionItemView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.title)
                         .font(StyleGuide.Typography.gridSubtext)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                         .lineLimit(1)
                     
                     if let clientId = session.clientId {
@@ -370,7 +358,7 @@ struct MonthSessionItemView: View {
                             viewModel: viewModel
                         )
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                         .lineLimit(1)
                     }
                 }
@@ -420,7 +408,7 @@ struct MonthEventItemView: View {
                 Text(event.title ?? "Event")
                     .font(StyleGuide.Typography.gridSubtextRegular)
                     .italic()
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                     .lineLimit(1)
                 
                 Spacer()

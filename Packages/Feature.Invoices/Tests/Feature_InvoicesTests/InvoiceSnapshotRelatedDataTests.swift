@@ -1,25 +1,20 @@
 import Core
 import Data
+import PersistenceModels
 @testable import Feature_Invoices
 import SwiftData
-import XCTest
-
+import Foundation
+import Testing
 @MainActor
-final class InvoiceSnapshotRelatedDataTests: XCTestCase {
-    private var modelContext: ModelContext!
+@Suite struct InvoiceSnapshotRelatedDataTests {
+    private let modelContext: ModelContext
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (_, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContext = context
+        self.modelContext = context
     }
 
-    override func tearDown() async throws {
-        modelContext = nil
-        try await super.tearDown()
-    }
-
-    func testSnapshotRelatedData_planManagerPickerOverridesClientDefault() throws {
+    @Test func SnapshotRelatedData_planManagerPickerOverridesClientDefault() throws {
         let client = Client(id: UUID(), fullName: "Participant One")
         client.email = "participant@example.com"
         client.billingAuthority = .client
@@ -45,12 +40,12 @@ final class InvoiceSnapshotRelatedDataTests: XCTestCase {
 
         invoice.snapshotRelatedData(billingPlanManager: selectedPM)
 
-        XCTAssertEqual(invoice.billToName, "Selected PM")
-        XCTAssertEqual(invoice.billToEmail, "selected-pm@example.com")
-        XCTAssertNotEqual(invoice.billToName, defaultPM.name)
+        #expect(invoice.billToName == "Selected PM")
+        #expect(invoice.billToEmail == "selected-pm@example.com")
+        #expect(invoice.billToName != defaultPM.name)
     }
 
-    func testSnapshotRelatedData_payeePickerOverridesClientWhenParentGuardian() throws {
+    @Test func SnapshotRelatedData_payeePickerOverridesClientWhenParentGuardian() throws {
         let client = Client(id: UUID(), fullName: "Minor Client")
         client.email = "minor@example.com"
         client.billingAuthority = .parentGuardian
@@ -74,13 +69,13 @@ final class InvoiceSnapshotRelatedDataTests: XCTestCase {
 
         invoice.snapshotRelatedData(billingPayee: selectedPayee)
 
-        XCTAssertEqual(invoice.billToName, "Selected Guardian")
-        XCTAssertEqual(invoice.billToEmail, "selected-guardian@example.com")
-        XCTAssertEqual(invoice.payeeName, "Selected Guardian")
-        XCTAssertEqual(invoice.payeeEmail, "selected-guardian@example.com")
+        #expect(invoice.billToName == "Selected Guardian")
+        #expect(invoice.billToEmail == "selected-guardian@example.com")
+        #expect(invoice.payeeName == "Selected Guardian")
+        #expect(invoice.payeeEmail == "selected-guardian@example.com")
     }
 
-    func testSnapshotRelatedData_clientAuthorityUsesClientBillTo() throws {
+    @Test func SnapshotRelatedData_clientAuthorityUsesClientBillTo() throws {
         let client = Client(id: UUID(), fullName: "Direct Client")
         client.email = "direct@example.com"
         client.billingAuthority = .client
@@ -104,10 +99,10 @@ final class InvoiceSnapshotRelatedDataTests: XCTestCase {
 
         invoice.snapshotRelatedData()
 
-        XCTAssertEqual(invoice.billToName, "Direct Client")
-        XCTAssertEqual(invoice.billToEmail, "direct@example.com")
-        XCTAssertEqual(invoice.clientName, "Direct Client")
-        XCTAssertNotNil(invoice.billToAddressSnapshot)
-        XCTAssertTrue(invoice.billToAddressSnapshot?.fullFormattedAddress.contains("Main St") == true)
+        #expect(invoice.billToName == "Direct Client")
+        #expect(invoice.billToEmail == "direct@example.com")
+        #expect(invoice.clientName == "Direct Client")
+        #expect(invoice.billToAddressSnapshot != nil)
+        #expect(invoice.billToAddressSnapshot?.fullFormattedAddress.contains("Main St") == true)
     }
 }

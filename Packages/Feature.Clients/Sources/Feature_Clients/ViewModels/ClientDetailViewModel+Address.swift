@@ -1,5 +1,6 @@
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 import SharedUI
 

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import os
+import Data
 
 public struct AppStartupError: Identifiable, LocalizedError {
     public let id = UUID()
@@ -63,10 +64,9 @@ public final class AppSession {
 
         do {
             let runtime = try await bootstrapper.makeRuntime(Self.startupSignpostLog)
+            await AppIntentBootstrap.adoptModelContainer(runtime.modelContainer)
 
-            withAnimation {
-                phase = .ready(runtime)
-            }
+            phase = .ready(runtime)
 
             #if DEBUG
             os_signpost(
@@ -90,6 +90,21 @@ public final class AppSession {
                 "failed"
             )
             #endif
+        }
+    }
+
+    public func startFresh() async {
+        guard !isBootstrapping,
+              case let .failed(error) = phase,
+              let bootstrapError = error.underlyingError as? AppDatabase.BootstrapError,
+              case .existingStoreRequiresFreshStart = bootstrapError
+        else { return }
+
+        do {
+            _ = try AppDatabase.archiveExistingStoreForFreshInstall()
+            await bootstrap()
+        } catch {
+            phase = .failed(AppStartupError(underlyingError: error))
         }
     }
 }

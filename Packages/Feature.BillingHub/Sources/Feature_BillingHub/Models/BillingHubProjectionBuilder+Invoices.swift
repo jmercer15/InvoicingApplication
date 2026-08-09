@@ -1,5 +1,6 @@
-import Core
+import PersistenceModels
 import Foundation
+import SharedUI
 
 extension BillingHubProjectionBuilder {
     
@@ -40,7 +41,7 @@ extension BillingHubProjectionBuilder {
             serviceName = "Invoice Services"
         }
         let date = invoice.issueDate.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year())
-        let amount = String(format: "$%.2f", invoice.totalAmount)
+        let amount = CurrencyFormatting.display(invoice.totalAmount)
         let priority: Priority = invoice.isOverdue ? .high : .medium
 
         let invoiceCardData = InvoiceKanbanCardData(

@@ -60,6 +60,7 @@ struct InvoiceLineItemsPreviewTable: View {
             typographyScale: typographyScale,
             currencyCode: viewModel.currencyCode,
             currencyDisplayStyle: viewModel.currencyDisplayStyle,
+            dateFormatStyle: viewModel.dateFormatStyle,
             showsItemCode: visibility.showItemCode
                 ? { !$0.itemCode.isEmpty }
                 : { _ in false }
@@ -184,6 +185,7 @@ struct InvoiceLineItemsPreviewTable: View {
         }
         .font(cellFont)
         .frame(width: contentWidth, height: estimatedTableHeight, alignment: .topLeading)
+        .clipped()
     }
 
     @ViewBuilder
@@ -197,7 +199,7 @@ struct InvoiceLineItemsPreviewTable: View {
                 Text(InvoiceDateFormatter.documentString(for: item.serviceDate, style: viewModel.dateFormatStyle))
                     .font(cellFont)
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(0.85)
                     .lineItemPreviewGridCell(column: .date, width: widths.date, zebra: zebra)
                     .previewInspectorTargetIfPresent(.lineItemServiceDate(item.id), interaction: inspectorInteraction)
             }
@@ -367,6 +369,6 @@ private struct ThemedAccentMutedText: View {
             .tracking(tracking)
             .foregroundStyle(emphasized ? theme.accent : theme.accentMuted)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .minimumScaleFactor(0.85)
     }
 }

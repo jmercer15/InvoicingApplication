@@ -10,8 +10,6 @@ import UniformTypeIdentifiers
 // ─────────────────────────────────────────────────────────────
 
 struct AllDayStripView: View {
-    private static let layoutMetrics = AllDayLayoutEngine()
-
     let viewModel: CalendarViewModel
     var interactionHandler: CalendarInteractionHandler
     let timeColumnWidth: CGFloat
@@ -19,10 +17,11 @@ struct AllDayStripView: View {
 
     @ScaledMetric(relativeTo: .body) private var paddingMedium: CGFloat = StyleGuide.Dimensions.paddingMedium
     @ScaledMetric(relativeTo: .body) private var paddingSmall: CGFloat = StyleGuide.Dimensions.paddingSmall
+    @ScaledMetric(relativeTo: .body) private var paddingXSmall: CGFloat = StyleGuide.Dimensions.paddingXSmall
 
     var body: some View {
-        let positionedItems = viewModel.allDayPositionedItems
-        let height = viewModel.allDayStripHeight
+        let positionedItems = viewModel.display.allDayPositionedItems
+        let height = viewModel.display.allDayStripHeight
 
         if height > 0 {
             ZStack(alignment: .topLeading) {
@@ -32,7 +31,7 @@ struct AllDayStripView: View {
                     VStack {
                         Text("All Day")
                             .font(StyleGuide.Typography.caption)
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
                             .frame(width: timeColumnWidth, alignment: .trailing)
                             .padding(.trailing, paddingMedium)
                             .padding(.top, paddingSmall)
@@ -47,9 +46,9 @@ struct AllDayStripView: View {
                     )
 
                     // Daily grid column backgrounds
-                    ForEach(viewModel.currentWeekDays, id: \.self) { day in
+                    ForEach(viewModel.currentWeekDayIdentities) { identity in
                         AllDayGridColumnView(
-                            day: day,
+                            day: identity.resolvedDate(),
                             viewModel: viewModel,
                             interactionHandler: interactionHandler
                         )
@@ -58,8 +57,8 @@ struct AllDayStripView: View {
                 }
 
                 // Horizontal banners for all-day items
-                let itemSpacing = Self.layoutMetrics.itemSpacing
-                let verticalPadding = Self.layoutMetrics.columnVerticalPadding
+                let itemSpacing = paddingXSmall
+                let verticalPadding = paddingSmall
                 let rowHeight: CGFloat = 24
 
                 ForEach(positionedItems) { pItem in
@@ -133,20 +132,9 @@ struct AllDayDropDelegate: DropDelegate {
     func dropEntered(info: DropInfo) {
         isTargeted = true
         Task { @MainActor in
-            if interactionHandler.draggingSessionInfo == nil {
-                if let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
-                    let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
-                        DispatchQueue.main.async {
-                            if case .success(let payload) = result {
-                                interactionHandler.startDragging(
-                                    sessionID: payload.sessionID,
-                                    duration: payload.duration,
-                                    originalInstanceDate: payload.originalInstanceDate
-                                )
-                            }
-                        }
-                    }
-                }
+            if interactionHandler.draggingSessionInfo == nil,
+               let provider = info.itemProviders(for: [.calendarSessionDragType]).first {
+                CalendarSessionDragLoading.loadPayload(from: provider, interactionHandler: interactionHandler)
             }
         }
     }
@@ -165,23 +153,26 @@ struct AllDayDropDelegate: DropDelegate {
             return false
         }
 
-        let _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let payload):
-                    if let sessionID = UUID(uuidString: payload.sessionID) {
-                        viewModel.rescheduleSession(
-                            with: sessionID,
-                            originalInstanceDate: payload.originalInstanceDate,
-                            to: newStartDate,
-                            isAllDay: true
-                        )
-                    }
-                case .failure(let error):
-                    print("Failed to load drag payload in AllDayDropDelegate: \(error)")
+        provider.loadTransferable(type: SessionDragPayload.self) { result in
+            Task { @MainActor in
+                defer {
+                    interactionHandler.draggingSessionInfo = nil
+                    interactionHandler.dropTargetTime = nil
                 }
-                interactionHandler.draggingSessionInfo = nil
-                interactionHandler.dropTargetTime = nil
+                guard case .success(let payload) = result else {
+                    if case .failure(let error) = result {
+                        print("Failed to load drag payload in AllDayDropDelegate: \(error)")
+                    }
+                    return
+                }
+                if let sessionID = UUID(uuidString: payload.sessionID) {
+                    viewModel.rescheduleSession(
+                        with: sessionID,
+                        originalInstanceDate: payload.originalInstanceDate,
+                        to: newStartDate,
+                        isAllDay: true
+                    )
+                }
             }
         }
 
@@ -207,7 +198,7 @@ struct AllDayCalendarItemView: View {
                 if viewModel.isBulkSelectionMode, item.underlyingSession != nil {
                     Image(systemName: viewModel.isItemSelected(item) ? "checkmark.circle.fill" : "circle")
                         .font(StyleGuide.Typography.micro.weight(.semibold))
-                        .foregroundColor(viewModel.isItemSelected(item) ? .accentColor : StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(viewModel.isItemSelected(item) ? Color.accentColor : StyleGuide.Colors.textSecondary)
                 } else {
                     Circle()
                         .fill(statusColor)
@@ -216,7 +207,7 @@ struct AllDayCalendarItemView: View {
 
                 Text(item.title)
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .italic(isEvent)
@@ -290,7 +281,7 @@ struct AllDayCalendarItemView: View {
                     viewDetails: "info.circle",
                     markCompleted: "checkmark.circle",
                     markCancelled: "xmark.circle",
-                    markPlanned: "calendar",
+                    markScheduled: "calendar",
                     duplicate: "plus.square.on.square",
                     travel: "car",
                     delete: "trash"
@@ -307,7 +298,7 @@ struct AllDayCalendarItemView: View {
                     viewDetails: "info.circle",
                     markCompleted: "checkmark.circle",
                     markCancelled: "xmark.circle",
-                    markPlanned: "calendar",
+                    markScheduled: "calendar",
                     duplicate: "plus.square.on.square",
                     travel: "car",
                     delete: "trash"

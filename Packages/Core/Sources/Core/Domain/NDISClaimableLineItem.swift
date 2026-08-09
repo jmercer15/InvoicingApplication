@@ -3,16 +3,16 @@ import Foundation
 /// A single claimable line item for NDIS billing.
 public struct NDISClaimableLineItem: Sendable {
     public let supportItemNumber: String
-    public let quantity: Double
-    public let unitPrice: Double
-    public let totalAmount: Double
+    public let quantity: Decimal
+    public let unitPrice: Decimal
+    public let totalAmount: Decimal
     public let claimType: String
 
     public init(
         supportItemNumber: String,
-        quantity: Double,
-        unitPrice: Double,
-        totalAmount: Double,
+        quantity: Decimal,
+        unitPrice: Decimal,
+        totalAmount: Decimal,
         claimType: String
     ) {
         self.supportItemNumber = supportItemNumber
@@ -23,7 +23,7 @@ public struct NDISClaimableLineItem: Sendable {
     }
 
     /// Computed convenience property.
-    public var lineTotal: Double {
+    public var lineTotal: Decimal {
         quantity * unitPrice
     }
 }

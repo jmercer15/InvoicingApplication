@@ -1,11 +1,12 @@
 @testable import Data
 import Core
 import EventKit
-import XCTest
-
+import Foundation
+import Testing
+import PersistenceModels
 @MainActor
-final class EventKitSessionWriterTests: XCTestCase {
-    func testMapSessionToEventCopiesCoreFields() throws {
+@Suite struct EventKitSessionWriterTests {
+    @Test func MapSessionToEventCopiesCoreFields() throws {
         let manager = RecurrenceRuleManager()
         let writer = EventKitSessionWriter(
             recurrenceRuleManager: manager,
@@ -35,12 +36,7 @@ final class EventKitSessionWriterTests: XCTestCase {
         )
 
         let store = EKEventStore()
-        guard let calendar = store.defaultCalendarForNewEvents ?? store.calendars(for: .event).first else {
-            throw XCTSkip("No EventKit calendars available in this host environment (cannot validate EKEvent mapping)")
-        }
-
         let event = EKEvent(eventStore: store)
-        event.calendar = calendar
 
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let end = start.addingTimeInterval(3600)
@@ -56,8 +52,8 @@ final class EventKitSessionWriterTests: XCTestCase {
             isTravel: false,
             groupID: nil,
             groupedPosition: 0,
-            sessionLatitude: 0,
-            sessionLongitude: 0,
+            sessionLatitude: -33.8688,
+            sessionLongitude: 151.2093,
             travelDistanceKM: nil,
             travelTimeMinutes: nil,
             travelTollsAmount: nil,
@@ -73,11 +69,11 @@ final class EventKitSessionWriterTests: XCTestCase {
 
         writer.mapSessionToEvent(snapshot, event: event, preserveExistingMetadata: false)
 
-        XCTAssertEqual(event.title, snapshot.title)
-        XCTAssertEqual(event.startDate, start)
-        XCTAssertEqual(event.endDate, end)
-        XCTAssertEqual(event.isAllDay, snapshot.isAllDay)
-        XCTAssertEqual(event.location, snapshot.location)
-        XCTAssertEqual(event.notes, snapshot.notes)
+        #expect(event.title == snapshot.title)
+        #expect(event.startDate == start)
+        #expect(event.endDate == end)
+        #expect(event.isAllDay == snapshot.isAllDay)
+        #expect(event.location == snapshot.location)
+        #expect(event.notes == snapshot.notes)
     }
 }

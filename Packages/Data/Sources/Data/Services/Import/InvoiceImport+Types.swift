@@ -1,5 +1,4 @@
 import Foundation
-import Core
 
 /// JSON model for individual invoice items in the legacy format
 struct LegacyInvoiceItemPayload: Codable {

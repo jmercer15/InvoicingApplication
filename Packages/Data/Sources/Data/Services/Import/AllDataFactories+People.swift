@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 /// Factory methods for creating entities from dictionary data.
 extension AllDataFactories {
@@ -70,7 +71,7 @@ extension AllDataFactories {
             status:      ClientStatus(rawValue: status) ?? .active
         )
         client.billingAuthority     = BillingAuthority(rawValue: dict["billingAuthority"] as? String ?? "Client")
-        client.creditAmount         = dict["creditAmount"]         as? Double ?? 0.0
+        client.creditAmount         = MoneyDecimalImport.decimal(from: dict["creditAmount"] as? Double ?? 0.0)
         client.isMinor              = dict["isMinor"]              as? Bool   ?? false
         client.hasNdisPlan          = dict["hasNdisPlan"]          as? Bool   ?? false
         client.notes                = dict["notes"]                as? String
@@ -122,7 +123,7 @@ extension AllDataFactories {
             id: UUID(),
             serviceName: dict["serviceName"] as? String ?? "",
             unit:        dict["unit"]        as? String ?? "",
-            rate:        dict["rate"]        as? Double ?? 0.0
+            rate:        MoneyDecimalImport.decimal(from: dict["rate"] as? Double ?? 0.0)
         )
         cs.status   = dict["status"]   as? String
         cs.ndisCode = dict["ndisCode"] as? String
@@ -231,7 +232,7 @@ extension AllDataFactories {
 
     static func createCreditHistoryEntry(from dict: [String: Any], entityMapping: [String: Any]) throws -> CreditHistoryEntry {
         let entry = CreditHistoryEntry(id: UUID())
-        entry.amount = dict["amount"] as? Double ?? 0.0
+        entry.amount = MoneyDecimalImport.decimal(from: dict["amount"] as? Double ?? 0.0)
         entry.type   = CreditHistoryType(rawValue: dict["type"] as? String ?? "Usage") ?? .credit
         entry.notes  = dict["description"] as? String ?? dict["reason"] as? String
 

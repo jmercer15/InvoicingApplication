@@ -1,9 +1,9 @@
 @testable import Data
 import Core
-import XCTest
-
-final class EventKitExternalPromptReconciliationTests: XCTestCase {
-    func testPromptPolicyReturnsPromptWhenBothSidesChanged() {
+import Testing
+import PersistenceModels
+@Suite struct EventKitExternalPromptReconciliationTests {
+    @Test func PromptPolicyReturnsPromptWhenBothSidesChanged() {
         let decision = EventKitSyncPolicy.reconcileDecision(
             syncDirection: .bidirectional,
             conflictResolutionPolicy: .prompt,
@@ -11,10 +11,10 @@ final class EventKitExternalPromptReconciliationTests: XCTestCase {
             remoteFreshness: .changed
         )
 
-        XCTAssertEqual(decision, .prompt)
+        #expect(decision == .prompt)
     }
 
-    func testPromptPolicyReturnsPromptWhenRemoteFreshnessUnknown() {
+    @Test func PromptPolicyReturnsPromptWhenRemoteFreshnessUnknown() {
         let decision = EventKitSyncPolicy.reconcileDecision(
             syncDirection: .bidirectional,
             conflictResolutionPolicy: .prompt,
@@ -22,10 +22,10 @@ final class EventKitExternalPromptReconciliationTests: XCTestCase {
             remoteFreshness: .unknown
         )
 
-        XCTAssertEqual(decision, .prompt)
+        #expect(decision == .prompt)
     }
 
-    func testPromptPolicyPullsWhenOnlyRemoteChanged() {
+    @Test func PromptPolicyPullsWhenOnlyRemoteChanged() {
         let decision = EventKitSyncPolicy.reconcileDecision(
             syncDirection: .bidirectional,
             conflictResolutionPolicy: .prompt,
@@ -33,10 +33,10 @@ final class EventKitExternalPromptReconciliationTests: XCTestCase {
             remoteFreshness: .changed
         )
 
-        XCTAssertEqual(decision, .pull)
+        #expect(decision == .pull)
     }
 
-    func testUnknownFreshnessRespectsPreferCalendar() {
+    @Test func UnknownFreshnessRespectsPreferCalendar() {
         let decision = EventKitSyncPolicy.reconcileDecision(
             syncDirection: .bidirectional,
             conflictResolutionPolicy: .preferCalendar,
@@ -44,6 +44,6 @@ final class EventKitExternalPromptReconciliationTests: XCTestCase {
             remoteFreshness: .unknown
         )
 
-        XCTAssertEqual(decision, .pull)
+        #expect(decision == .pull)
     }
 }

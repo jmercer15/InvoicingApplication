@@ -3,15 +3,23 @@ import SwiftData
 
 /// Canonical persistence facade for app bootstrap and worker creation.
 ///
+/// **Manual-save contract:** Every app `ModelContext` — workspace scene environments, Settings,
+/// `makeMainContext()`, and ephemeral billing/worker contexts — must keep `autosaveEnabled = false`.
+/// Call `save()` explicitly to commit. Use `ModelContainerFactory.makeEphemeralContext(from:)` for
+/// short-lived contexts off the shared container.
+///
 /// **Background actors:** `makeDataImporterActor`, `makeDataExporterActor`, `makeBulkClaimBuilderActor`, and `makeTravelChargeAutomationActor` are the supported construction sites for heavy SwiftData model actors. Callers should keep using these rather than ad-hoc `ModelActor` initializers elsewhere.
 public struct AppDatabase: Sendable {
     public enum BootstrapError: LocalizedError, Sendable {
         case productionSyncRequired(underlyingError: String)
+        case existingStoreRequiresFreshStart(storePath: String, underlyingError: String)
 
         public var errorDescription: String? {
             switch self {
             case let .productionSyncRequired(underlyingError):
                 return "Production persistence bootstrap requires a CloudKit-compatible store. Underlying error: \(underlyingError)"
+            case let .existingStoreRequiresFreshStart(storePath, _):
+                return "An existing data store cannot be opened by this version. Its files remain at \(storePath). Choose Start Fresh to archive that store and create empty app data."
             }
         }
     }
@@ -22,7 +30,7 @@ public struct AppDatabase: Sendable {
         self.container = container
     }
 
-    /// Build the requested SwiftData container and run post-open migrations when persisted storage is used.
+    /// Build requested SwiftData container.
     public static func bootstrap(policy: PersistenceBootstrapPolicy = .productionSyncRequired) async throws -> AppDatabase {
         let container: ModelContainer
         switch policy {
@@ -30,6 +38,14 @@ public struct AppDatabase: Sendable {
             do {
                 container = try ModelContainerFactory.makePersistentContainer(cloudSyncEnabled: policy.cloudSyncEnabled)
             } catch {
+                let storeURL = try ModelContainerFactory.persistentStoreURL()
+                if !AppMigrationPlan.legacyStoreMigrationIsQualified,
+                   FileManager.default.fileExists(atPath: storeURL.path) {
+                    throw BootstrapError.existingStoreRequiresFreshStart(
+                        storePath: storeURL.path,
+                        underlyingError: String(describing: error)
+                    )
+                }
                 throw BootstrapError.productionSyncRequired(underlyingError: String(describing: error))
             }
         case .localOnly:
@@ -38,13 +54,7 @@ public struct AppDatabase: Sendable {
             container = try ModelContainerFactory.makeInMemoryContainer()
         }
 
-        let database = AppDatabase(container: container)
-        if !policy.isStoredInMemoryOnly {
-            // Migration completion is part of database readiness. Returning earlier lets feature
-            // queries race partially migrated values and hides failures behind a detached task.
-            try await database.performPostOpenMigrations()
-        }
-        return database
+        return AppDatabase(container: container)
     }
 
     @MainActor
@@ -70,11 +80,15 @@ public struct AppDatabase: Sendable {
         TravelChargeAutomationActor(modelContainer: container)
     }
 
-    public func performPostOpenMigrations() async throws {
-        let context = ModelContext(container)
-        context.autosaveEnabled = false
-        let orchestrator = MigrationOrchestrator()
-        _ = try orchestrator.executeAllMigrations(modelContext: context)
+    /// Compatibility placeholder. Marker-file migrations are intentionally no longer run at
+    /// bootstrap. Historical transformations belong in fixture-qualified schema stages.
+    public func performPostOpenMigrations() async throws {}
+
+    /// Explicit fresh-install escape hatch for incompatible canonical stores.
+    /// Call only after user confirmation; archived files remain beside the store directory.
+    public static func archiveExistingStoreForFreshInstall() throws -> URL? {
+        let storeURL = try ModelContainerFactory.persistentStoreURL()
+        return try PersistentStoreRecovery.archiveForFreshInstall(storeURL: storeURL)
     }
 }
 

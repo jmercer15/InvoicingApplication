@@ -1,6 +1,6 @@
+import PersistenceModels
 import SwiftUI
 import SwiftData
-import Data
 import SharedUI
 import Observation
 
@@ -10,7 +10,11 @@ struct CalendarBulkOperationsToolbar: View {
     
     var body: some View {
         HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
-            selectionInfoView
+            if let progress = viewModel.bulkOperationProgress {
+                progressView(progress)
+            } else {
+                selectionInfoView
+            }
             
             Divider()
                 .frame(height: 20)
@@ -30,13 +34,13 @@ struct CalendarBulkOperationsToolbar: View {
                 .frame(height: StyleGuide.Dimensions.hairlineWidth),
             alignment: .bottom
         )
-        .alert("Delete Sessions", isPresented: $showDeleteAlert) {
+        .alert(deleteConfirmationTitle, isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
+            Button(deleteConfirmationButtonTitle, role: .destructive) {
                 viewModel.bulkDeleteSessions()
             }
         } message: {
-            Text("Are you sure you want to delete \(viewModel.selectedSessions.count) session(s)? This action cannot be undone.")
+            Text(deleteConfirmationMessage)
         }
     }
     
@@ -44,31 +48,44 @@ struct CalendarBulkOperationsToolbar: View {
         HStack {
             Text("\(viewModel.selectedItemIDs.count) selected")
                 .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundColor(StyleGuide.Colors.textSecondary)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
             
-            // Select All / Deselect All
-            Button(viewModel.selectedItemIDs.count == viewModel.displayableItems.count ? "Deselect All" : "Select All") {
-                if viewModel.selectedItemIDs.count == viewModel.displayableItems.count {
+            // Select All / Deselect All — compare against session-only count (ignore EventKit events).
+            Button(viewModel.areAllSelectableSessionsSelected ? "Deselect All" : "Select All") {
+                if viewModel.areAllSelectableSessionsSelected {
                     viewModel.deselectAllItems()
                 } else {
                     viewModel.selectAllItems()
                 }
             }
             .buttonStyle(.glass)
+            .disabled(viewModel.isBulkOperationInFlight)
         }
+    }
+
+    private func progressView(_ progress: CalendarBulkOperationProgress) -> some View {
+        HStack(spacing: StyleGuide.Dimensions.paddingMedium) {
+            ProgressView(value: progress.fractionCompleted)
+                .progressViewStyle(.linear)
+                .frame(width: 96)
+            Text(progress.message)
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundStyle(StyleGuide.Colors.textSecondary)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(progress.message)
     }
 
     private var actionsView: some View {
         HStack {
             // Status change menu
             Menu {
-                Button("Mark as Planned") {
+                Button("Mark as Scheduled") {
                     viewModel.bulkChangeStatus(to: AppConstants.sessionStatusPlanned)
                 }
-                Button("Mark as Confirmed") {
-                    viewModel.bulkChangeStatus(to: AppConstants.sessionStatusConfirmed)
-                }
-                Button("Mark as Completed") {
+                Button("Mark as Completed", systemImage: "checkmark.circle.fill") {
                     viewModel.bulkChangeStatus(to: AppConstants.sessionStatusCompleted)
                 }
                 Button("Mark as Cancelled") {
@@ -77,7 +94,7 @@ struct CalendarBulkOperationsToolbar: View {
             } label: {
                 Label("Change Status", systemImage: "tag")
             }
-            .disabled(viewModel.selectedSessions.isEmpty)
+            .disabled(viewModel.selectedSessions.isEmpty || viewModel.isBulkOperationInFlight)
             
             // Delete button
             Button("Delete") {
@@ -85,7 +102,7 @@ struct CalendarBulkOperationsToolbar: View {
             }
             .buttonStyle(.glassProminent)
             .tint(ColorSystem.Status.error.opacity(0.7))
-            .disabled(viewModel.selectedSessions.isEmpty)
+            .disabled(viewModel.selectedSessions.isEmpty || viewModel.isBulkOperationInFlight)
         }
     }
 
@@ -94,10 +111,34 @@ struct CalendarBulkOperationsToolbar: View {
             viewModel.toggleBulkSelectionMode()
         }
         .buttonStyle(.glass)
+        .disabled(viewModel.isBulkOperationInFlight)
+    }
+
+    private var selectedCount: Int {
+        viewModel.selectedItemIDs.count
+    }
+
+    private var selectedInvoicedCount: Int {
+        viewModel.selectedSessions.filter { $0.invoice != nil }.count
+    }
+
+    private var deleteConfirmationTitle: String {
+        CalendarBulkDeleteConfirmationCopy.title(count: selectedCount)
+    }
+
+    private var deleteConfirmationButtonTitle: String {
+        CalendarBulkDeleteConfirmationCopy.buttonTitle(count: selectedCount)
+    }
+
+    private var deleteConfirmationMessage: String {
+        CalendarBulkDeleteConfirmationCopy.message(
+            count: selectedCount,
+            invoicedCount: selectedInvoicedCount
+        )
     }
 }
 
 #Preview {
     // Preview intentionally minimal; full toolbar behavior depends on live calendar container state.
     EmptyView()
-}  
+}

@@ -3,7 +3,7 @@ import AppKit
 import MapKit
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -87,9 +87,13 @@ public class PayeeDetailViewModel {
         loadAddressFields(from: payee.address)
     }
 
-    func refreshRelatedInvoices(using workflowActor: ReferenceDataWorkflowActor) async {
+    func refreshRelatedInvoices() async {
         await MainActor.run { self.isLoading = true }
         defer { Task { @MainActor in self.isLoading = false } }
+
+        relatedInvoices = []
+        linkedClients = []
+        lastAllInvoices = []
 
         let payeeID = payee.id
         let linkedClients = (try? modelContext.fetch(FetchDescriptor<Client>(
@@ -106,10 +110,6 @@ public class PayeeDetailViewModel {
         }
         self.relatedInvoices = fetchedInvoices
         self.linkedClients = linkedClients
-    }
-
-    private func clientsLinkedToPayee() -> [Client] {
-        return self.linkedClients
     }
 
     func loadAddressDetails() {
@@ -146,8 +146,7 @@ public class PayeeDetailViewModel {
             await updateClientAssociations()
             
             // Re-fetch using actor
-            let actor = ReferenceDataWorkflowActor(modelContainer: modelContext.container)
-            await refreshRelatedInvoices(using: actor)
+            await refreshRelatedInvoices()
         } catch {
             let nsError = error as NSError
             alertTitle = "Save Error"

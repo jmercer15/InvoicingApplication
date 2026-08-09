@@ -1,9 +1,10 @@
 @testable import Data
 import Core
-import XCTest
-
-final class AllDataImportPayloadTests: XCTestCase {
-    func testRowsReturnsTypedRowsForKnownEntities() throws {
+import Foundation
+import PersistenceModels
+import Testing
+@Suite struct AllDataImportPayloadTests {
+    @Test func RowsReturnsTypedRowsForKnownEntities() throws {
         let payloadData = try JSONSerialization.data(withJSONObject: [
             "Client": [
                 [
@@ -26,21 +27,24 @@ final class AllDataImportPayloadTests: XCTestCase {
 
         let payload = try AllDataImportPayload(data: payloadData)
 
-        XCTAssertEqual(payload.sortedKeys, ["Client", "Ignored", "Invoice"])
-        XCTAssertEqual(payload.rows(for: .client)?.count, 1)
-        XCTAssertEqual(payload.rows(for: .client)?.first?["fullName"] as? String, "Jordan Participant")
-        XCTAssertEqual(payload.rows(for: .invoice)?.first?["invoiceNumber"] as? String, "INV-001")
-        XCTAssertNil(payload.rows(for: .address))
+        #expect(payload.sortedKeys == ["Client", "Ignored", "Invoice"])
+        #expect(payload.rows(for: .client)?.count == 1)
+        #expect(payload.rows(for: .client)?.first?["fullName"] as? String == "Jordan Participant")
+        #expect(payload.rows(for: .invoice)?.first?["invoiceNumber"] as? String == "INV-001")
+        #expect(payload.rows(for: .address) == nil)
     }
 
-    func testInvalidJSONUsesExistingImportErrorShape() {
+    @Test func InvalidJSONUsesExistingImportErrorShape() {
         let invalidData = Data("{".utf8)
 
-        XCTAssertThrowsError(try AllDataImportPayload(data: invalidData)) { error in
+        do {
+            _ = try AllDataImportPayload(data: invalidData)
+            Issue.record("Expected error")
+        } catch {
             let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "ImportError")
-            XCTAssertEqual(nsError.code, 100)
-            XCTAssertEqual(nsError.localizedDescription, "Invalid JSON Format")
+            #expect(nsError.domain == "ImportError")
+            #expect(nsError.code == 100)
+            #expect(nsError.localizedDescription == "Invalid JSON Format")
         }
     }
 }

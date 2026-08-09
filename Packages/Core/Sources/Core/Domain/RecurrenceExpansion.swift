@@ -12,25 +12,6 @@ public struct RecurrenceExpansion {
         }
     }
 
-    /// Expands a recurring session into all instances within the given date range.
-    public static func expandInstances(
-        for templateSession: Session,
-        rule: EKRecurrenceRule,
-        masterStartTime: Date,
-        masterEndTime: Date,
-        rangeStart: Date,
-        rangeEnd: Date
-    ) -> [Instance] {
-        expandInstances(
-            isAllDay: templateSession.isAllDay,
-            rule: rule,
-            masterStartTime: masterStartTime,
-            masterEndTime: masterEndTime,
-            rangeStart: rangeStart,
-            rangeEnd: rangeEnd
-        )
-    }
-
     /// Expands a recurring session snapshot into all instances within the given date range.
     public static func expandInstances(
         for snapshot: SessionSnapshot,

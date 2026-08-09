@@ -1,6 +1,5 @@
 import Foundation
 import Core
-import Data
 
 /// Centralizes drag-and-drop validation logic for the Billing Hub Kanban board.
 public struct BillingHubDragDropCoordinator {
@@ -26,11 +25,15 @@ public struct BillingHubDragDropCoordinator {
         case .session(let sourceID):
             guard let source = sessionCard(for: sourceID) else { return false }
             guard targetID != sourceID else { return false }
+            // Same-column reorder stubs do not persist peer order — disable no-op drops.
+            guard source.columnType != column else { return false }
             return canMoveSession(from: source.columnType, to: column)
 
         case .invoice(let sourceID):
             guard let source = invoiceCard(for: sourceID) else { return false }
             guard targetID != sourceID else { return false }
+            // Invoice lanes have no persisted position — disable same-column reorder lies.
+            guard source.columnType != column else { return false }
             return canMoveInvoice(from: source.columnType, to: column)
 
         case .group:
@@ -40,11 +43,12 @@ public struct BillingHubDragDropCoordinator {
 
     public func canAcceptSessionDropInGroupedColumn(sourceID: UUID, beforeClusterID: UUID?) -> Bool {
         guard let source = sessionCard(for: sourceID) else { return false }
+        // Already in Grouped: cluster reorder is a no-op stub — only accept column moves in.
+        guard source.columnType != .grouped else { return false }
         guard canMoveSession(from: source.columnType, to: .grouped) else { return false }
 
         if let beforeClusterID {
-            guard projection.groupedSessions.contains(where: { ($0.groupID ?? $0.sessions.first?.id) == beforeClusterID }) else { return false }
-            if source.columnType == .grouped, source.groupID == nil, beforeClusterID == sourceID {
+            guard projection.groupedSessions.contains(where: { ($0.groupID ?? $0.sessions.first?.id) == beforeClusterID }) else {
                 return false
             }
         }
@@ -66,16 +70,17 @@ public struct BillingHubDragDropCoordinator {
             guard beforeTargetID != sourceID else { return false }
         }
 
+        // Already a member: in-group reorder is a no-op stub.
         if targetGroup.sessions.contains(where: { $0.id == sourceID }) {
-            return true
+            return false
         }
 
-        // Logic for client matching...
+        // Client matching: reject stacking sessions from different clients into one group.
         guard let firstSession = targetGroup.sessions.first else { return false }
-        
-        let clientID = fetchClientForSession(firstSession.id)
-        let sourceClientID = fetchClientForSession(source.sessionId)
-        
+
+        guard let clientID = fetchClientForSession(firstSession.id),
+              let sourceClientID = fetchClientForSession(source.sessionId) else { return false }
+
         return sourceClientID == clientID
     }
 
@@ -99,9 +104,7 @@ public struct BillingHubDragDropCoordinator {
         return data
     }
     
-    private func fetchClientForSession(_: UUID) -> UUID? {
-        // This usually comes from the model but for validation we might need the projection or a lookup
-        // For simplicity in this coordinator, we'll assume the projection handles client summaries or similar
-        return nil // Placeholder, needs actual implementation based on where client info lives
+    private func fetchClientForSession(_ id: UUID) -> UUID? {
+        sessionCard(for: id)?.clientID
     }
 }

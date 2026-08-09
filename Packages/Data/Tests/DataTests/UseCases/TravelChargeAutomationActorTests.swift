@@ -1,30 +1,24 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class TravelChargeAutomationActorTests: XCTestCase {
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
-    private var actor: TravelChargeAutomationActor!
+@Suite struct TravelChargeAutomationActorTests {
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+    private let actor: TravelChargeAutomationActor
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
-        actor = TravelChargeAutomationActor(modelContainer: container)
+        self.modelContainer = container
+        self.modelContext = context
+        self.actor = TravelChargeAutomationActor(modelContainer: container)
     }
 
-    override func tearDown() async throws {
-        actor = nil
-        modelContext = nil
-        modelContainer = nil
-        try await super.tearDown()
-    }
-
-    func testResolveReviewBySkippingWithModelIDUpdatesStatus() async throws {
+    @Test func ResolveReviewBySkippingWithModelIDUpdatesStatus() async throws {
         let review = TravelChargeReviewItem(id: UUID(), reason: "MMM lookup missing")
         review.status = "pending"
         modelContext.insert(review)
@@ -41,12 +35,12 @@ final class TravelChargeAutomationActorTests: XCTestCase {
         )
         let refreshed = try modelContext.fetch(descriptor).first
 
-        XCTAssertEqual(refreshed?.status, "resolved")
-        XCTAssertTrue((refreshed?.resolutionNotes ?? "").contains("Skipped by user"))
-        XCTAssertTrue((refreshed?.resolutionNotes ?? "").contains("manual override by tester"))
+        #expect(refreshed?.status == "resolved")
+        #expect((refreshed?.resolutionNotes ?? "").contains("Skipped by user"))
+        #expect((refreshed?.resolutionNotes ?? "").contains("manual override by tester"))
     }
 
-    func testResolveDeletedReviewModelIDThrowsTypedNotFoundError() async throws {
+    @Test func ResolveDeletedReviewModelIDThrowsTypedNotFoundError() async throws {
         let review = TravelChargeReviewItem(id: UUID(), reason: "Deleted review")
         modelContext.insert(review)
         try modelContext.save()
@@ -56,9 +50,9 @@ final class TravelChargeAutomationActorTests: XCTestCase {
 
         do {
             try await actor.resolveReviewBySkipping(reviewModelID: deletedModelID)
-            XCTFail("Expected deleted review model identifier to throw.")
+            Issue.record("Expected deleted review model identifier to throw.")
         } catch let error as TravelChargeAutomationActorError {
-            XCTAssertEqual(error, .reviewItemModelNotFound)
+            #expect(error == .reviewItemModelNotFound)
         }
     }
 }

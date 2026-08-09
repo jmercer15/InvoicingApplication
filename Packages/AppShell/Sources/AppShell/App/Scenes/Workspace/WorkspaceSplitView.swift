@@ -2,6 +2,10 @@ import SwiftUI
 import Core
 import SharedUI
 
+private enum WorkspaceSplitShellIdentity {
+    static let workspace = "workspace-split-shell"
+}
+
 struct WorkspaceSplitView: View {
     let features: WorkspaceFeatureRegistries
     let navigationManager: AppNavigationManager
@@ -17,6 +21,7 @@ struct WorkspaceSplitView: View {
     private var splitView: some View {
         let activeFeature = nav.selectedTab
         let widthProfile = activeFeature.widthProfile
+        let usesContentColumn = activeFeature.splitStyle == .workspacePlusContentDetail
         let visibility = Binding(
             get: { nav.columnVisibility },
             set: { newValue in
@@ -24,25 +29,28 @@ struct WorkspaceSplitView: View {
                 nav.columnVisibility = newValue
             }
         )
-        switch activeFeature.splitStyle {
-        case .workspacePlusDetail:
-            NavigationSplitView(columnVisibility: visibility) {
-                sidebarColumn(with: widthProfile.sidebar)
-            } detail: {
-                detailColumn(with: widthProfile)
-            }
-            .id(SplitViewShellStyle.workspacePlusDetail)
 
-        case .workspacePlusContentDetail:
-            NavigationSplitView(columnVisibility: visibility) {
-                sidebarColumn(with: widthProfile.sidebar)
-            } content: {
+        NavigationSplitView(columnVisibility: visibility) {
+            sidebarColumn(with: widthProfile.sidebar)
+        } content: {
+            // Unified 3-column shell always declares a content column. Collapse it to
+            // zero width for sidebar+detail tabs (Billing Hub, Template Editor, Calendar).
+            if usesContentColumn {
                 contentColumnThreeColumn(with: widthProfile)
-            } detail: {
-                detailColumn(with: widthProfile)
+            } else {
+                collapsedContentColumn
             }
-            .id(SplitViewShellStyle.workspacePlusContentDetail)
+        } detail: {
+            detailColumn(with: widthProfile)
         }
+        .id(WorkspaceSplitShellIdentity.workspace)
+    }
+
+    /// Keeps the stable split shell while removing residual content-column chrome.
+    private var collapsedContentColumn: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .navigationSplitViewColumnWidth(min: 0, ideal: 0, max: 0)
     }
 
     private func sidebarColumn(with width: SplitViewColumnWidthProfile) -> some View {
@@ -85,7 +93,8 @@ struct WorkspaceSplitView: View {
 
     @ViewBuilder
     private func detailColumn(with widthProfile: SplitViewWidthProfile) -> some View {
-        let role: PanelShellRole = widthProfile.content == nil ? .singlePanel : .detailPanel
+        let usesContentColumn = widthProfile.content.map { $0.ideal > 0 } ?? false
+        let role: PanelShellRole = usesContentColumn ? .detailPanel : .singlePanel
         let detailColumn = WorkspaceFeatureDetailColumn(
             feature: nav.selectedTab,
             features: features,

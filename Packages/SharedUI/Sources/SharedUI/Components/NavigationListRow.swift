@@ -1,5 +1,4 @@
 import SwiftUI
-import Core
 
 /// Shared navigation list row for hierarchical content panels (parent drill-down + leaf selection).
 public struct NavigationListRow: View {

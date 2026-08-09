@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 
 /// Preflight validation for BPR export: reuses BulkClaimValidationService and adds duplicate claim reference check.

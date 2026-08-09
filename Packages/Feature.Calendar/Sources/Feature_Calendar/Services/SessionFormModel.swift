@@ -7,6 +7,7 @@
 import Foundation
 import SwiftUI
 import Core
+import PersistenceModels
 import EventKit
 import Data
 import SharedUI
@@ -32,7 +33,7 @@ struct SessionSupportLogDraft: Sendable {
 
 /// A simple struct to hold the raw, mutable state of session form fields
 /// Extracted from NewSessionViewModel to separate data from logic
-struct SessionFormModel {
+struct SessionFormModel: Sendable {
     
     // MARK: - Basic Session Properties
     var title: String = ""

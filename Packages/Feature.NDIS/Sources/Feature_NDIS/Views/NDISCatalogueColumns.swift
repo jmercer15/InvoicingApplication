@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
-import Data
 import Core
+import PersistenceModels
 import SharedUI
 import Observation
 
@@ -45,7 +45,7 @@ public struct NDISCatalogueContentColumn: View {
                 revision: viewModel.dataRevision,
                 businessId: businessEntities.first?.id
             )) {
-                try? await Task.sleep(for: .milliseconds(150))
+                guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
                 viewModel.refreshPreferredRegion(using: businessEntities.first)
                 if viewModel.dataRevision > 0 {
                     viewModel.loadCatalogue(force: true)

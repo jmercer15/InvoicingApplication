@@ -28,16 +28,15 @@ extension NDISBillingService {
 
     func applyGeoModifier(_ baseRate: Double, _ context: NDISBillingInputVector) throws -> Double {
         let location = isDirectService(context.context) ? context.participant.location : context.provider.location
-        guard let multiplier = configService.getGeoMultiplier(for: location) else {
-            throw NDISBillingError.invalidPrice("Geographic loading requires coordinates that resolve to an MMM zone.")
-        }
+        // Missing / unresolved MMM → 1.0x after upstream geo gate (IntegrationService) has run.
+        let multiplier = configService.getGeoMultiplier(for: location)
         return baseRate * multiplier
     }
 
     func applyTimeModifier(_ rate: Double, _ context: NDISBillingInputVector) throws -> Double {
         let serviceStart = context.service.startTime
         let serviceEnd   = context.service.endTime
-        let workerType   = "DSW"
+        let workerType   = context.context.providerType
         if isCrossShift(serviceStart, serviceEnd, workerType) {
             let rate1 = try getRateForTime(rate, serviceStart, workerType)
             let rate2 = try getRateForTime(rate, serviceEnd,   workerType)
@@ -72,7 +71,8 @@ extension NDISBillingService {
         let day = try getDayOfWeek(time)
         if day == "Sunday"   { return "Sunday" }
         if day == "Saturday" { return "Saturday" }
-        if workerType == "DSW" {
+        let normalized = workerType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.caseInsensitiveCompare(TravelChargeProviderType.dsw.rawValue) == .orderedSame {
             let hour = Calendar.current.component(.hour, from: time)
             if hour >= 20 { return "DSWEvening" }
             if hour <  6  { return "DSWNight" }
@@ -128,7 +128,7 @@ extension NDISBillingService {
         return "Direct"
     }
 
-    func applyCoPayment(_ claim: NDISClaimableLineItem, _ coPaymentAmount: Double) -> NDISClaimableLineItem {
+    func applyCoPayment(_ claim: NDISClaimableLineItem, _ coPaymentAmount: Decimal) -> NDISClaimableLineItem {
         let newTotal    = max(0, claim.totalAmount - coPaymentAmount)
         let newUnitPrice = claim.quantity > 0 ? newTotal / claim.quantity : 0
         return NDISClaimableLineItem(

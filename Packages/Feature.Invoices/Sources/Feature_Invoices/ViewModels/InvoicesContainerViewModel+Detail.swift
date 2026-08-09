@@ -1,4 +1,4 @@
-import Core
+import PersistenceModels
 
 extension InvoicesContainerViewModel {
     /// List and deep-link selection only. New table-layout editor owns draft lifecycle.

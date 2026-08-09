@@ -1,40 +1,29 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class BulkClaimBuilderActorTests: XCTestCase {
+@Suite struct BulkClaimBuilderActorTests {
     private typealias PersistenceBillingAuthority = BillingAuthority
     private typealias PersistenceNDISClaimType = NDISClaimType
     private typealias PersistenceInvoiceStatus = InvoiceStatus
     private typealias PersistenceSessionStatus = SessionStatus
 
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+    private let builder: BulkClaimBuilderActor
 
-    private var builder: BulkClaimBuilderActor!
-
-    override func setUp() async throws {
-        try await super.setUp()
-
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
-
-        builder = BulkClaimBuilderActor(modelContainer: modelContainer)
+        self.modelContainer = container
+        self.modelContext = context
+        self.builder = BulkClaimBuilderActor(modelContainer: container)
     }
 
-    override func tearDown() async throws {
-        builder = nil
-
-        modelContext = nil
-        modelContainer = nil
-
-        try await super.tearDown()
-    }
-
-    func testBuildLinesMapsClaimTypesAndGSTFallback() async throws {
+    @Test func BuildLinesMapsClaimTypesAndGSTFallback() async throws {
         let client = try insertClient(name: "Claim Builder Client")
         let session = try insertSession(client: client)
         let invoice = try insertInvoice(client: client, session: session)
@@ -64,21 +53,21 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         let batchNoTravel = makeBatch(includeTravel: false)
 
         let withoutTravel = try await builder.buildLines(for: batchNoTravel.snapshot())
-        XCTAssertEqual(withoutTravel.count, 1)
-        XCTAssertEqual(withoutTravel[0].claimTypeCode, BPRClaimTypeCode.thlt.rawValue)
-        XCTAssertEqual(withoutTravel[0].hours, "001:30")
-        XCTAssertNil(withoutTravel[0].quantity)
-        XCTAssertEqual(withoutTravel[0].gstCode, "P2")
-        XCTAssertEqual(withoutTravel[0].registrationNumber, "12345")
+        #expect(withoutTravel.count == 1)
+        #expect(withoutTravel[0].claimTypeCode == BPRClaimTypeCode.thlt.rawValue)
+        #expect(withoutTravel[0].hours == "001:30")
+        #expect(withoutTravel[0].quantity == nil)
+        #expect(withoutTravel[0].gstCode == "P2")
+        #expect(withoutTravel[0].registrationNumber == "12345")
 
         let batchWithTravel = makeBatch(includeTravel: true)
 
         let withTravel = try await builder.buildLines(for: batchWithTravel.snapshot())
-        XCTAssertEqual(withTravel.count, 2)
-        XCTAssertTrue(withTravel.contains(where: { $0.claimTypeCode == BPRClaimTypeCode.tran.rawValue }))
+        #expect(withTravel.count == 2)
+        #expect(withTravel.contains(where: { $0.claimTypeCode == BPRClaimTypeCode.tran.rawValue }))
     }
 
-    func testBuildLinesPlanManagedUsesBusinessABNForSupportProvider() async throws {
+    @Test func BuildLinesPlanManagedUsesBusinessABNForSupportProvider() async throws {
         let client = try insertClient(
             name: "Plan Managed Client",
             planManagementType: "Plan Managed",
@@ -102,11 +91,11 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         let batch = makeBatch()
 
         let lines = try await builder.buildLines(for: batch.snapshot())
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertEqual(lines.first?.abnOfSupportProvider, "12345678901")
+        #expect(lines.count == 1)
+        #expect(lines.first?.abnOfSupportProvider == "12345678901")
     }
 
-    func testBuildLinesNonPlanManagedLeavesSupportProviderABNBlank() async throws {
+    @Test func BuildLinesNonPlanManagedLeavesSupportProviderABNBlank() async throws {
         let client = try insertClient(
             name: "Self Managed Client",
             planManagementType: "Self Managed",
@@ -130,11 +119,11 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         let batch = makeBatch()
 
         let lines = try await builder.buildLines(for: batch.snapshot())
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertNil(lines.first?.abnOfSupportProvider)
+        #expect(lines.count == 1)
+        #expect(lines.first?.abnOfSupportProvider == nil)
     }
 
-    func testBuildLinesByBatchIDLoadsPersistedBatch() async throws {
+    @Test func BuildLinesByBatchIDLoadsPersistedBatch() async throws {
         let client = try insertClient(name: "Batch ID Client")
         let session = try insertSession(client: client)
         let invoice = try insertInvoice(client: client, session: session)
@@ -156,11 +145,11 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         try modelContext.save()
 
         let lines = try await builder.buildLines(batchID: batch.id)
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertEqual(lines.first?.batchId, batch.id)
+        #expect(lines.count == 1)
+        #expect(lines.first?.batchId == batch.id)
     }
 
-    func testBuildLinesByBatchModelIDLoadsPersistedBatch() async throws {
+    @Test func BuildLinesByBatchModelIDLoadsPersistedBatch() async throws {
         let client = try insertClient(name: "Batch Model ID Client")
         let session = try insertSession(client: client)
         let invoice = try insertInvoice(client: client, session: session)
@@ -182,11 +171,11 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         try modelContext.save()
 
         let lines = try await builder.buildLines(batchModelID: batch.persistentModelID)
-        XCTAssertEqual(lines.count, 1)
-        XCTAssertEqual(lines.first?.batchId, batch.id)
+        #expect(lines.count == 1)
+        #expect(lines.first?.batchId == batch.id)
     }
 
-    func testBuildLinesByDeletedBatchModelIDThrowsTypedNotFoundError() async throws {
+    @Test func BuildLinesByDeletedBatchModelIDThrowsTypedNotFoundError() async throws {
         let batch = makeBatch()
         modelContext.insert(batch)
         try modelContext.save()
@@ -196,21 +185,21 @@ final class BulkClaimBuilderActorTests: XCTestCase {
 
         do {
             _ = try await builder.buildLines(batchModelID: deletedModelID)
-            XCTFail("Expected deleted batch model identifier to throw.")
+            Issue.record("Expected deleted batch model identifier to throw.")
         } catch let error as BulkClaimBuilderActorError {
-            XCTAssertEqual(error, .batchModelNotFound)
+            #expect(error == .batchModelNotFound)
         }
     }
 
-    func testBuildLinesByBatchIDThrowsWhenBatchMissing() async throws {
+    @Test func BuildLinesByBatchIDThrowsWhenBatchMissing() async throws {
         let missingBatchID = UUID()
         do {
             _ = try await builder.buildLines(batchID: missingBatchID)
-            XCTFail("Expected missing batch to throw.")
+            Issue.record("Expected missing batch to throw.")
         } catch let error as BulkClaimBuilderActorError {
-            XCTAssertEqual(error, .batchNotFound(missingBatchID))
+            #expect(error == .batchNotFound(missingBatchID))
         } catch {
-            XCTFail("Unexpected error type: \(error)")
+            Issue.record("Unexpected error type: \(error)")
         }
     }
 
@@ -304,8 +293,8 @@ final class BulkClaimBuilderActorTests: XCTestCase {
         item.invoice = invoice
         item.session = session
         item.claimType = claimType
-        item.quantity = quantity
-        item.rate = 100
+        item.quantity = Decimal(quantity)
+        item.rate = Decimal(100)
         item.serviceDate = Date()
         item.unit = unit
         item.gstCode = gstCode

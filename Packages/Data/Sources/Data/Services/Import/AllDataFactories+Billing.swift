@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 
 extension AllDataFactories {
 
@@ -40,7 +41,7 @@ extension AllDataFactories {
 
     static func createRegionalPrice(from dict: [String: Any], entityMapping: [String: Any]) throws -> RegionalPrice {
         let rp = RegionalPrice(id: UUID())
-        rp.amount           = dict["amount"]           as? Double ?? 0.0
+        rp.amount           = MoneyDecimalImport.decimal(from: dict["amount"] as? Double ?? 0.0)
         rp.regionIdentifier = dict["regionIdentifier"] as? String ?? ""
 
         if let id = dict["ndisItem"] as? String, let item = entityMapping[id] as? NDISItem {
@@ -56,10 +57,10 @@ extension AllDataFactories {
 
     static func createInvoice(from dict: [String: Any], entityMapping: [String: Any]) throws -> Invoice {
         let invoice = Invoice(id: UUID(), invoiceNumber: dict["invoiceNumber"] as? String ?? "")
-        invoice.totalAmount   = dict["totalAmount"]  as? Double ?? 0.0
-        invoice.taxRate       = dict["taxRate"]      as? Double ?? 0.0
-        invoice.creditApplied = dict["creditApplied"] as? Double ?? 0.0
-        invoice.discount      = dict["discount"]     as? Double ?? 0.0
+        invoice.totalAmount   = MoneyDecimalImport.decimal(from: dict["totalAmount"]  as? Double ?? 0.0)
+        invoice.taxRate       = MoneyDecimalImport.decimal(from: dict["taxRate"]      as? Double ?? 0.0)
+        invoice.creditApplied = MoneyDecimalImport.decimal(from: dict["creditApplied"] as? Double ?? 0.0)
+        invoice.discount      = MoneyDecimalImport.decimal(from: dict["discount"]     as? Double ?? 0.0)
         invoice.notes         = dict["notes"]        as? String
         invoice.paymentTerms  = dict["paymentTerms"] as? String
         invoice.currencyCode  = dict["currencyCode"] as? String ?? "AUD"
@@ -177,10 +178,10 @@ extension AllDataFactories {
     static func createInvoiceItem(from dict: [String: Any], entityMapping: [String: Any]) throws -> InvoiceItem {
         let item = InvoiceItem(id: UUID(), itemDescription: dict["itemDescription"] as? String ?? dict["description"] as? String ?? "")
         item.position = dict["position"] as? Int32 ?? 0
-        item.quantity = dict["quantity"] as? Double ?? 0.0
-        item.rate     = dict["rate"] as? Double ?? dict["unitPrice"] as? Double ?? 0.0
+        item.quantity = MoneyDecimalImport.decimal(from: dict["quantity"] as? Double ?? 0.0)
+        item.rate     = MoneyDecimalImport.decimal(from: dict["rate"] as? Double ?? dict["unitPrice"] as? Double ?? 0.0)
         item.unit     = dict["unit"]    as? String
-        item.taxRate  = dict["taxRate"] as? Double ?? 0.0
+        item.taxRate  = MoneyDecimalImport.decimal(from: dict["taxRate"] as? Double ?? 0.0)
         item.gstCode  = dict["gstCode"] as? String
         item.ndisItemNumber = dict["itemCode"] as? String
 
@@ -226,9 +227,9 @@ extension AllDataFactories {
         line.ndisNumber            = dict["ndisNumber"]            as? String ?? ""
         line.supportNumber         = dict["supportNumber"]         as? String ?? ""
         line.claimReference        = dict["claimReference"]        as? String
-        line.quantity              = dict["quantity"]              as? Double
+        line.quantity              = MoneyDecimalImport.decimal(from: dict["quantity"] as? Double)
         line.hours                 = dict["hours"]                 as? String
-        line.unitPrice             = dict["unitPrice"]             as? Double ?? 0.0
+        line.unitPrice             = MoneyDecimalImport.decimal(from: dict["unitPrice"] as? Double ?? 0.0)
         line.gstCode               = dict["gstCode"]              as? String ?? GSTCode.p2.rawValue
         line.authorisedBy          = dict["authorisedBy"]          as? String
         line.participantApproved   = dict["participantApproved"]   as? String

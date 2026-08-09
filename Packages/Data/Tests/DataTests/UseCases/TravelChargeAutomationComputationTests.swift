@@ -1,57 +1,69 @@
-import XCTest
+import Foundation
+import CoreLocation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class TravelChargeAutomationComputationTests: XCTestCase {
-    private var container: ModelContainer!
-    private var service: Core.TravelChargeAutomationService!
+@Suite struct TravelChargeAutomationComputationTests {
+    private let container: ModelContainer
+    private let service: TravelChargeAutomationService
 
-    override func setUp() async throws {
-        try await super.setUp()
-        let (inMemoryContainer, context) = try ModelContainerFactory.makeInMemoryContext()
-        container = inMemoryContainer
-        service = Core.TravelChargeAutomationService(
-            modelContext: context,
-            businessRules: Core.BusinessRules(),
-            userPreferences: Core.UserPreferences(),
-            mmmZoneTable: Core.MMMZoneTable(mmmZoneLookup: Core.MMMZoneLookup()),
-            recurrenceRuleManager: Core.RecurrenceRuleManager(),
+    init() throws {
+        let (container, _) = try ModelContainerFactory.makeInMemoryContext()
+        self.container = container
+        self.service = TravelChargeAutomationService(
+            modelContainer: container,
+            businessRules: BusinessRules(),
+            userPreferences: UserPreferences(),
+            mmmZoneTable: MMMZoneTable(mmmZoneLookup: StubMMMZoneLookup()),
+            recurrenceRuleManager: RecurrenceRuleManager(),
             testingMode: true
         )
     }
 
-    override func tearDown() async throws {
-        service = nil
-        container = nil
-        try await super.tearDown()
-    }
-
-    func testCalculatedAmountMappingByChargeType() {
+    @Test func CalculatedAmountMappingByChargeType() async {
         let breakdown = makeBreakdown(
             labourPerParticipant: 22.0,
             nonLabourPerParticipant: 9.5,
             totalPerParticipant: 31.5
         )
 
-        XCTAssertEqual(service.testCalculatedAmount(for: "labour", breakdown: breakdown), 22.0)
-        XCTAssertEqual(service.testCalculatedAmount(for: "non-labour", breakdown: breakdown), 9.5)
-        XCTAssertEqual(service.testCalculatedAmount(for: "activity-based", breakdown: breakdown), 31.5)
-        XCTAssertEqual(service.testCalculatedAmount(for: "unexpected", breakdown: breakdown), 31.5)
+        #expect(await service.testCalculatedAmount(for: "labour", breakdown: breakdown) == 22.0)
+        #expect(await service.testCalculatedAmount(for: "non-labour", breakdown: breakdown) == 9.5)
+        #expect(await service.testCalculatedAmount(for: "activity-based", breakdown: breakdown) == 31.5)
+        #expect(await service.testCalculatedAmount(for: "unexpected", breakdown: breakdown) == 31.5)
     }
 
-    func testAutomateFromEmptySnapshotsIsNoOp() async {
+    @Test func AutomateFromEmptySnapshotsIsNoOp() async {
         await service.automateTravelChargesFromSnapshots(for: [], dateRange: nil)
-        let results = service.getTestResults()
-        XCTAssertTrue(results.charges.isEmpty)
-        XCTAssertTrue(results.reviews.isEmpty)
-        XCTAssertTrue(results.detailedReviews.isEmpty)
+        let results = await service.getTestResults()
+        #expect(results.charges.isEmpty)
+        #expect(results.reviews.isEmpty)
+        #expect(results.detailedReviews.isEmpty)
     }
 
-    func testGenerateTravelChargeNotesIncludesAdjustmentWarnings() {
-        let session = Core.Session(id: UUID(), title: "Morning Session")
-        let context = Core.TravelChargeAutomationService.SessionAutomationContext(
+    @Test func ModelActorFacadeAcceptsIdentifiersAndReturnsValueResults() async {
+        let actor = TravelChargeAutomationActor(modelContainer: container)
+
+        let results = await actor.runAutomation(
+            sessionModelIDs: [],
+            dateRange: nil,
+            testingMode: true,
+            mmmZoneLookup: StubMMMZoneLookup(),
+            recurrenceRuleManager: RecurrenceRuleManager()
+        )
+
+        #expect(results.charges.isEmpty)
+        #expect(results.reviews.isEmpty)
+        #expect(results.detailedReviews.isEmpty)
+    }
+
+    @Test func GenerateTravelChargeNotesIncludesAdjustmentWarnings() async {
+        let session = Session(id: UUID(), title: "Morning Session")
+        let context = TravelChargeAutomationService.SessionAutomationContext(
             session: session.snapshot(),
             client: nil,
             service: nil,
@@ -74,7 +86,7 @@ final class TravelChargeAutomationComputationTests: XCTestCase {
             severity: .warning
         )
 
-        let notes = service.testGenerateTravelChargeNotes(
+        let notes = await service.testGenerateTravelChargeNotes(
             session: context,
             direction: .before,
             distance: 20.0,
@@ -83,7 +95,7 @@ final class TravelChargeAutomationComputationTests: XCTestCase {
             travelTime: 30.0,
             originalTravelTime: 95.0,
             travelTimeWarnings: [travelTimeWarning],
-            mmmZone: Core.MMMZone(name: "MMM 1", maxTime: 30),
+            mmmZone: MMMZone(name: "MMM 1", maxTime: 30),
             vehicleType: "Car",
             parking: nil,
             tolls: nil,
@@ -97,37 +109,37 @@ final class TravelChargeAutomationComputationTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(notes.contains("adjusted from 42.0 km"))
-        XCTAssertTrue(notes.contains("adjusted from 95 min"))
-        XCTAssertTrue(notes.contains("Distance exceeded policy cap and was adjusted."))
-        XCTAssertTrue(notes.contains("Travel time exceeded MMM cap and was adjusted."))
-        XCTAssertTrue(notes.contains("Total per participant"))
+        #expect(notes.contains("adjusted from 42.0 km"))
+        #expect(notes.contains("adjusted from 95 min"))
+        #expect(notes.contains("Distance exceeded policy cap and was adjusted."))
+        #expect(notes.contains("Travel time exceeded MMM cap and was adjusted."))
+        #expect(notes.contains("Total per participant"))
     }
 
-    func testOverrideNoteSuffixIncludesTypeAndReason() {
-        let explicit = service.testOverrideNotesSuffix(
+    @Test func OverrideNoteSuffixIncludesTypeAndReason() async {
+        let explicit = await service.testOverrideNotesSuffix(
             overrideType: "Distance Override",
             overrideReason: "Approved by coordinator"
         )
-        XCTAssertTrue(explicit.contains("[Override: Distance Override - Approved by coordinator]"))
+        #expect(explicit.contains("[Override: Distance Override - Approved by coordinator]"))
 
-        let defaulted = service.testOverrideNotesSuffix(overrideType: nil, overrideReason: nil)
-        XCTAssertTrue(defaulted.contains("[Override: Manual - No reason provided]"))
+        let defaulted = await service.testOverrideNotesSuffix(overrideType: nil, overrideReason: nil)
+        #expect(defaulted.contains("[Override: Manual - No reason provided]"))
     }
 
-    func testLookupMMMZoneDoesNotUsePostcodeOnlyFallback() {
-        let client = Core.Client(
+    @Test func LookupMMMZoneDoesNotUsePostcodeOnlyFallback() async {
+        let client = Client(
             id: UUID(),
             ndisNumber: "123456789",
             fullName: "Fallback Check",
             status: .active
         )
-        let addr = Core.Address()
+        let addr = Address()
         addr.postcode = "2000"
         client.address = addr
 
-        let session = Core.Session(id: UUID(), title: "Postcode Only Session")
-        let context = Core.TravelChargeAutomationService.SessionAutomationContext(
+        let session = Session(id: UUID(), title: "Postcode Only Session")
+        let context = TravelChargeAutomationService.SessionAutomationContext(
             session: session.snapshot(),
             client: client.snapshot(),
             service: nil,
@@ -135,29 +147,26 @@ final class TravelChargeAutomationComputationTests: XCTestCase {
             address: nil
         )
 
-        XCTAssertNil(
-            service.testLookupMMMZone(for: context),
-            "Travel charge automation should not derive MMM from postcode-only data."
-        )
+        #expect(await service.testLookupMMMZone(for: context) == nil, "Travel charge automation should not derive MMM from postcode-only data.")
     }
 
-    func testLookupMMMZoneUsesStoredClientCoordinates() throws {
-        let client = Core.Client(
+    @Test func LookupMMMZoneUsesStoredClientCoordinates() async throws {
+        let client = Client(
             id: UUID(),
             ndisNumber: "123456789",
             fullName: "Coordinate Check",
             status: .active
         )
-        let addr = Core.Address()
+        let addr = Address()
         addr.postcode = "7000"
         addr.latitude = -42.8821
         addr.longitude = 147.3272
         client.address = addr
 
-        let session = Core.Session(id: UUID(), title: "Client Coordinate Session")
+        let session = Session(id: UUID(), title: "Client Coordinate Session")
         session.sessionLatitude = -42.8821
         session.sessionLongitude = 147.3272
-        let context = Core.TravelChargeAutomationService.SessionAutomationContext(
+        let context = TravelChargeAutomationService.SessionAutomationContext(
             session: session.snapshot(),
             client: client.snapshot(),
             service: nil,
@@ -165,10 +174,14 @@ final class TravelChargeAutomationComputationTests: XCTestCase {
             address: nil
         )
 
-        guard let zone = service.testLookupMMMZone(for: context) else {
-            throw XCTSkip("MMM polygon data is not bundled in this test host; CoreTests exercise GeoJSON loading.")
+        let zone = try #require(await service.testLookupMMMZone(for: context))
+        #expect(zone.name == "MMM 2")
+    }
+
+    private struct StubMMMZoneLookup: MMMZoneLookupProtocol {
+        func mmm(for coord: CLLocationCoordinate2D) -> Int? {
+            coord.latitude == -42.8821 && coord.longitude == 147.3272 ? 2 : nil
         }
-        XCTAssertEqual(zone.name, "MMM 2")
     }
 
     private func makeBreakdown(

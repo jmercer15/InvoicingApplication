@@ -1,6 +1,6 @@
 import AppKit
 import Core
-import Data
+import PersistenceModels
 import SharedUI
 import SwiftData
 import SwiftUI
@@ -11,11 +11,16 @@ public struct ClaimBatchDetailView: View {
     let batchId: UUID
     @State private var batch: BulkClaimBatch?
     @Bindable var viewModel: ClaimBatchesViewModel
-    @Environment(\.modelContext) private var modelContext
     @State private var lines: [BulkClaimLine] = []
 
-    @State private var showBPRFImport = false
-    @State private var showReconciliation = false
+    @State private var sheetDestination: SheetDestination?
+
+    private enum SheetDestination: Identifiable {
+        case bprfImport
+        case reconciliation
+
+        var id: Self { self }
+    }
     @State private var preflightSummary: String?
     @State private var errorMessage: String?
     @State private var isBusy = false
@@ -30,13 +35,13 @@ public struct ClaimBatchDetailView: View {
             if let msg = errorMessage {
                 Text(msg)
                     .font(.caption)
-                    .foregroundColor(Color(NSColor.systemRed))
+                    .foregroundStyle(ColorSystem.Status.error)
                     .padding(.horizontal)
             }
             if let summary = preflightSummary {
                 Text(summary)
                     .font(.caption)
-                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     .padding(.horizontal)
             }
             Table(lines) {
@@ -44,7 +49,7 @@ public struct ClaimBatchDetailView: View {
                 TableColumn("Support Number") { line in Text(line.supportNumber) }
                 TableColumn("NDIS Number") { line in Text(line.ndisNumber) }
                 TableColumn("Hours") { line in Text(line.hours ?? "-") }
-                TableColumn("Unit Price") { line in Text(String(format: "%.2f", line.unitPrice)) }
+                TableColumn("Unit Price") { line in Text(CurrencyFormatting.editableAmount(line.unitPrice)) }
                 TableColumn("Status") { line in Text(line.submissionStatus ?? "-") }
             }
         }
@@ -77,13 +82,13 @@ public struct ClaimBatchDetailView: View {
 
                     Section("Reconciliation") {
                         Button {
-                            showBPRFImport = true
+                            sheetDestination = .bprfImport
                         } label: {
                             Label("Import BPRF…", systemImage: "doc.badge.arrow.up")
                         }
 
                         Button {
-                            showReconciliation = true
+                            sheetDestination = .reconciliation
                         } label: {
                             Label("Reconciliation", systemImage: "arrow.triangle.merge")
                         }
@@ -92,18 +97,18 @@ public struct ClaimBatchDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showBPRFImport) {
-            ReconcileBPRFImportView(batchId: batchId, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showReconciliation) {
-            NavigationStack {
-                ReconciliationDashboardContainer(batchId: batchId, viewModel: viewModel)
+        .sheet(item: $sheetDestination) { destination in
+            switch destination {
+            case .bprfImport:
+                ReconcileBPRFImportView(batchId: batchId, viewModel: viewModel)
+            case .reconciliation:
+                NavigationStack {
+                    ReconciliationDashboardContainer(batchId: batchId, viewModel: viewModel)
+                }
             }
         }
         .task(id: batchId) {
-            var descriptor = FetchDescriptor<BulkClaimBatch>(predicate: #Predicate<BulkClaimBatch> { $0.id == batchId })
-            descriptor.fetchLimit = 1
-            batch = try? modelContext.fetch(descriptor).first
+            batch = try? viewModel.fetchBatch(id: batchId)
             self.lines = await viewModel.fetchLines(forBatch: batchId)
         }
     }
@@ -203,7 +208,7 @@ public struct ClaimBatchDetailView: View {
             }
             Task {
                 do {
-                    try await Task.detached(priority: .userInitiated) {
+                    try await Task(priority: .userInitiated) {
                         try data.write(to: url)
                     }.value
                     completion(url.lastPathComponent)

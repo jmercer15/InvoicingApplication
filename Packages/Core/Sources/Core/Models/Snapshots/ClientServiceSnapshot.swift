@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - ClientServiceSnapshot
 
@@ -15,32 +14,51 @@ public struct ClientServiceSnapshot: Sendable, Equatable, Hashable {
     public let serviceName: String
     public let ndisCode: String?
     public let unit: String
-    public let rate: Double
+    public let rate: Decimal
     public let isActive: Bool
     public let startDate: Date?
     public let endDate: Date?
     public let isDefault: Bool
     public let ndisItemNumber: String?
     public let gstCode: String?
+    public let consecutiveMonths: Int?
     public let status: String?
     public let clientId: UUID?
     public let ndisItemId: UUID?
 
-    public init(_ service: ClientService) {
-        self.id = service.id
-        self.serviceName = service.serviceName
-        self.ndisCode = service.ndisCode
-        self.unit = service.unit
-        self.rate = service.rate
-        self.isActive = service.isActive
-        self.startDate = service.startDate
-        self.endDate = service.endDate
-        self.isDefault = service.isDefault
-        self.ndisItemNumber = service.ndisItemNumber
-        self.gstCode = service.gstCode
-        self.status = service.status
-        self.clientId = service.client?.id
-        self.ndisItemId = service.ndisItem?.id
-    }
-}
 
+    public init(
+        id: UUID,
+        serviceName: String,
+        ndisCode: String?,
+        unit: String,
+        rate: Decimal,
+        isActive: Bool,
+        startDate: Date?,
+        endDate: Date?,
+        isDefault: Bool,
+        ndisItemNumber: String?,
+        gstCode: String?,
+        consecutiveMonths: Int?,
+        status: String?,
+        clientId: UUID?,
+        ndisItemId: UUID?
+    ) {
+        self.id = id
+        self.serviceName = serviceName
+        self.ndisCode = ndisCode
+        self.unit = unit
+        self.rate = rate
+        self.isActive = isActive
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isDefault = isDefault
+        self.ndisItemNumber = ndisItemNumber
+        self.gstCode = gstCode
+        self.consecutiveMonths = consecutiveMonths
+        self.status = status
+        self.clientId = clientId
+        self.ndisItemId = ndisItemId
+    }
+
+}

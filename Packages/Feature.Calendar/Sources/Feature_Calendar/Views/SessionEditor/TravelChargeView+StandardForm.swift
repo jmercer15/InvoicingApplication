@@ -8,20 +8,20 @@ extension TravelChargeView {
     var standardTravelForm: some View {
         Section("Labour Cost (Time-Based)") {
             VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
-                Text("Include Labour Costs")
+                Toggle("Include provider travel time", isOn: $viewModel.form.includeLabour.animation())
+                Text("Bills provider time immediately before or after this session.")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
-                Toggle("Include Labour Costs", isOn: $viewModel.form.includeLabour.animation())
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
 
             if viewModel.form.includeLabour {
                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     Text("MMM Zone")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     Picker("MMM Zone", selection: $viewModel.form.mmmZone) {
                         ForEach(TravelChargeSheetMMMZone.allCases, id: \.self) { zone in
-                            Text(String(describing: zone)).tag(zone)
+                            Text(zone.rawValue).tag(zone)
                         }
                     }
                     .pickerStyle(.menu)
@@ -29,7 +29,7 @@ extension TravelChargeView {
                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     Text("Provider Type")
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                     Picker("Provider Type", selection: $viewModel.form.providerType) {
                         ForEach(Core.TravelChargeProviderType.allCases, id: \.self) { provider in
                             Text(provider.rawValue).tag(provider)
@@ -40,10 +40,10 @@ extension TravelChargeView {
                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     Text("Travel occurs")
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                     Picker("Travel occurs", selection: $viewModel.form.travelDirection) {
                         ForEach(TravelChargeSheetDirection.allCases, id: \.self) { direction in
-                            Text(String(describing: direction)).tag(direction)
+                            Text(direction.rawValue).tag(direction)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -56,30 +56,28 @@ extension TravelChargeView {
                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text("Time Before (minutes)")
                             .font(StyleGuide.Typography.itemSubtitle)
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
-                        TextField("30", text: $viewModel.form.travelTimeBeforeString)
-                            .textFieldStyle(.roundedBorder)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
+                    TextField("30", text: $viewModel.form.travelTimeBeforeString)
+                        .textFieldStyle(.roundedBorder)
                     }
-                    .disabled(viewModel.form.hasExistingTravelBefore)
                 } else {
                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text("Time After (minutes)")
                             .font(StyleGuide.Typography.itemSubtitle)
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
-                        TextField("30", text: $viewModel.form.travelTimeAfterString)
-                            .textFieldStyle(.roundedBorder)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
+                    TextField("30", text: $viewModel.form.travelTimeAfterString)
+                        .textFieldStyle(.roundedBorder)
                     }
-                    .disabled(viewModel.form.hasExistingTravelAfter)
                 }
             }
         }
         
         Section("Non-Labour Cost (Distance-Based)") {
             VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
-                Text("Include Kilometre Allowance")
+                Toggle("Include kilometre allowance", isOn: $viewModel.form.includeNonLabour.animation())
+                Text("Bills distance plus optional parking and toll costs.")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
-                Toggle("Include Kilometre Allowance", isOn: $viewModel.form.includeNonLabour.animation())
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
 
             if viewModel.form.includeNonLabour {
@@ -89,14 +87,14 @@ extension TravelChargeView {
                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text("Parking Fees")
                             .font(StyleGuide.Typography.itemSubtitle)
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
                         TextField("e.g., 5.50", text: $viewModel.form.parkingString)
                             .textFieldStyle(.roundedBorder)
                     }
                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text("Road Tolls")
                             .font(StyleGuide.Typography.itemSubtitle)
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
                         TextField("e.g., 4.75", text: $viewModel.form.tollsString)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -113,7 +111,7 @@ extension TravelChargeView {
             Text("To:   \(viewModel.form.toAddressString)")
         }
         .font(StyleGuide.Typography.itemSubtitle)
-        .foregroundColor(StyleGuide.Colors.textSecondary)
+        .foregroundStyle(StyleGuide.Colors.textSecondary)
     }
 
     @ViewBuilder
@@ -122,7 +120,7 @@ extension TravelChargeView {
             VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                 Text("Distance (km)")
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                 TextField("e.g., 15", text: $viewModel.form.distanceString)
                     .textFieldStyle(.roundedBorder)
             }
@@ -142,7 +140,7 @@ extension TravelChargeView {
         if let error = viewModel.form.distanceCalculationError {
             Text(error)
                 .font(.caption)
-                .foregroundColor(ColorSystem.Status.error)
+                .foregroundStyle(ColorSystem.Status.error)
         }
     }
 }

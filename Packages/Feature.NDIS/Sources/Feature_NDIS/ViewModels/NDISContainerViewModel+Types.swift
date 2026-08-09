@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
-import Data
+import PersistenceModels
 
 extension NDISContainerViewModel {
     

@@ -3,7 +3,9 @@
 import SwiftUI
 import SwiftData
 import Core
+import PersistenceModels
 import Data
+import DataInterfaces
 import SharedUI
 import Observation
 import InvoiceTableLayoutEditor
@@ -314,7 +316,7 @@ public class InvoicesContainerViewModel {
 
     /// Currency-neutral amount labels for mixed-currency invoice lists.
     private static func formatAmountFilterValue(_ amount: Double) -> String {
-        String(format: "%.2f", amount)
+        CurrencyFormatting.editableAmount(amount)
     }
 
     func beginListLoad() -> UUID {
@@ -361,7 +363,7 @@ public class InvoicesContainerViewModel {
     public init(
         modelContext: ModelContext,
         listFetcher: (any InvoiceListFetching)? = nil,
-        storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil,
+        storeChangeMonitor: (any StoreChangeMonitoring)? = nil,
         invoiceCreationPreparation: (@MainActor () async -> Bool)? = nil
     ) {
         self.modelContext = modelContext
@@ -372,8 +374,8 @@ public class InvoicesContainerViewModel {
         self.invoiceCreationPreparation = invoiceCreationPreparation ?? {
             await editorSession.prepareForInvoiceCreation()
         }
-        SwiftDataStoreChangeMonitor.subscribeToStoreChanges(monitor: storeChangeMonitor) { [weak self] revision in
-            self?.dataRevision = revision
+        StoreChangeMonitoringSubscription.subscribe(monitor: storeChangeMonitor) { [weak self] revision in
+            self?.handleStoreRevision(revision)
         }
         editorSession.setMutationHandler { [weak self] mutation in
             Task { @MainActor [weak self] in
@@ -384,6 +386,26 @@ public class InvoicesContainerViewModel {
 
     func updateSortOrder() {
         invoiceSortOrder = InvoicesSortOrder.from(field: sortField, direction: sortDirection)
+    }
+
+    /// Store revision means persistent history advanced (including CloudKit HistoryExpired).
+    /// Drop live Invoice / InvoiceItem refs before reload so UI cannot touch invalidated backing data.
+    func handleStoreRevision(_ revision: Int) {
+        guard revision != dataRevision else { return }
+        dataRevision = revision
+        invalidateLiveListModelsForStoreChange()
+    }
+
+    private func invalidateLiveListModelsForStoreChange() {
+        guard !invoiceEntities.isEmpty || selectedInvoice != nil || !loadedInvoicesByID.isEmpty else {
+            return
+        }
+        invoiceEntities = []
+        loadedInvoicesByID = [:]
+        applySelection(nil)
+        analyticsSummary = InvoiceAnalyticsEngine.calculateSummary(from: [])
+        listContentRevision &+= 1
+        isLoading = true
     }
 }
 

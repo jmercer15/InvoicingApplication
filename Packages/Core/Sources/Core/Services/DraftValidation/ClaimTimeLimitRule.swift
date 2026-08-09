@@ -22,11 +22,11 @@ public struct ClaimTimeLimitRule: Sendable {
     }
 
     /// Evaluates the support start date and returns a blocking or warning issue if applicable.
-    public func evaluate(supportStartDate: Date, draftId: UUID) -> DraftIssue? {
+    public func evaluate(supportStartDate: Date, draftId: UUID) -> DraftIssueSnapshot? {
         let twoYearsAgo = Calendar.current.date(byAdding: .year, value: -2, to: referenceDate) ?? referenceDate
         if supportStartDate < twoYearsAgo {
             let afterCutoff = referenceDate > Self.graceCutoffDate
-            return DraftIssue(
+            return DraftIssueSnapshot(
                 id: UUID(),
                 draftId: draftId,
                 severity: afterCutoff ? .blocking : .warning,
@@ -46,7 +46,7 @@ public struct ClaimTimeLimitRule: Sendable {
         if supportStartDate < boundaryStart {
             return nil
         }
-        return DraftIssue(
+        return DraftIssueSnapshot(
             id: UUID(),
             draftId: draftId,
             severity: .warning,

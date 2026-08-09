@@ -18,22 +18,25 @@ struct CalendarRowView: View {
     
     var body: some View {
         HStack(spacing: FormSectionTokens.sectionStackSpacing) {
-            // Checkbox
             Button(action: {
                 onToggle(!isSelected)
             }) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(StyleGuide.Typography.sectionTitle)
-                    .foregroundColor(isSelected ? .accentColor : .white.opacity(0.6))
+                HStack(spacing: FormSectionTokens.sectionStackSpacing) {
+                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                        .font(StyleGuide.Typography.sectionTitle)
+                        .foregroundColor(isSelected ? .accentColor : .white.opacity(0.6))
+
+                    Text(calendar.title)
+                        .font(.subheadline)
+                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
             .buttonStyle(.plain)
-            
-            // Calendar name
-            Text(calendar.title)
-                .font(.subheadline)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("\(calendar.title), \(isSelected ? "visible" : "hidden")")
+            .accessibilityHint("Shows or hides this calendar.")
+            .accessibilityAddTraits(.isButton)
             
             // Color picker button
             Button(action: {
@@ -80,9 +83,5 @@ struct CalendarRowView: View {
             RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusCompact)
                 .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onToggle(!isSelected)
-        }
     }
 }

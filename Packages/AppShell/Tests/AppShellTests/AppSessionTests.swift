@@ -1,10 +1,9 @@
 import Foundation
 @testable import AppShell
-import XCTest
-
+import Testing
 @MainActor
-final class AppSessionTests: XCTestCase {
-    func testBootstrapFailurePublishesStartupError() async {
+@Suite struct AppSessionTests {
+    @Test func BootstrapFailurePublishesStartupError() async {
         struct StartupTestError: LocalizedError {
             var errorDescription: String? { "test startup failure" }
         }
@@ -18,15 +17,15 @@ final class AppSessionTests: XCTestCase {
         await session.bootstrap()
 
         guard case .failed(let error) = session.phase else {
-            XCTFail("Expected failed startup phase")
+            Issue.record("Expected failed startup phase")
             return
         }
 
-        XCTAssertEqual(error.errorDescription, "Failed to start InvoicingApplication.")
-        XCTAssertEqual(error.recoverySuggestion, "test startup failure")
+        #expect(error.errorDescription == "Failed to start InvoicingApplication.")
+        #expect(error.recoverySuggestion == "test startup failure")
     }
 
-    func testConcurrentBootstrapRunsOnlyOneRuntimeFactory() async {
+    @Test func ConcurrentBootstrapRunsOnlyOneRuntimeFactory() async {
         actor Counter {
             private(set) var value = 0
 
@@ -51,6 +50,6 @@ final class AppSessionTests: XCTestCase {
         _ = await (first, second)
 
         let calls = await counter.value
-        XCTAssertEqual(calls, 1)
+        #expect(calls == 1)
     }
 }

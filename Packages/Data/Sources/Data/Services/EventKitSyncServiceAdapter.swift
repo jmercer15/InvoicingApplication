@@ -2,10 +2,11 @@ import Foundation
 import EventKit
 import SwiftData
 import Core
+import PersistenceModels
 
 /// Adapter that makes EventKitSyncService conform to the Core SyncService protocol
 @MainActor
-public class EventKitSyncServiceAdapter: @preconcurrency SyncService {
+public class EventKitSyncServiceAdapter: SyncService {
     private let eventKitService: EventKitSyncService
     private let modelContext: ModelContext
 

@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -187,9 +188,9 @@ struct InvoiceImport {
                 }
                 
                 if let amount = invoice.totalAmount {
-                    invoiceModel.totalAmount = amount
+                    invoiceModel.totalAmount = MoneyDecimalImport.decimal(from: amount)
                 } else if let amountString = invoice.totalAmountString, let amount = Double(amountString) {
-                    invoiceModel.totalAmount = amount
+                    invoiceModel.totalAmount = MoneyDecimalImport.decimal(from: amount)
                 }
                 
                 invoiceModel.status = try parseInvoiceStatus(invoice.status, invoiceNumber: invoice.invoiceNumber)
@@ -263,8 +264,8 @@ struct InvoiceImport {
             let lineItem = InvoiceItem(id: UUID(), itemDescription: item.name)
             context.insert(lineItem)
             lineItem.position = Int32(index)
-            lineItem.quantity = Double(item.quantity)
-            lineItem.rate = item.unitPrice
+            lineItem.quantity = MoneyDecimalImport.decimal(from: Double(item.quantity))
+            lineItem.rate = MoneyDecimalImport.decimal(from: item.unitPrice)
             lineItem.invoice = invoice
             lineItem.serviceDate = invoice.issueDate
             importedItems.append(lineItem)
@@ -272,7 +273,7 @@ struct InvoiceImport {
             if let client = invoice.client {
                 let clientServices = client.clientServices ?? []
                 if clientServices.first(where: { $0.serviceName.caseInsensitiveCompare(item.name) == .orderedSame }) == nil {
-                    let newClientService = ClientService(id: UUID(), serviceName: item.name, unit: "", rate: item.unitPrice)
+                    let newClientService = ClientService(id: UUID(), serviceName: item.name, unit: "", rate: MoneyDecimalImport.decimal(from: item.unitPrice))
                     context.insert(newClientService)
                     newClientService.client = client
                     newClientService.isActive = true
@@ -293,8 +294,8 @@ struct InvoiceImport {
             let lineItem = InvoiceItem(id: UUID(), itemDescription: item.description)
             context.insert(lineItem)
             lineItem.position = Int32(index)
-            lineItem.quantity = Double(item.quantity)
-            lineItem.rate = item.unitPrice
+            lineItem.quantity = MoneyDecimalImport.decimal(from: Double(item.quantity))
+            lineItem.rate = MoneyDecimalImport.decimal(from: item.unitPrice)
             lineItem.invoice = invoice
             lineItem.serviceDate = invoice.issueDate
             importedItems.append(lineItem)
@@ -302,7 +303,7 @@ struct InvoiceImport {
             if let client = invoice.client {
                 let clientServices = client.clientServices ?? []
                 if clientServices.first(where: { $0.serviceName.caseInsensitiveCompare(item.description) == .orderedSame }) == nil {
-                    let newClientService = ClientService(id: UUID(), serviceName: item.description, unit: "", rate: item.unitPrice)
+                    let newClientService = ClientService(id: UUID(), serviceName: item.description, unit: "", rate: MoneyDecimalImport.decimal(from: item.unitPrice))
                     context.insert(newClientService)
                     newClientService.client = client
                     newClientService.isActive = true
@@ -315,9 +316,9 @@ struct InvoiceImport {
 
     private static func applyTransferFields(_ source: InvoiceImportPayload, to invoice: Invoice) {
         if let value = source.currencyCode { invoice.currencyCode = value.uppercased() }
-        if let value = source.taxRate { invoice.taxRate = value }
-        if let value = source.discount { invoice.discount = value }
-        if let value = source.creditApplied { invoice.creditApplied = value }
+        if let value = source.taxRate { invoice.taxRate = MoneyDecimalImport.decimal(from: value) }
+        if let value = source.discount { invoice.discount = MoneyDecimalImport.decimal(from: value) }
+        if let value = source.creditApplied { invoice.creditApplied = MoneyDecimalImport.decimal(from: value) }
         if let value = source.paymentTerms { invoice.paymentTerms = value }
         if let value = source.notes { invoice.notes = value }
         if let value = source.paidDate { invoice.paidDate = value }
@@ -357,10 +358,10 @@ struct InvoiceImport {
             item.position = source.position ?? Int32(index)
             item.serviceDate = source.serviceDate ?? invoice.issueDate
             item.ndisItemNumber = source.itemCode
-            item.quantity = source.quantity
+            item.quantity = MoneyDecimalImport.decimal(from: source.quantity)
             item.unit = source.unit
-            item.rate = source.unitPrice
-            item.taxRate = source.taxRate ?? 0
+            item.rate = MoneyDecimalImport.decimal(from: source.unitPrice)
+            item.taxRate = MoneyDecimalImport.decimal(from: source.taxRate ?? 0)
             item.gstCode = source.gstCode
             item.invoice = invoice
             context.insert(item)

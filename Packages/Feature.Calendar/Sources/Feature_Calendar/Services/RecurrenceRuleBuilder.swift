@@ -9,7 +9,7 @@ import EventKit
 
 /// Responsible for building EKRecurrenceRule objects from SessionFormModel data
 /// Extracted from NewSessionViewModel to isolate complex rule construction logic
-class RecurrenceRuleBuilder {
+final class RecurrenceRuleBuilder: Sendable {
     
     // MARK: - Rule Construction
     

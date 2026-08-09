@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 
 struct InvoiceDocumentConfigurationEnvelope: Codable {
@@ -53,7 +54,7 @@ struct InvoiceDocumentConfigurationEnvelope: Codable {
         )
     }
 
-    static func decode(from invoice: Core.Invoice) -> Self {
+    static func decode(from invoice: Invoice) -> Self {
         guard let data = invoice.invoiceEditorStateData,
               let value = try? JSONDecoder().decode(Self.self, from: data)
         else {
@@ -139,57 +140,73 @@ extension InvoiceStatus {
 }
 
 extension InvoiceLineItemSnapshot {
-    init(coreItem: Core.InvoiceItem) {
+    init(coreItem: InvoiceItem) {
+        let clientService = coreItem.clientService
+        let session = coreItem.session
+        let serviceItemNumber = clientService?.ndisItemNumber.nonBlank
+            ?? clientService?.ndisCode.nonBlank
+        let fallbackRate = session?.assignedRate ?? clientService?.rate ?? 0
+
         self.init(
             id: coreItem.id,
             sortOrder: Int(coreItem.position),
-            itemDescription: coreItem.itemDescription,
+            itemDescription: coreItem.itemDescription.nonBlank
+                ?? session?.assignedServiceName.nonBlank
+                ?? clientService?.serviceName.nonBlank
+                ?? "",
             serviceDate: coreItem.serviceDate,
-            itemCode: coreItem.ndisItemNumber ?? "",
-            quantity: Decimal(coreItem.quantity),
-            unit: coreItem.unit ?? "",
-            unitPrice: Decimal(coreItem.rate),
-            taxRate: Decimal(coreItem.taxRate),
-            gstCode: coreItem.gstCode ?? ""
+            itemCode: coreItem.ndisItemNumber.nonBlank ?? serviceItemNumber ?? "",
+            quantity: coreItem.quantity,
+            unit: coreItem.unit.nonBlank ?? clientService?.unit.nonBlank ?? "",
+            unitPrice: coreItem.rate == 0 ? fallbackRate : coreItem.rate,
+            taxRate: coreItem.taxRate,
+            gstCode: coreItem.gstCode.nonBlank ?? clientService?.gstCode.nonBlank ?? "",
+            claimType: coreItem.claimType,
+            sessionID: session?.id,
+            clientServiceID: clientService?.id
         )
     }
 }
 
 extension InvoiceSnapshot {
-    init(coreInvoice invoice: Core.Invoice) {
+    init(coreInvoice invoice: Invoice) {
         let state = InvoiceDocumentConfigurationEnvelope.decode(from: invoice)
         let linkedBusiness = invoice.business
         let linkedClient = invoice.client
         let billingAuthority = invoice.billingAuthority ?? linkedClient?.billingAuthority
+        let clientSnapshot: (name: String, address: String, email: String, phone: String) = (
+            invoice.clientName.nonBlank ?? linkedClient?.fullName.nonBlank ?? "",
+            invoice.clientAddressSnapshot?.fullFormattedAddress.nonBlank
+                ?? invoice.clientAddress?.fullFormattedAddress.nonBlank
+                ?? linkedClient?.address?.fullFormattedAddress.nonBlank
+                ?? "",
+            invoice.clientEmail.nonBlank ?? linkedClient?.email.nonBlank ?? "",
+            invoice.clientPhone.nonBlank ?? linkedClient?.phone.nonBlank ?? ""
+        )
         let billingRecipient: (name: String, address: String, email: String, phone: String)
         switch billingAuthority ?? .client {
         case .parentGuardian:
             let payee = invoice.payee ?? linkedClient?.payee
             billingRecipient = (
-                invoice.payeeName ?? payee?.fullName ?? "",
-                invoice.payeeAddressSnapshot?.fullFormattedAddress
-                    ?? invoice.payeeAddress?.fullFormattedAddress
-                    ?? payee?.address?.fullFormattedAddress
+                invoice.payeeName.nonBlank ?? payee?.fullName.nonBlank ?? "",
+                invoice.payeeAddressSnapshot?.fullFormattedAddress.nonBlank
+                    ?? invoice.payeeAddress?.fullFormattedAddress.nonBlank
+                    ?? payee?.address?.fullFormattedAddress.nonBlank
                     ?? "",
-                invoice.payeeEmail ?? payee?.email ?? "",
-                invoice.payeePhone ?? payee?.phone ?? ""
+                invoice.payeeEmail.nonBlank ?? payee?.email.nonBlank ?? "",
+                invoice.payeePhone.nonBlank ?? payee?.phone.nonBlank ?? ""
             )
         case .planManager:
             billingRecipient = (
-                linkedClient?.planManager?.name ?? "",
-                linkedClient?.planManager?.address?.fullFormattedAddress ?? "",
-                linkedClient?.planManager?.email ?? "",
-                linkedClient?.planManager?.phone ?? ""
+                linkedClient?.planManager?.name.nonBlank ?? "",
+                linkedClient?.planManager?.address?.fullFormattedAddress.nonBlank ?? "",
+                linkedClient?.planManager?.email.nonBlank ?? "",
+                linkedClient?.planManager?.phone.nonBlank ?? ""
             )
         case .ndia:
             billingRecipient = ("NDIA", "", "", "")
         case .client:
-            billingRecipient = (
-                linkedClient?.fullName ?? "",
-                linkedClient?.address?.fullFormattedAddress ?? "",
-                linkedClient?.email ?? "",
-                linkedClient?.phone ?? ""
-            )
+            billingRecipient = clientSnapshot
         }
         let billsParticipantDirectly = billingAuthority.map { $0 == .client }
             ?? state.billParticipantDirectly
@@ -198,7 +215,7 @@ extension InvoiceSnapshot {
         let items = invoice.itemsArray.map { item in
             var snapshot = InvoiceLineItemSnapshot(coreItem: item)
             if shouldMigrateGlobalTax {
-                snapshot.taxRate = Decimal(invoice.taxRate)
+                snapshot.taxRate = invoice.taxRate
             }
             return snapshot
         }
@@ -209,41 +226,38 @@ extension InvoiceSnapshot {
             status: InvoiceStatus(coreStatus: invoice.effectiveStatus),
             issueDate: invoice.issueDate,
             dueDate: invoice.dueDate ?? invoice.issueDate,
-            sellerName: invoice.businessName ?? linkedBusiness?.name ?? "",
-            sellerAddress: invoice.businessAddressSnapshot?.fullFormattedAddress
-                ?? invoice.businessAddress?.fullFormattedAddress
-                ?? linkedBusiness?.address?.fullFormattedAddress
+            sellerName: invoice.businessName.nonBlank ?? linkedBusiness?.name.nonBlank ?? "",
+            sellerAddress: invoice.businessAddressSnapshot?.fullFormattedAddress.nonBlank
+                ?? invoice.businessAddress?.fullFormattedAddress.nonBlank
+                ?? linkedBusiness?.address?.fullFormattedAddress.nonBlank
                 ?? "",
-            sellerEmail: invoice.businessEmail ?? linkedBusiness?.email ?? "",
-            sellerPhone: invoice.businessPhone ?? linkedBusiness?.phone ?? "",
-            sellerTaxID: invoice.businessABN ?? linkedBusiness?.abn ?? "",
+            sellerEmail: invoice.businessEmail.nonBlank ?? linkedBusiness?.email.nonBlank ?? "",
+            sellerPhone: invoice.businessPhone.nonBlank ?? linkedBusiness?.phone.nonBlank ?? "",
+            sellerTaxID: invoice.businessABN.nonBlank ?? linkedBusiness?.abn.nonBlank ?? "",
             billParticipantDirectly: billsParticipantDirectly,
-            billToName: invoice.billToName ?? billingRecipient.name,
-            billToEmail: invoice.billToEmail ?? billingRecipient.email,
-            billToAddress: invoice.billToAddressSnapshot?.fullFormattedAddress
-                ?? invoice.billToAddress?.fullFormattedAddress
+            billToName: invoice.billToName.nonBlank ?? billingRecipient.name,
+            billToEmail: invoice.billToEmail.nonBlank ?? billingRecipient.email,
+            billToAddress: invoice.billToAddressSnapshot?.fullFormattedAddress.nonBlank
+                ?? invoice.billToAddress?.fullFormattedAddress.nonBlank
                 ?? billingRecipient.address,
-            billToPhone: state.billToPhone.isEmpty ? billingRecipient.phone : state.billToPhone,
+            billToPhone: state.billToPhone.nonBlank ?? billingRecipient.phone,
             billingAuthority: billingAuthority?.rawValue ?? "",
-            clientName: invoice.clientName ?? linkedClient?.fullName ?? "",
-            clientAddress: invoice.clientAddressSnapshot?.fullFormattedAddress
-                ?? invoice.clientAddress?.fullFormattedAddress
-                ?? linkedClient?.address?.fullFormattedAddress
-                ?? "",
-            clientEmail: invoice.clientEmail ?? linkedClient?.email ?? "",
-            clientPhone: invoice.clientPhone ?? linkedClient?.phone ?? "",
-            clientTaxID: invoice.clientNDISNumber ?? linkedClient?.ndisNumber ?? "",
-            bankName: invoice.bankName ?? linkedBusiness?.bankName ?? "",
-            bankAccountName: invoice.bankAccountName ?? linkedBusiness?.bankAccountName ?? "",
-            bankBSB: invoice.bankBSB ?? linkedBusiness?.bankBSB ?? "",
-            bankAccountNumber: invoice.bankAccountNumber ?? linkedBusiness?.bankAccountNumber ?? "",
+            clientName: clientSnapshot.name,
+            clientAddress: clientSnapshot.address,
+            clientEmail: clientSnapshot.email,
+            clientPhone: clientSnapshot.phone,
+            clientTaxID: invoice.clientNDISNumber.nonBlank ?? linkedClient?.ndisNumber.nonBlank ?? "",
+            bankName: invoice.bankName.nonBlank ?? linkedBusiness?.bankName.nonBlank ?? "",
+            bankAccountName: invoice.bankAccountName.nonBlank ?? linkedBusiness?.bankAccountName.nonBlank ?? "",
+            bankBSB: invoice.bankBSB.nonBlank ?? linkedBusiness?.bankBSB.nonBlank ?? "",
+            bankAccountNumber: invoice.bankAccountNumber.nonBlank ?? linkedBusiness?.bankAccountNumber.nonBlank ?? "",
             currencyCode: InvoiceCurrencyCode.normalizedOrDefault(invoice.currencyCode),
-            defaultTaxRate: Decimal(invoice.taxRate),
-            paymentTerms: invoice.paymentTerms ?? "",
-            notes: invoice.notes ?? "",
+            defaultTaxRate: invoice.taxRate,
+            paymentTerms: invoice.paymentTerms.nonBlank ?? "",
+            notes: invoice.notes.nonBlank ?? "",
             discountAmount: state.discountAmount,
-            discountPercent: Decimal(invoice.discount),
-            creditApplied: Decimal(invoice.creditApplied),
+            discountPercent: invoice.discount,
+            creditApplied: invoice.creditApplied,
             showsTaxSummary: state.showsTaxSummary,
             paperSize: state.paperSize,
             pageOrientation: state.pageOrientation,
@@ -257,7 +271,8 @@ extension InvoiceSnapshot {
             InvoiceLineItem(
                 id: $0.id, sortOrder: $0.sortOrder, itemDescription: $0.itemDescription,
                 serviceDate: $0.serviceDate, itemCode: $0.itemCode, quantity: $0.quantity,
-                unit: $0.unit, unitPrice: $0.unitPrice, taxRate: $0.taxRate, gstCode: $0.gstCode
+                unit: $0.unit, unitPrice: $0.unitPrice, taxRate: $0.taxRate, gstCode: $0.gstCode,
+                claimType: $0.claimType, sessionID: $0.sessionID, clientServiceID: $0.clientServiceID
             )
         }
         document.recalculateTotals()
@@ -265,8 +280,21 @@ extension InvoiceSnapshot {
     }
 }
 
+private extension Optional where Wrapped == String {
+    var nonBlank: String? {
+        self?.nonBlank
+    }
+}
+
+private extension String {
+    var nonBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+}
+
 extension InvoiceClientOption {
-    init(_ client: Core.Client) {
+    init(_ client: Client) {
         let authority = client.billingAuthority ?? .client
         let recipient: (name: String, address: String, email: String, phone: String)
         switch authority {

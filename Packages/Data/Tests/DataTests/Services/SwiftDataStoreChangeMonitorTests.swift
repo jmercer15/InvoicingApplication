@@ -1,11 +1,13 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
 import Core
+import PersistenceModels
 @testable import Data
 
 @MainActor
-final class SwiftDataStoreChangeMonitorTests: XCTestCase {
-    func testContainerLevelMonitorObservesSavesFromIndependentContexts() async throws {
+@Suite struct SwiftDataStoreChangeMonitorTests {
+    @Test func ContainerLevelMonitorObservesSavesFromIndependentContexts() async throws {
         let database = try await AppDatabase.bootstrap(policy: .inMemory)
         let monitor = SwiftDataStoreChangeMonitor(modelContainer: database.container)
         let workspaceContext = database.makeMainContext()
@@ -16,8 +18,8 @@ final class SwiftDataStoreChangeMonitorTests: XCTestCase {
             observedRevisions.append(revision)
         }
 
-        XCTAssertEqual(monitor.revision, 0)
-        XCTAssertEqual(observedRevisions, [0])
+        #expect(monitor.revision == 0)
+        #expect(observedRevisions == [0])
 
         workspaceContext.insert(Business(abn: "11 111 111 111"))
         try workspaceContext.save()
@@ -27,7 +29,7 @@ final class SwiftDataStoreChangeMonitorTests: XCTestCase {
         try settingsContext.save()
         try await waitForRevision(monitor, atLeast: 2)
 
-        XCTAssertGreaterThanOrEqual(observedRevisions.max() ?? 0, 2)
+        #expect(observedRevisions.max() ?? 0 >= 2)
     }
 
     private func waitForRevision(
@@ -38,7 +40,7 @@ final class SwiftDataStoreChangeMonitorTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while monitor.revision < expected {
             if Date() >= deadline {
-                XCTFail("Expected revision >= \(expected), got \(monitor.revision)")
+                Issue.record("Expected revision >= \(expected), got \(monitor.revision)")
                 return
             }
             await Task.yield()

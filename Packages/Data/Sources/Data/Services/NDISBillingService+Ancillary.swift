@@ -91,9 +91,10 @@ extension NDISBillingService {
         return context.context.isDirectService && (category.contains("centre") || category.contains("group"))
     }
 
-    func calculateCentreCapitalCost(_ context: NDISBillingInputVector) throws -> NDISClaimableLineItem {
+    /// Returns `nil` when MMM is unresolved — soft-skip (do not fail the whole session).
+    func calculateCentreCapitalCost(_ context: NDISBillingInputVector) throws -> NDISClaimableLineItem? {
         guard let unitPrice = configService.getCentreCapitalRate(for: context.participant.location) else {
-            throw NDISBillingError.invalidPrice("Centre capital cost requires coordinates that resolve to an MMM zone.")
+            return nil
         }
         let quantity = max(context.service.duration, 1)
         return try createLineItem(
@@ -107,13 +108,16 @@ extension NDISBillingService {
     // MARK: - Establishment Fee
 
     func isEligibleForEstablishmentFee(_ context: NDISBillingInputVector) -> Bool {
-        let months = context.service.consecutiveMonths ?? 1
+        // Only fire when consecutiveMonths is explicitly provided; a missing value
+        // must never be treated as "first month" (that silently over-billed every session).
+        guard let months = context.service.consecutiveMonths else { return false }
         return months <= 1 && context.context.isDirectService
     }
 
-    func calculateEstablishmentFee(_ context: NDISBillingInputVector) throws -> NDISClaimableLineItem {
+    /// Returns `nil` when MMM is unresolved — soft-skip (do not fail the whole session).
+    func calculateEstablishmentFee(_ context: NDISBillingInputVector) throws -> NDISClaimableLineItem? {
         guard let fee = configService.getEstablishmentFeeRate(for: context.participant.location) else {
-            throw NDISBillingError.invalidPrice("Establishment fee requires coordinates that resolve to an MMM zone.")
+            return nil
         }
         return try createLineItem(
             supportItemNumber: context.service.supportItemNumber,

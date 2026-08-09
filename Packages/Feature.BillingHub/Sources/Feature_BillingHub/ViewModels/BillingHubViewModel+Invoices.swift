@@ -1,228 +1,191 @@
 import Core
-import Data
+import PersistenceModels
 import Foundation
 import SwiftData
 
+extension BillingHubViewModel: BillingHubInvoiceCoordinatorHost {}
+
 extension BillingHubViewModel {
-    
-    public func moveInvoice(_ id: UUID, to column: KanbanCardData.BillingColumnType) async {
-        guard let modelID = await invoiceModelID(for: id) else { return }
-        do {
-            let result = try await workflow.moveInvoice(modelID: modelID, to: column, complianceValidator: complianceValidator)
-            switch result {
-            case .successWithComplianceWarnings:
-                bulkActionFeedback = "Compliance warnings: review details before the next step."
-            case .blocked(let message):
-                bulkActionFeedback = message
-            default:
-                break
-            }
-        } catch {
-            print("❌ [BillingHubViewModel] Invoice move error: \(error)")
-        }
+    @discardableResult
+    public func moveInvoice(_ id: UUID, to column: KanbanCardData.BillingColumnType) async -> MoveResult? {
+        await invoiceCoordinator.moveInvoice(id, to: column)
     }
-    
+
     public func createDraftInvoicesForGroupedSessions(from projection: BillingHubBoardProjection) async {
-        let groups = projection.groupedSessions
-        guard !groups.isEmpty else { return }
-        isLoading = true
-        defer { isLoading = false }
-        
-        var created = 0
-        for group in groups {
-            guard let clientId = await clientIdForFirstSession(in: group) else { continue }
-            let sessionReferences = await sessionReferences(for: group.sessions.map(\.id))
-            guard !sessionReferences.isEmpty else { continue }
-            do {
-                let report = try await workflow.createDraftInvoices(
-                    sessions: sessionReferences,
-                    clientID: clientId,
-                    ndisService: ndisBillingIntegrationService
-                )
-                if report.invoice != nil { created += 1 }
-            } catch {
-                print("❌ [BillingHubViewModel] Draft creation error: \(error)")
-            }
-        }
-        
-        if created > 0 {
-            bulkActionFeedback = "Created \(created) draft invoices."
-        }
+        await invoiceCoordinator.createDraftInvoicesForGroupedSessions(from: projection)
     }
 
-    public func sendAllReadyToSendInvoices(from projection: BillingHubBoardProjection) async {
-        let invoices = projection.invoicesByStatus[.readyToSend] ?? []
-        guard !invoices.isEmpty else { return }
+    public func createDraftInvoice(fromGroupID groupID: UUID) async -> DraftInvoiceCreationOutcome? {
+        await invoiceCoordinator.createDraftInvoice(fromGroupID: groupID)
+    }
 
-        let ids = invoices.map(\.id)
-        do {
-            if let validator = complianceValidator {
-                let results = try await validator.validateBulkInvoices(invoiceIds: ids, action: .bulkSendReady)
-                let allowed = ids.filter { !(results[$0]?.isBlocked ?? true) }
-                var blockedCount = ids.count - allowed.count
-                var allowedModelIDs: [PersistentIdentifier] = []
-                for invoiceId in allowed {
-                    if let mid = await invoiceModelID(for: invoiceId) { allowedModelIDs.append(mid) }
-                }
-                blockedCount += allowed.count - allowedModelIDs.count
-                let processedCount: Int
-                if allowedModelIDs.isEmpty {
-                    processedCount = 0
-                } else {
-                    processedCount = try await workflow.bulkUpdateInvoices(modelIDs: allowedModelIDs, targetStatus: .pending) { invoice in
-                        invoice.sentDate = Date()
-                    }
-                }
-                if processedCount > 0 || blockedCount > 0 {
-                    bulkActionFeedback = "Processed \(processedCount), blocked \(blockedCount)."
-                }
-            } else {
-                var modelIDs: [PersistentIdentifier] = []
-                for invoiceId in ids {
-                    if let mid = await invoiceModelID(for: invoiceId) { modelIDs.append(mid) }
-                }
-                let count = try await workflow.bulkUpdateInvoices(modelIDs: modelIDs, targetStatus: .pending) { invoice in
-                    invoice.sentDate = Date()
-                }
-                if count > 0 {
-                    bulkActionFeedback = "Sent \(count) invoices."
-                }
-            }
-        } catch {
-            print("❌ [BillingHubViewModel] Bulk send error: \(error)")
-        }
+    @discardableResult
+    public func createInvoiceFromSessions(_ sessionIDs: [UUID]) async -> DraftInvoiceCreationOutcome? {
+        await invoiceCoordinator.createInvoiceFromSessions(sessionIDs)
+    }
+
+    public func markReadyToSendInvoicesSent(from projection: BillingHubBoardProjection) async {
+        await invoiceCoordinator.markReadyToSendInvoicesSent(from: projection)
     }
 
     public func completeAllPendingInvoices(from projection: BillingHubBoardProjection) async {
-        let invoices = projection.invoicesByStatus[.pending] ?? []
-        guard !invoices.isEmpty else { return }
-
-        let ids = invoices.map(\.id)
-        do {
-            if let validator = complianceValidator {
-                let results = try await validator.validateBulkInvoices(invoiceIds: ids, action: .bulkCompletePending)
-                let allowed = ids.filter { !(results[$0]?.isBlocked ?? true) }
-                var blockedCount = ids.count - allowed.count
-                var allowedModelIDs: [PersistentIdentifier] = []
-                for invoiceId in allowed {
-                    if let mid = await invoiceModelID(for: invoiceId) { allowedModelIDs.append(mid) }
-                }
-                blockedCount += allowed.count - allowedModelIDs.count
-                let processedCount: Int
-                if allowedModelIDs.isEmpty {
-                    processedCount = 0
-                } else {
-                    processedCount = try await workflow.bulkUpdateInvoices(modelIDs: allowedModelIDs, targetStatus: .received) { invoice in
-                        if invoice.paidDate == nil { invoice.paidDate = Date() }
-                    }
-                }
-                if processedCount > 0 || blockedCount > 0 {
-                    bulkActionFeedback = "Processed \(processedCount), blocked \(blockedCount)."
-                }
-            } else {
-                var modelIDs: [PersistentIdentifier] = []
-                for invoiceId in ids {
-                    if let mid = await invoiceModelID(for: invoiceId) { modelIDs.append(mid) }
-                }
-                let count = try await workflow.bulkUpdateInvoices(modelIDs: modelIDs, targetStatus: .received) { invoice in
-                    if invoice.paidDate == nil { invoice.paidDate = Date() }
-                }
-                if count > 0 {
-                    bulkActionFeedback = "Completed \(count) invoices."
-                }
-            }
-        } catch {
-            print("❌ [BillingHubViewModel] Bulk complete error: \(error)")
-        }
+        await invoiceCoordinator.completeAllPendingInvoices(from: projection)
     }
 
-    public func updateInvoiceDetails(id: UUID, clientName: String) async {
-        guard let modelID = await invoiceModelID(for: id) else { return }
-        do {
-            try await workflow.updateInvoiceDetails(modelID: modelID, clientName: clientName)
-        } catch { print("❌ Update invoice details error: \(error)") }
+    @discardableResult
+    public func updateInvoiceDetails(id: UUID, clientName: String) async -> Bool {
+        await invoiceCoordinator.updateInvoiceDetails(id: id, clientName: clientName)
     }
 
-    public func fetchComplianceChecklist(for id: UUID) async -> Core.ComplianceValidationResult? {
-        return try? await complianceValidator?.validateInvoiceTransition(invoiceId: id, action: .approveDraft)
+    public func fetchComplianceChecklist(for id: UUID) async throws -> Core.ComplianceValidationResult? {
+        try await invoiceCoordinator.fetchComplianceChecklist(for: id)
     }
 
-    public func createDraftInvoice(fromGroupID groupID: UUID) async {
-        let sessionReferences: [SessionWorkflowReference]
-        do {
-            sessionReferences = try await workflow.sessionWorkflowReferencesForGroup(groupID: groupID)
-        } catch {
-            return
-        }
-        let sessionIDs = sessionReferences.map(\.sessionID)
-        guard !sessionIDs.isEmpty else { return }
-        await createInvoiceFromSessions(sessionIDs)
+    @discardableResult
+    public func approveDraftInvoice(id: UUID, dueDate: Date) async -> Bool {
+        await invoiceCoordinator.approveDraftInvoice(id: id, dueDate: dueDate)
     }
 
-    public func createInvoiceFromSessions(_ sessionIDs: [UUID]) async {
-        guard let firstID = sessionIDs.first,
-              let clientID = try? await workflow.clientIdForSession(id: firstID) else { return }
-        let sessionReferences = await sessionReferences(for: sessionIDs)
-        guard !sessionReferences.isEmpty else { return }
-        do {
-            let report = try await workflow.createDraftInvoices(
-                sessions: sessionReferences,
-                clientID: clientID,
-                ndisService: ndisBillingIntegrationService
-            )
-            _ = report.invoice
-        } catch { print("❌ Create invoice error: \(error)") }
-    }
-
-    public func approveDraftInvoice(id: UUID, dueDate _: Date) async {
-        await moveInvoice(id, to: .readyToSend)
-    }
-
-    public func requestChanges(for id: UUID) async {
-        await moveInvoice(id, to: .reviewDrafts)
+    @discardableResult
+    public func requestChanges(for id: UUID, reason: String) async -> Bool {
+        await invoiceCoordinator.requestChanges(for: id, reason: reason)
     }
 
     public func invoice(byId id: UUID) async -> Invoice? {
-        fetchInvoiceOnMainContext(by: id)
+        await invoiceCoordinator.invoice(byId: id)
     }
 
     public func updateInvoiceStatus(_ id: UUID, to column: KanbanCardData.BillingColumnType) async {
-        await moveInvoice(id, to: column)
+        await invoiceCoordinator.updateInvoiceStatus(id, to: column)
     }
 
-    public func sendInvoice(id: UUID, recipients _: String, subject _: String, message _: String) async {
-        await moveInvoice(id, to: .pending)
+    @discardableResult
+    public func markInvoiceSentManually(id: UUID) async -> Bool {
+        await invoiceCoordinator.markInvoiceSentManually(id: id)
     }
 
-    public func sendTestInvoice(id _: UUID, recipients _: String, subject _: String, message _: String) async {
+    @discardableResult
+    public func sendInvoice(
+        id: UUID,
+        recipients: String,
+        cc: String,
+        subject: String,
+        message: String,
+        attachPDF: Bool,
+        sendCopyToSelf: Bool
+    ) async -> Bool {
+        await invoiceCoordinator.sendInvoice(
+            id: id,
+            recipients: recipients,
+            cc: cc,
+            subject: subject,
+            message: message,
+            attachPDF: attachPDF,
+            sendCopyToSelf: sendCopyToSelf
+        )
     }
 
-    public func moveInvoiceBackToDraftReview(id: UUID) async {
-        await moveInvoice(id, to: .reviewDrafts)
+    func sendInvoiceWithOutcome(
+        id: UUID,
+        recipients: String,
+        additionalRecipients: String,
+        subject: String,
+        message: String,
+        attachPDF: Bool,
+        sendCopyToSelf: Bool
+    ) async -> BillingHubInvoiceSendOutcome {
+        await invoiceCoordinator.sendInvoiceWithOutcome(
+            id: id,
+            recipients: recipients,
+            additionalRecipients: additionalRecipients,
+            subject: subject,
+            message: message,
+            attachPDF: attachPDF,
+            sendCopyToSelf: sendCopyToSelf
+        )
     }
 
-    public func finalizePayment(id: UUID, amount _: String, date _: Date, method _: String, reference _: String) async {
-        await moveInvoice(id, to: .received)
+    public func sendTestInvoice(
+        id: UUID,
+        recipients: String,
+        cc: String,
+        subject: String,
+        message: String,
+        attachPDF: Bool
+    ) async {
+        await invoiceCoordinator.sendTestInvoice(
+            id: id,
+            recipients: recipients,
+            cc: cc,
+            subject: subject,
+            message: message,
+            attachPDF: attachPDF
+        )
     }
 
-    public func savePaymentDraft(id _: UUID, amount _: String, date _: Date, method _: String, reference _: String) async {
+    public func moveInvoiceBackToDraftReview(id: UUID) async -> Bool {
+        await invoiceCoordinator.moveInvoiceBackToDraftReview(id: id)
     }
 
-    public func markInvoiceOverdue(id _: UUID) async {
+    @discardableResult
+    public func finalizePayment(id: UUID, amount: String, date: Date, method: String, reference: String) async -> Bool {
+        await invoiceCoordinator.finalizePayment(
+            id: id,
+            amount: amount,
+            date: date,
+            method: method,
+            reference: reference
+        )
     }
 
-    public func moveInvoiceBackToReadyToSend(id: UUID) async {
-        await moveInvoice(id, to: .readyToSend)
+    @discardableResult
+    public func savePaymentDraft(id: UUID, amount: String, date: Date, method: String, reference: String) async -> Bool {
+        await invoiceCoordinator.savePaymentDraft(
+            id: id,
+            amount: amount,
+            date: date,
+            method: method,
+            reference: reference
+        )
     }
 
-    public func reopenInvoiceAsPending(id: UUID) async {
-        await moveInvoice(id, to: .pending)
+    @discardableResult
+    public func markInvoiceOverdue(id: UUID) async -> Bool {
+        await invoiceCoordinator.markInvoiceOverdue(id: id)
     }
 
-    public func sendReceipt(id _: UUID, recipientEmail _: String, includePDF _: Bool) async {
+    @discardableResult
+    public func moveInvoiceBackToReadyToSend(id: UUID) async -> Bool {
+        await invoiceCoordinator.moveInvoiceBackToReadyToSend(id: id)
     }
 
-    public func exportReceiptPDF(id _: UUID) async -> URL? {
-        return nil
+    @discardableResult
+    public func reopenInvoiceAsPending(id: UUID) async -> Bool {
+        await invoiceCoordinator.reopenInvoiceAsPending(id: id)
+    }
+
+    func sendReceiptWithOutcome(
+        id: UUID,
+        recipientEmail: String,
+        includePDF: Bool
+    ) async -> BillingHubReceiptSendOutcome {
+        await invoiceCoordinator.sendReceiptWithOutcome(
+            id: id,
+            recipientEmail: recipientEmail,
+            includePDF: includePDF
+        )
+    }
+
+    @discardableResult
+    public func sendReceipt(id: UUID, recipientEmail: String, includePDF: Bool) async -> Bool {
+        await invoiceCoordinator.sendReceipt(id: id, recipientEmail: recipientEmail, includePDF: includePDF)
+    }
+
+    func exportReceiptPDFWithOutcome(id: UUID) async -> BillingHubReceiptExportOutcome {
+        await invoiceCoordinator.exportReceiptPDFWithOutcome(id: id)
+    }
+
+    public func exportReceiptPDF(id: UUID) async -> URL? {
+        await invoiceCoordinator.exportReceiptPDF(id: id)
     }
 }

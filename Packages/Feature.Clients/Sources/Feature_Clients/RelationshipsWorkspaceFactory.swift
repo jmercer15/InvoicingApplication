@@ -1,17 +1,17 @@
 import SwiftData
-import Data
+import DataInterfaces
 
 @MainActor
 public enum RelationshipsWorkspaceFactory {
     public struct Dependencies {
-        public let modelContext: ModelContext
-        public let storeChangeMonitor: SwiftDataStoreChangeMonitor?
+        public let relationshipDeleter: any ClientRelationshipDeleting
+        public let storeChangeMonitor: (any StoreChangeMonitoring)?
 
         public init(
-            modelContext: ModelContext,
-            storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+            relationshipDeleter: any ClientRelationshipDeleting,
+            storeChangeMonitor: (any StoreChangeMonitoring)? = nil
         ) {
-            self.modelContext = modelContext
+            self.relationshipDeleter = relationshipDeleter
             self.storeChangeMonitor = storeChangeMonitor
         }
     }
@@ -20,7 +20,7 @@ public enum RelationshipsWorkspaceFactory {
         _ dependencies: Dependencies
     ) -> RelationshipsContainerViewModel {
         RelationshipsContainerViewModel(
-            modelContext: dependencies.modelContext,
+            relationshipDeleter: dependencies.relationshipDeleter,
             storeChangeMonitor: dependencies.storeChangeMonitor
         )
     }

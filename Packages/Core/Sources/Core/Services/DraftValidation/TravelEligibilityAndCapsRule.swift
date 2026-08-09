@@ -20,8 +20,8 @@ public struct TravelEligibilityAndCapsRule: Sendable {
         }
     }
 
-    public func evaluate(context: DraftValidationContext) -> [DraftIssue] {
-        var issues: [DraftIssue] = []
+    public func evaluate(context: DraftValidationContext) -> [DraftIssueSnapshot] {
+        var issues: [DraftIssueSnapshot] = []
         let hasTravel = context.billingContext.isProviderTravel
             || context.billingContext.travelTime > 0
             || context.billingContext.travelDistance > 0
@@ -29,7 +29,7 @@ public struct TravelEligibilityAndCapsRule: Sendable {
         if hasTravel {
             let coord = context.sessionCoordinate ?? context.clientCoordinate
             if coord == nil {
-                issues.append(DraftIssue(
+                issues.append(DraftIssueSnapshot(
                     id: UUID(),
                     draftId: context.draftId,
                     severity: .blocking,
@@ -45,7 +45,7 @@ public struct TravelEligibilityAndCapsRule: Sendable {
             if let code = coord.flatMap({ mmmLookup.mmm(for: $0) }) {
                 let maxMinutes = Self.maxTravelMinutes(mmmCode: code)
                 if maxMinutes != .infinity, context.billingContext.travelTime > maxMinutes {
-                    issues.append(DraftIssue(
+                    issues.append(DraftIssueSnapshot(
                         id: UUID(),
                         draftId: context.draftId,
                         severity: .warning,

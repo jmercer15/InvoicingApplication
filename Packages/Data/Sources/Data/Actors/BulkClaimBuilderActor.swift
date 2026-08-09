@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 import SwiftData
 
 public enum BulkClaimBuilderActorError: LocalizedError, Sendable, Equatable {
@@ -110,20 +111,20 @@ public actor BulkClaimBuilderActor: ModelActor {
         if sessionIds.isEmpty {
             supportLogsBySessionId = [:]
         } else {
-            let from = batch.fromDate
-            let to = batch.toDate
+            let sessionIdList = Array(sessionIds)
             let logs = try modelContext.fetch(
                 FetchDescriptor<SupportLog>(predicate: #Predicate { log in
-                    log.deliveredFrom >= from && log.deliveredFrom <= to
+                    if let sessionId = log.sessionId {
+                        sessionIdList.contains(sessionId)
+                    } else {
+                        false
+                    }
                 })
-            ).filter {
-                guard let sid = $0.session?.id else { return false }
-                return sessionIds.contains(sid)
-            }
+            )
 
             var grouped: [UUID: [SupportLog]] = [:]
             for log in logs {
-                guard let sid = log.session?.id else { continue }
+                guard let sid = log.sessionId else { continue }
                 grouped[sid, default: []].append(log)
             }
             supportLogsBySessionId = grouped
@@ -245,28 +246,10 @@ public actor BulkClaimBuilderActor: ModelActor {
     }
 
     private static func mapClaimTypeCode(from claimType: String?) -> String? {
-        guard let claimType else { return nil }
-        switch claimType {
-        case NDISClaimType.direct.rawValue:
-            return nil
-        case let value where value.hasPrefix(NDISClaimType.providerTravel.rawValue):
-            return BPRClaimTypeCode.tran.rawValue
-        case NDISClaimType.nonFaceToFace.rawValue:
-            return BPRClaimTypeCode.nf2f.rawValue
-        case NDISClaimType.telehealth.rawValue:
-            return BPRClaimTypeCode.thlt.rawValue
-        case NDISClaimType.cancellation.rawValue:
-            return BPRClaimTypeCode.canc.rawValue
-        case NDISClaimType.ndiaReport.rawValue:
-            return BPRClaimTypeCode.repw.rawValue
-        case NDISClaimType.irregularSILSupport.rawValue:
-            return BPRClaimTypeCode.irss.rawValue
-        default:
-            return nil
-        }
+        NDISClaimType.bprClaimTypeCode(fromRaw: claimType)?.rawValue
     }
 
-    private static func mapQuantityOrHours(from item: InvoiceItemSnapshot) -> (Double?, String?) {
+    private static func mapQuantityOrHours(from item: InvoiceItemSnapshot) -> (Decimal?, String?) {
         let unit = (item.unit ?? "").lowercased()
         if unit.contains("hour") || unit == "hr" || unit == "hrs" {
             return (nil, formatHours(item.quantity))
@@ -274,11 +257,8 @@ public actor BulkClaimBuilderActor: ModelActor {
         return (item.quantity, nil)
     }
 
-    private static func formatHours(_ quantity: Double) -> String {
-        let totalMinutes = max(Int((quantity * 60).rounded()), 0)
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        return String(format: "%03d:%02d", hours, minutes)
+    private static func formatHours(_ quantity: Decimal) -> String {
+        return ExportMachineFormatting.claimHoursToken(fromHourQuantity: quantity)
     }
 
     private static func normalizeGSTCode(_ code: String?) -> String? {

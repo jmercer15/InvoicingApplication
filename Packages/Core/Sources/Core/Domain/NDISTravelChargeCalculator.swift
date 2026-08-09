@@ -58,7 +58,14 @@ public struct NDISTravelChargeBreakdown: Sendable, Equatable {
 }
 
 public enum NDISTravelChargeCalculator {
+    /// Standard vehicle non-labour / activity km rate (NDIS guidance).
     public static let vehicleRatePerKilometre: Double = 0.99
+    /// Modified / bus activity-transport km rate (Calendar + Hub parity).
+    public static let modifiedVehicleRatePerKilometre: Double = 2.76
+
+    public static func vehicleRatePerKilometre(isModified: Bool) -> Double {
+        isModified ? modifiedVehicleRatePerKilometre : vehicleRatePerKilometre
+    }
 
     /// MMM 1-3: 30 mins, MMM 4-5: 60 mins, MMM 6-7: uncapped (by agreement).
     public static func maxBillableMinutes(forMMMDescriptor descriptor: String?) -> Double {
@@ -121,13 +128,15 @@ public enum NDISTravelChargeCalculator {
         minutesTravelled: Double,
         kilometresTravelled: Double,
         ancillaryCosts: Double,
-        participantCount: Int
+        participantCount: Int,
+        vehicleRatePerKilometre: Double = NDISTravelChargeCalculator.vehicleRatePerKilometre
     ) -> NDISTravelChargeBreakdown {
         let safeParticipants = max(participantCount, 1)
         let safeMinutes = max(minutesTravelled, 0)
         let safeKilometres = max(kilometresTravelled, 0)
         let safeAncillary = max(ancillaryCosts, 0)
         let safeRate = max(hourlyRate, 0)
+        let safeVehicleRate = max(vehicleRatePerKilometre, 0)
 
         let maxMinutes = maxBillableMinutes(forMMMDescriptor: mmmZoneDescriptor)
         let billableMinutes: Double
@@ -138,7 +147,7 @@ public enum NDISTravelChargeCalculator {
         }
 
         let labourTotal = (safeRate * providerType.travelFactor) * (billableMinutes / 60.0)
-        let nonLabourTotal = (safeKilometres * vehicleRatePerKilometre) + safeAncillary
+        let nonLabourTotal = (safeKilometres * safeVehicleRate) + safeAncillary
         let grossTotal = labourTotal + nonLabourTotal
 
         return NDISTravelChargeBreakdown(

@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import PersistenceModels
 import SwiftData
 
 /// Snapshot-based Data-layer implementation of `ComplianceValidating`, running on a SwiftData `ModelActor`
@@ -261,11 +262,11 @@ public actor NDISComplianceValidator: ComplianceValidating, ModelActor {
                 )
             }
 
-            if item.finalRateLimit > 0, item.rate > item.finalRateLimit {
+            if item.finalRateLimit > 0, item.rate > Decimal(item.finalRateLimit) {
                 let message = String(
                     format: "Line item \"%@\" rate $%.2f exceeds PAPL cap $%.2f.",
                     item.itemDescription,
-                    item.rate,
+                    NSDecimalNumber(decimal: item.rate).doubleValue,
                     item.finalRateLimit
                 )
                 appendExportIssue(

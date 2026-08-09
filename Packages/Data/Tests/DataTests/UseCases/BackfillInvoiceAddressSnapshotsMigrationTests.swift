@@ -1,27 +1,22 @@
-import XCTest
+import Foundation
+import Testing
 import SwiftData
+import PersistenceModels
 @testable import Data
 @testable import Core
 
 @MainActor
-final class BackfillInvoiceAddressSnapshotsMigrationTests: XCTestCase {
-    private var modelContainer: ModelContainer!
-    private var modelContext: ModelContext!
+@Suite struct BackfillInvoiceAddressSnapshotsMigrationTests {
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
 
-    override func setUp() async throws {
-        try await super.setUp()
+    init() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext()
-        modelContainer = container
-        modelContext = context
+        self.modelContainer = container
+        self.modelContext = context
     }
 
-    override func tearDown() async throws {
-        modelContext = nil
-        modelContainer = nil
-        try await super.tearDown()
-    }
-
-    func testExecuteBackfillsAllInvoiceAddressSnapshotsFromLegacyRelationships() throws {
+    @Test func ExecuteBackfillsAllInvoiceAddressSnapshotsFromLegacyRelationships() throws {
         let invoice = Invoice(invoiceNumber: "INV-001")
         invoice.businessAddress = makeAddress(
             streetNumber: "1",
@@ -57,13 +52,13 @@ final class BackfillInvoiceAddressSnapshotsMigrationTests: XCTestCase {
 
         try BackfillInvoiceAddressSnapshots_v1.execute(modelContext: modelContext)
 
-        XCTAssertEqual(invoice.businessAddressSnapshot?.streetName, "Queen St")
-        XCTAssertEqual(invoice.clientAddressSnapshot?.city, "Sydney")
-        XCTAssertEqual(invoice.billToAddressSnapshot?.state, "VIC")
-        XCTAssertEqual(invoice.payeeAddressSnapshot?.postcode, "6000")
+        #expect(invoice.businessAddressSnapshot?.streetName == "Queen St")
+        #expect(invoice.clientAddressSnapshot?.city == "Sydney")
+        #expect(invoice.billToAddressSnapshot?.state == "VIC")
+        #expect(invoice.payeeAddressSnapshot?.postcode == "6000")
     }
 
-    func testExecuteDoesNotOverwriteExistingSnapshots() throws {
+    @Test func ExecuteDoesNotOverwriteExistingSnapshots() throws {
         let invoice = Invoice(invoiceNumber: "INV-002")
         invoice.businessAddress = makeAddress(
             streetNumber: "9",
@@ -93,8 +88,8 @@ final class BackfillInvoiceAddressSnapshotsMigrationTests: XCTestCase {
 
         try BackfillInvoiceAddressSnapshots_v1.execute(modelContext: modelContext)
 
-        XCTAssertEqual(invoice.businessAddressSnapshot?.streetName, "Snapshot Rd")
-        XCTAssertEqual(invoice.businessAddressSnapshot?.state, "ACT")
+        #expect(invoice.businessAddressSnapshot?.streetName == "Snapshot Rd")
+        #expect(invoice.businessAddressSnapshot?.state == "ACT")
     }
 
     private func makeAddress(

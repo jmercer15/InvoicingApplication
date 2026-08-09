@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 // TravelCharge, TravelChargeReviewItem, TravelChargeAuditLog domain structs removed.
 // Use the SwiftData @Model equivalents (Packages/Data) as the primary domain types.

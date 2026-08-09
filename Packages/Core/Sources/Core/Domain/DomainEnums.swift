@@ -137,6 +137,16 @@ public enum UnitType: String, CaseIterable, Codable, Sendable {
 public enum NDISClaimType: String, CaseIterable, Codable, Sendable {
     case direct = "Direct"
     case providerTravel = "ProviderTravel"
+    case providerTravelLabour = "ProviderTravel_Labour"
+    case providerTravelNonLabour = "ProviderTravel_NonLabour"
+    case providerTravelOtherCosts = "ProviderTravel_OtherCosts"
+    case activityTransport = "ActivityTransport"
+    case establishmentFee = "EstablishmentFee"
+    case centreCapitalCost = "CentreCapitalCost"
+    case nightTimeSleepover = "NightTimeSleepover"
+    case shadowShift = "ShadowShift"
+    case therapySupervision = "TherapySupervision"
+    case subscription = "Subscription"
     case cancellation = "Cancellation"
     case prepayment = "Prepayment"
     case telehealth = "Telehealth"
@@ -149,6 +159,16 @@ public enum NDISClaimType: String, CaseIterable, Codable, Sendable {
         switch self {
         case .direct: return "Direct Support"
         case .providerTravel: return "Provider Travel"
+        case .providerTravelLabour: return "Provider Travel (Labour)"
+        case .providerTravelNonLabour: return "Provider Travel (Non-Labour)"
+        case .providerTravelOtherCosts: return "Provider Travel (Tolls/Parking)"
+        case .activityTransport: return "Activity Transport"
+        case .establishmentFee: return "Establishment Fee"
+        case .centreCapitalCost: return "Centre Capital Cost"
+        case .nightTimeSleepover: return "Night-Time Sleepover"
+        case .shadowShift: return "Shadow Shift"
+        case .therapySupervision: return "Therapy Supervision"
+        case .subscription: return "Subscription"
         case .cancellation: return "Cancellation Fee"
         case .prepayment: return "Prepayment"
         case .telehealth: return "Telehealth"
@@ -157,6 +177,41 @@ public enum NDISClaimType: String, CaseIterable, Codable, Sendable {
         case .irregularSILSupport: return "Irregular SIL Support"
         case .bereavement: return "Bereavement Support"
         }
+    }
+
+    /// PACE/BPR claim-type code for bulk payment requests. `nil` means standard (blank column).
+    /// Establishment / sleepover / shadow / fee lines use support-item identity, not a claim code.
+    public var bprClaimTypeCode: BPRClaimTypeCode? {
+        switch self {
+        case .providerTravel, .providerTravelLabour, .providerTravelNonLabour, .providerTravelOtherCosts,
+             .activityTransport:
+            return .tran
+        case .nonFaceToFace:
+            return .nf2f
+        case .telehealth:
+            return .thlt
+        case .cancellation:
+            return .canc
+        case .ndiaReport:
+            return .repw
+        case .irregularSILSupport:
+            return .irss
+        case .direct, .establishmentFee, .centreCapitalCost, .nightTimeSleepover, .shadowShift,
+             .therapySupervision, .subscription, .prepayment, .bereavement:
+            return nil
+        }
+    }
+
+    /// Maps engine/persisted claim-type strings onto PACE codes, including `ProviderTravel_*` prefixes.
+    public static func bprClaimTypeCode(fromRaw claimType: String?) -> BPRClaimTypeCode? {
+        guard let claimType, !claimType.isEmpty else { return nil }
+        if let typed = NDISClaimType(rawValue: claimType) {
+            return typed.bprClaimTypeCode
+        }
+        if claimType.hasPrefix(NDISClaimType.providerTravel.rawValue) {
+            return .tran
+        }
+        return nil
     }
 }
 

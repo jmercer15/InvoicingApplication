@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - ServiceAgreementSnapshot
 
@@ -27,22 +26,39 @@ public struct ServiceAgreementSnapshot: Sendable, Equatable, Hashable {
     public let isArchived: Bool
     public let clientId: UUID?
 
-    public init(_ agreement: ServiceAgreement) {
-        self.id = agreement.id
-        self.effectiveFrom = agreement.effectiveFrom
-        self.effectiveTo = agreement.effectiveTo
-        self.pricingDisclosureAcceptedAt = agreement.pricingDisclosureAcceptedAt
-        self.cancellationPolicyType = agreement.cancellationPolicyType
-        self.allowsProviderTravel = agreement.allowsProviderTravel
-        self.allowsTelehealth = agreement.allowsTelehealth
-        self.allowsNonFaceToFace = agreement.allowsNonFaceToFace
-        self.participantSignatoryName = agreement.participantSignatoryName
-        self.participantSignatoryRole = agreement.participantSignatoryRole
-        self.signedAt = agreement.signedAt
-        self.signatureMethod = agreement.signatureMethod
-        self.notes = agreement.notes
-        self.isArchived = agreement.isArchived
-        self.clientId = agreement.client?.id
-    }
-}
 
+    public init(
+        id: UUID,
+        effectiveFrom: Date,
+        effectiveTo: Date?,
+        pricingDisclosureAcceptedAt: Date?,
+        cancellationPolicyType: String,
+        allowsProviderTravel: Bool,
+        allowsTelehealth: Bool,
+        allowsNonFaceToFace: Bool,
+        participantSignatoryName: String?,
+        participantSignatoryRole: String?,
+        signedAt: Date?,
+        signatureMethod: String?,
+        notes: String?,
+        isArchived: Bool,
+        clientId: UUID?
+    ) {
+        self.id = id
+        self.effectiveFrom = effectiveFrom
+        self.effectiveTo = effectiveTo
+        self.pricingDisclosureAcceptedAt = pricingDisclosureAcceptedAt
+        self.cancellationPolicyType = cancellationPolicyType
+        self.allowsProviderTravel = allowsProviderTravel
+        self.allowsTelehealth = allowsTelehealth
+        self.allowsNonFaceToFace = allowsNonFaceToFace
+        self.participantSignatoryName = participantSignatoryName
+        self.participantSignatoryRole = participantSignatoryRole
+        self.signedAt = signedAt
+        self.signatureMethod = signatureMethod
+        self.notes = notes
+        self.isArchived = isArchived
+        self.clientId = clientId
+    }
+
+}

@@ -8,11 +8,9 @@ private func highlightedText(_ text: String, searchingFor query: String) -> some
         let match = text[range]
         let suffix = text[range.upperBound...]
 
-        Text(
-            "\(Text(String(prefix)))" +
-            "\(Text(String(match)).bold().foregroundColor(.accentColor))" +
-            "\(Text(String(suffix)))"
-        )
+        Text(String(prefix)) +
+        Text(String(match)).bold().foregroundStyle(Color.accentColor) +
+        Text(String(suffix))
     } else {
         Text(text)
     }
@@ -20,21 +18,20 @@ private func highlightedText(_ text: String, searchingFor query: String) -> some
 
 struct KanbanCardView: View, Equatable {
     nonisolated static func == (lhs: KanbanCardView, rhs: KanbanCardView) -> Bool {
-        MainActor.assumeIsolated {
-            lhs.card.id == rhs.card.id &&
-            lhs.card.titleText == rhs.card.titleText &&
-            lhs.card.subtitleText == rhs.card.subtitleText &&
-            lhs.card.detailText == rhs.card.detailText &&
-            lhs.card.statusText == rhs.card.statusText &&
-            lhs.card.accentColor == rhs.card.accentColor &&
-            lhs.isSelected == rhs.isSelected &&
-            lhs.searchText == rhs.searchText
-        }
+        lhs.card.id == rhs.card.id &&
+        lhs.card.titleText == rhs.card.titleText &&
+        lhs.card.subtitleText == rhs.card.subtitleText &&
+        lhs.card.detailText == rhs.card.detailText &&
+        lhs.card.statusText == rhs.card.statusText &&
+        lhs.card.trailingMetadataSymbol == rhs.card.trailingMetadataSymbol &&
+        lhs.card.accentColor == rhs.card.accentColor &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.searchText == rhs.searchText
     }
 
-    let viewModel: BillingHubViewModel
+    let cardActions: KanbanCardActions
     let card: KanbanCardData
-    @Binding var isSelected: Bool
+    let isSelected: Bool
     let onTap: () -> Void
     var onOpen: (() -> Void)? = nil
     var searchText: String = ""
@@ -50,18 +47,17 @@ struct KanbanCardView: View, Equatable {
                 VStack(alignment: .leading, spacing: ListRowTokens.titleSubtitleSpacing + 4) {
                     highlightedText(card.titleText, searchingFor: searchText)
                         .font(BillingHubTheme.Typography.cardTitle)
-                        .foregroundColor(BillingHubTheme.Palette.textPrimary)
+                        .foregroundStyle(BillingHubTheme.Palette.textPrimary)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.85)
                         .truncationMode(.tail)
                         .fixedSize(horizontal: false, vertical: true)
 
                     highlightedText(card.subtitleText, searchingFor: searchText)
                         .font(BillingHubTheme.Typography.cardSubtitle)
-                        .foregroundColor(BillingHubTheme.Palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .foregroundStyle(BillingHubTheme.Palette.textSecondary)
+                        .lineLimit(2)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: ListRowTokens.metadataSpacing + 2) {
@@ -91,7 +87,7 @@ struct KanbanCardView: View, Equatable {
             RoundedRectangle(cornerRadius: BillingHubTheme.Dimensions.cardCornerRadius)
                 .strokeBorder(
                     isSelected
-                        ? Color.accentColor
+                        ? card.accentColor
                         : BillingHubTheme.Surfaces.cardStroke.opacity(BillingHubTheme.Surfaces.cardDefaultStrokeOpacity),
                     lineWidth: isSelected
                         ? BillingHubTheme.Surfaces.cardSelectedStrokeWidth
@@ -107,39 +103,58 @@ struct KanbanCardView: View, Equatable {
                 Label("Open Details", systemImage: "pencil")
             }
 
-            if let nextColumn = viewModel.nextColumn(for: card) {
+            if let nextColumn = cardActions.nextColumn(card) {
                 Divider()
 
                 Button {
                     Task {
-                        _ = await viewModel.advanceCard(card)
+                        await cardActions.advanceCard(card)
                     }
                 } label: {
                     Label("Move to \(nextColumn.menuTitle)", systemImage: "arrow.right.circle")
                 }
             }
         }
+        .onKeyPress(.return) {
+            onTap()
+            onOpen?()
+            return .handled
+        }
         .billingHubPointerStyle(.link)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(card.titleText), \(card.subtitleText), \(card.detailText ?? "No date"), \(card.statusText ?? "")")
-        .accessibilityHint("Double click to open details.")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityHint("Press Return or double click to open details.")
+        .accessibilityAddTraits(
+            isSelected ? [.isButton, .isSelected] : .isButton
+        )
         .accessibilityAction(named: "Open Details") {
             onTap()
             onOpen?()
         }
     }
 
+    private var accessibilitySummary: String {
+        [
+            card.titleText,
+            card.subtitleText,
+            card.columnType.laneTitle,
+            card.detailText ?? "No date",
+            card.statusText,
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: ", ")
+    }
+
     private var metadataLeading: some View {
         HStack(spacing: ListRowTokens.metadataSpacing) {
             Image(systemName: "calendar")
                 .font(BillingHubTheme.Typography.cardMetadata)
-                .foregroundColor(BillingHubTheme.Palette.textSecondary)
+                .foregroundStyle(BillingHubTheme.Palette.textSecondary)
             Text(card.detailText ?? "No date")
                 .font(BillingHubTheme.Typography.cardMetadata)
-                .foregroundColor(BillingHubTheme.Palette.textSecondary)
+                .foregroundStyle(BillingHubTheme.Palette.textSecondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
                 .truncationMode(.tail)
         }
     }
@@ -148,12 +163,12 @@ struct KanbanCardView: View, Equatable {
         HStack(spacing: ListRowTokens.metadataSpacing) {
             Image(systemName: card.trailingMetadataSymbol)
                 .font(BillingHubTheme.Typography.cardMetadata)
-                .foregroundColor(BillingHubTheme.Palette.textSecondary)
+                .foregroundStyle(BillingHubTheme.Palette.textSecondary)
             Text(card.statusText ?? "No amount")
                 .font(BillingHubTheme.Typography.cardMetadata)
-                .foregroundColor(BillingHubTheme.Palette.textPrimary.opacity(0.8))
+                .fontWeight(.semibold)
+                .foregroundStyle(BillingHubTheme.Palette.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
                 .truncationMode(.tail)
         }
     }
@@ -163,7 +178,7 @@ struct KanbanCardView: View, Equatable {
             .fill(BillingHubTheme.Surfaces.cardBase)
             .shadow(
                 color: isSelected
-                    ? Color.accentColor.opacity(StyleGuide.Opacity.medium)
+                    ? card.accentColor.opacity(StyleGuide.Opacity.medium)
                     : StyleGuide.shadowColor.opacity(StyleGuide.Opacity.faint),
                 radius: isSelected ? StyleGuide.Shadows.lightRadius + 2 : StyleGuide.Shadows.lightRadius,
                 x: 0,

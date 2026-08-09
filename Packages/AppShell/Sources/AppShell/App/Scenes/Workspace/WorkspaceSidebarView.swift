@@ -38,7 +38,7 @@ struct WorkspaceSidebarView: View {
     private var featuresHeader: some View {
         Text("Features")
             .font(.caption)
-            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
     }
 }
 

@@ -1,5 +1,6 @@
 import CloudKit
 import Core
+import CoreData
 import Foundation
 import os
 import SwiftData
@@ -87,7 +88,7 @@ public final class CloudKitSyncMonitor {
     // MARK: - Private
 
     private let observationBag = ObservationBag()
-    private let container: CKContainer
+    private let container: CKContainer?
 
     /// Consecutive error counter for persistent-error detection.
     private var consecutiveErrorCount: Int = 0
@@ -100,11 +101,16 @@ public final class CloudKitSyncMonitor {
 
     public init(
         cloudKitContainerIdentifier: String = CloudKitConfiguration.containerIdentifier,
-        historyCoordinator _: Any? = nil
+        historyCoordinator _: Any? = nil,
+        startsLiveMonitoring: Bool = true
     ) {
-        container = CKContainer(identifier: cloudKitContainerIdentifier)
-        scheduleAccountStatusCheck()
-        startObserving()
+        if startsLiveMonitoring {
+            container = CKContainer(identifier: cloudKitContainerIdentifier)
+            scheduleAccountStatusCheck()
+            startObserving()
+        } else {
+            container = nil
+        }
     }
 
     // MARK: - Public API
@@ -127,13 +133,13 @@ public final class CloudKitSyncMonitor {
 
     private func startObserving() {
         // CloudKit container event changes (import/export/setup lifecycle)
-        let eventName = NSNotification.Name("NSPersistentCloudKitContainerEventChangedNotification")
         let obs = NotificationCenter.default.addObserver(
-            forName: eventName,
+            forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
             queue: nil  // Background queue — parse snapshot here, then hop to MainActor.
         ) { [weak self] notification in
-            guard let event = notification.userInfo?["event"] else { return }
+            guard let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                as? NSPersistentCloudKitContainer.Event else { return }
             let snapshot = CloudKitEventSnapshot(event: event)
             Task { @MainActor [weak self] in
                 self?.apply(snapshot: snapshot)
@@ -157,7 +163,7 @@ public final class CloudKitSyncMonitor {
     }
 
     private func apply(snapshot: CloudKitEventSnapshot) {
-        let eventType = CloudKitEventType(rawValue: snapshot.type)
+        let eventType = CloudKitEventType(rawValue: snapshot.type.rawValue)
 
         if let endDate = snapshot.endDate {
             // Event has finished
@@ -202,6 +208,7 @@ public final class CloudKitSyncMonitor {
     }
 
     private func checkAccountStatus() async {
+        guard let container else { return }
         do {
             let status = try await container.accountStatus()
             accountStatus = status
@@ -226,66 +233,16 @@ public struct CloudKitSyncError: Equatable, Sendable, Identifiable {
 // MARK: - CloudKitEventSnapshot
 
 private struct CloudKitEventSnapshot {
-    let type: Int
+    let type: NSPersistentCloudKitContainer.EventType
     let endDate: Date?
     let succeeded: Bool
     let errorMessage: String?
 
-    init(event: Any) {
-        let mirror = Mirror(reflecting: event)
-
-        type = Self.intValue(named: "type", in: mirror)
-        endDate = Self.dateValue(named: "endDate", in: mirror)
-        succeeded = Self.boolValue(named: "succeeded", in: mirror, default: false)
-        errorMessage = Self.errorDescription(named: "error", in: mirror)
-    }
-
-    private static func intValue(named name: String, in mirror: Mirror) -> Int {
-        guard let value = mirror.children.first(where: { $0.label == name })?.value else {
-            return 0
-        }
-        if let intValue = value as? Int {
-            return intValue
-        }
-        if let rawRepresentable = value as? any RawRepresentable,
-           let rawInt = rawRepresentable.rawValue as? Int {
-            return rawInt
-        }
-        return 0
-    }
-
-    private static func dateValue(named name: String, in mirror: Mirror) -> Date? {
-        guard let value = mirror.children.first(where: { $0.label == name })?.value else {
-            return nil
-        }
-        if let date = value as? Date {
-            return date
-        }
-        if let optional = value as? Date? {
-            return optional
-        }
-        return nil
-    }
-
-    private static func boolValue(named name: String, in mirror: Mirror, default fallback: Bool) -> Bool {
-        guard let value = mirror.children.first(where: { $0.label == name })?.value else {
-            return fallback
-        }
-        return value as? Bool ?? fallback
-    }
-
-    private static func errorDescription(named name: String, in mirror: Mirror) -> String? {
-        guard let value = mirror.children.first(where: { $0.label == name })?.value else {
-            return nil
-        }
-        if let error = value as? Error {
-            return error.localizedDescription
-        }
-        if let optionalError = value as? Error?,
-           let error = optionalError {
-            return error.localizedDescription
-        }
-        return nil
+    init(event: NSPersistentCloudKitContainer.Event) {
+        type = event.type
+        endDate = event.endDate
+        succeeded = event.succeeded
+        errorMessage = event.error?.localizedDescription
     }
 }
 
@@ -321,4 +278,3 @@ private final class ObservationBag {
         }
     }
 }
-

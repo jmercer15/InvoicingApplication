@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import EventKit
 import Foundation
 import SwiftData
@@ -233,7 +234,7 @@ public extension Color {
     }
     
     var contrastForeground: Color {
-        relativeLuminance >= 0.45 ? .black : .white
+        relativeLuminance >= 0.45 ? .black : Color.white
     }
 
     func blended(with backgroundColor: Color, opacity: Double) -> Color {

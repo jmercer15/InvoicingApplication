@@ -1,5 +1,6 @@
-import Core
+import PersistenceModels
 import Foundation
+import SharedUI
 
 extension BillingHubProjectionBuilder {
     
@@ -49,7 +50,7 @@ extension BillingHubProjectionBuilder {
             if let hours = components.hour, let minutes = components.minute {
                 let totalMinutes = Double(hours * 60 + minutes)
                 if totalMinutes > 0 {
-                    duration = String(format: "%.1f", totalMinutes / 60.0) + "h"
+                    duration = MeasurementFormatting.hoursShort(totalMinutes / 60.0)
                 }
             }
         }
@@ -64,6 +65,7 @@ extension BillingHubProjectionBuilder {
 
         let sessionCardData = SessionKanbanCardData(
             sessionId: sessionId,
+            clientID: session.clientId,
             title: title,
             clientName: clientName,
             serviceName: serviceName,

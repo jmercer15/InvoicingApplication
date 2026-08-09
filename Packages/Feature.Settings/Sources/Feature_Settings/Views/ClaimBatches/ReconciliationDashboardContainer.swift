@@ -32,7 +32,7 @@ struct ReconciliationDashboardContainer: View {
                 .frame(minWidth: StyleGuide.Dimensions.settingsSheetStandardMinWidth, minHeight: StyleGuide.Dimensions.settingsSheetStandardMinHeight)
                 .task {
                     // Small delay to let the sheet presentation animation finish smoothly
-                    try? await Task.sleep(for: .milliseconds(150))
+                    guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
                     withAnimation(.easeOut(duration: 0.15)) {
                         isLoaded = true
                     }

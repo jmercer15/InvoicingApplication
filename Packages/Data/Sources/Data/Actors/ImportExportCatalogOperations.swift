@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -25,10 +26,19 @@ actor ImportExportCatalogOperations {
     }
 
     func importSpecificData(source: ImportSource, data: Data, fileName: String) async throws -> ImportResult {
-        try await dataImporterActor.importSpecificData(type: source, data: data, fileName: fileName)
+        if source != .ndisItems {
+            try ImportPayloadValidator.validateJSONImport(data: data, source: source)
+        }
+        return try await dataImporterActor.importSpecificData(type: source, data: data, fileName: fileName)
     }
 
     func importSpecificDataFromFile(url: URL, source: ImportSource) async throws -> ImportResult {
+        let accessedSecurityScopedResource = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessedSecurityScopedResource {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
         let fileName = url.lastPathComponent
         let extensionName = url.pathExtension.lowercased()
         let normalizedSource = source == .unknown ? .unknown : source
@@ -60,38 +70,54 @@ actor ImportExportCatalogOperations {
         }
     }
 
-    func importAllData() async throws -> [ImportResult] {
-        try await dataImporterActor.importAllData()
-    }
-
     func importAllData(fileData: Data, fileName: String) async throws -> ImportResult {
         try await dataImporterActor.importSpecificData(type: .allData, data: fileData, fileName: fileName)
     }
 
-    func export(source: ImportSource, dateString: String? = nil) async throws -> (data: Data, fileName: String) {
+    func export(
+        source: ImportSource,
+        redaction: ExportRedactionPreset = .none,
+        dateString: String? = nil,
+        encryption: ExportEncryptionOptions? = nil
+    ) async throws -> (data: Data, fileName: String) {
         let dateString = dateString ?? ImportExportTimestamp.fileSuffix()
-        switch source {
+        let redactedSuffix = redaction == .omitBankAndNDISIdentifiers ? "-Redacted" : ""
+        let exportPayload: (data: Data, fileName: String) = switch source {
         case .clients:
-            let data = try await dataExporterActor.exportClients()
-            return (data, "Clients-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportClients(redaction: redaction),
+                "Clients-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .payees:
-            let data = try await dataExporterActor.exportPayees()
-            return (data, "Payees-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportPayees(redaction: redaction),
+                "Payees-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .services:
-            let data = try await dataExporterActor.exportServices()
-            return (data, "Services-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportServices(redaction: redaction),
+                "Services-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .ndisItems:
-            let data = try await dataExporterActor.exportNDISItems()
-            return (data, "NDISItems-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportNDISItems(redaction: redaction),
+                "NDISItems-Export-\(dateString).json"
+            )
         case .invoices:
-            let data = try await dataExporterActor.exportInvoices()
-            return (data, "Invoices-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportInvoices(redaction: redaction),
+                "Invoices-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .sessions:
-            let data = try await dataExporterActor.exportSessions()
-            return (data, "Sessions-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportSessions(redaction: redaction),
+                "Sessions-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .allData:
-            let data = try await dataExporterActor.exportAllEntitiesToJSON()
-            return (data, "AllData-Export-\(dateString).json")
+            (
+                try await dataExporterActor.exportAllEntitiesToJSON(redaction: redaction),
+                "AllData-Export-\(dateString)\(redactedSuffix).json"
+            )
         case .unknown:
             throw NSError(
                 domain: "ImportExportCoordinatorError",
@@ -99,12 +125,21 @@ actor ImportExportCatalogOperations {
                 userInfo: [NSLocalizedDescriptionKey: "Unsupported export source"]
             )
         }
+        return try applyEncryptionIfNeeded(to: exportPayload, encryption: encryption)
     }
 
-    func exportAllData(dateString: String? = nil) async throws -> (data: Data, fileName: String) {
+    func exportAllData(
+        redaction: ExportRedactionPreset = .none,
+        dateString: String? = nil,
+        encryption: ExportEncryptionOptions? = nil
+    ) async throws -> (data: Data, fileName: String) {
         let dateString = dateString ?? ImportExportTimestamp.fileSuffix()
-        let data = try await dataExporterActor.exportAllEntitiesToJSON()
-        return (data, "AllData-Export-\(dateString).json")
+        let redactedSuffix = redaction == .omitBankAndNDISIdentifiers ? "-Redacted" : ""
+        let data = try await dataExporterActor.exportAllEntitiesToJSON(redaction: redaction)
+        return try applyEncryptionIfNeeded(
+            to: (data, "AllData-Export-\(dateString)\(redactedSuffix).json"),
+            encryption: encryption
+        )
     }
 
     func recalculateCurrentStatus() async throws -> (updated: Int, total: Int) {
@@ -118,13 +153,37 @@ actor ImportExportCatalogOperations {
     }
 
     private func readFileData(url: URL) async throws -> Data {
-        try await Task.detached(priority: .userInitiated) {
+        try await Task(priority: .userInitiated) {
             do {
-                return try Data(contentsOf: url, options: .mappedIfSafe)
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                if let fileSize = attributes[.size] as? NSNumber,
+                   fileSize.intValue > ImportPayloadValidator.maxJSONPayloadBytes {
+                    throw ImportPayloadValidationError.payloadTooLarge(
+                        byteCount: fileSize.intValue,
+                        limit: ImportPayloadValidator.maxJSONPayloadBytes
+                    )
+                }
+                return data
+            } catch let validation as ImportPayloadValidationError {
+                throw validation
             } catch {
                 throw ImportExportCatalogError.unableToReadInputFile(url: url, underlying: error)
             }
         }.value
+    }
+
+    private func applyEncryptionIfNeeded(
+        to payload: (data: Data, fileName: String),
+        encryption: ExportEncryptionOptions?
+    ) throws -> (data: Data, fileName: String) {
+        guard let encryption else { return payload }
+        let encrypted = try EncryptedExportContainer.encrypt(plaintext: payload.data, passphrase: encryption.passphrase)
+        let encryptedName = payload.fileName.replacingOccurrences(
+            of: ".json",
+            with: ".\(EncryptedExportContainer.fileExtension)"
+        )
+        return (encrypted, encryptedName)
     }
     
     private func allowedExtensions(for source: ImportSource) -> Set<String>? {

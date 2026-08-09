@@ -1,66 +1,55 @@
-import Core
 import Combine
-import Data
+import Core
+import DataInterfaces
 import EventKit
 @testable import Feature_Settings
-import SwiftData
-import XCTest
+import Testing
 
 @MainActor
-final class CalendarSettingsViewModelCapabilityTests: XCTestCase {
-    func testCalendarIdentifierEqualityIncludesCalendarIdentifierAndTitle() {
+@Suite struct CalendarSettingsViewModelCapabilityTests {
+    @Test func CalendarIdentifierEqualityIncludesCalendarIdentifierAndTitle() {
         let first = CalendarSettingsViewModel.CalendarIdentifier(id: "cal-1", title: "Work")
         let renamed = CalendarSettingsViewModel.CalendarIdentifier(id: "cal-1", title: "Work Renamed")
         let other = CalendarSettingsViewModel.CalendarIdentifier(id: "cal-2", title: "Personal")
 
-        XCTAssertNotEqual(first, renamed)
-        XCTAssertNotEqual(first, other)
+        #expect(first != renamed)
+        #expect(first != other)
 
         let set: Set<CalendarSettingsViewModel.CalendarIdentifier> = [first, renamed, other]
-        XCTAssertEqual(set.count, 3)
+        #expect(set.count == 3)
     }
 
-    func testClearAllSessionsPreservesDisabledAutosavePolicy() async throws {
-        let container = try ModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        context.autosaveEnabled = false
-        context.insert(Session(title: "Session to clear"))
-        try context.save()
+    @Test func ClearAllSessionsDelegatesToSessionWiper() async {
+        let wiper = MockCalendarSessionWiper()
         let viewModel = CalendarSettingsViewModel(
-            modelContext: context,
             preferencesStore: CalendarPreferencesStore(),
-            eventKitService: MockCalendarIntegrationService()
+            eventKitService: MockCalendarIntegrationService(),
+            sessionWiper: wiper
         )
 
         await viewModel.clearAllSessions()
 
-        let remainingSessions = try context.fetch(FetchDescriptor<Session>())
-        XCTAssertTrue(remainingSessions.isEmpty)
-        XCTAssertFalse(context.autosaveEnabled)
+        #expect(wiper.wipeCallCount == 1)
+        #expect(viewModel.errorMessage == nil)
     }
 
-    func testClearAllSessionsRestoresPriorAutosaveValue() async throws {
-        let container = try ModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        context.autosaveEnabled = true
-        context.insert(Session(title: "Session to clear"))
-        try context.save()
+    @Test func ClearAllSessionsSurfacesWiperFailure() async {
+        let wiper = MockCalendarSessionWiper(shouldFail: true)
         let viewModel = CalendarSettingsViewModel(
-            modelContext: context,
             preferencesStore: CalendarPreferencesStore(),
-            eventKitService: MockCalendarIntegrationService()
+            eventKitService: MockCalendarIntegrationService(),
+            sessionWiper: wiper
         )
 
         await viewModel.clearAllSessions()
 
-        let remainingSessions = try context.fetch(FetchDescriptor<Session>())
-        XCTAssertTrue(remainingSessions.isEmpty)
-        XCTAssertTrue(context.autosaveEnabled)
+        #expect(wiper.wipeCallCount == 1)
+        #expect(viewModel.errorMessage?.contains("Failed to delete sessions") == true)
     }
 }
 
 @MainActor
-private final class MockCalendarIntegrationService: CalendarIntegrationService, @unchecked Sendable {
+private final class MockCalendarIntegrationService: CalendarIntegrationService {
     var accessGranted = false
     var availableCalendars: [EKCalendar] = []
 
@@ -79,4 +68,21 @@ private final class MockCalendarIntegrationService: CalendarIntegrationService, 
     func fetchAvailableCalendars() async {}
 
     func createCalendar(title _: String, color _: CGColor?) async throws {}
+}
+
+@MainActor
+private final class MockCalendarSessionWiper: CalendarSessionWiping {
+    let shouldFail: Bool
+    private(set) var wipeCallCount = 0
+
+    init(shouldFail: Bool = false) {
+        self.shouldFail = shouldFail
+    }
+
+    func wipeAllSessions() async throws {
+        wipeCallCount += 1
+        if shouldFail {
+            throw NSError(domain: "MockCalendarSessionWiper", code: 1)
+        }
+    }
 }

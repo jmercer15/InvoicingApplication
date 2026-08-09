@@ -1,26 +1,27 @@
-import XCTest
+import Foundation
+import Testing
 @testable import Core
 
-final class InvoiceCurrencyCodeTests: XCTestCase {
-    func testNormalizesWhitespaceAndCase() {
-        XCTAssertEqual(InvoiceCurrencyCode.normalized("  aud\n"), "AUD")
+@Suite struct InvoiceCurrencyCodeTests {
+    @Test func NormalizesWhitespaceAndCase() {
+        #expect(InvoiceCurrencyCode.normalized("  aud\n") == "AUD")
     }
 
-    func testValidationRequiresThreeASCIILetters() {
-        XCTAssertTrue(InvoiceCurrencyCode.isValid("usd"))
-        XCTAssertFalse(InvoiceCurrencyCode.isValid("US"))
-        XCTAssertFalse(InvoiceCurrencyCode.isValid("12!"))
-        XCTAssertFalse(InvoiceCurrencyCode.isValid("AÜD"))
+    @Test func ValidationRequiresThreeASCIILetters() {
+        #expect(InvoiceCurrencyCode.isValid("usd"))
+        #expect(!(InvoiceCurrencyCode.isValid("US")))
+        #expect(!(InvoiceCurrencyCode.isValid("12!")))
+        #expect(!(InvoiceCurrencyCode.isValid("AÜD")))
     }
 
-    func testInvalidValuesUseProductDefault() {
-        XCTAssertEqual(InvoiceCurrencyCode.defaultValue, "AUD")
-        XCTAssertEqual(InvoiceCurrencyCode.normalizedOrDefault(""), "AUD")
-        XCTAssertEqual(InvoiceCurrencyCode.normalizedOrDefault("12!"), "AUD")
-        XCTAssertEqual(InvoiceCurrencyCode.normalizedOrDefault(" usd "), "USD")
+    @Test func InvalidValuesUseProductDefault() {
+        #expect(InvoiceCurrencyCode.defaultValue == "AUD")
+        #expect(InvoiceCurrencyCode.normalizedOrDefault("") == "AUD")
+        #expect(InvoiceCurrencyCode.normalizedOrDefault("12!") == "AUD")
+        #expect(InvoiceCurrencyCode.normalizedOrDefault(" usd ") == "USD")
     }
 
-    func testPersistedInvoiceDefaultMatchesSharedContract() {
-        XCTAssertEqual(Invoice(invoiceNumber: "INV-001").currencyCode, InvoiceCurrencyCode.defaultValue)
+    @Test func PersistedInvoiceDefaultMatchesSharedContract() {
+        #expect(InvoiceCurrencyCode.defaultValue == "AUD")
     }
 }

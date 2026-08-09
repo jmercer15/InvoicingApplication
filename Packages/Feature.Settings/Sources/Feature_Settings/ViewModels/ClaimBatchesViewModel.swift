@@ -1,6 +1,7 @@
 import Core
-import Data
+import DataInterfaces
 import Foundation
+import PersistenceModels
 import SwiftData
 import SwiftUI
 import Observation
@@ -10,27 +11,24 @@ import Observation
 public final class ClaimBatchesViewModel {
     public var errorMessage: String?
 
-    private let persistence: any ClaimBatchMainContextPersisting
-    private let modelContext: ModelContext
-    private let claimBatchBuilder: ClaimBatchBuilderService
-    private let preflightValidator: BPRPreflightValidator
-    private let csvWriter: BPRCSVWriter
-    private let hashVerifier: BulkClaimExportHashVerifier
-    private let reconciliationService: ClaimReconciliationService
-    private let bprfParser: BPRFParser
+    private let persistence: any ClaimBatchPersisting
+    private let claimBatchBuilder: any ClaimBatchBuilding
+    private let preflightValidator: any ClaimBatchPreflightValidating
+    private let csvWriter: any ClaimBatchCSVExporting
+    private let hashVerifier: any BulkClaimExportHashVerifying
+    private let reconciliationService: any ClaimReconciling
+    private let bprfParser: any BPRFParsing
 
     public init(
-        modelContext: ModelContext,
-        modelContainer: ModelContainer,
-        claimBatchBuilder: ClaimBatchBuilderService,
-        preflightValidator: BPRPreflightValidator,
-        csvWriter: BPRCSVWriter,
-        hashVerifier: BulkClaimExportHashVerifier,
-        reconciliationService: ClaimReconciliationService,
-        bprfParser: BPRFParser
+        persistence: any ClaimBatchPersisting,
+        claimBatchBuilder: any ClaimBatchBuilding,
+        preflightValidator: any ClaimBatchPreflightValidating,
+        csvWriter: any ClaimBatchCSVExporting,
+        hashVerifier: any BulkClaimExportHashVerifying,
+        reconciliationService: any ClaimReconciling,
+        bprfParser: any BPRFParsing
     ) {
-        self.modelContext = modelContext
-        self.persistence = SwiftDataClaimBatchMainContextPersistence(modelContext: modelContext)
+        self.persistence = persistence
         self.claimBatchBuilder = claimBatchBuilder
         self.preflightValidator = preflightValidator
         self.csvWriter = csvWriter
@@ -39,25 +37,28 @@ public final class ClaimBatchesViewModel {
         self.bprfParser = bprfParser
     }
 
+    public func fetchBatch(id: UUID) throws -> BulkClaimBatch? {
+        try persistence.fetchBatch(id: id)
+    }
+
     public func fetchLines(forBatch batchId: UUID) async -> [BulkClaimLine] {
         do {
-            let descriptor = FetchDescriptor<BulkClaimLine>(
-                predicate: #Predicate { $0.batch?.id == batchId }
-            )
-            return try modelContext.fetch(descriptor)
+            return try persistence.fetchLines(forBatch: batchId)
         } catch {
             print("Failed to fetch lines for batch: \(error)")
             return []
         }
     }
 
-    /// Fallback when `BulkClaimLine.claimableLines` is not populated; resolves the parent billable draft for a claimable line id.
+    public func fetchWizardReferenceData() throws -> ClaimBatchWizardReferenceData {
+        try persistence.fetchWizardReferenceData()
+    }
+
     public func draftId(containingClaimableLineId lineId: UUID) async throws -> UUID? {
         try persistence.draftId(containingClaimableLineId: lineId)
     }
 
-    public func createBatch(from drafts: [BillableDraft], fromDate: Date, toDate: Date) async throws -> BulkClaimBatch {
-        let draftIDs = drafts.map(\.id)
+    public func createBatch(fromDraftIDs draftIDs: [UUID], fromDate: Date, toDate: Date) async throws -> BulkClaimBatch {
         let (batchSnapshot, linesSnapshot) = try await claimBatchBuilder.buildBatch(
             fromDraftIDs: draftIDs,
             fromDate: fromDate,
@@ -80,13 +81,10 @@ public final class ClaimBatchesViewModel {
         return result
     }
 
-    /// Returns (csvData, suggestedFileName, checksumSHA256) for the view to present save panel and then call `markExported`.
     public func prepareExport(lines: [BulkClaimLine]) throws -> (data: Data, fileName: String, checksumSHA256: String) {
         let data = csvWriter.csvData(lines: lines)
         let checksum = hashVerifier.hash(for: data)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let fileName = "BPR_Export_\(formatter.string(from: Date())).csv"
+        let fileName = csvWriter.suggestedFileName(at: Date())
         return (data, fileName, checksum)
     }
 

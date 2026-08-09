@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - BillableDraftSnapshot
 
@@ -14,6 +13,7 @@ public struct BillableDraftSnapshot: Sendable, Equatable, Hashable {
     public let id: UUID
     public let sessionId: UUID
     public let clientId: UUID
+    public let clientPlanManagementType: String
     public let serviceId: UUID
     public let computedAt: Date
     public let billingContextSnapshot: Data
@@ -25,6 +25,7 @@ public struct BillableDraftSnapshot: Sendable, Equatable, Hashable {
         id: UUID,
         sessionId: UUID,
         clientId: UUID,
+        clientPlanManagementType: String = "",
         serviceId: UUID,
         computedAt: Date,
         billingContextSnapshot: Data,
@@ -35,6 +36,7 @@ public struct BillableDraftSnapshot: Sendable, Equatable, Hashable {
         self.id = id
         self.sessionId = sessionId
         self.clientId = clientId
+        self.clientPlanManagementType = clientPlanManagementType
         self.serviceId = serviceId
         self.computedAt = computedAt
         self.billingContextSnapshot = billingContextSnapshot
@@ -43,16 +45,5 @@ public struct BillableDraftSnapshot: Sendable, Equatable, Hashable {
         self.updatedAt = updatedAt
     }
 
-    public init(_ draft: BillableDraft) {
-        self.id = draft.id
-        self.sessionId = draft.sessionId
-        self.clientId = draft.clientId
-        self.serviceId = draft.serviceId
-        self.computedAt = draft.computedAt
-        self.billingContextSnapshot = draft.billingContextSnapshot
-        self.draftStatus = draft.draftStatus
-        self.createdAt = draft.createdAt
-        self.updatedAt = draft.updatedAt
-    }
 }
 

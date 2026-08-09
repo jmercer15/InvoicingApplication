@@ -1,5 +1,7 @@
+import Core
 import Foundation
 import Observation
+import os
 import SwiftData
 
 /// Observes SwiftData persistent history and surfaces a monotonic revision for projection refresh.
@@ -14,25 +16,31 @@ public final class SwiftDataStoreChangeMonitor {
     public private(set) var revision: Int = 0
 
     private let modelContext: ModelContext
+    private let tokenStore: HistoryTokenStore
     private var lastToken: DefaultHistoryToken?
-    @ObservationIgnored nonisolated(unsafe) private var saveObserver: NSObjectProtocol?
-    @ObservationIgnored nonisolated(unsafe) private var remoteChangeObserver: NSObjectProtocol?
+    @ObservationIgnored private var revisionBumpTask: Task<Void, Never>?
+    private let revisionBumpDelay: Duration = .milliseconds(300)
+    @ObservationIgnored private var saveObserver: NSObjectProtocol?
+    @ObservationIgnored private var remoteChangeObserver: NSObjectProtocol?
 
     public init(modelContainer: ModelContainer) {
         let context = ModelContext(modelContainer)
         context.autosaveEnabled = false
         self.modelContext = context
-        seedLatestHistoryToken()
+        self.tokenStore = HistoryTokenStore(container: modelContainer)
+        restoreOrSeedHistoryToken()
         startObserving()
     }
 
     public init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        seedLatestHistoryToken()
+        self.tokenStore = HistoryTokenStore(container: modelContext.container)
+        restoreOrSeedHistoryToken()
         startObserving()
     }
 
-    deinit {
+    isolated deinit {
+        revisionBumpTask?.cancel()
         if let saveObserver {
             NotificationCenter.default.removeObserver(saveObserver)
         }
@@ -59,11 +67,27 @@ public final class SwiftDataStoreChangeMonitor {
         }
     }
 
+    private func restoreOrSeedHistoryToken() {
+        if let restored = tokenStore.load() {
+            lastToken = restored
+            return
+        }
+        seedLatestHistoryToken()
+    }
+
     private func seedLatestHistoryToken() {
-        var descriptor = HistoryDescriptor<DefaultHistoryTransaction>()
-        descriptor.sortBy = [SortDescriptor(\.token, order: .reverse)]
-        descriptor.fetchLimit = 1
-        lastToken = try? modelContext.fetchHistory(descriptor).first?.token
+        do {
+            var descriptor = HistoryDescriptor<DefaultHistoryTransaction>()
+            descriptor.sortBy = [SortDescriptor(\.token, order: .reverse)]
+            descriptor.fetchLimit = 1
+            let token = try modelContext.fetchHistory(descriptor).first?.token
+            lastToken = token
+            if let token {
+                tokenStore.save(token)
+            }
+        } catch {
+            Logger.data.error("SwiftDataStoreChangeMonitor seedLatestHistoryToken failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func startObserving() {
@@ -86,6 +110,7 @@ public final class SwiftDataStoreChangeMonitor {
                 self?.consumeHistoryTransactions()
             }
         }
+
     }
 
     private func consumeHistoryTransactions() {
@@ -98,11 +123,54 @@ public final class SwiftDataStoreChangeMonitor {
             }
         }
 
-        guard let transactions = try? modelContext.fetchHistory(descriptor), !transactions.isEmpty else {
+        let transactions: [DefaultHistoryTransaction]
+        do {
+            transactions = try modelContext.fetchHistory(descriptor)
+        } catch {
+            if isHistoryTokenExpired(error) {
+                Logger.data.warning("SwiftDataStoreChangeMonitor history token expired; re-seeding latest token")
+                tokenStore.clear()
+                seedLatestHistoryToken()
+                // Force UI to drop live models; CloudKit HistoryExpired invalidates
+                // relationship faults still held by list/detail view models.
+                scheduleRevisionBump(immediate: true)
+            } else {
+                Logger.data.error("SwiftDataStoreChangeMonitor fetchHistory failed: \(error.localizedDescription, privacy: .public)")
+            }
             return
         }
 
-        lastToken = transactions.last?.token ?? lastToken
-        revision &+= 1
+        guard !transactions.isEmpty else { return }
+
+        if let newToken = transactions.last?.token {
+            lastToken = newToken
+            tokenStore.save(newToken)
+        }
+
+        // Do not deleteHistory here. CloudKit mirroring keeps its own history token;
+        // purging past this monitor's token invalidates CloudKit's token → 134301
+        // HistoryExpired → export thrash → permanent "exporting" / reset loops.
+        scheduleRevisionBump(immediate: false)
+    }
+
+    private func scheduleRevisionBump(immediate: Bool) {
+        revisionBumpTask?.cancel()
+        if immediate {
+            revision &+= 1
+            return
+        }
+        revisionBumpTask = Task { @MainActor [weak self] in
+            guard await Task.waitUnlessCancelled(for: self?.revisionBumpDelay ?? .milliseconds(300)) else { return }
+            guard !Task.isCancelled, let self else { return }
+            self.revision &+= 1
+        }
+    }
+
+    private func isHistoryTokenExpired(_ error: Error) -> Bool {
+        let description = String(describing: error)
+        return description.localizedCaseInsensitiveContains("historyTokenExpired")
+            || description.localizedCaseInsensitiveContains("history token is expired")
+            || description.localizedCaseInsensitiveContains("token expired")
+            || description.localizedCaseInsensitiveContains("token is expired")
     }
 }

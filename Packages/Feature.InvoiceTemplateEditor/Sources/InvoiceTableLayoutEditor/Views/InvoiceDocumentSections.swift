@@ -12,70 +12,30 @@ enum InvoiceDocumentLayout {
   static let partyBlockTitleSpacing: CGFloat = 4
   /// Horizontal gap between party columns (From | Billed To | For) on wide layouts.
   static let partyColumnSpacing: CGFloat = 14
-  /// Gap between the label and value columns in the invoice details grid.
-  static let metadataColumnSpacing: CGFloat = 10
-  /// Two-column layouts when content width allows (A4+; A5 stacks).
-  static let sideBySideMinWidth: CGFloat = InvoicePartyLayout.sideBySideMinContentWidth
-
-  static func usesSideBySideLayout(contentWidth: CGFloat, partyLayout: InvoicePartyLayout) -> Bool {
-    partyLayout.usesSideBySide(contentWidth: contentWidth)
-  }
-
-  static func sectionSpacing(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    sectionSpacing(scale: preset.scale)
-  }
-
   static func sectionSpacing(scale: CGFloat) -> CGFloat {
     (sectionSpacing * scale).rounded(.toNearestOrAwayFromZero)
-  }
-
-  static func lineItemsTitleSpacing(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    lineItemsTitleSpacing(scale: preset.scale)
   }
 
   static func lineItemsTitleSpacing(scale: CGFloat) -> CGFloat {
     (lineItemsTitleSpacing * scale).rounded(.toNearestOrAwayFromZero)
   }
 
-  static func compactBlockSpacing(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    compactBlockSpacing(scale: preset.scale)
-  }
-
   static func compactBlockSpacing(scale: CGFloat) -> CGFloat {
     (compactBlockSpacing * scale).rounded(.toNearestOrAwayFromZero)
-  }
-
-  static func lineItemsTopPadding(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    lineItemsTopPadding(scale: preset.scale)
   }
 
   static func lineItemsTopPadding(scale: CGFloat) -> CGFloat {
     (lineItemsTopPadding * scale).rounded(.toNearestOrAwayFromZero)
   }
 
-  static func footerSpacing(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    footerSpacing(scale: preset.scale)
-  }
-
   static func footerSpacing(scale: CGFloat) -> CGFloat {
     (footerSpacing * scale).rounded(.toNearestOrAwayFromZero)
-  }
-
-  static func partyColumnSpacing(for preset: InvoiceDocumentSpacingPreset) -> CGFloat {
-    partyColumnSpacing(scale: preset.scale)
   }
 
   static func partyColumnSpacing(scale: CGFloat) -> CGFloat {
     (partyColumnSpacing * scale).rounded(.toNearestOrAwayFromZero)
   }
 
-  static func usesSideBySideLayout(contentWidth: CGFloat) -> Bool {
-    contentWidth >= sideBySideMinWidth
-  }
-
-  static func usesSideBySideFooterLayout(contentWidth: CGFloat) -> Bool {
-    usesSideBySideLayout(contentWidth: contentWidth)
-  }
 }
 
 /// Which provider/participant fields appear on an NDIS-compliant invoice document.
@@ -996,10 +956,6 @@ enum InvoiceDocumentSections {
     }
   }
 
-  private static func totalsEmptyDateCell(columnWidths: LineItemTableColumnWidths) -> some View {
-    totalsEmptyDateCell(columnWidths: columnWidths, visibility: .allVisible)
-  }
-
   private static func totalsEmptyDescriptionCell(width: CGFloat) -> some View {
     Color.clear
       .lineItemPreviewTotalsEmptyCell(
@@ -1086,14 +1042,6 @@ enum InvoiceDocumentSections {
         }
       }
     }
-  }
-
-  private static func paymentDetailRow(
-    label: String,
-    value: String,
-    isLast: Bool
-  ) -> some View {
-    PaymentDetailRowView(label: label, value: value, isLast: isLast)
   }
 
   /// Payment Terms in a card matching the payment details styling so the two
@@ -1454,12 +1402,6 @@ struct PartyPreviewBlock: View {
       .previewInspectorTargetIfPresent(target, interaction: inspectorInteraction)
   }
 
-  private var placeholderDash: some View {
-    Text("—")
-      .font(bodyFont)
-      .foregroundStyle(InvoiceDocumentDesign.inkFaint)
-  }
-
   private func partyNameText(_ text: String) -> some View {
     Text(text.isEmpty ? "—" : text)
       .font(bodyEmphasisFont)
@@ -1642,7 +1584,6 @@ private enum InvoiceDetailsTableStyle {
     Color.white
   }
 
-  static let borderWidth: CGFloat = 1
   static let cellHorizontalPadding: CGFloat = 9
   static let cellVerticalPadding: CGFloat = 3
 

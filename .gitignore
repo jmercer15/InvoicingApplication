@@ -149,6 +149,7 @@ Packages/Data/test_results.txt
 .env.production
 
 # Build artifacts
+BuildData/
 *.app
 *.framework
 *.bundle

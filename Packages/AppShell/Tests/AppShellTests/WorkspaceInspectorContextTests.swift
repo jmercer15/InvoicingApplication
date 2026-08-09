@@ -1,68 +1,67 @@
 @testable import AppShell
 import Core
-import XCTest
-
+import Testing
 @MainActor
-final class WorkspaceInspectorContextTests: XCTestCase {
-    func testInvoiceFeaturesUseOnlyIntegratedEditorInspector() {
-        XCTAssertTrue(AppTab.invoices.usesIntegratedInvoiceEditorInspector)
-        XCTAssertTrue(AppTab.invoiceTemplateEditor.usesIntegratedInvoiceEditorInspector)
-        XCTAssertFalse(AppTab.relationships.usesIntegratedInvoiceEditorInspector)
-        XCTAssertFalse(AppTab.ndisCatalogue.usesIntegratedInvoiceEditorInspector)
+@Suite struct WorkspaceInspectorContextTests {
+    @Test func InvoiceFeaturesUseOnlyIntegratedEditorInspector() {
+        #expect(AppTab.invoices.usesIntegratedInvoiceEditorInspector)
+        #expect(AppTab.invoiceTemplateEditor.usesIntegratedInvoiceEditorInspector)
+        #expect(!(AppTab.relationships.usesIntegratedInvoiceEditorInspector))
+        #expect(!(AppTab.ndisCatalogue.usesIntegratedInvoiceEditorInspector))
     }
 
-    func testInspectorPresentationCombinesSplitColumnAndStandaloneWindow() {
+    @Test func InspectorPresentationCombinesSplitColumnAndStandaloneWindow() {
         var presentation = InspectorPresentationState()
 
-        XCTAssertFalse(presentation.isVisible)
+        #expect(!(presentation.isVisible))
 
         presentation.splitPresented = true
-        XCTAssertTrue(presentation.isVisible)
+        #expect(presentation.isVisible)
 
         presentation.splitPresented = false
         presentation.standaloneOpen = true
-        XCTAssertTrue(presentation.isVisible)
+        #expect(presentation.isVisible)
 
         presentation.standaloneOpen = false
-        XCTAssertFalse(presentation.isVisible)
+        #expect(!(presentation.isVisible))
     }
 
-    func testSplitInspectorHiddenWhenStandaloneInspectorOpen() {
+    @Test func SplitInspectorHiddenWhenStandaloneInspectorOpen() {
         let presentation = InspectorPresentationState(
             splitPresented: true,
             standaloneOpen: true
         )
 
         let showsSplitColumn = presentation.splitPresented && !presentation.standaloneOpen
-        XCTAssertFalse(showsSplitColumn)
-        XCTAssertTrue(presentation.isVisible)
+        #expect(!(showsSplitColumn))
+        #expect(presentation.isVisible)
     }
 
-    func testToolWindowPresenceRegistryTracksStandaloneInspectorAndActivity() {
+    @Test func ToolWindowPresenceRegistryTracksStandaloneInspectorAndActivity() {
         let registry = ToolWindowPresenceRegistry()
 
-        XCTAssertFalse(registry.inspectorStandaloneOpen)
-        XCTAssertFalse(registry.activityMonitorOpen)
+        #expect(!(registry.inspectorStandaloneOpen))
+        #expect(!(registry.activityMonitorOpen))
 
         registry.setInspectorStandaloneOpen(true)
-        XCTAssertTrue(registry.inspectorStandaloneOpen)
+        #expect(registry.inspectorStandaloneOpen)
 
         registry.setActivityMonitorOpen(true)
-        XCTAssertTrue(registry.activityMonitorOpen)
+        #expect(registry.activityMonitorOpen)
 
         registry.setInspectorStandaloneOpen(false)
         registry.setActivityMonitorOpen(false)
-        XCTAssertFalse(registry.inspectorStandaloneOpen)
-        XCTAssertFalse(registry.activityMonitorOpen)
+        #expect(!(registry.inspectorStandaloneOpen))
+        #expect(!(registry.activityMonitorOpen))
     }
 
-    func testToolWindowContextFocusedValueKind() {
+    @Test func ToolWindowContextFocusedValueKind() {
         let inspectorContext = ToolWindowContext(kind: .standaloneInspector, isOpen: true)
         let activityContext = ToolWindowContext(kind: .activityMonitor, isOpen: false)
 
-        XCTAssertEqual(inspectorContext.kind, .standaloneInspector)
-        XCTAssertTrue(inspectorContext.isOpen)
-        XCTAssertEqual(activityContext.kind, .activityMonitor)
-        XCTAssertFalse(activityContext.isOpen)
+        #expect(inspectorContext.kind == .standaloneInspector)
+        #expect(inspectorContext.isOpen)
+        #expect(activityContext.kind == .activityMonitor)
+        #expect(!(activityContext.isOpen))
     }
 }

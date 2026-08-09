@@ -13,14 +13,21 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
+        .package(path: "../PersistenceModels"),
     ],
     targets: [
         .target(
             name: "DataInterfaces",
-            dependencies: ["Core"],
+            dependencies: ["Core", "PersistenceModels"],
             path: "Sources/DataInterfaces",
             swiftSettings: strictConcurrencySettings
-        )
+        ),
+        .testTarget(
+            name: "DataInterfacesTests",
+            dependencies: ["DataInterfaces", "Core"],
+            path: "Tests/DataInterfacesTests",
+            swiftSettings: strictConcurrencySettings
+        ),
     ]
 )
 

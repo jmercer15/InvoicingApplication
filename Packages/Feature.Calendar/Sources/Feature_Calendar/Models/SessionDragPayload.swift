@@ -19,5 +19,5 @@ public struct SessionDragPayload: Codable, Transferable {
 }
 
 public extension UTType {
-    static let calendarSessionDragType = UTType(exportedAs: "com.invoicingapp.calendar-session-drag-type")
+    static let calendarSessionDragType = UTType(exportedAs: "com.jesse.InvoicingApplication.calendar-session-drag-type")
 }

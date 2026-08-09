@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -31,7 +32,7 @@ public struct ClaimReconciliationService: Sendable {
             line.submissionRef = nil
             line.reconciliationNotes = nil
             line.reconciledAt = Date()
-            line.ndiaPaidAmount = result.paidAmount.flatMap { NSDecimalNumber(decimal: $0).doubleValue }
+            line.ndiaPaidAmount = result.paidAmount
             line.ndiaErrorCode = result.errorCode
             line.ndiaErrorMessage = result.errorMessage
         }

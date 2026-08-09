@@ -1,24 +1,15 @@
 import SwiftUI
 import SwiftData
-import Core
-import Data
+import PersistenceModels
+import DataInterfaces
 import SharedUI
 import Observation
 
-public enum DetailState: Hashable {
-    case none
-    case client(UUID)
-    case payee(UUID)
-    case planManager(UUID)
-    case newClient
-    case newPayee
-    case newPlanManager
-}
 @Observable
 @MainActor
 public final class RelationshipsContainerViewModel {
     // MARK: - Dependencies
-    private let persistenceCommands: RelationshipPersistenceCommands
+    private let relationshipDeleter: any ClientRelationshipDeleting
     private var requestRelationshipDelete: (UUID) -> Void
 
     // MARK: - Published State
@@ -43,17 +34,32 @@ public final class RelationshipsContainerViewModel {
 
     // MARK: - Initializer
     public init(
-        modelContext: ModelContext,
+        relationshipDeleter: any ClientRelationshipDeleting,
         requestRelationshipDelete: @escaping (UUID) -> Void = { _ in },
-        storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+        storeChangeMonitor: (any StoreChangeMonitoring)? = nil
     ) {
-        self.persistenceCommands = RelationshipPersistenceCommands(modelContext: modelContext)
+        self.relationshipDeleter = relationshipDeleter
         self.requestRelationshipDelete = requestRelationshipDelete
         syncSelectionFromParent()
 
-        SwiftDataStoreChangeMonitor.subscribeToStoreChanges(monitor: storeChangeMonitor) { [weak self] revision in
+        StoreChangeMonitoringSubscription.subscribe(monitor: storeChangeMonitor) { [weak self] revision in
             self?.dataRevision = revision
         }
+    }
+
+    /// Builds the relationships navigation tree off the main actor.
+    func buildProjection(
+        searchText: String,
+        selectedFilter: EntityFilter,
+        selectedStatus: StatusFilter,
+        modelContainer: ModelContainer
+    ) async -> RelationshipsProjection? {
+        let actor = RelationshipsProjectionActor(modelContainer: modelContainer)
+        return try? await actor.build(
+            searchText: searchText,
+            selectedFilter: selectedFilter,
+            selectedStatus: selectedStatus
+        )
     }
 
     // MARK: - Public Intents
@@ -75,22 +81,27 @@ public final class RelationshipsContainerViewModel {
     
     // MARK: - Deletion Actions
     /// Deletes the same `@Query`-materialized model the detail column is showing (no duplicate fetch).
-    func deleteClient(_ entity: Client) async throws {
+    /// When the client still has sessions, throws unless `deleteSessions` is true (sessions deleted first).
+    public func deleteClient(_ entity: Client, deleteSessions: Bool = false) async throws {
         let id = entity.id
-        try persistenceCommands.delete(entity)
-        await MainActor.run { deleteEntity(with: id) }
+        let linkedSessions = entity.sessions ?? []
+        if !linkedSessions.isEmpty && !deleteSessions {
+            throw ClientDeletionError.hasLinkedSessions(count: linkedSessions.count)
+        }
+        try await relationshipDeleter.deleteClient(id: id, deleteSessions: deleteSessions)
+        deleteEntity(with: id)
     }
 
-    func deletePayee(_ entity: Payee) async throws {
+    public func deletePayee(_ entity: Payee) async throws {
         let id = entity.id
-        try persistenceCommands.delete(entity)
-        await MainActor.run { deleteEntity(with: id) }
+        try await relationshipDeleter.deletePayee(id: id)
+        deleteEntity(with: id)
     }
 
-    func deletePlanManager(_ entity: PlanManager) async throws {
+    public func deletePlanManager(_ entity: PlanManager) async throws {
         let id = entity.id
-        try persistenceCommands.delete(entity)
-        await MainActor.run { deleteEntity(with: id) }
+        try await relationshipDeleter.deletePlanManager(id: id)
+        deleteEntity(with: id)
     }
 
     // MARK: - Private Logic
@@ -112,16 +123,6 @@ public final class RelationshipsContainerViewModel {
     }
 }
 
-@MainActor
-private struct RelationshipPersistenceCommands {
-    let modelContext: ModelContext
-
-    func delete<T: PersistentModel>(_ entity: T) throws {
-        modelContext.delete(entity)
-        try modelContext.save()
-    }
-}
-
 // MARK: - Enums & Extensions
 extension RelationshipsContainerViewModel {
     enum RelationType: String, CaseIterable, Identifiable {
@@ -131,4 +132,26 @@ extension RelationshipsContainerViewModel {
         var id: String { self.rawValue }
     }
 
+}
+
+public enum DetailState: Hashable {
+    case none
+    case client(UUID)
+    case payee(UUID)
+    case planManager(UUID)
+    case newClient
+    case newPayee
+    case newPlanManager
+}
+
+public enum ClientDeletionError: LocalizedError, Equatable, Sendable {
+    case hasLinkedSessions(count: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .hasLinkedSessions(count):
+            let noun = count == 1 ? "session" : "sessions"
+            return "This client has \(count) linked \(noun). Delete those sessions first, or delete the client and all sessions together."
+        }
+    }
 }

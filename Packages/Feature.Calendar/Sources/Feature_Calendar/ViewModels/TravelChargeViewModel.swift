@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Core
+import PersistenceModels
 import Data
 import Observation
 
@@ -8,17 +9,20 @@ import Observation
 @MainActor
 class TravelChargeViewModel {
     var form: TravelChargeFormState
+    var saveError: String?
     let modelContext: ModelContext
     private let persistence: TravelChargePersistence
 
     var onSave: (() -> Void)?
+    var onError: ((Error) -> Void)?
 
     init(
         modelContext: ModelContext,
         geocodingService: any Core.GeocodingServiceProtocol,
         mainSession: Session,
         daySessions: [DisplayableCalendarItem],
-        onSave: (() -> Void)? = nil
+        onSave: (() -> Void)? = nil,
+        onError: ((Error) -> Void)? = nil
     ) {
         form = TravelChargeFormState(
             geocodingService: geocodingService,
@@ -28,6 +32,7 @@ class TravelChargeViewModel {
         self.modelContext = modelContext
         persistence = TravelChargePersistence(modelContext: modelContext)
         self.onSave = onSave
+        self.onError = onError
     }
 
     func applyTravelChargeQuerySnapshot(
@@ -63,7 +68,13 @@ class TravelChargeViewModel {
     }
 
     func saveTravelCharges() {
-        persistence.saveTravelCharges(form: form)
-        onSave?()
+        saveError = nil
+        do {
+            try persistence.saveTravelCharges(form: form)
+            onSave?()
+        } catch {
+            saveError = error.localizedDescription
+            onError?(error)
+        }
     }
 }

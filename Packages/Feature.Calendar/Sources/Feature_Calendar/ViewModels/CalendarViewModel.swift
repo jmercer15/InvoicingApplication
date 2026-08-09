@@ -1,10 +1,12 @@
 import SwiftUI
 import Core
+import PersistenceModels
 import EventKit
 import Foundation
 import SwiftData
 import SharedUI
 import Data
+import DataInterfaces
 import Observation
 
 // DisplayableCalendarItem extracted to Models/DisplayableCalendarItem.swift
@@ -21,29 +23,102 @@ public class CalendarViewModel {
     var selectedSessionInfo: (session: Session?, instanceStart: Date?, instanceEnd: Date?)?
     var selectedClientFilterIDs: Set<UUID> = []
     var showCancelledSessions: Bool = false
-    var isLoading: Bool = false
+    var isLoading: Bool {
+        get { display.isLoading }
+        set { display.isLoading = newValue }
+    }
     var operationErrorMessage: String?
+    /// Non-blocking nudge shown after a session is marked Completed, pointing the user at Billing
+    /// Hub instead of leaving them to discover the next step on their own.
+    var sessionReadyForBillingHubMessage: String?
+    /// Session ids carried with the Billing Hub nudge so Open Billing Hub can focus Completed cards.
+    var sessionReadyForBillingHubSessionIDs: [UUID] = []
     /// Shared-store revision. Changes from Billing Hub, imports, CloudKit, and other windows
     /// invalidate calendar projections without reaching into SwiftData's Core Data internals.
     var dataRevision: Int = 0
     /// Latest display refresh wins; cancels in-flight range/EventKit work when the view range or query updates rapidly.
     var displayItemsUpdateTask: Task<Void, Never>?
+    var recurringModificationTask: Task<Void, Never>?
     var displayItemsUpdateGeneration: UInt64 = 0
     var lastDisplayItemsRefreshFingerprint: DisplayItemsRefreshFingerprint?
     /// Bumped on EventKit store changes so display refresh is not skipped when only external events changed.
     var eventStoreChangeGeneration: UInt64 = 0
     var hourHeight: CGFloat
-    var filteredSessions: [Session] = []
-    /// Sessions seen from the last `@Query`-driven calendar pipeline plus any single-row resolves (Billing Hub deep link, off-window ops). Prefer this over ad-hoc fetches when an id should already be materialized.
-    var sessionRegistry: [UUID: Session] = [:]
-    var clientNamesCache: [UUID: String] = [:]
-    var serviceNamesCache: [UUID: String] = [:]
+
+    /// Display cache isolated from interaction/filter state to reduce observation fan-out.
+    let display = CalendarDisplayState()
 
     // --- Travel Charge Sheet State ---
-    var isShowingTravelChargeSheet: Bool = false
-    var selectedSessionForTravel: Session?
-    var selectedInstanceStartDateForTravel: Date?
-    var selectedInstanceEndDateForTravel: Date?
+    let travelPresentation = CalendarTravelPresentation()
+
+    var isShowingTravelChargeSheet: Bool {
+        get { travelPresentation.isShowingSheet }
+        set { travelPresentation.isShowingSheet = newValue }
+    }
+    var selectedSessionForTravel: Session? {
+        get { travelPresentation.selectedSession }
+        set { travelPresentation.selectedSession = newValue }
+    }
+    var selectedInstanceStartDateForTravel: Date? {
+        get { travelPresentation.selectedInstanceStartDate }
+        set { travelPresentation.selectedInstanceStartDate = newValue }
+    }
+    var selectedInstanceEndDateForTravel: Date? {
+        get { travelPresentation.selectedInstanceEndDate }
+        set { travelPresentation.selectedInstanceEndDate = newValue }
+    }
+    var travelChargeDaySessions: [DisplayableCalendarItem] {
+        get { travelPresentation.daySessions }
+        set { travelPresentation.daySessions = newValue }
+    }
+
+    func presentTravelCharge(
+        for session: Session,
+        instanceStart: Date,
+        instanceEnd: Date
+    ) {
+        travelPresentation.present(
+            for: session,
+            instanceStart: instanceStart,
+            instanceEnd: instanceEnd,
+            daySessionsProvider: daySessionsForTravel(mainSession:on:)
+        )
+    }
+
+    func dismissTravelChargePresentation() {
+        travelPresentation.dismiss()
+    }
+
+    /// Store revision (including CloudKit HistoryExpired) — drop live Session refs before reload.
+    func handleStoreRevision(_ revision: Int) {
+        guard revision != dataRevision else { return }
+        dataRevision = revision
+        invalidateLiveSessionModelsForStoreChange()
+        updateDisplayableItems()
+    }
+
+    private func invalidateLiveSessionModelsForStoreChange() {
+        selectedSessionInfo = nil
+        pendingRecurringModification = nil
+        dismissTravelChargePresentation()
+        displayItemsUpdateTask?.cancel()
+        displayItemsUpdateGeneration &+= 1
+        lastDisplayItemsRefreshFingerprint = nil
+        display.clearLiveSessionModels()
+    }
+
+    func daySessionsForTravel(mainSession: Session, on sessionDate: Date) -> [DisplayableCalendarItem] {
+        let allItems = display.allDayItems + display.timedItems
+        return allItems.filter { item in
+            guard let itemSession = item.underlyingSession,
+                  !itemSession.isTravel,
+                  itemSession.clientId == mainSession.clientId else {
+                return false
+            }
+            guard let startDate = item.startDate else { return false }
+            return Calendar.current.isDate(startDate, inSameDayAs: sessionDate)
+        }
+    }
 
     // --- ADD State for Event Conversion ---
     var eventToConvert: EKEvent? = nil
@@ -51,26 +126,65 @@ public class CalendarViewModel {
     // --- Bulk Selection Mode ---
     var isBulkSelectionMode: Bool = false
     var bulkSelectedSessionIDs: Set<UUID> = []
+    var bulkOperationProgress: CalendarBulkOperationProgress?
+    var bulkOperationFeedback: CalendarBulkOperationFeedback?
+
+    var isBulkOperationInFlight: Bool {
+        bulkOperationProgress != nil
+    }
     
     // --- Available Calendars from EventKit ---
     var availableCalendars: [EKCalendar] = []
     
-    // --- ADD Unified Item State ---
-    var allDayItems: [DisplayableCalendarItem] = []
-    var timedItems: [DisplayableCalendarItem] = []
-    
-    // --- ADD Pre-grouped Item Caches ---
-    var timedItemsByDay: [DateComponents: [DisplayableCalendarItem]] = [:]
-    var allDayItemsByDay: [DateComponents: [DisplayableCalendarItem]] = [:]
-    /// Pre-merged timed + all-day items per day (sorted once per refresh).
-    var combinedItemsByDay: [DateComponents: [DisplayableCalendarItem]] = [:]
-    
-    // --- ADD Pre-calculated Relative Placements ---
-    var relativePlacementsByDay: [DateComponents: [String: CalendarItemOverlapGeometry.RelativePlacement]] = [:]
-    
-    // --- ADD All-Day Layout Caches ---
-    var allDayPositionedItems: [AllDayPositionedItem] = []
-    var allDayStripHeight: CGFloat = 0
+    // --- ADD Unified Item State (display cache) ---
+    var filteredSessions: [Session] {
+        get { display.filteredSessions }
+        set { display.filteredSessions = newValue }
+    }
+    var sessionRegistry: [UUID: Session] {
+        get { display.sessionRegistry }
+        set { display.sessionRegistry = newValue }
+    }
+    var clientNamesCache: [UUID: String] {
+        get { display.clientNamesCache }
+        set { display.clientNamesCache = newValue }
+    }
+    var serviceNamesCache: [UUID: String] {
+        get { display.serviceNamesCache }
+        set { display.serviceNamesCache = newValue }
+    }
+    var allDayItems: [DisplayableCalendarItem] {
+        get { display.allDayItems }
+        set { display.allDayItems = newValue }
+    }
+    var timedItems: [DisplayableCalendarItem] {
+        get { display.timedItems }
+        set { display.timedItems = newValue }
+    }
+    var timedItemsByDay: [DateComponents: [DisplayableCalendarItem]] {
+        get { display.timedItemsByDay }
+        set { display.timedItemsByDay = newValue }
+    }
+    var allDayItemsByDay: [DateComponents: [DisplayableCalendarItem]] {
+        get { display.allDayItemsByDay }
+        set { display.allDayItemsByDay = newValue }
+    }
+    var combinedItemsByDay: [DateComponents: [DisplayableCalendarItem]] {
+        get { display.combinedItemsByDay }
+        set { display.combinedItemsByDay = newValue }
+    }
+    var relativePlacementsByDay: [DateComponents: [String: CalendarItemOverlapGeometry.RelativePlacement]] {
+        get { display.relativePlacementsByDay }
+        set { display.relativePlacementsByDay = newValue }
+    }
+    var allDayPositionedItems: [AllDayPositionedItem] {
+        get { display.allDayPositionedItems }
+        set { display.allDayPositionedItems = newValue }
+    }
+    var allDayStripHeight: CGFloat {
+        get { display.allDayStripHeight }
+        set { display.allDayStripHeight = newValue }
+    }
     
     // --- Dynamic Filter Options ---
     var availableFilterStatuses: [(label: String, value: String?)] = [("All", nil)]
@@ -81,12 +195,15 @@ public class CalendarViewModel {
     
     // --- Calendar Visibility State ---
     var visibleCalendarIdentifiers: Set<String> = []
-    @ObservationIgnored nonisolated(unsafe) private var eventStoreObserver: NSObjectProtocol?
+    @ObservationIgnored private var eventStoreObserver: NSObjectProtocol?
 
     // --- State for Recurring Modification Dialog ---
     var showingRecurringModificationDialog = false
     var pendingRecurringModification: (session: Session, modification: RecurringModificationType, originalInstanceDate: Date)?
     var mode: RecurringEditMode = .thisOnly
+
+    // --- Soft-lock confirmation for edits to sessions already linked to an invoice ---
+    var pendingInvoicedSessionAction: InvoicedSessionAction?
 
     var recurringModificationModes: [RecurringEditMode] {
         pendingRecurringModification == nil ? [] : [.thisOnly, .thisAndFuture, .all]
@@ -109,6 +226,7 @@ public class CalendarViewModel {
     
     // MARK: - Session Modification Service
     let sessionModificationService: SessionModificationService
+    private(set) var sessionActionCoordinator: CalendarSessionActionCoordinator!
     
     public init(
         modelContext: ModelContext,
@@ -120,7 +238,7 @@ public class CalendarViewModel {
         calendarViewType: CalendarViewType = .week,
         searchText: String = "",
         sessionResolver: (any CalendarSessionResolving)? = nil,
-        storeChangeMonitor: SwiftDataStoreChangeMonitor? = nil
+        storeChangeMonitor: (any StoreChangeMonitoring)? = nil
     ) {
         self.modelContext = modelContext
         self.syncService = syncService
@@ -136,18 +254,19 @@ public class CalendarViewModel {
         self.workflow = CalendarWorkflowActor(modelContainer: modelContainer)
 
         self.sessionModificationService = SessionModificationService(
-            modelContext: modelContext,
+            modelContainer: modelContainer,
             syncService: syncService,
             eventKitService: eventKitService,
             recurrenceRuleManager: recurrenceRuleManager,
             recurrenceRuleBuilder: RecurrenceRuleBuilder()
         )
+        self.sessionActionCoordinator = CalendarSessionActionCoordinator(host: self)
 
         initializeCalendarVisibility()
         self.availableCalendars = eventKitService.getCalendars()
 
-        SwiftDataStoreChangeMonitor.subscribeToStoreChanges(monitor: storeChangeMonitor) { [weak self] revision in
-            self?.dataRevision = revision
+        StoreChangeMonitoringSubscription.subscribe(monitor: storeChangeMonitor) { [weak self] revision in
+            self?.handleStoreRevision(revision)
         }
 
         self.eventStoreObserver = NotificationCenter.default.addObserver(
@@ -164,7 +283,9 @@ public class CalendarViewModel {
         }
     }
 
-    deinit {
+    isolated deinit {
+        displayItemsUpdateTask?.cancel()
+        recurringModificationTask?.cancel()
         if let observer = eventStoreObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -201,7 +322,11 @@ public class CalendarViewModel {
             geocodingService: geocodingService,
             mainSession: mainSession,
             daySessions: daySessions,
-            onSave: onSave
+            onSave: onSave,
+            onError: { [weak self] error in
+                self?.operationErrorMessage =
+                    "Save travel charge failed: \(error.localizedDescription)"
+            }
         )
     }
 
@@ -238,23 +363,19 @@ public class CalendarViewModel {
 
     // --- ADDED: Computed property for all displayable items ---
     var displayableItems: [DisplayableCalendarItem] {
-        return allDayItems + timedItems
+        display.displayableItems
     }
 
-    // --- ADDED: Helper functions to get items for a specific day ---
     func getTimedItems(for day: Date) -> [DisplayableCalendarItem] {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
-        return timedItemsByDay[components] ?? []
+        display.timedItems(for: day)
     }
 
     func getAllDayItems(for day: Date) -> [DisplayableCalendarItem] {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
-        return allDayItemsByDay[components] ?? []
+        display.allDayItems(for: day)
     }
 
     func combinedItems(for day: Date) -> [DisplayableCalendarItem] {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
-        return combinedItemsByDay[components] ?? []
+        display.combinedItems(for: day)
     }
 
     func isSelectedDay(_ day: Date) -> Bool {
@@ -274,11 +395,44 @@ public class CalendarViewModel {
         }
     }
     
-    func handleSaveFromEditor(with _: RecurringEditMode, viewModel _: NewSessionViewModel) {
-        // Refresh and dismiss
+    func handleSaveFromEditor(with _: RecurringEditMode, viewModel: NewSessionViewModel) {
+        // Editor Complete→Save: nudge only on a true transition into Completed.
+        if viewModel.didTransitionIntoCompletedStatus {
+            setBillingHubNudge(
+                message: CalendarSessionCompletionFeedback.billingHubNudgeMessage,
+                sessionIDs: CalendarSessionCompletionFeedback.focusSessionIDs(
+                    persistedID: viewModel.lastPersistedSessionID,
+                    editingID: viewModel.sessionToEdit?.id
+                )
+            )
+        }
         self.selectedSessionInfo = nil
         self.eventToConvert = nil
         self.updateDisplayableItems()
+    }
+
+    func setBillingHubNudge(message: String, sessionIDs: [UUID]) {
+        let mergedIDs = CalendarSessionCompletionFeedback.mergedFocusSessionIDs(
+            existing: sessionReadyForBillingHubSessionIDs,
+            new: sessionIDs
+        )
+        sessionReadyForBillingHubSessionIDs = mergedIDs
+        sessionReadyForBillingHubMessage = mergedIDs.count > 1
+            ? CalendarSessionCompletionFeedback.billingHubNudgeMessage(
+                completedCount: mergedIDs.count
+            )
+            : message
+    }
+
+    /// Clears banner copy only. Focus ids stay until Open Billing Hub consumes them
+    /// or an explicit full clear runs.
+    func clearBillingHubNudgeMessage() {
+        sessionReadyForBillingHubMessage = nil
+    }
+
+    func clearBillingHubNudge() {
+        sessionReadyForBillingHubMessage = nil
+        sessionReadyForBillingHubSessionIDs = []
     }
     
     // MARK: - Recurring Modification Execution (for drag/drop or resize)
@@ -286,20 +440,19 @@ public class CalendarViewModel {
     func executeRecurringModification(with mode: RecurringEditMode) {
         guard let (session, modification, originalDate) = pendingRecurringModification else { return }
         
-        Task {
+        recurringModificationTask?.cancel()
+        recurringModificationTask = Task {
             do {
                 _ = try await sessionModificationService.processRecurringModification(
-                    session: session,
+                    sessionID: session.id,
                     modification: modification,
                     mode: mode,
                     originalInstanceDate: originalDate
                 )
-                
-                await MainActor.run {
-                    self.pendingRecurringModification = nil
-                    self.showingRecurringModificationDialog = false
-                    self.updateDisplayableItems()
-                }
+
+                pendingRecurringModification = nil
+                showingRecurringModificationDialog = false
+                updateDisplayableItems()
             } catch {
                 reportOperationFailure("Apply recurring change", error: error)
             }
@@ -310,15 +463,9 @@ public class CalendarViewModel {
     
     // Session Manipulation actions extracted to CalendarViewModel+Actions.swift
     
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
     /// Format a date as time string
     func formatTime(_ date: Date) -> String {
-        return Self.timeFormatter.string(from: date)
+        date.formatted(.dateTime.hour().minute())
     }
     
     /// Check if a calendar is visible
@@ -336,26 +483,58 @@ public class CalendarViewModel {
         bulkSelectedSessionIDs
     }
     
-    /// Bulk delete selected sessions
+    /// Bulk delete selected sessions. Sessions already linked to an invoice are skipped
+    /// (soft-locked) rather than silently deleted, and reported separately.
     func bulkDeleteSessions() {
+        guard !isBulkOperationInFlight else { return }
+        let sessionIDs = Array(bulkSelectedSessionIDs)
+        guard !sessionIDs.isEmpty else { return }
+        bulkOperationFeedback = nil
+        bulkOperationProgress = CalendarBulkOperationProgress(
+            action: "Deleting",
+            completedCount: 0,
+            totalCount: sessionIDs.count
+        )
+
         Task {
             var failureCount = 0
-            for sessionId in bulkSelectedSessionIDs {
+            var lockedCount = 0
+            var skippedInvoiceIDs: [UUID] = []
+            for (index, sessionId) in sessionIDs.enumerated() {
+                let invoiceID = resolveSession(for: sessionId)?.invoice?.id
                 do {
                     try await deleteSession(sessionId: sessionId)
+                } catch is CalendarActionError {
+                    lockedCount += 1
+                    if let invoiceID, !skippedInvoiceIDs.contains(invoiceID) {
+                        skippedInvoiceIDs.append(invoiceID)
+                    }
                 } catch {
                     failureCount += 1
                 }
+                bulkOperationProgress = CalendarBulkOperationProgress(
+                    action: "Deleting",
+                    completedCount: index + 1,
+                    totalCount: sessionIDs.count
+                )
             }
-            await MainActor.run {
-                bulkSelectedSessionIDs.removeAll()
-                isBulkSelectionMode = false
-                if failureCount > 0 {
-                    operationErrorMessage = "Bulk delete failed for \(failureCount) session(s)."
-                }
-                updateDisplayableItems()
-            }
+            let succeededCount = sessionIDs.count - lockedCount - failureCount
+            bulkOperationProgress = nil
+            bulkOperationFeedback = CalendarBulkOperationFeedback.result(
+                action: "Deleted",
+                succeeded: succeededCount,
+                skipped: lockedCount,
+                failed: failureCount,
+                invoicedInvoiceIDs: skippedInvoiceIDs
+            )
+            bulkSelectedSessionIDs.removeAll()
+            isBulkSelectionMode = false
+            updateDisplayableItems()
         }
+    }
+
+    func clearBulkOperationFeedback() {
+        bulkOperationFeedback = nil
     }
 
     func serviceName(for serviceId: UUID) -> String? {

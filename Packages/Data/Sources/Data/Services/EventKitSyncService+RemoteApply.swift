@@ -1,7 +1,8 @@
 import Foundation
-@preconcurrency import EventKit
+import EventKit
 import SwiftData
 import Core
+import PersistenceModels
 
 extension EventKitSyncService {
     func applyRemoteEventToSession(

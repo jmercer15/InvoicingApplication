@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 // MARK: - BulkClaimBatchSnapshot
 
@@ -61,22 +60,5 @@ public struct BulkClaimBatchSnapshot: Sendable, Equatable, Hashable {
         self.notes = notes
     }
 
-    public init(_ batch: BulkClaimBatch) {
-        self.id = batch.id
-        self.createdAt = batch.createdAt
-        self.fromDate = batch.fromDate
-        self.toDate = batch.toDate
-        self.status = batch.status
-        self.includeTravel = batch.includeTravel
-        self.includeCancellations = batch.includeCancellations
-        self.claimReferenceStrategy = batch.claimReferenceStrategy
-        self.exportFileName = batch.exportFileName
-        self.exportedAt = batch.exportedAt
-        self.submittedAt = batch.submittedAt
-        self.rowCount = batch.rowCount
-        self.errorCount = batch.errorCount
-        self.checksumSHA256 = batch.checksumSHA256
-        self.notes = batch.notes
-    }
 }
 

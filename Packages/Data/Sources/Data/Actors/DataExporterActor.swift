@@ -1,4 +1,5 @@
 import Core
+import PersistenceModels
 import Foundation
 import SwiftData
 
@@ -15,20 +16,23 @@ public actor DataExporterActor: ModelActor {
     }
     
     /// Exports all data to a file in the specified format
-    public func exportToFile(format: SwiftDataExportFormat = .json) async throws -> (Data, String) {
+    public func exportToFile(
+        format: SwiftDataExportFormat = .json,
+        redaction: ExportRedactionPreset = .none
+    ) async throws -> (Data, String) {
         let context = modelContext
-        return try SwiftDataExportService.exportToFile(context: context, format: format)
+        return try SwiftDataExportService.exportToFile(context: context, format: format, redaction: redaction)
     }
     
     /// Exports all entities to a JSON Data object
-    public func exportAllEntitiesToJSON() async throws -> Data {
+    public func exportAllEntitiesToJSON(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
-        return try SwiftDataExportService.exportAllEntitiesToJSON(context: context)
+        return try SwiftDataExportService.exportAllEntitiesToJSON(context: context, redaction: redaction)
     }
     
     // MARK: - Specialized Entity Exports
     
-    public func exportClients() async throws -> Data {
+    public func exportClients(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<Client>()
         let clients = try context.fetch(fetchDescriptor)
@@ -60,10 +64,10 @@ public actor DataExporterActor: ModelActor {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        return try encoder.encode(clientsJSON)
+        return try encoder.encode(ExportFieldRedactor.redact(clientsJSON, preset: redaction))
     }
     
-    public func exportPayees() async throws -> Data {
+    public func exportPayees(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<Payee>()
         let payees = try context.fetch(fetchDescriptor)
@@ -87,16 +91,16 @@ public actor DataExporterActor: ModelActor {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        return try encoder.encode(payeesJSON)
+        return try encoder.encode(ExportFieldRedactor.redact(payeesJSON, preset: redaction))
     }
     
-    public func exportServices() async throws -> Data {
+    public func exportServices(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<ClientService>()
         let services = try context.fetch(fetchDescriptor)
 
         let servicesJSON = services.map { service -> ExportModels.ServiceJSON in
-            let formattedRate = service.rate > 0 ? String(format: "%.2f", service.rate) : nil
+            let formattedRate = service.rate > 0 ? ExportMachineFormatting.exportDecimal2(service.rate) : nil
             let rateValue = service.rate > 0 ? service.rate : nil
             return ExportModels.ServiceJSON(
                 name: service.serviceName,
@@ -113,13 +117,13 @@ public actor DataExporterActor: ModelActor {
         return try encoder.encode(servicesJSON)
     }
     
-    public func exportNDISItems() async throws -> Data {
+    public func exportNDISItems(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<NDISItem>()
         let ndisItems = try context.fetch(fetchDescriptor)
 
         let ndisItemsJSON = ndisItems.map { item -> ExportModels.NDISItemJSON in
-            var primaryRateValue: Double = 0.0
+            var primaryRateValue: Decimal = 0
             var primaryRateString: String = "0.00"
 
             let regionalPrices = item.regionalPrices ?? []
@@ -135,7 +139,7 @@ public actor DataExporterActor: ModelActor {
                     primaryRateValue = first.amount
                 }
             }
-            primaryRateString = String(format: "%.2f", primaryRateValue)
+            primaryRateString = ExportMachineFormatting.exportDecimal2(primaryRateValue)
 
             return ExportModels.NDISItemJSON(
                 itemNumber: item.itemNumber,
@@ -153,20 +157,17 @@ public actor DataExporterActor: ModelActor {
         return try encoder.encode(ndisItemsJSON)
     }
     
-    public func exportInvoices() async throws -> Data {
+    public func exportInvoices(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<Invoice>()
         let invoices = try context.fetch(fetchDescriptor)
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-
         let invoicesJSON = invoices.map { invoice -> ExportModels.InvoiceJSON in
-            let dateIssuedString = dateFormatter.string(from: invoice.date)
+            let dateIssuedString = ExportMachineFormatting.exportDate(invoice.date)
 
             var dateDueString: String? = nil
             if let dueDate = invoice.dueDate {
-                dateDueString = dateFormatter.string(from: dueDate)
+                dateDueString = ExportMachineFormatting.exportDate(dueDate)
             }
 
             return ExportModels.InvoiceJSON(
@@ -176,7 +177,7 @@ public actor DataExporterActor: ModelActor {
                 dateDue: invoice.dueDate,
                 dateDueString: dateDueString,
                 totalAmount: invoice.totalAmount,
-                totalAmountString: String(format: "%.2f", invoice.totalAmount),
+                totalAmountString: ExportMachineFormatting.exportDecimal2(invoice.totalAmount),
                 status: invoice.effectiveStatus.rawValue,
                 clientName: invoice.clientName ?? invoice.client?.fullName,
                 currencyCode: invoice.currencyCode,
@@ -224,25 +225,18 @@ public actor DataExporterActor: ModelActor {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        return try encoder.encode(invoicesJSON)
+        return try encoder.encode(ExportFieldRedactor.redact(invoicesJSON, preset: redaction))
     }
     
-    public func exportSessions() async throws -> Data {
+    public func exportSessions(redaction: ExportRedactionPreset = .none) async throws -> Data {
         let context = modelContext
         let fetchDescriptor = FetchDescriptor<Session>()
         let sessions = try context.fetch(fetchDescriptor)
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm"
-
         let sessionsJSON = sessions.map { session -> ExportModels.SessionJSON in
-            let dateString = session.startTime != nil ? dateFormatter.string(from: session.startTime!) : ""
-
-            let startTimeString = session.startTime != nil ? timeFormatter.string(from: session.startTime!) : ""
-            let endTimeString = session.endTime != nil ? timeFormatter.string(from: session.endTime!) : nil
+            let dateString = session.startTime.map(ExportMachineFormatting.exportDate) ?? ""
+            let startTimeString = session.startTime.map(ExportMachineFormatting.exportTime) ?? ""
+            let endTimeString = session.endTime.map(ExportMachineFormatting.exportTime)
 
             return ExportModels.SessionJSON(
                 title: session.title,

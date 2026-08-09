@@ -1,3 +1,2 @@
-import XCTest
-
-final class UpdateInvoiceStatusTests: XCTestCase {}
+import Testing
+@Suite struct UpdateInvoiceStatusTests {}

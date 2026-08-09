@@ -20,6 +20,7 @@ import Observation
 /// providing an optimal user experience across all Apple platforms.
 struct CalendarTabView: View {
     @Bindable var viewModel: CalendarViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var monthGridWeeks: [[Date?]] = []
     private let monthGridProvider = CalendarDisplayDataProvider()
 
@@ -42,14 +43,23 @@ struct CalendarTabView: View {
             guard viewModel.calendarViewType == .month else { return }
             monthGridWeeks = monthGridProvider.buildMonthGridWeeks(for: viewModel.selectedDate)
         }
-        .animation(.easeInOut(duration: StyleGuide.Animations.durationShort), value: viewModel.calendarViewType)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: StyleGuide.Animations.durationShort),
+            value: viewModel.calendarViewType
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Calendar view container")
     }
 }
 
 // MARK: - Preview
-#Preview {
-    // Preview intentionally disabled while Calendar wiring is being modernized.
-    EmptyView()
+#if DEBUG
+#Preview("Calendar Week") {
+    let container = CalendarPreviewSupport.makeContainer()
+    let viewModel = CalendarPreviewSupport.makeViewModel(container: container)
+
+    CalendarTabView(viewModel: viewModel)
+        .modelContainer(container)
+        .frame(width: 980, height: 620)
 }
+#endif

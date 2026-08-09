@@ -1,9 +1,10 @@
 @testable import Data
 import Core
-import XCTest
-
-final class NDISItemImportParserTests: XCTestCase {
-    func testParsesSimpleItemArray() throws {
+import Foundation
+import Testing
+import PersistenceModels
+@Suite struct NDISItemImportParserTests {
+    @Test func ParsesSimpleItemArray() throws {
         let json = """
         [
           {
@@ -15,23 +16,23 @@ final class NDISItemImportParserTests: XCTestCase {
           }
         ]
         """
-        let data = try XCTUnwrap(json.data(using: .utf8))
+        let data = try try #require(json.data(using: .utf8))
         var messages: [String] = []
 
         let items = try NDISItemImportParser.parse(data: data, messages: &messages)
 
-        XCTAssertEqual(items.count, 1)
-        XCTAssertEqual(messages, [])
-        XCTAssertEqual(items[0].itemNumber, "01_001_0101_1_1")
-        XCTAssertEqual(items[0].name, "Assistance with self-care")
-        XCTAssertEqual(items[0].unit, "Hour")
-        XCTAssertEqual(items[0].category, "Core")
-        XCTAssertEqual(items[0].regionalPricesData?["NATIONAL"], 12.50)
-        XCTAssertNotNil(items[0].effectiveStartDate)
-        XCTAssertNil(items[0].effectiveEndDate)
+        #expect(items.count == 1)
+        #expect(messages == [])
+        #expect(items[0].itemNumber == "01_001_0101_1_1")
+        #expect(items[0].name == "Assistance with self-care")
+        #expect(items[0].unit == "Hour")
+        #expect(items[0].category == "Core")
+        #expect(items[0].regionalPricesData?["NATIONAL"] == 12.50)
+        #expect(items[0].effectiveStartDate != nil)
+        #expect(items[0].effectiveEndDate == nil)
     }
 
-    func testParsesCatalogueItemsAndSkipsRowsWithoutItemNumber() throws {
+    @Test func ParsesCatalogueItemsAndSkipsRowsWithoutItemNumber() throws {
         let payload: [String: Any] = [
             "Current Support Items": [
                 [
@@ -71,28 +72,28 @@ final class NDISItemImportParserTests: XCTestCase {
 
         let items = try NDISItemImportParser.parse(data: data, messages: &messages)
 
-        XCTAssertEqual(items.count, 1)
-        XCTAssertEqual(messages, ["Skipped item: Missing or empty Support Item Number."])
+        #expect(items.count == 1)
+        #expect(messages == ["Skipped item: Missing or empty Support Item Number."])
 
-        let item = try XCTUnwrap(items.first)
-        XCTAssertEqual(item.itemNumber, "04_104_0125_6_1")
-        XCTAssertEqual(item.name, "Community participation")
-        XCTAssertEqual(item.description, "Participate in community activities")
-        XCTAssertEqual(item.unit, "Day")
-        XCTAssertEqual(item.category, "Social and Community Participation")
-        XCTAssertEqual(item.registrationGroup, "Innovative Community Participation")
-        XCTAssertEqual(Set(item.features), ["Provider Travel", "NDIA Requested Reports"])
-        XCTAssertEqual(item.quoteRequired, true)
-        XCTAssertEqual(item.regionalPricesData?["ACT"], 15.0)
-        XCTAssertEqual(item.regionalPricesData?["QLD"], 20.50)
-        XCTAssertEqual(item.effectiveStartDate, date("2025-07-01"))
-        XCTAssertEqual(item.effectiveEndDate, date("2026-06-30"))
+        let item = try try #require(items.first)
+        #expect(item.itemNumber == "04_104_0125_6_1")
+        #expect(item.name == "Community participation")
+        #expect(item.description == "Participate in community activities")
+        #expect(item.unit == "Day")
+        #expect(item.category == "Social and Community Participation")
+        #expect(item.registrationGroup == "Innovative Community Participation")
+        #expect(Set(item.features) == ["Provider Travel", "NDIA Requested Reports"])
+        #expect(item.quoteRequired == true)
+        #expect(item.regionalPricesData?["ACT"] == 15.0)
+        #expect(item.regionalPricesData?["QLD"] == 20.50)
+        #expect(item.effectiveStartDate == date("2025-07-01"))
+        #expect(item.effectiveEndDate == date("2026-06-30"))
     }
 
-    func testDateParserSupportsLegacyImportFormats() {
-        XCTAssertEqual(NDISItemImportDateParser.parseDate("01/07/2025"), date("2025-07-01"))
-        XCTAssertEqual(NDISItemImportDateParser.parseDate("01-07-2025"), date("2025-07-01"))
-        XCTAssertEqual(NDISItemImportDateParser.parseDate("2025-07-01"), date("2025-07-01"))
+    @Test func DateParserSupportsLegacyImportFormats() {
+        #expect(NDISItemImportDateParser.parseDate("01/07/2025") == date("2025-07-01"))
+        #expect(NDISItemImportDateParser.parseDate("01-07-2025") == date("2025-07-01"))
+        #expect(NDISItemImportDateParser.parseDate("2025-07-01") == date("2025-07-01"))
     }
 
     private func date(_ isoDate: String) -> Date {

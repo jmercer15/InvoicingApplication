@@ -7,13 +7,13 @@ public struct StyleGuide {
     public static let sectionSpacing: CGFloat = 12.0
     
     public struct Header {
-        public static let titleFont = Font.system(size: 18, weight: .semibold)
+        public static let titleFont = Font.headline.weight(.semibold)
     }
 
     // Text struct removed - empty struct, never instantiated or referenced
 
     public struct Section {
-        public static let titleFont = Font.system(size: 20, weight: .bold)
+        public static let titleFont = Font.title3.weight(.bold)
     }
     
     public struct Colors {

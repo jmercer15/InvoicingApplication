@@ -1,11 +1,11 @@
-import Core
+import PersistenceModels
 import CoreLocation
 import Foundation
 
 extension BillingHubProjectionBuilder {
     
     internal struct TravelRateInfo {
-        let rate: Double
+        let rate: Decimal
         let unit: String?
     }
 

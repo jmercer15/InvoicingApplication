@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import Core
+import PersistenceModels
 import SharedUI
 
 struct WorkspaceInvoiceCommandRefreshToken: Equatable {
@@ -58,6 +59,10 @@ struct AppRootView: View {
 
     private var nav: AppNavigationManager { navigationManager }
 
+    private var sceneRestorationTaskID: String {
+        "scene-restore"
+    }
+
     var body: some View {
         WorkspaceSplitView(
             features: features,
@@ -74,21 +79,22 @@ struct AppRootView: View {
                 prompt: WorkspaceSearchConfiguration.prompt(for: nav.selectedTab)
             )
             .navigationTitle(nav.selectedTab.title)
-            .navigationSplitViewStyle(.balanced)
+            .navigationSplitViewStyle(.prominentDetail)
             .windowToolbarFullScreenVisibility(.visible)
             .focusedSceneValue(\.workspaceCommandActions, workspaceCommandActions)
             .focusedSceneValue(\.workspaceInspectorSplitPresented, workspaceSplitInspectorIsPresented)
+            .task(id: sceneRestorationTaskID) {
+                guard !hasRestoredSceneNavigation else { return }
+                hasRestoredSceneNavigation = true
+                isRestoringSceneNavigation = true
+                defer { isRestoringSceneNavigation = false }
+                guard !Task.isCancelled else { return }
+                restoreSceneNavigationState()
+            }
             .onAppear {
                 refreshWorkspaceCommandActions()
                 sidebarMinWidth = WorkspaceSidebarView.preferredMinimumWidth()
                 workspaceSearchFieldPresented = WorkspaceSearchConfiguration.isPresented(for: nav.selectedTab)
-                guard !hasRestoredSceneNavigation else { return }
-                hasRestoredSceneNavigation = true
-                Task { @MainActor in
-                    isRestoringSceneNavigation = true
-                    restoreSceneNavigationState()
-                    isRestoringSceneNavigation = false
-                }
             }
             .onChange(of: nav.selectedTab) { _, newValue in
                 guard !isRestoringSceneNavigation else { return }
@@ -145,26 +151,24 @@ struct AppRootView: View {
     }
 
     private func restoreSceneNavigationState() {
-        if let restoredTab = AppTab(rawValue: restoredSelectedTabRaw),
-           restoredTab != nav.selectedTab {
-            nav.selectedTab = restoredTab
-        }
-        nav.columnVisibility = NavigationSplitViewStateCodec.decodeColumnVisibility(restoredColumnVisibilityRaw)
-        if let restoredPath = restoredNavigationPath() {
-            nav.restoreNavigationPath(restoredPath)
-            restoredSelectedTabRaw = nav.selectedTab.rawValue
-        } else {
-            nav.selection = restoreSelection()
-            nav.navigationContext = restoreNavigationContext()
-        }
-        nav.applyTabSelectionRules(newTab: nav.selectedTab)
-        nav.inspectorIsPresented = restoredInspectorPresented
-        nav.reconcileHistoryAfterSceneRestore()
+        sceneNavigationStorage.restore(into: nav)
         restoredSelectedTabRaw = nav.selectedTab.rawValue
         restoredColumnVisibilityRaw = NavigationSplitViewStateCodec.encodeColumnVisibility(nav.columnVisibility)
         Task { @MainActor in
             scheduleRestoredNavigationSanitization()
         }
+    }
+
+    private var sceneNavigationStorage: WorkspaceSceneNavigationStorage {
+        WorkspaceSceneNavigationStorage(
+            selectedTabRaw: restoredSelectedTabRaw,
+            columnVisibilityRaw: restoredColumnVisibilityRaw,
+            selectionKind: restoredSelectionKind,
+            selectionID: restoredSelectionID,
+            navigationContextData: restoredNavigationContextData,
+            navigationPathData: restoredNavigationPathData,
+            inspectorPresented: restoredInspectorPresented
+        )
     }
 
     private var workspaceInspectorPresentation: Binding<Bool> {
@@ -250,143 +254,17 @@ struct AppRootView: View {
     }
 
     private func persistSelection(_ selection: AppSelection?) {
-        guard let selection else {
-            restoredSelectionKind = ""
-            restoredSelectionID = ""
-            return
-        }
-
-        switch selection {
-        case .invoice(let id):
-            persistSelection(kind: "invoice", id: id)
-        case .client(let id):
-            persistSelection(kind: "client", id: id)
-        case .payee(let id):
-            persistSelection(kind: "payee", id: id)
-        case .planManager(let id):
-            persistSelection(kind: "planManager", id: id)
-        case .ndisItem(let id):
-            persistSelection(kind: "ndisItem", id: id)
-        }
-    }
-
-    private func persistSelection(kind: String, id: UUID) {
-        restoredSelectionKind = kind
-        restoredSelectionID = id.uuidString
-    }
-
-    private func restoreSelection() -> AppSelection? {
-        guard let id = UUID(uuidString: restoredSelectionID) else { return nil }
-        switch restoredSelectionKind {
-        case "invoice":
-            return .invoice(id)
-        case "client":
-            return .client(id)
-        case "payee":
-            return .payee(id)
-        case "planManager":
-            return .planManager(id)
-        case "ndisItem":
-            return .ndisItem(id)
-        default:
-            return nil
-        }
+        let encoded = WorkspaceSceneNavigationStorage.encodeSelection(selection)
+        restoredSelectionKind = encoded.kind
+        restoredSelectionID = encoded.id
     }
 
     private func persistNavigationContext() {
-        restoredNavigationContextData = RestorableNavigationContext(nav.navigationContext)
-            .flatMap { try? JSONEncoder().encode($0) }
-    }
-
-    private func restoreNavigationContext() -> NavigationContext? {
-        guard let data = restoredNavigationContextData,
-              let context = try? JSONDecoder().decode(RestorableNavigationContext.self, from: data)
-        else { return nil }
-        return context.navigationContext
+        restoredNavigationContextData = WorkspaceSceneNavigationStorage.encodeNavigationContext(nav.navigationContext)
     }
 
     private func persistNavigationPath() {
         restoredNavigationPathData = try? JSONEncoder().encode(nav.navigationPath)
     }
 
-    private func restoredNavigationPath() -> [WorkspaceRoute]? {
-        guard let data = restoredNavigationPathData,
-              let path = try? JSONDecoder().decode([WorkspaceRoute].self, from: data)
-        else { return nil }
-        return path
-    }
-
-}
-
-private struct RestorableNavigationContext: Codable {
-    let targetEntity: UUID?
-    let targetEntityType: RestorableEntityType?
-    let targetDate: Date?
-    let searchQuery: String?
-
-    init?(_ context: NavigationContext?) {
-        guard let context else { return nil }
-        self.targetEntity = context.targetEntity
-        self.targetEntityType = RestorableEntityType(context.targetEntityType)
-        self.targetDate = context.targetDate
-        self.searchQuery = context.searchQuery
-    }
-
-    var navigationContext: NavigationContext {
-        NavigationContext(
-            targetEntity: targetEntity,
-            targetEntityType: targetEntityType?.navigationEntityType,
-            targetDate: targetDate,
-            searchQuery: searchQuery
-        )
-    }
-}
-
-private enum RestorableEntityType: String, Codable {
-    case client
-    case session
-    case invoice
-    case payee
-    case planManager
-    case clientService
-    case ndisItem
-
-    init?(_ type: NavigationContext.EntityType?) {
-        guard let type else { return nil }
-        switch type {
-        case .client:
-            self = .client
-        case .session:
-            self = .session
-        case .invoice:
-            self = .invoice
-        case .payee:
-            self = .payee
-        case .planManager:
-            self = .planManager
-        case .clientService:
-            self = .clientService
-        case .ndisItem:
-            self = .ndisItem
-        }
-    }
-
-    var navigationEntityType: NavigationContext.EntityType {
-        switch self {
-        case .client:
-            return .client
-        case .session:
-            return .session
-        case .invoice:
-            return .invoice
-        case .payee:
-            return .payee
-        case .planManager:
-            return .planManager
-        case .clientService:
-            return .clientService
-        case .ndisItem:
-            return .ndisItem
-        }
-    }
 }

@@ -4,6 +4,26 @@ import Core
 import Observation
 
 // MARK: - App Navigation Manager
+
+/// Central workspace navigation coordinator for tab selection, deep links, split-view path,
+/// inspector fallback, and back/forward history.
+///
+/// ## Public surface
+/// - **State:** ``selectedTab``, ``selection``, ``navigationContext``, ``navigationPath``,
+///   ``inspectorIsPresented``, ``columnVisibility``, per-tab coordinators.
+/// - **History:** ``canNavigateBack`` / ``canNavigateForward``, ``navigateBack()`` /
+///   ``navigateForward()``, ``recentHistory``, ``reconcileHistoryAfterSceneRestore()``.
+/// - **Routing:** ``navigateTo(tab:context:title:)`` and typed helpers
+///   (``navigateToClient(_:)``, ``navigateToSession(_:date:)``, ``navigateToInvoice(_:sourceTab:sourceFocusID:)``, etc.).
+/// - **Intents:** ``applyRoutingIntent(_:onCreateInvoice:onCreateSession:onOpenBillingHub:)``.
+///
+/// ## `navigateTo` vs `selectTab`
+/// - Use ``navigateTo(tab:context:title:)`` (or typed helpers) when the user follows a link or
+///   command that should **push** a new history entry (deep links, cross-feature jumps).
+/// - Use ``selectTab(_:)`` for **sidebar and keyboard tab switches** that should replace the
+///   current history slot without growing the stack.
+///
+/// History storage lives in ``NavigationHistoryStore``; this type owns routing side-effects only.
 @Observable
 @MainActor
 public class AppNavigationManager {
@@ -244,7 +264,7 @@ public class AppNavigationManager {
     
     // MARK: - Primary Navigation Methods
     
-    /// Navigate to a specific tab with optional context
+    /// Navigate to a specific tab with optional context. Pushes a new history entry.
     public func navigateTo(tab: AppTab, context: NavigationContext? = nil, title: String? = nil) {
         let nextRoute = route(for: context, in: tab)
         let nextContext = isNavigationContextCompatible(with: tab, context) ? context : nil
@@ -318,10 +338,16 @@ public class AppNavigationManager {
     }
     
     /// Navigate to view a specific invoice in the invoices tab
-    public func navigateToInvoice(_ invoiceID: UUID) {
+    public func navigateToInvoice(
+        _ invoiceID: UUID,
+        sourceTab: AppTab? = nil,
+        sourceFocusID: UUID? = nil
+    ) {
         let context = NavigationContext(
             targetEntity: invoiceID,
-            targetEntityType: .invoice
+            targetEntityType: .invoice,
+            sourceTab: sourceTab,
+            sourceFocusID: sourceFocusID
         )
         navigateTo(tab: .invoices, context: context, title: "Invoice Details")
     }
@@ -364,14 +390,22 @@ public class AppNavigationManager {
     }
     
     /// Applies menu-driven intents; pure routing uses navigation history. Creation intents delegate to the supplied closures because they require feature view models.
+    /// `onOpenBillingHub` receives focus session ids when the Calendar nudge (or equivalent) opens Hub.
     public func applyRoutingIntent(
         _ intent: WorkspaceRoutingIntent,
         onCreateInvoice: (() -> Void)? = nil,
-        onCreateSession: (() -> Void)? = nil
+        onCreateSession: (() -> Void)? = nil,
+        onOpenBillingHub: (([UUID]) -> Void)? = nil
     ) {
         switch intent {
         case .selectTab(let tab):
             selectTab(tab)
+        case .openBillingHub(let focusSessionIDs):
+            if let onOpenBillingHub {
+                onOpenBillingHub(focusSessionIDs)
+            } else {
+                selectTab(.billingHub)
+            }
         case .createNewInvoice:
             onCreateInvoice?()
         case .createNewSession:
