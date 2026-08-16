@@ -110,8 +110,8 @@ struct BillingHubPhase2HonestyKanbanTests {
 
         try await workflow.updateSessionDetails(modelID: session.persistentModelID, durationString: "1h 30m")
 
-        let refreshed = try try #require(context.fetch(FetchDescriptor<Session>()).first)
-        let end = try try #require(refreshed.endTime)
+        let refreshed = try #require(context.fetch(FetchDescriptor<Session>()).first)
+        let end = try #require(refreshed.endTime)
         #expect(end.timeIntervalSince(start) == 90 * 60) // was accuracy: 1
     }
 
@@ -148,7 +148,7 @@ struct BillingHubPhase2HonestyKanbanTests {
         #expect(try context.fetch(FetchDescriptor<Invoice>()).first?.status == Optional(.pending))
 
         await viewModel.undoLastBulkAction()
-        let restored = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        let restored = try #require(context.fetch(FetchDescriptor<Invoice>()).first)
         #expect(restored.status == Optional(.readyToSend))
         #expect(restored.sentDate == nil)
         #expect(restored.notes == "before")

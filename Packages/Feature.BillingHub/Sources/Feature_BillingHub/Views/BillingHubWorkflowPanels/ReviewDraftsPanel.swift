@@ -134,11 +134,10 @@ struct ReviewDraftsPanel: View {
                     Button {
                         requestChanges()
                     } label: {
-                        if isRequestingChanges {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Request Changes")
-                        }
+                        BillingHubBusyButtonLabel.progressOrText(
+                            isBusy: isRequestingChanges,
+                            title: "Request Changes"
+                        )
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
@@ -253,12 +252,11 @@ struct ReviewDraftsPanel: View {
         Button {
             approve()
         } label: {
-            if isApproving {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
-            } else {
-                Label("Approve", systemImage: "checkmark.circle.fill")
-                    .frame(maxWidth: .infinity)
-            }
+            BillingHubBusyButtonLabel.progressOrLabel(
+                isBusy: isApproving,
+                title: "Approve",
+                systemImage: "checkmark.circle.fill"
+            )
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)

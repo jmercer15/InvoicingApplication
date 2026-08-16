@@ -12,7 +12,7 @@ import PersistenceModels
         try insertComplianceFixture(into: sourceContext)
 
         let exportedData = try SwiftDataExportService.exportAllEntitiesToJSON(context: sourceContext)
-        let exportedJSON = try try #require(JSONSerialization.jsonObject(with: exportedData) as? [String: Any])
+        let exportedJSON = try #require(JSONSerialization.jsonObject(with: exportedData) as? [String: Any])
 
         #expect((exportedJSON["ServiceAgreement"] as? [[String: Any]])?.count == 1)
         #expect((exportedJSON["SupportLog"] as? [[String: Any]])?.count == 1)
@@ -46,7 +46,7 @@ import PersistenceModels
         #expect(importedLines.first?.submissionRef == "SUB-ROUNDTRIP-001")
         #expect(importedLines.first?.reconciliationNotes == "Portal reconciliation matched.")
         #expect(importedLines.first?.reconciledAt != nil)
-        let importedInvoice = try try #require(importedInvoices.first)
+        let importedInvoice = try #require(importedInvoices.first)
         #expect(importedInvoice.currencyCode == "AUD")
         #expect(importedInvoice.taxRate == 10)
         #expect(importedInvoice.discount == 5)
@@ -55,7 +55,7 @@ import PersistenceModels
         #expect(importedInvoice.clientPhone == "0400 000 000")
         #expect(importedInvoice.bankBSB == "123-456")
         #expect(importedInvoice.invoiceEditorStateData == Data("layout-v2".utf8))
-        let importedItem = try try #require(importedInvoiceItems.first)
+        let importedItem = try #require(importedInvoiceItems.first)
         #expect(importedItem.position == 2)
         #expect(importedItem.unit == "hour")
         #expect(importedItem.taxRate == 10)

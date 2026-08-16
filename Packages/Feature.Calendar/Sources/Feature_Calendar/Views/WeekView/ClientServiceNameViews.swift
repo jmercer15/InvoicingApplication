@@ -4,16 +4,17 @@ import Observation
 
 // MARK: - Helper Views for Client/Service Labels
 
-struct ClientNameView: View {
-    let clientId: UUID
-    @Bindable var viewModel: CalendarViewModel
+struct CalendarLookupLabelView: View {
+    let systemImage: String
+    let name: String?
     var fontSize: CGFloat = StyleGuide.Dimensions.fontSizeXSmall
     var textColor: Color = StyleGuide.Colors.textSecondary
+
     var body: some View {
         Group {
-            if let name = viewModel.clientName(for: clientId), !name.isEmpty {
+            if let name, !name.isEmpty {
                 HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
-                    Image(systemName: "person.fill")
+                    Image(systemName: systemImage)
                         .font(CalendarTypography.inlineIcon(size: fontSize))
                         .foregroundStyle(textColor)
                     Text(name)
@@ -26,24 +27,34 @@ struct ClientNameView: View {
     }
 }
 
+struct ClientNameView: View {
+    let clientId: UUID
+    @Bindable var viewModel: CalendarViewModel
+    var fontSize: CGFloat = StyleGuide.Dimensions.fontSizeXSmall
+    var textColor: Color = StyleGuide.Colors.textSecondary
+
+    var body: some View {
+        CalendarLookupLabelView(
+            systemImage: "person.fill",
+            name: viewModel.clientName(for: clientId),
+            fontSize: fontSize,
+            textColor: textColor
+        )
+    }
+}
+
 struct ServiceNameView: View {
     let serviceId: UUID
     @Bindable var viewModel: CalendarViewModel
     var fontSize: CGFloat = StyleGuide.Dimensions.fontSizeXSmall
     var textColor: Color = StyleGuide.Colors.textSecondary
+
     var body: some View {
-        Group {
-            if let name = viewModel.serviceName(for: serviceId), !name.isEmpty {
-                HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
-                    Image(systemName: "tag.fill")
-                        .font(CalendarTypography.inlineIcon(size: fontSize))
-                        .foregroundStyle(textColor)
-                    Text(name)
-                        .font(CalendarTypography.gridScaled(fontSize))
-                        .foregroundStyle(textColor)
-                        .lineLimit(1)
-                }
-            }
-        }
+        CalendarLookupLabelView(
+            systemImage: "tag.fill",
+            name: viewModel.serviceName(for: serviceId),
+            fontSize: fontSize,
+            textColor: textColor
+        )
     }
 }

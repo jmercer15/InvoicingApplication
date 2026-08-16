@@ -42,7 +42,7 @@ struct NativeSessionFormLocationSection: View {
         .groupBoxStyle(EnhancedGroupBoxStyle())
         .background(Color.clear)
         .sheet(isPresented: $showAddressEditingSheet) {
-            AddressEditingSheet(
+            SessionAddressEditingSheet(
                 viewModel: viewModel,
                 isPresented: $showAddressEditingSheet
             )

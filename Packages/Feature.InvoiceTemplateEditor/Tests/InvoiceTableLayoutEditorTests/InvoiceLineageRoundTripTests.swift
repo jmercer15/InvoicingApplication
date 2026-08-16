@@ -35,7 +35,7 @@ struct InvoiceLineageRoundTripTests {
         try context.save()
 
         let snapshot = try await InvoiceModelActor(modelContainer: container).fetchInvoice(id: invoice.id)
-        let line = try try #require(snapshot?.lineItems.first)
+        let line = try #require(snapshot?.lineItems.first)
         #expect(line.claimType == .providerTravelLabour)
         #expect(line.sessionID == session.id)
         #expect(line.clientServiceID == clientService.id)
@@ -74,7 +74,7 @@ struct InvoiceLineageRoundTripTests {
 
         let actor = InvoiceModelActor(modelContainer: container)
         let fetchedValue = try await actor.fetchInvoice(id: invoice.id)
-        let fetched = try try #require(fetchedValue)
+        let fetched = try #require(fetchedValue)
         var draft = InvoiceDraft(fetched)
         draft.lineItems[0].itemDescription = "Travel labour (edited)"
         draft.title = "Edited draft"
@@ -86,20 +86,20 @@ struct InvoiceLineageRoundTripTests {
         )
         #expect(result.isValid)
 
-        let saved = try try #require(result.savedSnapshot)
+        let saved = try #require(result.savedSnapshot)
         #expect(saved.lineItems.first?.claimType == .providerTravelLabour)
         #expect(saved.lineItems.first?.sessionID == sessionID)
         #expect(saved.lineItems.first?.clientServiceID == clientServiceID)
         #expect(saved.lineItems.first?.itemDescription == "Travel labour (edited)")
 
         let refetchedValue = try await actor.fetchInvoice(id: invoice.id)
-        let refetched = try try #require(refetchedValue)
+        let refetched = try #require(refetchedValue)
         #expect(refetched.lineItems.first?.claimType == .providerTravelLabour)
         #expect(refetched.lineItems.first?.sessionID == sessionID)
 
         // Claim batching reads InvoiceItem.claimType — must remain travel after editor save.
         let verifyContext = ModelContext(container)
-        let persistedTravel = try try #require(try verifyContext.fetch(
+        let persistedTravel = try #require(try verifyContext.fetch(
                 FetchDescriptor<InvoiceItem>(predicate: #Predicate { $0.id == travelItemID })
             ).first
         )
@@ -119,7 +119,7 @@ struct InvoiceLineageRoundTripTests {
         let actor = InvoiceModelActor(modelContainer: container)
         let seedID = try await actor.createInvoice()
         let seedValue = try await actor.fetchInvoice(id: seedID)
-        let seed = try try #require(seedValue)
+        let seed = try #require(seedValue)
         var draft = InvoiceDraft(seed)
         draft.client.name = "Draft Lineage Client"
         draft.currencyCode = "AUD"
@@ -137,8 +137,8 @@ struct InvoiceLineageRoundTripTests {
 
         let createdID = try await actor.createInvoice(from: draft)
         let createdValue = try await actor.fetchInvoice(id: createdID)
-        let created = try try #require(createdValue)
-        let line = try try #require(created.lineItems.first)
+        let created = try #require(createdValue)
+        let line = try #require(created.lineItems.first)
         #expect(line.id != seed.lineItems.first?.id)
         #expect(line.claimType == .providerTravelNonLabour)
         #expect(line.sessionID == sessionID)
@@ -171,7 +171,7 @@ struct InvoiceLineageRoundTripTests {
 
         let actor = InvoiceModelActor(modelContainer: container)
         let fetchedSnapshot = try await actor.fetchInvoice(id: invoice.id)
-        let snapshot = try try #require(fetchedSnapshot)
+        let snapshot = try #require(fetchedSnapshot)
         var draft = InvoiceDraft(snapshot)
         draft.lineItems[0].sessionID = UUID()
         draft.lineItems[0].clientServiceID = UUID()
@@ -182,7 +182,7 @@ struct InvoiceLineageRoundTripTests {
 
         let verifyContext = ModelContext(container)
         let itemID = item.id
-        let persisted = try try #require(verifyContext.fetch(FetchDescriptor<InvoiceItem>(predicate: #Predicate { $0.id == itemID })).first
+        let persisted = try #require(verifyContext.fetch(FetchDescriptor<InvoiceItem>(predicate: #Predicate { $0.id == itemID })).first
         )
         #expect(persisted.session?.id == session.id)
         #expect(persisted.clientService?.id == clientService.id)

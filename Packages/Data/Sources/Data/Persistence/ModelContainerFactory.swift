@@ -1,6 +1,8 @@
 import Core
 import Foundation
+import PersistenceModels
 import SwiftData
+
 
 public enum ModelContainerFactoryError: Error, Equatable, Sendable {
     case migrationPlanNotSupportedForInMemory

@@ -21,7 +21,6 @@ struct WorkspaceSceneStorageRoundTripTests {
         let firstWindow = AppNavigationManager()
         let secondWindow = AppNavigationManager()
 
-        let invoiceID = UUID()
         let clientID = UUID()
 
         firstWindow.navigateTo(tab: .billingHub)

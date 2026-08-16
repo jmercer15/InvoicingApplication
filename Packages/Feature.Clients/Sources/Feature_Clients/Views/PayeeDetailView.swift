@@ -1,6 +1,6 @@
 import SwiftUI
-import AppKit // For NSColor, NSPasteboard
-import MapKit // For address map view
+import AppKit
+import MapKit
 import SwiftData
 import Core
 import PersistenceModels
@@ -16,30 +16,12 @@ struct PayeeDetailView: View {
     let onOpenClient: (UUID) -> Void
     @State private var viewModel: PayeeDetailViewModel
 
-    // UI state only
-    @State private var activeSheet: PayeeDetailSheet?
-
-    private enum PayeeDetailSheet: Identifiable {
-        case map
-        case addressEditing
-
-        var id: Self { self }
-    }
-
-    // Sorting state
+    @State private var activeSheet: RelationshipDetailActiveSheet?
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
 
-    // Computed properties from ViewModel
-    private var linkedClients: [Client] {
-        viewModel.linkedClients
-    }
-
-    private var filteredInvoices: [Invoice] {
-        viewModel.relatedInvoices
-    }
-
-    // MARK: - Computed Properties
+    private var linkedClients: [Client] { viewModel.linkedClients }
+    private var filteredInvoices: [Invoice] { viewModel.relatedInvoices }
 
     private var sortedClients: [Client] {
         linkedClients.sorted(using: clientsSortOrder)
@@ -91,6 +73,14 @@ struct PayeeDetailView: View {
         return viewModel.formattedAddressString(from: address)
     }
 
+    private var mapSheetBinding: Binding<Bool> {
+        RelationshipDetailSheetBindings.isPresented($activeSheet, equals: .map)
+    }
+
+    private var addressEditingSheetBinding: Binding<Bool> {
+        RelationshipDetailSheetBindings.isPresented($activeSheet, equals: .addressEditing)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             RelationshipDetailHeaderBar(
@@ -107,7 +97,9 @@ struct PayeeDetailView: View {
                     showingMapSheet: mapSheetBinding,
                     showingAddressEditingSheet: addressEditingSheetBinding
                 )
-                PayeeDetailLinkedClientsCard(
+                RelationshipDetailClientsCard(
+                    title: "Linked Clients",
+                    emptyMessage: "No clients are linked to this payee",
                     clients: sortedClients,
                     clientsSortOrder: $clientsSortOrder,
                     onOpenClient: onOpenClient
@@ -137,26 +129,13 @@ struct PayeeDetailView: View {
                     InteractiveMapView(address: viewModel.formattedAddressString(from: address))
                 }
             case .addressEditing:
-                PayeeAddressEditingSheetView(viewModel: viewModel, isPresented: addressEditingSheetBinding)
+                RelationshipAddressEditingSheetView(
+                    viewModel: viewModel,
+                    isPresented: addressEditingSheetBinding
+                )
             }
         }
     }
-
-    private var mapSheetBinding: Binding<Bool> {
-        Binding(
-            get: { activeSheet == .map },
-            set: { activeSheet = $0 ? .map : nil }
-        )
-    }
-
-    private var addressEditingSheetBinding: Binding<Bool> {
-        Binding(
-            get: { activeSheet == .addressEditing },
-            set: { activeSheet = $0 ? .addressEditing : nil }
-        )
-    }
-
-    // MARK: - Helper Functions
 
     private var maxLabelWidth: CGFloat {
         RelationshipDetailLabelMetrics.maxWidth(for: [
@@ -165,58 +144,5 @@ struct PayeeDetailView: View {
             "Phone:",
             "Address:"
         ])
-    }
-
-}
-
-// MARK: - PayeeAddressEditingSheetView
-
-struct PayeeAddressEditingSheetView: View {
-    @Bindable var viewModel: PayeeDetailViewModel
-    @Binding var isPresented: Bool
-
-    @State private var form = AddressFormState()
-
-    var body: some View {
-        AddressFormSheet(
-            state: form,
-            isPresented: $isPresented,
-            hasAddressDataOverride: form.hasAddressData || viewModel.payee.address != nil,
-            onSearchAddressSelected: { viewModel.updateAddressFromSearchResult($0) },
-            onCommit: {
-                syncFormToViewModel()
-                viewModel.commitAddressChanges(autosave: true)
-            }
-        )
-        .onAppear {
-            viewModel.loadAddressDetails()
-            syncViewModelToForm()
-            if let address = viewModel.payee.address {
-                form.addressSearchText = viewModel.formattedAddressString(from: address)
-            }
-        }
-    }
-
-    private func syncViewModelToForm() {
-        form.unitNumber = viewModel.editableUnitNumber
-        form.streetNumber = viewModel.editableStreetNumber
-        form.streetName = viewModel.editableStreetName
-        form.suburb = viewModel.editableSuburb
-        form.postcode = viewModel.editablePostcode
-        form.state = viewModel.editableState
-        form.country = viewModel.editableCountry
-        form.poBox = viewModel.editablePoBox
-    }
-
-    private func syncFormToViewModel() {
-        viewModel.editableUnitNumber = form.unitNumber
-        viewModel.editableStreetNumber = form.streetNumber
-        viewModel.editableStreetName = form.streetName
-        viewModel.editableSuburb = form.suburb
-        viewModel.editableCity = form.suburb
-        viewModel.editablePostcode = form.postcode
-        viewModel.editableState = form.state
-        viewModel.editableCountry = form.country
-        viewModel.editablePoBox = form.poBox
     }
 }

@@ -131,11 +131,11 @@ extension BillingHubAddTravelPanel {
                 }
             }
         } label: {
-            if isAdding {
-                ProgressView().controlSize(.small)
-            } else {
-                Label("Save Travel Charge", systemImage: "car.badge.plus")
-            }
+            BillingHubBusyButtonLabel.progressOrLabel(
+                isBusy: isAdding,
+                title: "Save Travel Charge",
+                systemImage: "car.badge.plus"
+            )
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)

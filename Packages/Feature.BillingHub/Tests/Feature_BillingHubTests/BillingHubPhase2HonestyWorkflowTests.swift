@@ -139,7 +139,7 @@ struct BillingHubPhase2HonestyWorkflowTests {
         let didReopen = await viewModel.reopenInvoiceAsPending(id: invoice.id)
         #expect(didReopen)
 
-        let refreshed = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        let refreshed = try #require(context.fetch(FetchDescriptor<Invoice>()).first)
         #expect(refreshed.status == Optional(.pending))
         #expect(refreshed.paidDate == nil)
         #expect(refreshed.sentDate == Date(timeIntervalSince1970: 1_700_000_000))
@@ -232,8 +232,8 @@ struct BillingHubPhase2HonestyWorkflowTests {
 
         let verify = ModelContext(container)
         let sessions = try verify.fetch(FetchDescriptor<Session>())
-        let left = try try #require(sessions.first { $0.id == leaving.id })
-        let stay = try try #require(sessions.first { $0.id == remaining.id })
+        let left = try #require(sessions.first { $0.id == leaving.id })
+        let stay = try #require(sessions.first { $0.id == remaining.id })
         #expect(left.groupID == nil)
 #expect(stay.groupID == nil, "singleton leftover group must dissolve")
     }

@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct InvoiceEditorConfigurationTests {
     @Test func DecodesSharedFieldsFromRicherFeatureEnvelope() throws {
-        let data = try try #require(
+        let data = try #require(
             """
             {
               "version": 3,

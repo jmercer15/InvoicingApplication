@@ -196,7 +196,7 @@ struct BillingHubTravelReplaceTests {
             vehicleType: "Standard Car",
             participantCount: 2,
             splitCosts: true)
-        let expectedPreview = try try #require(preview)
+        let expectedPreview = try #require(preview)
 
         try await workflow.addTravelCharge(
             sessionModelID: modelID,
@@ -211,7 +211,7 @@ struct BillingHubTravelReplaceTests {
             splitCosts: true
         )
 
-        let charge = try try #require(fetchTravelCharges(for: sessionID, in: context).first)
+        let charge = try #require(fetchTravelCharges(for: sessionID, in: context).first)
         #expect(charge.chargeAmount == Decimal(expectedPreview.chargeAmount))
         #expect(charge.chargeAmount == Decimal(expectedPreview.totalPerParticipant))
         #expect(charge.durationMinutes ?? -1 == expectedPreview.billableMinutes) // was accuracy: 0.0001

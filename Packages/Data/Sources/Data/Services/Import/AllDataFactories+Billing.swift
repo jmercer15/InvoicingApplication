@@ -33,8 +33,8 @@ extension AllDataFactories {
         ndisItem.type                     = dict["type"]                     as? String
         ndisItem.unit                     = dict["unit"]                     as? String
 
-        if let s = dict["effectiveStartDate"] as? String { ndisItem.effectiveStartDate = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["effectiveEndDate"]   as? String { ndisItem.effectiveEndDate   = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["effectiveStartDate"] as? String { ndisItem.effectiveStartDate = ImportISO8601.date(from: s) }
+        if let s = dict["effectiveEndDate"]   as? String { ndisItem.effectiveEndDate   = ImportISO8601.date(from: s) }
 
         return ndisItem
     }
@@ -111,11 +111,11 @@ extension AllDataFactories {
             invoice.status = .reviewDraft
         }
 
-        if let s = dict["date"]      as? String { invoice.date      = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["dueDate"]   as? String { invoice.dueDate   = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["issueDate"] as? String { invoice.issueDate = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["paidDate"]  as? String { invoice.paidDate  = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["sentDate"]  as? String { invoice.sentDate  = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["date"]      as? String { invoice.date      = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["dueDate"]   as? String { invoice.dueDate   = ImportISO8601.date(from: s) }
+        if let s = dict["issueDate"] as? String { invoice.issueDate = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["paidDate"]  as? String { invoice.paidDate  = ImportISO8601.date(from: s) }
+        if let s = dict["sentDate"]  as? String { invoice.sentDate  = ImportISO8601.date(from: s) }
 
         if let clientId = dict["client"] as? String, let client = entityMapping[clientId] as? Client {
             invoice.client = client
@@ -185,7 +185,7 @@ extension AllDataFactories {
         item.gstCode  = dict["gstCode"] as? String
         item.ndisItemNumber = dict["itemCode"] as? String
 
-        if let s = dict["date"] as? String { item.serviceDate = ISO8601DateFormatter().date(from: s) ?? Date() }
+        if let s = dict["date"] as? String { item.serviceDate = ImportISO8601.date(from: s) ?? Date() }
 
         if let id = dict["invoice"] as? String, let inv = entityMapping[id] as? Invoice { item.invoice = inv }
         else if let id = dict["invoiceId"] as? String, let inv = entityMapping[id] as? Invoice { item.invoice = inv }
@@ -213,10 +213,10 @@ extension AllDataFactories {
         batch.checksumSHA256           = dict["checksumSHA256"]           as? String
         batch.notes                    = dict["notes"]                    as? String
 
-        if let s = dict["createdAt"]   as? String { batch.createdAt   = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["fromDate"]    as? String { batch.fromDate    = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["toDate"]      as? String { batch.toDate      = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["exportedAt"]  as? String { batch.exportedAt  = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["createdAt"]   as? String { batch.createdAt   = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["fromDate"]    as? String { batch.fromDate    = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["toDate"]      as? String { batch.toDate      = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["exportedAt"]  as? String { batch.exportedAt  = ImportISO8601.date(from: s) }
 
         return batch
     }
@@ -243,9 +243,9 @@ extension AllDataFactories {
         line.submissionRef         = dict["submissionRef"]         as? String
         line.reconciliationNotes   = dict["reconciliationNotes"]   as? String
 
-        if let s = dict["supportsDeliveredFrom"] as? String { line.supportsDeliveredFrom = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["supportsDeliveredTo"]   as? String { line.supportsDeliveredTo   = ISO8601DateFormatter().date(from: s) ?? line.supportsDeliveredFrom }
-        if let s = dict["reconciledAt"]          as? String { line.reconciledAt          = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["supportsDeliveredFrom"] as? String { line.supportsDeliveredFrom = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["supportsDeliveredTo"]   as? String { line.supportsDeliveredTo   = ImportISO8601.date(from: s) ?? line.supportsDeliveredFrom }
+        if let s = dict["reconciledAt"]          as? String { line.reconciledAt          = ImportISO8601.date(from: s) }
 
         guard let batchId = dict["batchId"] as? String, let batch = entityMapping[batchId] as? BulkClaimBatch else {
             throw NSError(
@@ -275,11 +275,11 @@ extension AllDataFactories {
         let token = canonicalSessionStatusToken(dict["status"] as? String) ?? SessionStatus.scheduled.rawValue
         session.status = SessionStatus(normalized: token) ?? .scheduled
 
-        if let s = dict["startTime"]       as? String { session.startTime        = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["endTime"]         as? String { session.endTime          = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["occurrenceDate"]  as? String { session.occurrenceDate   = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["lastModifiedDate"] as? String { session.lastModifiedDate = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["ekCreationDate"]  as? String { session.ekCreationDate   = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["startTime"]       as? String { session.startTime        = ImportISO8601.date(from: s) }
+        if let s = dict["endTime"]         as? String { session.endTime          = ImportISO8601.date(from: s) }
+        if let s = dict["occurrenceDate"]  as? String { session.occurrenceDate   = ImportISO8601.date(from: s) }
+        if let s = dict["lastModifiedDate"] as? String { session.lastModifiedDate = ImportISO8601.date(from: s) }
+        if let s = dict["ekCreationDate"]  as? String { session.ekCreationDate   = ImportISO8601.date(from: s) }
 
         if let id = dict["client"] as? String, let c = entityMapping[id] as? Client { session.client = c }
         else if let id = dict["clientId"] as? String, let c = entityMapping[id] as? Client { session.client = c }

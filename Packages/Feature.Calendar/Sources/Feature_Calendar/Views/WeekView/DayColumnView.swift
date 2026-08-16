@@ -269,7 +269,7 @@ struct DayColumnDropDelegate: DropDelegate {
             return false
         }
         
-        provider.loadTransferable(type: SessionDragPayload.self) { result in
+        _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
             Task { @MainActor in
                 defer {
                     interactionHandler.draggingSessionInfo = nil

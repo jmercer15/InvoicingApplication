@@ -36,8 +36,9 @@ import PersistenceModels
         let refreshed = try modelContext.fetch(descriptor).first
 
         #expect(refreshed?.status == "resolved")
-        #expect((refreshed?.resolutionNotes ?? "").contains("Skipped by user"))
-        #expect((refreshed?.resolutionNotes ?? "").contains("manual override by tester"))
+        let notes = refreshed?.resolutionNotes ?? ""
+        #expect(notes.contains("Skipped by user"))
+        #expect(notes.contains("manual override by tester"))
     }
 
     @Test func ResolveDeletedReviewModelIDThrowsTypedNotFoundError() async throws {

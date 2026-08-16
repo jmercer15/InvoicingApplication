@@ -101,16 +101,13 @@ public class NDISVersioningService {
     
     /// Creates a version identifier for an NDIS item based on its composite key and dates
     static func createVersionIdentifier(itemNumber: String, itemName: String, startDate: Date, endDate: Date?) -> String { // Make startDate non-optional
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
         // Swift's `hashValue` is randomized per process. Persisted identifiers need a stable
         // value so a later import resolves the same version after an app relaunch.
         let nameHash = String(stableNameHash(itemName), radix: 16)
         
-        let startString = dateFormatter.string(from: startDate) // Use non-optional startDate
+        let startString = ImportCalendarDate.string(from: startDate)
         if let end = endDate {
-            let endString = dateFormatter.string(from: end)
+            let endString = ImportCalendarDate.string(from: end)
             return "\(itemNumber)_\(nameHash)_\(startString)_\(endString)"
         } else {
             return "\(itemNumber)_\(nameHash)_\(startString)_ongoing"

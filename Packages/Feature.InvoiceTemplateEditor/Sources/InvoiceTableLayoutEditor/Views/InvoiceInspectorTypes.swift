@@ -101,7 +101,7 @@ final class InvoicePreviewInspectorInteraction {
     func accessibilityHint(for target: InvoiceInspectorFocusTarget) -> String {
         switch mode {
         case .invoiceData:
-            return "Opens related invoice data controls"
+            return "Opens related invoice data controls in the editor"
         case .templateFormatting:
             let section = InvoiceTemplateFormatSection.destination(for: target)
             return "Opens \(section.title) format section without changing mock invoice data"
@@ -113,7 +113,7 @@ final class InvoicePreviewInspectorInteraction {
     func helpText(for target: InvoiceInspectorFocusTarget) -> String {
         switch mode {
         case .invoiceData:
-            return "Edit \(target.previewInteractionLabel) in inspector"
+            return "Edit \(target.previewInteractionLabel) in the invoice editor"
         case .templateFormatting:
             let section = InvoiceTemplateFormatSection.destination(for: target)
             return "Format \(target.previewInteractionLabel) in \(section.title)"

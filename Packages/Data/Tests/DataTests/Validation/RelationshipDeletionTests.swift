@@ -29,7 +29,7 @@ import PersistenceModels
     @Test func ClientCascadeDeleteWithClientServices() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Client
         let clientEntity = Client(
@@ -65,7 +65,7 @@ import PersistenceModels
     @Test func ClientCascadeDeleteWithCreditHistory() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Client
         let clientEntity = Client(
@@ -102,7 +102,7 @@ import PersistenceModels
     @Test func ClientCascadeDeleteWithTravelCharges() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Client
         let clientEntity = Client(
@@ -140,7 +140,7 @@ import PersistenceModels
     @Test func ClientNullifyDeleteWithSessions() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Client
         let clientEntity = Client(
@@ -179,7 +179,7 @@ import PersistenceModels
     @Test func ClientNullifyDeleteWithInvoices() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Client
         let clientEntity = Client(
@@ -217,7 +217,7 @@ import PersistenceModels
     @Test func PayeeNullifyDeleteWithGuardedClients() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Payee
         let payeeEntity = Payee(id: UUID(), fullName: "Jane Doe")
@@ -255,7 +255,7 @@ import PersistenceModels
     @Test func PayeeNullifyDeleteWithInvoices() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Payee
         let payeeEntity = Payee(id: UUID(), fullName: "Jane Doe")
@@ -288,7 +288,7 @@ import PersistenceModels
     @Test func PlanManagerNullifyDeleteWithClients() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test PlanManager
         let planManagerEntity = PlanManager(abn: "12345678901")
@@ -327,7 +327,7 @@ import PersistenceModels
     @Test func AddressNullifyDeleteWithClients() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Address
         let addressEntity = Address()
@@ -371,7 +371,7 @@ import PersistenceModels
     @Test func AddressNullifyDeleteWithPayees() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Address
         let addressEntity = Address()
@@ -410,7 +410,7 @@ import PersistenceModels
     @Test func AddressNullifyDeleteWithPlanManagers() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Address
         let addressEntity = Address()
@@ -451,7 +451,7 @@ import PersistenceModels
     @Test func AddressNullifyDeleteWithSessions() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Address
         let addressEntity = Address()
@@ -493,7 +493,7 @@ import PersistenceModels
     @Test func ComplexRelationshipDeletionScenario() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create test Address
         let addressEntity = Address()
@@ -613,7 +613,7 @@ import PersistenceModels
     @Test func RelationshipDeletionPerformance() throws {
 
 
-        let (modelContainer, modelContext) = try ModelContainerFactory.makeInMemoryContext()
+        let (_, modelContext) = try ModelContainerFactory.makeInMemoryContext()
 
         // Create large dataset with relationships
         let clients = (0..<1000).map { index in

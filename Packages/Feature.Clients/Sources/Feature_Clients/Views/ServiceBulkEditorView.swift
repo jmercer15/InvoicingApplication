@@ -151,7 +151,7 @@ struct ServiceBulkEditorView: View {
     }
 
     private func removeTemplate(_ template: ClientServiceTemplate) {
-        _ = withAnimation(.easeInOut) {
+        withAnimation(.easeInOut) {
             templates.removeAll { $0.id == template.id }
         }
     }

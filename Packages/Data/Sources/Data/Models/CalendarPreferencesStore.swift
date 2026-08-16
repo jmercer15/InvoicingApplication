@@ -1,5 +1,0 @@
-import Core
-
-public typealias CalendarPreferencesStore = Core.CalendarPreferencesStore
-public typealias CalendarPreferencesStoreProtocol = Core.CalendarPreferencesStoreProtocol
-public typealias CalendarPerCalendarSettings = Core.CalendarPerCalendarSettings

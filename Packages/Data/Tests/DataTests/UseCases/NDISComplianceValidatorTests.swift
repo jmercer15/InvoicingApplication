@@ -277,7 +277,7 @@ import PersistenceModels
         }
         try modelContext.save()
 
-        let snapshot = try try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let snapshot = try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
         let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
 
         let result = validator.validateInvoiceForExport(
@@ -312,7 +312,7 @@ import PersistenceModels
         }
         try modelContext.save()
 
-        let snapshot = try try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
+        let snapshot = try #require(try modelContext.fetch(FetchDescriptor<Invoice>()).first?.snapshot())
         let items = try modelContext.fetch(FetchDescriptor<InvoiceItem>()).map { $0.snapshot() }
 
         let result = validator.validateInvoiceForExport(

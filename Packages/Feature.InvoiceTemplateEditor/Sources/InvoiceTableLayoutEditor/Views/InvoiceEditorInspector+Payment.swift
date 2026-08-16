@@ -5,57 +5,66 @@ extension InvoiceEditorInspector {
     // MARK: - Payment (Details | Terms)
 
     var paymentDetailsSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: expansionBinding(for: .paymentDetails)) {
-                TextField("Bank", text: $viewModel.bankName)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedTarget, equals: .bankName)
-                    .accessibilityLabel("Bank name")
-                TextField("Account", text: $viewModel.bankAccountName)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Account name")
-                    .focused($focusedTarget, equals: .bankAccountName)
-                TextField("BSB", text: $viewModel.bankBSB)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("BSB")
-                    .focused($focusedTarget, equals: .bankBSB)
-                TextField("Account no.", text: $viewModel.bankAccountNumber)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Account number")
-                    .focused($focusedTarget, equals: .bankAccountNumber)
-            } label: {
-                Label("Payment Details", systemImage: "building.columns")
+        InvoiceEditorSection(title: "Payment Details", systemImage: "building.columns") {
+            HStack(spacing: InspectorLayout.fieldSpacing) {
+                InvoiceEditorIconField(systemImage: "building.columns", help: "Bank name") {
+                    TextField("Bank", text: $viewModel.bankName)
+                        .focused($focusedTarget, equals: .bankName)
+                        .accessibilityLabel("Bank name")
+                }
+                InvoiceEditorIconField(systemImage: "person.text.rectangle", help: "Account name") {
+                    TextField("Account", text: $viewModel.bankAccountName)
+                        .accessibilityLabel("Account name")
+                        .focused($focusedTarget, equals: .bankAccountName)
+                }
+            }
+            HStack(spacing: InspectorLayout.fieldSpacing) {
+                InvoiceEditorIconField(systemImage: "number", help: "BSB") {
+                    TextField("BSB", text: $viewModel.bankBSB)
+                        .accessibilityLabel("BSB")
+                        .focused($focusedTarget, equals: .bankBSB)
+                }
+                InvoiceEditorIconField(systemImage: "number.square", help: "Account number") {
+                    TextField("Account no.", text: $viewModel.bankAccountNumber)
+                        .accessibilityLabel("Account number")
+                        .focused($focusedTarget, equals: .bankAccountNumber)
+                }
             }
         }
         .id(InvoiceInspectorSection.paymentDetails)
     }
 
     var paymentTermsSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: expansionBinding(for: .paymentTerms)) {
-                TextField(
-                    "Terms",
-                    text: $viewModel.paymentTerms,
-                    axis: .vertical
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedTarget, equals: .paymentTerms)
-                .lineLimit(1 ... 3)
-                .accessibilityLabel("Payment Terms")
-                TextField(
-                    "Notes",
-                    text: $viewModel.notes,
-                    axis: .vertical
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedTarget, equals: .notes)
-                .lineLimit(1 ... 5)
-                .accessibilityLabel("Invoice Notes")
-            } label: {
-                Label("Payment Terms", systemImage: "doc.plaintext")
+        ViewThatFits(in: .horizontal) {
+            IntrinsicPartyRowLayout(spacing: 0, expandsToFillWidth: true) {
+                termsSection.frame(minWidth: 320)
+                notesSection.frame(minWidth: 320)
+            }
+
+            VStack(spacing: 0) {
+                termsSection
+                notesSection
             }
         }
         .id(InvoiceInspectorSection.paymentTerms)
+    }
+
+    private var termsSection: some View {
+        InvoiceEditorSection(title: "Terms & Conditions", systemImage: "doc.plaintext") {
+            TextField("Payment terms", text: $viewModel.paymentTerms, axis: .vertical)
+                .focused($focusedTarget, equals: .paymentTerms)
+                .lineLimit(2 ... 3)
+                .accessibilityLabel("Payment Terms")
+        }
+    }
+
+    private var notesSection: some View {
+        InvoiceEditorSection(title: "Notes", systemImage: "note.text") {
+            TextField("Notes", text: $viewModel.notes, axis: .vertical)
+                .focused($focusedTarget, equals: .notes)
+                .lineLimit(2 ... 3)
+                .accessibilityLabel("Invoice Notes")
+        }
     }
 
     // MARK: - Editor-only (last, secondary)
@@ -63,7 +72,7 @@ extension InvoiceEditorInspector {
     @ViewBuilder
     func validationSection(_ proxy: ScrollViewProxy) -> some View {
         if !viewModel.validationIssues.isEmpty {
-            Section {
+            InvoiceEditorSection(title: "Validation", systemImage: "exclamationmark.triangle") {
                 ForEach(viewModel.validationIssues) { issue in
                     if let target = issue.target {
                         Button {
@@ -74,11 +83,12 @@ extension InvoiceEditorInspector {
                         } label: {
                             HStack {
                                 Label(issue.message, systemImage: "exclamationmark.triangle.fill")
-                                Spacer(minLength: 8)
+                                Spacer(minLength: InspectorLayout.compactFieldSpacing)
                                 Image(systemName: "arrow.right.circle")
                                     .accessibilityHidden(true)
                             }
                             .contentShape(Rectangle())
+                            .padding(.vertical, InspectorLayout.fieldLabelSpacing)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.red)
@@ -89,50 +99,23 @@ extension InvoiceEditorInspector {
                         Label(issue.message, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                             .font(.caption)
+                            .padding(.vertical, InspectorLayout.fieldLabelSpacing)
                     }
                 }
-            } header: {
-                Label("Validation", systemImage: "exclamationmark.triangle")
-            } footer: {
-                Text("Editor only — not part of the printed invoice layout.")
             }
             .id(InvoiceInspectorSection.validation)
         }
-    }
-
-    var settingsSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: expansionBinding(for: .settings)) {
-                TextField("Currency", text: $viewModel.currencyCode)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Currency")
-                    .focused($focusedTarget, equals: .currencyCode)
-                    .onSubmit {
-                        viewModel.currencyCode = InvoiceCurrencyCode.normalized(viewModel.currencyCode)
-                    }
-                validatedDecimalField(
-                    "Tax %",
-                    value: $viewModel.defaultTaxRate,
-                    inputID: "invoice.defaultTaxRate",
-                    focusTarget: .defaultTaxRate
-                )
-                .accessibilityLabel("Default Tax Rate")
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-            }
-        } footer: {
-            if isExpanded(.settings) {
-                Text("Used for new line items. Edit each row’s Tax % to change an existing rate.")
-            }
-        }
-        .id(InvoiceInspectorSection.settings)
     }
 
     func validatedDecimalField(
         _ title: String,
         value: Binding<Decimal>,
         inputID: String,
-        focusTarget: InvoiceInspectorFocusTarget
+        focusTarget: InvoiceInspectorFocusTarget,
+        showsValidationMessage: Bool = true,
+        step: Decimal? = nil,
+        minimumValue: Decimal? = nil,
+        usesPlainTextFieldStyle: Bool = false
     ) -> some View {
         InvoiceValidatedDecimalField(
             title,
@@ -142,44 +125,12 @@ extension InvoiceEditorInspector {
             focus: $focusedTarget,
             draftStore: toolbarState.numericInputDrafts,
             resetRevision: toolbarState.numericInputResetRevision,
+            showsValidationMessage: showsValidationMessage,
+            step: step,
+            minimumValue: minimumValue,
+            usesPlainTextFieldStyle: usesPlainTextFieldStyle,
             onValidityChange: viewModel.updateNumericInputValidity
         )
     }
 
-    @ViewBuilder
-    func sectionNavigator(_ proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(visibleSections) { section in
-                    Button {
-                        navigate(to: section, proxy: proxy)
-                    } label: {
-                        Label(section.displayName, systemImage: section.systemImage)
-                    }
-                }
-
-                Divider()
-
-                Button("Collapse All", systemImage: "rectangle.compress.vertical") {
-                    withAnimation(subtleAnimation) {
-                        collapseAllSections()
-                    }
-                }
-            } label: {
-                Label("Sections", systemImage: "list.bullet")
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel("Inspector sections")
-
-            Spacer(minLength: 0)
-
-            InvoicePreviewZoomControls(toolbarState: toolbarState)
-        }
-        .padding(.horizontal, InspectorLayout.scrollHorizontalPadding)
-        .padding(.vertical, 6)
-        .background(.bar)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
-    }
 }

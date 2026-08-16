@@ -34,9 +34,9 @@ extension ClientDetailView {
     }
 
     var invoicesCard: some View {
-        ClientDetailInvoicesCard(
-            viewModel: viewModel,
-            sortedInvoices: viewModel.sortedInvoices,
+        RelationshipDetailInvoicesCard(
+            invoices: viewModel.sortedInvoices,
+            isEmpty: viewModel.relatedInvoices.isEmpty,
             invoicesSortOrder: $viewModel.invoicesSortOrder,
             onOpenInvoice: onOpenInvoice
         )

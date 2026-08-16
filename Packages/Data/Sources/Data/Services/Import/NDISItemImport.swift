@@ -221,11 +221,9 @@ struct NDISItemImport {
     }
     
     private static func versionSortingKey(for item: NDISItemData) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         let startDate = item.effectiveStartDate ?? Date()
-        let startString = formatter.string(from: startDate)
-        let endString = item.effectiveEndDate.flatMap { formatter.string(from: $0) } ?? "ongoing"
+        let startString = ImportCalendarDate.string(from: startDate)
+        let endString = item.effectiveEndDate.map(ImportCalendarDate.string(from:)) ?? "ongoing"
         return "\(item.itemNumber)|\(item.name)|\(startString)|\(endString)"
     }
 

@@ -42,10 +42,7 @@ struct NDISActivityTravelTests {
 
     @Test func activityTransportPreferredChargeAmountHonored() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
         let travelInput = makeTravelInput(
             isActivityTransport: true,
             isProviderTravel: false,
@@ -71,10 +68,7 @@ struct NDISActivityTravelTests {
 
     @Test func modifiedVehicleUsesHigherTransportRateWhenRecomputing() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let standard = try #require(
             try billingService.calculateActivityTransport(
                 makeTravelInput(
@@ -99,11 +93,6 @@ let standard = try #require(
     }
 
     @Test func IsModifiedVehicleMapsModifiedBusOnly() throws {
-        let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 #expect(NDISBillingIntegrationService.isModifiedVehicle(.modifiedBus))
         #expect(NDISBillingIntegrationService.isModifiedVehicle(.standardCar) == false)
         #expect(NDISBillingIntegrationService.isModifiedVehicle(.car) == false)
@@ -112,9 +101,6 @@ let standard = try #require(
 
     @Test func resolveBillingContextActivityChargeXORsProviderTravel() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
         let integration = harness.integration
         let modelContext = harness.context
         let client = Client(id: UUID(), ndisNumber: "4300000001", fullName: "Jamie", status: .active)
@@ -149,9 +135,6 @@ let standard = try #require(
 
     @Test func resolveBillingContextProviderTravelWhenNotActivity() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
         let integration = harness.integration
         let modelContext = harness.context
         let client = Client(id: UUID(), ndisNumber: "4300000001", fullName: "Jamie", status: .active)
@@ -185,9 +168,6 @@ let standard = try #require(
     /// Labour TravelCharges win XOR even when orchestrator would flag activity transport.
     @Test func labourChargesIgnoreOrchestratorActivityFlag() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
         let integration = harness.integration
         let modelContext = harness.context
         let client = Client(id: UUID(), ndisNumber: "4300000001", fullName: "Jamie", status: .active)
@@ -271,10 +251,7 @@ let standard = try #require(
 
     @Test func KmRatesMatchCalculator() throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
         let configService = harness.configService
-        let integration = harness.integration
 #expect(abs(configService.getTravelRatePerKm() - NDISTravelChargeCalculator.vehicleRatePerKilometre) < 0.0001)
         #expect(abs(configService.getTransportRate(isModified: false) - NDISTravelChargeCalculator.vehicleRatePerKilometre) < 0.0001)
         #expect(abs(configService.getTransportRate(isModified: true) - NDISTravelChargeCalculator.modifiedVehicleRatePerKilometre) < 0.0001)
@@ -284,10 +261,7 @@ let standard = try #require(
 
     @Test func activityRecomputeUsesCalculatorRates() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let standard = try #require(
             try billingService.calculateActivityTransport(
                 makeTravelInput(
@@ -314,10 +288,7 @@ let standard = try #require(
 
     @Test func providerTravelIneligibleWithMoneyThrows() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
         let modelContext = harness.context
         let itemNumber = "01_099_0107_1_1"
         let entity = NDISItem(id: UUID())

@@ -56,7 +56,7 @@ struct AppIntentTests {
 
     @Test func deliveryCenterQueuesTabAndClientNavigation() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         delivery.enqueue(.selectTab(.calendar))
         #expect(delivery.pendingNavigation == .selectTab(.calendar))
@@ -89,7 +89,7 @@ struct AppIntentTests {
 
     @Test func coldStartReplayConsumesPendingWhenActive() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         let navigationManager = AppNavigationManager()
         delivery.enqueue(.selectTab(.calendar))
@@ -105,7 +105,7 @@ struct AppIntentTests {
 
     @Test func coldStartReplaySkipsWhenSessionNotYetActive() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         let navigationManager = AppNavigationManager()
         let clientID = UUID()
@@ -121,7 +121,7 @@ struct AppIntentTests {
 
     @Test func multiWindowOnlyActiveWorkspaceConsumesPending() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         let activeNavigation = AppNavigationManager()
         let inactiveNavigation = AppNavigationManager()
@@ -158,7 +158,7 @@ struct AppIntentTests {
         context.insert(client)
         try context.save()
 
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         let target = ClientEntity(id: client.id, displayName: client.fullName)
         try await OpenClientIntentPerforming.perform(
@@ -186,7 +186,7 @@ struct AppIntentTests {
 
     @Test func openWorkspaceTabIntentPerformEnqueuesTabSelection() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         OpenWorkspaceTabIntentPerforming.perform(tab: .billingHub, delivery: delivery)
 
@@ -195,7 +195,7 @@ struct AppIntentTests {
 
     @Test func openWorkspaceTabIntentPerformSupportsRelationshipsTab() {
         let delivery = WorkspaceIntentDeliveryCenter()
-        delivery.consumePending()
+        _ = delivery.consumePending()
 
         OpenWorkspaceTabIntentPerforming.perform(tab: .relationships, delivery: delivery)
 

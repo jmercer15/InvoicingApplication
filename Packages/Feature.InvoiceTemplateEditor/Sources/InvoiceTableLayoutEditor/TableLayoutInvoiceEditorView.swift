@@ -75,7 +75,7 @@ public struct TableLayoutInvoiceEditorView: View {
             let isCreatingInvoice
         ):
             InvoiceRootView(
-                viewModel: session.viewModel,
+                invoiceViewModel: session.viewModel,
                 externalSelection: selection,
                 externalDocumentRefreshRevision: documentRefreshRevision,
                 numericInputDrafts: session.numericInputDrafts,

@@ -131,11 +131,10 @@ public final class SwiftDataStoreChangeMonitor {
                 Logger.data.warning("SwiftDataStoreChangeMonitor history token expired; re-seeding latest token")
                 tokenStore.clear()
                 seedLatestHistoryToken()
-                // Force UI to drop live models; CloudKit HistoryExpired invalidates
-                // relationship faults still held by list/detail view models.
                 scheduleRevisionBump(immediate: true)
             } else {
                 Logger.data.error("SwiftDataStoreChangeMonitor fetchHistory failed: \(error.localizedDescription, privacy: .public)")
+                scheduleRevisionBump(immediate: true)
             }
             return
         }

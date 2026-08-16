@@ -33,6 +33,8 @@ struct InvoiceEditorView: View {
     let isPreparingWorkspaceHandoff: Bool
     let templateInputValidityChange: (String, Bool) -> Void
     @State private var previewInteraction: InvoicePreviewInspectorInteraction
+    @State private var previewSheetInteraction: InvoicePreviewInspectorInteraction
+    @State private var isPreviewPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -66,37 +68,13 @@ struct InvoiceEditorView: View {
                 mode: mode == .invoice ? .invoiceData : .templateFormatting
             )
         )
+        _previewSheetInteraction = State(
+            initialValue: InvoicePreviewInspectorInteraction(mode: .disabled)
+        )
     }
 
     var body: some View {
-        InvoiceDocumentPreview(
-            viewModel: viewModel,
-            zoom: $toolbarState.zoom,
-            viewport: toolbarState.viewport,
-            inspectorInteraction: previewInteraction
-        )
-        .inspector(isPresented: $inspectorPresented) {
-            InvoiceEditorInspector(
-                viewModel: viewModel,
-                toolbarState: toolbarState,
-                previewInteraction: previewInteraction,
-                mode: mode.inspectorMode,
-                templateSaveState: templateSaveState,
-                retryTemplateSave: retryTemplateSave,
-                isCreatingInvoiceFromTemplate: isCreatingInvoiceFromTemplate,
-                createInvoiceFromTemplate: createInvoiceFromTemplate,
-                openInvoices: openInvoices,
-                openTemplateEditor: openTemplateEditor,
-                isPreparingWorkspaceHandoff: isPreparingWorkspaceHandoff,
-                templateInputValidityChange: templateInputValidityChange
-            )
-            .inspectorColumnWidth(
-                min: 300,
-                ideal: 360,
-                max: 520
-            )
-            .disabled(viewModel.isBusy)
-        }
+        editorContent
         .navigationTitle(
             mode == .template
                 ? "Invoice Template"
@@ -117,8 +95,27 @@ struct InvoiceEditorView: View {
             reduceMotion ? nil : .easeInOut(duration: 0.16),
             value: progressPresentation
         )
+        .toolbar {
+            if mode == .invoice {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Preview", systemImage: "doc.text.magnifyingglass") {
+                        isPreviewPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .help("Preview invoice document")
+                    .accessibilityHint("Opens a read-only invoice document preview in a sheet")
+                }
+            }
+        }
+        .sheet(isPresented: $isPreviewPresented) {
+            InvoiceDocumentPreviewSheet(
+                viewModel: viewModel,
+                toolbarState: toolbarState,
+                inspectorInteraction: previewSheetInteraction
+            )
+        }
         .onChange(of: previewInteraction.focusRequest) { _, request in
-            if request != nil {
+            if mode == .template, request != nil {
                 revealInspector()
             }
         }
@@ -128,7 +125,6 @@ struct InvoiceEditorView: View {
         }
         .onChange(of: viewModel.validationRecoveryRequestRevision) { _, _ in
             guard mode == .invoice else { return }
-            revealInspector()
             if let target = viewModel.validationIssues.lazy.compactMap(\.target).first {
                 previewInteraction.select(target)
             }
@@ -200,6 +196,44 @@ struct InvoiceEditorView: View {
         } message: {
             Text(viewModel.pendingDiscardTransitionMessage)
         }
+    }
+
+    @ViewBuilder
+    private var editorContent: some View {
+        switch mode {
+        case .invoice:
+            editorControls
+                .disabled(viewModel.isBusy)
+        case .template:
+            InvoiceDocumentPreview(
+                viewModel: viewModel,
+                zoom: $toolbarState.zoom,
+                viewport: toolbarState.viewport,
+                inspectorInteraction: previewInteraction
+            )
+            .inspector(isPresented: $inspectorPresented) {
+                editorControls
+                    .inspectorColumnWidth(min: 300, ideal: 360, max: 520)
+                    .disabled(viewModel.isBusy)
+            }
+        }
+    }
+
+    private var editorControls: some View {
+        InvoiceEditorInspector(
+            viewModel: viewModel,
+            toolbarState: toolbarState,
+            previewInteraction: previewInteraction,
+            mode: mode.inspectorMode,
+            templateSaveState: templateSaveState,
+            retryTemplateSave: retryTemplateSave,
+            isCreatingInvoiceFromTemplate: isCreatingInvoiceFromTemplate,
+            createInvoiceFromTemplate: createInvoiceFromTemplate,
+            openInvoices: openInvoices,
+            openTemplateEditor: openTemplateEditor,
+            isPreparingWorkspaceHandoff: isPreparingWorkspaceHandoff,
+            templateInputValidityChange: templateInputValidityChange
+        )
     }
 
     private var navigationSubtitle: String {

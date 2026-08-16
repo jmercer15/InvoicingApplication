@@ -7,6 +7,63 @@ import Testing
 @testable import InvoiceTableLayoutEditor
 
 @Suite struct InvoiceEditorSeparationTests {
+    @Test func RefactorSymbolsRemainInFocusedSourceFiles() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let views = packageRoot.appendingPathComponent("Sources/InvoiceTableLayoutEditor/Views")
+
+        let placements: [(file: String, symbol: String)] = [
+            ("InvoiceThemePalette.swift", "struct InvoiceThemePalette"),
+            ("InvoiceDocumentDesignTokens.swift", "enum InvoiceDocumentDesign"),
+            ("InvoiceFormatters.swift", "enum InvoiceMoneyFormatter"),
+            ("InvoiceDocumentHeaderSections.swift", "extension InvoiceDocumentSections"),
+            ("InvoiceDocumentPartySections.swift", "extension InvoiceDocumentSections"),
+            ("InvoiceDocumentTotalsPaymentSections.swift", "extension InvoiceDocumentSections"),
+            ("PreviewCommandScrollZoomMonitor.swift", "PreviewCommandScrollZoomMonitor"),
+            ("InvoiceRootViewToolbarActions.swift", "InvoiceRootCommandConfigurator"),
+        ]
+
+        for placement in placements {
+            let source = try String(
+                contentsOf: views.appendingPathComponent(placement.file),
+                encoding: .utf8
+            )
+            #expect(source.contains(placement.symbol))
+        }
+
+        #expect(!FileManager.default.fileExists(
+            atPath: views.appendingPathComponent("InvoiceFormatting.swift").path
+        ))
+        let sectionsFacade = try String(
+            contentsOf: views.appendingPathComponent("InvoiceDocumentSections.swift"),
+            encoding: .utf8
+        )
+        #expect(sectionsFacade.contains("enum InvoiceDocumentSections"))
+        #expect(!sectionsFacade.contains("static func"))
+    }
+
+    @MainActor
+    @Test func InvoiceWorkspaceUsesCurrentInjectedModelWhenSwitchingInvoices() {
+        let templateViewModel = InvoiceEditorViewModel()
+        let firstInvoiceViewModel = InvoiceEditorViewModel()
+        let secondInvoiceViewModel = InvoiceEditorViewModel()
+
+        #expect(InvoiceRootViewModelOwnership.active(
+                invoiceViewModel: firstInvoiceViewModel,
+                templateViewModel: templateViewModel
+            ) === firstInvoiceViewModel)
+        #expect(InvoiceRootViewModelOwnership.active(
+                invoiceViewModel: secondInvoiceViewModel,
+                templateViewModel: templateViewModel
+            ) === secondInvoiceViewModel)
+        #expect(InvoiceRootViewModelOwnership.active(
+                invoiceViewModel: nil,
+                templateViewModel: templateViewModel
+            ) === templateViewModel)
+    }
+
     @Test func OperationErrorPresentationReplacesOpaqueSwiftDataDiagnostics() {
         let error = NSError(
             domain: "SwiftData.SwiftDataError",
@@ -922,6 +979,7 @@ import Testing
         #expect(activeInvoice.canCreate)
         #expect(activeInvoice.canSave)
         #expect(activeInvoice.canAddLineItem)
+        #expect(!(activeInvoice.canToggleInspector))
         #expect(activeInvoice.canFitWidth)
         #expect(!(activeInvoice.canSetActualSize))
 

@@ -176,7 +176,7 @@ struct NDISBillingIntegrationServiceTests {
     }
 
     @Test func persistedTravelTotalsPreserveDirectionAndApplyMMMCap() throws {
-        let (_, modelContext, service) = try makeFixture()
+        let (_, modelContext, _) = try makeFixture()
         let client = try insertClient(into: modelContext)
         let session = try insertSession(into: modelContext, client: client)
 

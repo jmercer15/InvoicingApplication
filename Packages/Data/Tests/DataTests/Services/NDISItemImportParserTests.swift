@@ -16,7 +16,7 @@ import PersistenceModels
           }
         ]
         """
-        let data = try try #require(json.data(using: .utf8))
+        let data = try #require(json.data(using: .utf8))
         var messages: [String] = []
 
         let items = try NDISItemImportParser.parse(data: data, messages: &messages)
@@ -75,7 +75,7 @@ import PersistenceModels
         #expect(items.count == 1)
         #expect(messages == ["Skipped item: Missing or empty Support Item Number."])
 
-        let item = try try #require(items.first)
+        let item = try #require(items.first)
         #expect(item.itemNumber == "04_104_0125_6_1")
         #expect(item.name == "Community participation")
         #expect(item.description == "Participate in community activities")

@@ -55,6 +55,74 @@ struct EntityPredicateBuildersTests {
         #expect(matches.first?.id == planDraft.id)
     }
 
+    @Test func billableDraftCombinedPredicateAppliesStatusDateAndClient() throws {
+        let (_, context) = try makeContext()
+        let matchingClientID = UUID()
+        let otherClientID = UUID()
+        let lowerBound = TestClock.addingTimeInterval(-60)
+        let upperBound = TestClock.addingTimeInterval(60)
+
+        func makeDraft(
+            clientID: UUID,
+            status: DraftStatus,
+            computedAt: Date
+        ) -> BillableDraft {
+            BillableDraft(
+                id: UUID(),
+                sessionId: UUID(),
+                clientId: clientID,
+                serviceId: UUID(),
+                computedAt: computedAt,
+                billingContextSnapshot: Data(),
+                draftStatus: status.rawValue,
+                createdAt: TestClock.now
+            )
+        }
+
+        let lowerBoundary = makeDraft(
+            clientID: matchingClientID,
+            status: .open,
+            computedAt: lowerBound
+        )
+        let upperBoundary = makeDraft(
+            clientID: matchingClientID,
+            status: .open,
+            computedAt: upperBound
+        )
+        let wrongClient = makeDraft(
+            clientID: otherClientID,
+            status: .open,
+            computedAt: TestClock.now
+        )
+        let wrongStatus = makeDraft(
+            clientID: matchingClientID,
+            status: .locked,
+            computedAt: TestClock.now
+        )
+        let outsideRange = makeDraft(
+            clientID: matchingClientID,
+            status: .open,
+            computedAt: TestClock.addingTimeInterval(61)
+        )
+
+        [lowerBoundary, upperBoundary, wrongClient, wrongStatus, outsideRange]
+            .forEach(context.insert)
+        try context.save()
+
+        let descriptor = FetchDescriptor<BillableDraft>(
+            predicate: EntityPredicateBuilders.billableDrafts(
+                statusRaw: DraftStatus.open.rawValue,
+                rangeLower: lowerBound,
+                rangeUpper: upperBound,
+                clientId: matchingClientID
+            ),
+            sortBy: [SortDescriptor(\.computedAt)]
+        )
+        let matches = try context.fetch(descriptor)
+
+        #expect(matches.map(\.id) == [lowerBoundary.id, upperBoundary.id])
+    }
+
     @Test func backfillBillableDraftPlanTypeCopiesClientPlanManagementType() throws {
         let (_, context) = try makeContext()
         let client = Client(id: UUID(), fullName: "Backfill Client")

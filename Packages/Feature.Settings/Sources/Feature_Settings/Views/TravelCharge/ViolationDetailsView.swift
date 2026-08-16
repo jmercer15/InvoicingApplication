@@ -10,13 +10,6 @@ struct ViolationDetailsView: View {
     @State private var selectedOverride: String = ""
     @State private var overrideReason: String = ""
 
-    private static let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
-    
     @ScaledMetric(relativeTo: .body) private var paddingSmall = StyleGuide.Dimensions.paddingSmall
     @ScaledMetric(relativeTo: .body) private var paddingMedium = StyleGuide.Dimensions.paddingMedium
     @ScaledMetric(relativeTo: .body) private var cornerRadiusSmall = StyleGuide.Dimensions.cornerRadiusSmall
@@ -42,7 +35,7 @@ struct ViolationDetailsView: View {
                         Text("Client: \(clientName)")
                             .font(.body)
                     }
-                    Text("Date: \(detailedReview.timestamp, formatter: Self.dateFormatter)")
+                    Text("Date: \(DateFormatting.mediumDateTime(detailedReview.timestamp))")
                         .font(.caption)
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }

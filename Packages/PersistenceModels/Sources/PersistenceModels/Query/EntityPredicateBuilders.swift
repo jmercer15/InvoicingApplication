@@ -39,6 +39,20 @@ public enum EntityPredicateBuilders {
         }
     }
 
+    public static func billableDrafts(
+        statusRaw: String,
+        rangeLower: Date,
+        rangeUpper: Date,
+        clientId: UUID
+    ) -> Predicate<BillableDraft> {
+        #Predicate { draft in
+            draft.draftStatus == statusRaw
+                && draft.computedAt >= rangeLower
+                && draft.computedAt <= rangeUpper
+                && draft.clientId == clientId
+        }
+    }
+
     public static func billableDrafts(planType: String) -> Predicate<BillableDraft> {
         #Predicate { $0.clientPlanManagementType == planType }
     }

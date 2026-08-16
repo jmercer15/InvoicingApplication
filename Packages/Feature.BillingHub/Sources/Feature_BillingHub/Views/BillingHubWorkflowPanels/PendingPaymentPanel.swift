@@ -71,7 +71,10 @@ struct PendingPaymentPanel: View {
                             value: BillingHubPaymentAmount.currencyText(parsedAmount)
                         )
                     }
-                    comparisonLabel
+                    BillingHubPaymentComparisonLabel(
+                        comparison: paymentComparison,
+                        style: .entry
+                    )
                 }
             } else {
                 Section {
@@ -104,7 +107,7 @@ struct PendingPaymentPanel: View {
             }
 
             if let operationFeedback {
-                paymentFeedback(operationFeedback)
+                BillingHubOperationFeedbackSection(message: operationFeedback)
             }
 
             Button {
@@ -123,16 +126,12 @@ struct PendingPaymentPanel: View {
             Button {
                 requestFinalizePayment()
             } label: {
-                if isFinalizing {
-                    Label {
-                        Text("Recording Payment…")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
-                } else {
-                    Label(finalizeButtonTitle, systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
-                }
+                BillingHubBusyButtonLabel.titledProgress(
+                    isBusy: isFinalizing,
+                    busyTitle: "Recording Payment…",
+                    idleTitle: finalizeButtonTitle,
+                    systemImage: "checkmark.seal.fill"
+                )
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -146,11 +145,12 @@ struct PendingPaymentPanel: View {
                 saveNote()
             } label: {
                 if isSavingNote {
-                    Label {
-                        Text("Saving Note…")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
+                    BillingHubBusyButtonLabel.titledProgress(
+                        isBusy: true,
+                        busyTitle: "Saving Note…",
+                        idleTitle: "Save Note Only",
+                        systemImage: "note.text.badge.plus"
+                    )
                 } else if noteIsSaved {
                     Label("Payment Note Saved", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -296,40 +296,6 @@ struct PendingPaymentPanel: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focusedField, equals: .reference)
                 .onChange(of: reference) { _, _ in noteIsSaved = false }
-        }
-    }
-
-    @ViewBuilder
-    private var comparisonLabel: some View {
-        switch paymentComparison {
-        case .matches:
-            Label("Matches invoice total", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(ColorSystem.Status.success)
-        case .underpayment(let difference):
-            Label(
-                "\(BillingHubPaymentAmount.currencyText(difference)) outstanding",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .foregroundStyle(ColorSystem.Status.warning)
-        case .overpayment(let difference):
-            Label(
-                "\(BillingHubPaymentAmount.currencyText(difference)) overpayment",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .foregroundStyle(ColorSystem.Status.warning)
-        case nil:
-            EmptyView()
-        }
-    }
-
-    private func paymentFeedback(_ message: String) -> some View {
-        let severity = BillingHubBulkFeedbackSeverity.classify(message)
-        return Section {
-            Label(message, systemImage: severity.symbolName)
-                .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundStyle(severity.tint)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
         }
     }
 

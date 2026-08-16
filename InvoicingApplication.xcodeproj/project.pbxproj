@@ -44,21 +44,12 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Core/Configuration/Info.plist,
+				Core/Configuration/InvoicingApplication.entitlements,
+				Core/Configuration/InvoicingApplicationRelease.entitlements,
 			);
 			target = CEFD0A9F2D8FC981008338E9 /* InvoicingApplication */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		CE1CBCBD2E597F2900C90458 /* Exceptions for "InvoicingApplication" folder in "Compile Sources" phase from "InvoicingApplication" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = CEFD0A9C2D8FC981008338E9 /* Sources */;
-			membershipExceptions = (
-				Core/Configuration/InvoicingApplication.entitlements,
-				Core/Configuration/InvoicingApplicationRelease.entitlements,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CEAA10022F00000000000001 /* InvoicingApplicationTests */ = {
@@ -70,7 +61,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				CE87D9FE2EC4A9EC001D9BAD /* Exceptions for "InvoicingApplication" folder in "InvoicingApplication" target */,
-				CE1CBCBD2E597F2900C90458 /* Exceptions for "InvoicingApplication" folder in "Compile Sources" phase from "InvoicingApplication" target */,
 			);
 			path = InvoicingApplication;
 			sourceTree = "<group>";
@@ -516,6 +506,10 @@
 				DEVELOPMENT_ASSET_PATHS = "\"InvoicingApplication/Preview Content\"";
 				DEVELOPMENT_TEAM = LV5SAR7LY2;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = InvoicingApplication/Core/Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = InvoicingApplication;
@@ -532,10 +526,10 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jesse.InvoicingApplication;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -554,6 +548,10 @@
 				DEVELOPMENT_TEAM = LV5SAR7LY2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = InvoicingApplication/Core/Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = InvoicingApplication;
@@ -570,10 +568,10 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jesse.InvoicingApplication;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;

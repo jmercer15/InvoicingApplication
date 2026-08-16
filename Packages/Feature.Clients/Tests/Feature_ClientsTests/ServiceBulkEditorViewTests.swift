@@ -59,8 +59,6 @@ import SwiftUI
             onBackToServiceSelection: { backCalled = true }
         )
         
-        let body = view.body
-        #expect(body != nil)
         #expect(state.templates.isEmpty)
         
         // Manually trigger and verify callbacks are wired correctly

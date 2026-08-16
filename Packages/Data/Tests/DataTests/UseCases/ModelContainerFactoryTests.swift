@@ -22,14 +22,14 @@ import PersistenceModels
 
     @Test func MakeInMemoryContainerWithAppSchemaSucceeds() throws {
         let container = try ModelContainerFactory.makeInMemoryContainer()
-        #expect(container != nil)
+        #expect(container.mainContext.container === container)
     }
 
     @Test func MakeInMemoryContainerWithSubsetSchemaSucceeds() throws {
         let container = try ModelContainerFactory.makeInMemoryContainer(
             models: [RegionalPrice.self]
         )
-        #expect(container != nil)
+        #expect(container.mainContext.container === container)
     }
 
     @Test func MakePersistentContainerWithSubsetSchemaSucceeds() throws {
@@ -46,7 +46,7 @@ import PersistenceModels
             cloudKitDatabase: .none
         )
         let container = try ModelContainer(for: schema, configurations: [configuration])
-        #expect(container != nil)
+        #expect(container.mainContext.container === container)
     }
 
     /// Regression: equal-checksum VersionedSchemas must not produce MigrationStage.custom pairs.
@@ -70,22 +70,21 @@ import PersistenceModels
             migrationPlan: AppMigrationPlan.self,
             configurations: [configuration]
         )
-        #expect(first != nil)
+        #expect(first.mainContext.container === first)
 
         let reopened = try ModelContainer(
             for: schema,
             migrationPlan: AppMigrationPlan.self,
             configurations: [configuration]
         )
-        #expect(reopened != nil)
+        #expect(reopened.mainContext.container === reopened)
     }
 
     @Test func MakeInMemoryContextReturnsContainerAndContext() throws {
         let (container, context) = try ModelContainerFactory.makeInMemoryContext(
             models: [RegionalPrice.self]
         )
-        #expect(container != nil)
-        #expect(context != nil)
+        #expect(context.container === container)
         #expect(!(context.autosaveEnabled))
     }
 

@@ -9,13 +9,6 @@ struct DetailedReviewView: View {
     @State private var notes = ""
     
     private let actions = ["Fix Location", "Override Compliance", "Skip", "Manual Charge"]
-    
-    private static let itemDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
 
     var body: some View {
         ScrollView {
@@ -43,7 +36,7 @@ struct DetailedReviewView: View {
                             Text("Client: \(parsedInfo.clientName)")
                             Text("Issue: \(parsedInfo.reason)")
                             if let date = parsedInfo.date {
-                                Text("Date: \(date, formatter: Self.itemDateFormatter)")
+                                Text("Date: \(DateFormatting.mediumDateTime(date))")
                             }
                         }
                         .font(.caption)

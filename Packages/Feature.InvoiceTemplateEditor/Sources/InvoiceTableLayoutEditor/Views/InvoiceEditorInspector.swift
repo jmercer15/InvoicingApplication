@@ -15,12 +15,6 @@ struct InvoiceEditorInspector: View {
     let isPreparingWorkspaceHandoff: Bool
     let templateInputValidityChange: (String, Bool) -> Void
 
-    /// The inspector is an accordion: exactly one document path may be open.
-    /// `nil` is used only by the explicit Collapse All command.
-    /// Line Items opens first because review/edit handoffs are usually about billable content.
-    @State var expandedSection: InvoiceInspectorSection? = .lineItems
-    /// Nested accordion state for the Line Items path.
-    @State var expandedLineItemID: UUID?
     @State var lineItemUndo = InvoiceLineItemUndoCoordinator()
     @State var handledAddLineItemRequestRevision = 0
     @State var activeDeferredFocusLeaseID: UUID?
@@ -33,7 +27,7 @@ struct InvoiceEditorInspector: View {
         switch mode {
         case .invoiceData:
             invoiceForm
-                .accessibilityLabel("Invoice data inspector")
+                .accessibilityLabel("Invoice editing controls")
         case .templateFormatting:
             InvoiceTemplateRibbon(
                 viewModel: viewModel,
@@ -52,26 +46,55 @@ struct InvoiceEditorInspector: View {
 
     var invoiceForm: some View {
         ScrollViewReader { proxy in
-            Form {
-                documentActionsSection
-                headerSection
-                fromSection
-                billedToSection
-                forSection
-                lineItemsSection
-                totalsSection
-                paymentDetailsSection
-                paymentTermsSection
-                validationSection(proxy)
-                settingsSection
+            ScrollView {
+                LazyVStack(alignment: .center, spacing: 0) {
+                    InvoiceEditorDocumentPage {
+                        headerSection
+
+                        ViewThatFits(in: .horizontal) {
+                            IntrinsicPartyRowLayout(spacing: 0, expandsToFillWidth: true) {
+                                fromSection.frame(minWidth: 210)
+                                billedToSection.frame(minWidth: 210)
+                                forSection.frame(minWidth: 210)
+                            }
+
+                            VStack(spacing: 0) {
+                                fromSection
+                                billedToSection
+                                forSection
+                            }
+                        }
+
+                        lineItemsSection
+
+                        ViewThatFits(in: .horizontal) {
+                            IntrinsicPartyRowLayout(spacing: 0, expandsToFillWidth: true) {
+                                paymentDetailsSection.frame(minWidth: 360)
+                                totalsSection.frame(minWidth: 360)
+                            }
+
+                            VStack(spacing: 0) {
+                                paymentDetailsSection
+                                totalsSection
+                            }
+                        }
+
+                        paymentTermsSection
+                    }
+
+                    validationSection(proxy)
+                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: InspectorLayout.documentMaxWidth)
+                }
+                .padding(.vertical, InspectorLayout.editorVerticalPadding)
+                .frame(maxWidth: .infinity)
             }
-            .formStyle(.grouped)
-            .controlSize(.regular)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .controlSize(.small)
             .textFieldStyle(.roundedBorder)
             .toggleStyle(.checkbox)
-            .disclosureGroupStyle(InspectorDisclosureGroupStyle())
-            .safeAreaInset(edge: .top, spacing: 0) {
-                sectionNavigator(proxy)
+            .toolbar {
+                documentToolbar
             }
             .onChange(of: previewInteraction.focusRequest) { _, request in
                 guard let request else { return }
@@ -86,7 +109,6 @@ struct InvoiceEditorInspector: View {
                     undoManager: undoManager
                 )
                 activeDeferredFocusLeaseID = nil
-                expandedLineItemID = nil
                 focusedTarget = nil
             }
             .onAppear {
@@ -106,17 +128,7 @@ struct InvoiceEditorInspector: View {
         }
     }
 
-    var visibleSections: [InvoiceInspectorSection] {
-        InvoiceInspectorSection.allCases.filter { section in
-            section != .validation || !viewModel.validationErrors.isEmpty
-        }
-    }
-
     var motionAnimation: Animation? {
         reduceMotion ? nil : .snappy
-    }
-
-    var subtleAnimation: Animation? {
-        reduceMotion ? nil : .easeInOut(duration: 0.15)
     }
 }

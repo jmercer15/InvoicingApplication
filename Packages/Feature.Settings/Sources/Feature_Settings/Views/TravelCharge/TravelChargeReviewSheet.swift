@@ -7,13 +7,6 @@ struct TravelChargeReviewSheet: View {
     let reviewSummaries: [String]
     let detailedReviewItems: [Core.DetailedReviewItem]
 
-    private static let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
-
     @Environment(\.dismiss) var dismiss
     @State private var selectedTab = 0
     @State private var showingDetailedReview = false
@@ -229,7 +222,7 @@ struct TravelChargeReviewSheet: View {
                         .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 }
                 
-                Text("Date: \(reviewItem.timestamp, formatter: Self.dateFormatter)")
+                Text("Date: \(DateFormatting.mediumDateTime(reviewItem.timestamp))")
                     .font(.caption)
                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                 

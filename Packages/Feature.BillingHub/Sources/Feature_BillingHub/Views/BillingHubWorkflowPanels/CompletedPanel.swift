@@ -26,12 +26,11 @@ struct CompletedPanel: View {
                     }
                 }
             } label: {
-                if isMoving {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Move to Grouped", systemImage: "rectangle.stack.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
+                BillingHubBusyButtonLabel.progressOrLabel(
+                    isBusy: isMoving,
+                    title: "Move to Grouped",
+                    systemImage: "rectangle.stack.badge.plus"
+                )
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

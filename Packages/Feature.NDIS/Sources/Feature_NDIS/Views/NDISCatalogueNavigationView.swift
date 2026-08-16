@@ -91,10 +91,7 @@ struct NDISCatalogueNavigationView: View {
                     .buttonStyle(.glassProminent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge, style: .continuous)
-                        .fill(PanelShellTokens.panelSecondaryBackground)
-                )
+                .ndisPanelFilledBackground()
                 .standardContentPanelListInsets()
             } else if projection.totalItemCount == 0 {
                 EmptyStateView(
@@ -103,10 +100,7 @@ struct NDISCatalogueNavigationView: View {
                     message: "Import or sync the catalogue to browse support items."
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge, style: .continuous)
-                        .fill(PanelShellTokens.panelSecondaryBackground)
-                )
+                .ndisPanelFilledBackground()
                 .standardContentPanelListInsets()
             } else if projection.navigationTree.isEmpty {
                 EmptyStateView(
@@ -115,10 +109,7 @@ struct NDISCatalogueNavigationView: View {
                     message: "Try adjusting your search or filter criteria."
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusLarge, style: .continuous)
-                        .fill(PanelShellTokens.panelSecondaryBackground)
-                )
+                .ndisPanelFilledBackground()
                 .standardContentPanelListInsets()
             } else {
                 ScrollableNDISCatalogueGrid(

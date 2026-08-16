@@ -17,9 +17,21 @@ enum InvoiceTemplatePersistenceIntent {
     }
 }
 
+enum InvoiceRootViewModelOwnership {
+    /// Invoice sessions own persisted-document models. Template mode owns only its local mock.
+    static func active(
+        invoiceViewModel: InvoiceEditorViewModel?,
+        templateViewModel: InvoiceEditorViewModel
+    ) -> InvoiceEditorViewModel {
+        invoiceViewModel ?? templateViewModel
+    }
+}
+
 /// Mode boundary for invoice and template workflows. Invoice list ownership stays in Feature.Invoices.
 struct InvoiceRootView: View {
-    @State private var viewModel: InvoiceEditorViewModel
+    // Template workspace owns its mock document. Invoice workspace receives its document owner
+    // from InvoiceEditorSession; storing that reference in State would retain stale injection.
+    @State private var templateViewModel = InvoiceEditorViewModel()
     @State private var editorToolbarState: InvoiceEditorToolbarState
     @State private var commandActions = InvoiceEditorCommandActions()
     @State private var templateSaveState = InvoiceTemplateSaveState.saved
@@ -36,6 +48,7 @@ struct InvoiceRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let externalSelection: Binding<UUID?>?
+    private let invoiceViewModel: InvoiceEditorViewModel?
     private let externalDocumentRefreshRevision: Int
     private let onCreateInvoice: (@MainActor () async throws -> Void)?
     private let onOpenInvoices: (@MainActor () -> Void)?
@@ -50,13 +63,13 @@ struct InvoiceRootView: View {
         onOpenInvoices: (@MainActor () -> Void)? = nil,
         featureInvoiceCreationIsActive: Bool = false
     ) {
-        _viewModel = State(initialValue: InvoiceEditorViewModel())
         _editorToolbarState = State(initialValue: InvoiceEditorToolbarState())
         _editorInspectorPresented = SceneStorage(
             wrappedValue: true,
             InvoiceEditorWorkspaceMode.template.inspectorSceneStorageKey
         )
         externalSelection = nil
+        invoiceViewModel = nil
         externalDocumentRefreshRevision = 0
         self.onCreateInvoice = onCreateInvoice
         self.onOpenInvoices = onOpenInvoices
@@ -67,7 +80,7 @@ struct InvoiceRootView: View {
     }
 
     init(
-        viewModel: InvoiceEditorViewModel,
+        invoiceViewModel: InvoiceEditorViewModel,
         externalSelection: Binding<UUID?>,
         externalDocumentRefreshRevision: Int = 0,
         numericInputDrafts: InvoiceNumericInputDraftStore,
@@ -76,7 +89,6 @@ struct InvoiceRootView: View {
         onBackToBillingHub: (@MainActor () -> Void)? = nil,
         featureInvoiceCreationIsActive: Bool = false
     ) {
-        _viewModel = State(initialValue: viewModel)
         _editorToolbarState = State(
             initialValue: InvoiceEditorToolbarState(numericInputDrafts: numericInputDrafts)
         )
@@ -85,6 +97,7 @@ struct InvoiceRootView: View {
             InvoiceEditorWorkspaceMode.invoice.inspectorSceneStorageKey
         )
         self.externalSelection = externalSelection
+        self.invoiceViewModel = invoiceViewModel
         self.externalDocumentRefreshRevision = externalDocumentRefreshRevision
         self.onCreateInvoice = onCreateInvoice
         onOpenInvoices = nil
@@ -92,6 +105,13 @@ struct InvoiceRootView: View {
         self.onBackToBillingHub = onBackToBillingHub
         mode = .invoice
         self.featureInvoiceCreationIsActive = featureInvoiceCreationIsActive
+    }
+
+    private var viewModel: InvoiceEditorViewModel {
+        InvoiceRootViewModelOwnership.active(
+            invoiceViewModel: invoiceViewModel,
+            templateViewModel: templateViewModel
+        )
     }
 
     var body: some View {
@@ -185,28 +205,12 @@ struct InvoiceRootView: View {
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .toolbar {
-            if onBackToBillingHub != nil {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        requestBackToBillingHub()
-                    } label: {
-                        if isPreparingWorkspaceHandoff {
-                            Label {
-                                Text("Saving Before Returning…")
-                            } icon: {
-                                ProgressView().controlSize(.small)
-                            }
-                        } else {
-                            Label("Back to Billing Hub", systemImage: "chevron.left")
-                        }
-                    }
-                    .disabled(isPreparingWorkspaceHandoff || viewModel.isBusy)
-                    .help("Return to Billing Hub and restore this invoice card")
-                    .accessibilityHint(
-                        "Saves valid edits, then switches to Billing Hub and focuses this invoice."
-                    )
-                }
-            }
+            InvoiceRootToolbarContent(
+                showsBackToBillingHub: onBackToBillingHub != nil,
+                isPreparingWorkspaceHandoff: isPreparingWorkspaceHandoff,
+                isDocumentBusy: viewModel.isBusy,
+                onBackToBillingHub: requestBackToBillingHub
+            )
         }
         .task {
             configureCommandActions()
@@ -651,40 +655,17 @@ struct InvoiceRootView: View {
     }
 
     private func configureCommandActions() {
-        commandActions.prepareForInvoiceCreation = {
-            switch mode {
-            case .template:
-                return persistTemplateImmediately()
-            case .invoice:
-                // Feature.Invoices prepares its active session at canonical creation boundary.
-                return true
-            }
-        }
-        commandActions.toggleInspector = {
-            setEditorInspectorPresented(!editorInspectorPresented)
-        }
-        commandActions.zoomIn = {
-            editorToolbarState.zoom.zoomIn(relativeTo: editorToolbarState.viewport.fitScale)
-        }
-        commandActions.zoomOut = {
-            editorToolbarState.zoom.zoomOut(relativeTo: editorToolbarState.viewport.fitScale)
-        }
-        commandActions.setActualSize = {
-            editorToolbarState.zoom.setActualSize()
-        }
-        commandActions.fitWidth = {
-            editorToolbarState.zoom.setFitWidth()
-        }
-        guard mode == .invoice else { return }
-        commandActions.save = { Task { await viewModel.saveCurrentInvoice() } }
-        commandActions.duplicate = { Task { await viewModel.duplicateSelectedInvoice() } }
-        commandActions.addLineItem = {
-            revealEditorInspector()
-            editorToolbarState.requestAddLineItem()
-        }
-        commandActions.requestDelete = { editorToolbarState.showsDeleteConfirmation = true }
-        commandActions.print = { Task { await viewModel.printCurrentInvoice() } }
-        commandActions.exportPDF = { Task { await viewModel.exportCurrentInvoicePDF() } }
+        InvoiceRootCommandConfigurator.install(
+            actions: commandActions,
+            mode: mode,
+            viewModel: viewModel,
+            toolbarState: editorToolbarState,
+            prepareTemplateForCreation: { persistTemplateImmediately() },
+            toggleInspector: {
+                setEditorInspectorPresented(!editorInspectorPresented)
+            },
+            revealInspector: revealEditorInspector
+        )
     }
 
     private func refreshCommandCapabilities() {
@@ -692,20 +673,9 @@ struct InvoiceRootView: View {
     }
 
     private func applyCommandCapabilities(_ capabilities: InvoiceEditorCommandCapabilities) {
-        commandActions.updateCapabilities(
-            canCreate: capabilities.canCreate,
-            canSave: capabilities.canSave,
-            canDuplicate: capabilities.canDuplicate,
-            canDelete: capabilities.canDelete,
-            canPrint: capabilities.canPrint,
-            canExportPDF: capabilities.canExportPDF,
-            canToggleInspector: capabilities.canToggleInspector,
-            isInvoiceContext: capabilities.isInvoiceContext,
-            canAddLineItem: capabilities.canAddLineItem,
-            canZoomIn: capabilities.canZoomIn,
-            canZoomOut: capabilities.canZoomOut,
-            canSetActualSize: capabilities.canSetActualSize,
-            canFitWidth: capabilities.canFitWidth
+        InvoiceRootCommandConfigurator.apply(
+            capabilities,
+            to: commandActions
         )
     }
 
@@ -734,76 +704,5 @@ struct InvoiceRootView: View {
             requested: requestedValue
         ) else { return }
         editorInspectorPresented = replacement
-    }
-}
-
-private struct InvoiceExternalDocumentRefreshTaskID: Equatable {
-    let selectedID: UUID?
-    let revision: Int
-}
-
-private struct InvoiceTemplateInvalidValuesBanner: View {
-    let reviewFormat: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-
-            Text("Template has invalid Format values.")
-                .font(.callout.weight(.medium))
-
-            Button("Review Format", action: reviewFormat)
-                .buttonStyle(.borderless)
-                .help("Open Format inspector and review highlighted values")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: Capsule())
-        .overlay {
-            Capsule().strokeBorder(.orange.opacity(0.2))
-        }
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Template contains invalid Format values")
-        .accessibilityHint("Open Format inspector to review highlighted values")
-    }
-}
-
-private struct InvoiceTemplateSaveFailureBanner: View {
-    let retry: () -> Void
-    let openFormat: () -> Void
-    @AccessibilityFocusState private var isRetryFocused: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .accessibilityHidden(true)
-
-            Text("Template changes couldn’t be saved.")
-                .font(.callout.weight(.medium))
-
-            Button("Retry", action: retry)
-                .buttonStyle(.borderless)
-                .accessibilityFocused($isRetryFocused)
-
-            Button("Open Format", action: openFormat)
-                .buttonStyle(.borderless)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: Capsule())
-        .overlay {
-            Capsule().strokeBorder(.red.opacity(0.16))
-        }
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Template save failed")
-        .onAppear {
-            isRetryFocused = true
-            AccessibilityNotification.Announcement("Save failed. Template changes couldn't be saved.").post()
-        }
     }
 }

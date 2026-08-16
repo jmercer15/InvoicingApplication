@@ -57,16 +57,12 @@ struct InvoiceImport {
     }
     
     private static func processActualInvoices(_ invoices: [LegacyInvoicePayload], fileName: String, context: ModelContext) throws -> ImportResult {
-        let dateFormatter = ISO8601DateFormatter()
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateFormat = "yyyy-MM-dd"
-        
         let clientFetchDescriptor = FetchDescriptor<Client>()
         let allClients = try context.fetch(clientFetchDescriptor)
         
         let convertedInvoices = invoices.map { invoice -> InvoiceImportPayload in
-            let issueDate: Date? = invoice.issueDate.flatMap { dateFormatter.date(from: $0) }
-            let dueDate: Date? = invoice.dueDate.flatMap { dateFormatter.date(from: $0) }
+            let issueDate: Date? = invoice.issueDate.flatMap { ImportISO8601.date(from: $0) }
+            let dueDate: Date? = invoice.dueDate.flatMap { ImportISO8601.date(from: $0) }
             
             var clientName: String? = nil
             let invoiceParts = invoice.invoiceNumber.split(separator: "-")
@@ -96,9 +92,9 @@ struct InvoiceImport {
             return InvoiceImportPayload(
                 invoiceNumber: invoice.invoiceNumber,
                 dateIssued: issueDate,
-                dateIssuedString: issueDate != nil ? displayFormatter.string(from: issueDate!) : invoice.issueDate,
+                dateIssuedString: issueDate.map(ImportCalendarDate.string(from:)) ?? invoice.issueDate,
                 dateDue: dueDate,
-                dateDueString: dueDate != nil ? displayFormatter.string(from: dueDate!) : invoice.dueDate,
+                dateDueString: dueDate.map(ImportCalendarDate.string(from:)) ?? invoice.dueDate,
                 totalAmount: invoice.totalAmount,
                 totalAmountString: invoice.totalAmount != nil ? String(invoice.totalAmount!) : nil,
                 status: invoice.status,
@@ -168,23 +164,15 @@ struct InvoiceImport {
                 if let issueDate = invoice.dateIssued {
                     invoiceModel.date = issueDate
                     invoiceModel.issueDate = issueDate
-                } else if let dateString = invoice.dateIssuedString {
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "yyyy-MM-dd"
-                    if let date = dateFormatter.date(from: dateString) {
-                        invoiceModel.date = date
-                        invoiceModel.issueDate = date
-                    }
+                } else if let date = ImportCalendarDate.date(from: invoice.dateIssuedString) {
+                    invoiceModel.date = date
+                    invoiceModel.issueDate = date
                 }
                 
                 if let dueDate = invoice.dateDue {
                     invoiceModel.dueDate = dueDate
-                } else if let dateString = invoice.dateDueString {
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "yyyy-MM-dd"
-                    if let date = dateFormatter.date(from: dateString) {
-                        invoiceModel.dueDate = date
-                    }
+                } else if let date = ImportCalendarDate.date(from: invoice.dateDueString) {
+                    invoiceModel.dueDate = date
                 }
                 
                 if let amount = invoice.totalAmount {

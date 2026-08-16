@@ -63,11 +63,8 @@ struct TabularInvoicePayload: Codable {
     
     /// Converts tabular input to canonical import-patch semantics.
     func toImportPayload() -> InvoiceImportPayload {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
-        let issueDateParsed = issueDate.flatMap { dateFormatter.date(from: $0) }
-        let dueDateParsed = dueDate.flatMap { dateFormatter.date(from: $0) }
+        let issueDateParsed = ImportCalendarDate.date(from: issueDate)
+        let dueDateParsed = ImportCalendarDate.date(from: dueDate)
         
         let userData = try? JSONEncoder().encode(self)
         

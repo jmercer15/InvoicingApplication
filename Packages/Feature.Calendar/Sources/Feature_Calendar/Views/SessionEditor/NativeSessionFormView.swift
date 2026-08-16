@@ -97,17 +97,9 @@ struct NativeSessionFormView: View {
                 .padding(.bottom, StyleGuide.Dimensions.paddingLarge)
             }
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    StyleGuide.Colors.background,
-                    StyleGuide.Colors.background.opacity(0.95),
-                    StyleGuide.Colors.background.opacity(0.9)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background {
+            AppSheetBackdrop()
+        }
         .frame(minWidth: StyleGuide.Dimensions.sessionSheetMinWidth, minHeight: StyleGuide.Dimensions.sessionSheetMinHeight)
         .onAppear {
             selectedRepeatOption = NativeSessionFormRecurrenceMapping.repeatPickerValue(for: viewModel.formModel)

@@ -41,11 +41,8 @@ struct ServiceAssignmentSheetContainer: View {
                         idealHeight: StyleGuide.Dimensions.sheetIdealHeight
                     )
                     .task {
-                        // Small delay to let the sheet presentation animation finish smoothly
-                        guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            isLoaded = true
-                        }
+                        guard await DeferredSheetPresentation.waitForReveal() else { return }
+                        DeferredSheetPresentation.reveal { isLoaded = true }
                     }
             }
         }

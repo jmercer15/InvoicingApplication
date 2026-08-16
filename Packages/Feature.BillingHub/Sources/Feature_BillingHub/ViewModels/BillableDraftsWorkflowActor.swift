@@ -11,7 +11,7 @@ public actor BillableDraftsWorkflowActor {
         filterPlanType: String?
     ) throws -> [PersistentIdentifier] {
         if let planType = filterPlanType, !planType.isEmpty {
-            var descriptor = FetchDescriptor<BillableDraft>(
+            let descriptor = FetchDescriptor<BillableDraft>(
                 predicate: EntityPredicateBuilders.billableDrafts(planType: planType),
                 sortBy: [SortDescriptor(\.computedAt, order: .reverse)]
             )

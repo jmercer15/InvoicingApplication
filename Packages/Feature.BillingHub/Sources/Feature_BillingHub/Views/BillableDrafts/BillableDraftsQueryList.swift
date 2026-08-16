@@ -46,11 +46,12 @@ struct BillableDraftsQueryList: View {
             )
         } else if let statusRaw, let rangeLower, let rangeUpper, let clientId {
             _drafts = Query(
-                filter: #Predicate<BillableDraft> { draft in
-                    draft.draftStatus == statusRaw
-                        && draft.computedAt >= rangeLower
-                        && draft.computedAt <= rangeUpper
-                },
+                filter: EntityPredicateBuilders.billableDrafts(
+                    statusRaw: statusRaw,
+                    rangeLower: rangeLower,
+                    rangeUpper: rangeUpper,
+                    clientId: clientId
+                ),
                 sort: \.computedAt,
                 order: .reverse
             )
@@ -111,7 +112,7 @@ struct BillableDraftsQueryList: View {
             guard let sectionDrafts = grouped[status.rawValue], !sectionDrafts.isEmpty else {
                 return nil
             }
-            return (statusLabel(status), sectionDrafts)
+            return (status.displayName, sectionDrafts)
         }
     }
 
@@ -146,16 +147,6 @@ struct BillableDraftsQueryList: View {
             NavigationLink(value: draft.id) {
                 DraftRowView(draft: draft)
             }
-        }
-    }
-
-    private func statusLabel(_ status: DraftStatus) -> String {
-        switch status {
-        case .open: return "Open"
-        case .needsInfo: return "Needs info"
-        case .needsReview: return "Needs review"
-        case .ready: return "Ready"
-        case .locked: return "Locked"
         }
     }
 }

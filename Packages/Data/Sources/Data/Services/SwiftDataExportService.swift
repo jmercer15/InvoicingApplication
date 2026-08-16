@@ -67,8 +67,6 @@ private extension SwiftDataExportService {
     ) throws -> [String: [[String: Any]]] {
         var exportDict: [String: [[String: Any]]] = [:]
 
-        let iso = ISO8601DateFormatter()
-
         // 1. Address
         let addressDescriptor = FetchDescriptor<Address>()
         let addresses = try context.fetch(addressDescriptor)
@@ -135,8 +133,8 @@ private extension SwiftDataExportService {
             dict["status"] = item.status
             dict["type"] = item.type
             dict["unit"] = item.unit
-            dict["effectiveStartDate"] = item.effectiveStartDate.map { iso.string(from: $0) }
-            dict["effectiveEndDate"] = item.effectiveEndDate.map { iso.string(from: $0) }
+            dict["effectiveStartDate"] = item.effectiveStartDate.map { ImportISO8601.string(from: $0) }
+            dict["effectiveEndDate"] = item.effectiveEndDate.map { ImportISO8601.string(from: $0) }
             return dict
         }
 
@@ -204,8 +202,8 @@ private extension SwiftDataExportService {
             dict["unit"] = clientService.unit
             dict["status"] = clientService.status ?? ""
             dict["isActive"] = clientService.isActive
-            dict["startDate"] = clientService.startDate.map { iso.string(from: $0) } ?? ""
-            dict["endDate"] = clientService.endDate.map { iso.string(from: $0) } ?? ""
+            dict["startDate"] = clientService.startDate.map { ImportISO8601.string(from: $0) } ?? ""
+            dict["endDate"] = clientService.endDate.map { ImportISO8601.string(from: $0) } ?? ""
             dict["ndisCode"] = clientService.ndisCode ?? ""
             dict["ndisItemId"] = clientService.ndisItem?.id.uuidString ?? ""
             return dict
@@ -218,9 +216,9 @@ private extension SwiftDataExportService {
             var dict: [String: Any] = [:]
             dict["id"] = invoice.id.uuidString
             dict["invoiceNumber"] = invoice.invoiceNumber
-            dict["date"] = iso.string(from: invoice.date)
-            dict["issueDate"] = iso.string(from: invoice.issueDate)
-            dict["dueDate"] = invoice.dueDate.map { iso.string(from: $0) } ?? ""
+            dict["date"] = ImportISO8601.string(from: invoice.date)
+            dict["issueDate"] = ImportISO8601.string(from: invoice.issueDate)
+            dict["dueDate"] = invoice.dueDate.map { ImportISO8601.string(from: $0) } ?? ""
             dict["totalAmount"] = invoice.totalAmount
             dict["taxRate"] = invoice.taxRate
             dict["discount"] = invoice.discount
@@ -229,8 +227,8 @@ private extension SwiftDataExportService {
             dict["paymentTerms"] = invoice.paymentTerms
             dict["notes"] = invoice.notes
             dict["status"] = invoice.effectiveStatus.rawValue
-            dict["paidDate"] = invoice.paidDate.map { iso.string(from: $0) }
-            dict["sentDate"] = invoice.sentDate.map { iso.string(from: $0) }
+            dict["paidDate"] = invoice.paidDate.map { ImportISO8601.string(from: $0) }
+            dict["sentDate"] = invoice.sentDate.map { ImportISO8601.string(from: $0) }
             dict["businessName"] = invoice.businessName
             dict["businessABN"] = invoice.businessABN
             dict["businessEmail"] = invoice.businessEmail
@@ -274,7 +272,7 @@ private extension SwiftDataExportService {
             dict["gstAmount"] = item.lineTotal * (item.taxRate / 100.0)
             dict["gstCode"] = item.gstCode
             dict["clientServiceId"] = item.clientService?.id.uuidString
-            dict["date"] = iso.string(from: item.serviceDate)
+            dict["date"] = ImportISO8601.string(from: item.serviceDate)
             return dict
         }
 
@@ -285,8 +283,8 @@ private extension SwiftDataExportService {
             var dict: [String: Any] = [:]
             dict["id"] = session.id.uuidString
             dict["title"] = session.title
-            dict["startTime"] = session.startTime.map { iso.string(from: $0) } ?? ""
-            dict["endTime"] = session.endTime.map { iso.string(from: $0) } ?? ""
+            dict["startTime"] = session.startTime.map { ImportISO8601.string(from: $0) } ?? ""
+            dict["endTime"] = session.endTime.map { ImportISO8601.string(from: $0) } ?? ""
             dict["location"] = session.location ?? ""
             dict["notes"] = session.notes ?? ""
             dict["status"] = session.status?.rawValue ?? ""
@@ -304,16 +302,16 @@ private extension SwiftDataExportService {
             var dict: [String: Any] = [:]
             dict["id"] = agreement.id.uuidString
             dict["clientId"] = agreement.client?.id.uuidString
-            dict["effectiveFrom"] = iso.string(from: agreement.effectiveFrom)
-            dict["effectiveTo"] = agreement.effectiveTo.map { iso.string(from: $0) }
-            dict["pricingDisclosureAcceptedAt"] = agreement.pricingDisclosureAcceptedAt.map { iso.string(from: $0) }
+            dict["effectiveFrom"] = ImportISO8601.string(from: agreement.effectiveFrom)
+            dict["effectiveTo"] = agreement.effectiveTo.map { ImportISO8601.string(from: $0) }
+            dict["pricingDisclosureAcceptedAt"] = agreement.pricingDisclosureAcceptedAt.map { ImportISO8601.string(from: $0) }
             dict["cancellationPolicyType"] = agreement.cancellationPolicyType
             dict["allowsProviderTravel"] = agreement.allowsProviderTravel
             dict["allowsTelehealth"] = agreement.allowsTelehealth
             dict["allowsNonFaceToFace"] = agreement.allowsNonFaceToFace
             dict["participantSignatoryName"] = agreement.participantSignatoryName
             dict["participantSignatoryRole"] = agreement.participantSignatoryRole
-            dict["signedAt"] = agreement.signedAt.map { iso.string(from: $0) }
+            dict["signedAt"] = agreement.signedAt.map { ImportISO8601.string(from: $0) }
             dict["signatureMethod"] = agreement.signatureMethod
             dict["notes"] = agreement.notes
             dict["isArchived"] = agreement.isArchived
@@ -333,15 +331,15 @@ private extension SwiftDataExportService {
             dict["supportItemNumber"] = log.supportItemNumber
             dict["serviceDescription"] = log.serviceDescription
             dict["location"] = log.location
-            dict["deliveredFrom"] = iso.string(from: log.deliveredFrom)
-            dict["deliveredTo"] = iso.string(from: log.deliveredTo)
+            dict["deliveredFrom"] = ImportISO8601.string(from: log.deliveredFrom)
+            dict["deliveredTo"] = ImportISO8601.string(from: log.deliveredTo)
             dict["quantityHours"] = log.quantityHours
             dict["deliveredBy"] = log.deliveredBy
             dict["attestedBy"] = log.attestedBy
-            dict["attestedAt"] = iso.string(from: log.attestedAt)
+            dict["attestedAt"] = ImportISO8601.string(from: log.attestedAt)
             dict["signatureMethod"] = log.signatureMethod
             dict["signedBy"] = log.signedBy
-            dict["signedAt"] = log.signedAt.map { iso.string(from: $0) }
+            dict["signedAt"] = log.signedAt.map { ImportISO8601.string(from: $0) }
             dict["cancellationReasonCode"] = log.cancellationReasonCode
             dict["notes"] = log.notes
             return dict
@@ -353,15 +351,15 @@ private extension SwiftDataExportService {
         exportDict["BulkClaimBatch"] = bulkBatches.map { batch -> [String: Any] in
             var dict: [String: Any] = [:]
             dict["id"] = batch.id.uuidString
-            dict["createdAt"] = iso.string(from: batch.createdAt)
-            dict["fromDate"] = iso.string(from: batch.fromDate)
-            dict["toDate"] = iso.string(from: batch.toDate)
+            dict["createdAt"] = ImportISO8601.string(from: batch.createdAt)
+            dict["fromDate"] = ImportISO8601.string(from: batch.fromDate)
+            dict["toDate"] = ImportISO8601.string(from: batch.toDate)
             dict["status"] = batch.status
             dict["includeTravel"] = batch.includeTravel
             dict["includeCancellations"] = batch.includeCancellations
             dict["claimReferenceStrategy"] = batch.claimReferenceStrategy
             dict["exportFileName"] = batch.exportFileName
-            dict["exportedAt"] = batch.exportedAt.map { iso.string(from: $0) }
+            dict["exportedAt"] = batch.exportedAt.map { ImportISO8601.string(from: $0) }
             dict["rowCount"] = Int(batch.rowCount)
             dict["errorCount"] = Int(batch.errorCount)
             dict["checksumSHA256"] = batch.checksumSHA256
@@ -378,8 +376,8 @@ private extension SwiftDataExportService {
             dict["batchId"] = line.batch?.id.uuidString
             dict["registrationNumber"] = line.registrationNumber
             dict["ndisNumber"] = line.ndisNumber
-            dict["supportsDeliveredFrom"] = iso.string(from: line.supportsDeliveredFrom)
-            dict["supportsDeliveredTo"] = iso.string(from: line.supportsDeliveredTo)
+            dict["supportsDeliveredFrom"] = ImportISO8601.string(from: line.supportsDeliveredFrom)
+            dict["supportsDeliveredTo"] = ImportISO8601.string(from: line.supportsDeliveredTo)
             dict["supportNumber"] = line.supportNumber
             dict["claimReference"] = line.claimReference
             dict["quantity"] = line.quantity
@@ -399,7 +397,7 @@ private extension SwiftDataExportService {
             dict["submissionStatus"] = line.submissionStatus
             dict["submissionRef"] = line.submissionRef
             dict["reconciliationNotes"] = line.reconciliationNotes
-            dict["reconciledAt"] = line.reconciledAt.map { iso.string(from: $0) }
+            dict["reconciledAt"] = line.reconciledAt.map { ImportISO8601.string(from: $0) }
             return dict
         }
 
@@ -410,7 +408,7 @@ private extension SwiftDataExportService {
             var dict: [String: Any] = [:]
             dict["id"] = charge.id.uuidString
             dict["clientId"] = charge.client?.id.uuidString
-            dict["date"] = charge.startTime.map { iso.string(from: $0) }
+            dict["date"] = charge.startTime.map { ImportISO8601.string(from: $0) }
             dict["distance"] = charge.distanceKM
             dict["duration"] = charge.durationMinutes
             dict["parkingCost"] = charge.parkingCost
@@ -431,7 +429,7 @@ private extension SwiftDataExportService {
             dict["isApproved"] = item.status != "pending"
             dict["status"] = item.status
             dict["reason"] = item.reason
-            dict["timestamp"] = item.timestamp.map { iso.string(from: $0) }
+            dict["timestamp"] = item.timestamp.map { ImportISO8601.string(from: $0) }
             return dict
         }
 
@@ -443,7 +441,7 @@ private extension SwiftDataExportService {
             dict["id"] = log.id.uuidString
             dict["travelChargeId"] = log.charge?.id.uuidString
             dict["action"] = log.action
-            dict["timestamp"] = log.timestamp.map { iso.string(from: $0) }
+            dict["timestamp"] = log.timestamp.map { ImportISO8601.string(from: $0) }
             dict["details"] = log.details
             return dict
         }
@@ -468,7 +466,7 @@ private extension SwiftDataExportService {
             dict["id"] = entry.id.uuidString
             dict["clientId"] = entry.client?.id.uuidString
             dict["amount"] = entry.amount
-            dict["date"] = entry.date.map { iso.string(from: $0) }
+            dict["date"] = entry.date.map { ImportISO8601.string(from: $0) }
             dict["reason"] = entry.notes
             dict["type"] = entry.type
             return dict
@@ -563,7 +561,7 @@ private extension SwiftDataExportService {
     static func stringify(_ value: Any) -> String {
         switch value {
         case let date as Date:
-            return ISO8601DateFormatter().string(from: date)
+            return ImportISO8601.string(from: date)
         case let number as NSNumber:
             return number.stringValue
         case let bool as Bool:

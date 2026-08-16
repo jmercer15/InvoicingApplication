@@ -188,22 +188,18 @@ struct ReadyToSendPanel: View {
             }
 
             if let operationFeedback {
-                sendFeedback(message: operationFeedback)
+                BillingHubOperationFeedbackSection(message: operationFeedback)
             }
 
             Button {
                 sendInvoice()
             } label: {
-                if isSending {
-                    Label {
-                        Text("Waiting for Mail…")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
-                } else {
-                    Label("Send Invoice", systemImage: "paperplane.fill")
-                        .frame(maxWidth: .infinity)
-                }
+                BillingHubBusyButtonLabel.titledProgress(
+                    isBusy: isSending,
+                    busyTitle: "Waiting for Mail…",
+                    idleTitle: "Send Invoice",
+                    systemImage: "paperplane.fill"
+                )
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -230,12 +226,11 @@ struct ReadyToSendPanel: View {
             Button {
                 showsMarkSentConfirmation = true
             } label: {
-                if isMarkingSent {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label(manualSentTitle, systemImage: "checkmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
+                BillingHubBusyButtonLabel.progressOrLabel(
+                    isBusy: isMarkingSent,
+                    title: manualSentTitle,
+                    systemImage: "checkmark.circle"
+                )
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
@@ -372,17 +367,6 @@ struct ReadyToSendPanel: View {
         needsManualSentRecovery
             ? BillingHubWorkflowCopy.finishMarkingSentConfirmationMessage
             : BillingHubWorkflowCopy.markSentConfirmationMessage
-    }
-
-    private func sendFeedback(message: String) -> some View {
-        let severity = BillingHubBulkFeedbackSeverity.classify(message)
-        return Section {
-            Label(message, systemImage: severity.symbolName)
-                .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundStyle(severity.tint)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
     }
 
     private func sendInvoice() {

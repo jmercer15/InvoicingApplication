@@ -6,8 +6,9 @@ import Testing
 @MainActor
 struct WorkspacePreviewServicesTests {
     @Test
-    func previewServicesConstructGeocodingService() {
+    func previewServicesConstructWorkingGeocodingService() async {
         let service = WorkspacePreviewServices.makeSwiftDataGeocodingService()
-        #expect(service is SwiftDataGeocodingService)
+        let result = await service.geocodeAddressString("   ")
+        #expect(result == nil)
     }
 }

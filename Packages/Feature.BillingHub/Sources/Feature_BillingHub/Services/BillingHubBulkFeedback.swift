@@ -1,4 +1,5 @@
 import SwiftUI
+import SharedUI
 
 /// In-flight n-of-m progress for Billing Hub bulk board actions.
 public struct BillingHubBulkActionProgress: Equatable, Sendable {
@@ -81,6 +82,22 @@ enum BillingHubBulkFeedbackSeverity: Equatable {
             return .error
         }
         return .success
+    }
+}
+
+/// In-panel operation result row (send / payment / receipt feedback).
+struct BillingHubOperationFeedbackSection: View {
+    let message: String
+
+    var body: some View {
+        let severity = BillingHubBulkFeedbackSeverity.classify(message)
+        Section {
+            Label(message, systemImage: severity.symbolName)
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundStyle(severity.tint)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
     }
 }
 

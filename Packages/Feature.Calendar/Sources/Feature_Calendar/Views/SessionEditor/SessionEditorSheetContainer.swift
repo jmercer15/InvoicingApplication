@@ -11,22 +11,30 @@ struct SessionEditorSheetContainer: View {
     let onSave: (RecurringEditMode, NewSessionViewModel) -> Void
     let onDelete: (RecurringEditMode, NewSessionViewModel) -> Void
 
-    @State private var editorViewModel: NewSessionViewModel? = nil
-
-    init(
-        viewModel: CalendarViewModel,
-        sessionInfo: (session: Session?, instanceStart: Date?, instanceEnd: Date?),
-        onDismiss: @escaping () -> Void,
-        onSave: @escaping (RecurringEditMode, NewSessionViewModel) -> Void,
-        onDelete: @escaping (RecurringEditMode, NewSessionViewModel) -> Void
-    ) {
-        self.viewModel = viewModel
-        self.sessionInfo = sessionInfo
-        self.onDismiss = onDismiss
-        self.onSave = onSave
-        self.onDelete = onDelete
-        _editorViewModel = State(initialValue: nil)
+    var body: some View {
+        DeferredSessionEditorSheet(
+            onDismiss: onDismiss,
+            onSave: onSave,
+            onDelete: onDelete,
+            makeEditor: {
+                viewModel.makeNewSessionViewModel(
+                    session: sessionInfo.session,
+                    instanceDate: sessionInfo.instanceStart,
+                    instanceEndDate: sessionInfo.instanceEnd
+                )
+            }
+        )
     }
+}
+
+/// Shared deferred-load scaffold for session editor and EventKit conversion sheets.
+struct DeferredSessionEditorSheet: View {
+    let onDismiss: () -> Void
+    let onSave: (RecurringEditMode, NewSessionViewModel) -> Void
+    let onDelete: (RecurringEditMode, NewSessionViewModel) -> Void
+    let makeEditor: () -> NewSessionViewModel
+
+    @State private var editorViewModel: NewSessionViewModel?
 
     var body: some View {
         Group {
@@ -41,31 +49,14 @@ struct SessionEditorSheetContainer: View {
                         }
                     }
             } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [
-                            StyleGuide.Colors.background,
-                            StyleGuide.Colors.background.opacity(0.95),
-                            StyleGuide.Colors.background.opacity(0.9)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .ignoresSafeArea()
-                    
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                }
-                .frame(minWidth: StyleGuide.Dimensions.sessionSheetMinWidth, minHeight: StyleGuide.Dimensions.sessionSheetMinHeight)
+                DeferredSheetPlaceholder(
+                    minWidth: StyleGuide.Dimensions.sessionSheetMinWidth,
+                    minHeight: StyleGuide.Dimensions.sessionSheetMinHeight
+                )
                 .task {
-                    // Small delay to let the sheet presentation animation finish smoothly
-                    guard await Task.waitUnlessCancelled(for: .milliseconds(150)) else { return }
-                    let vm = viewModel.makeNewSessionViewModel(
-                        session: sessionInfo.session,
-                        instanceDate: sessionInfo.instanceStart,
-                        instanceEndDate: sessionInfo.instanceEnd
-                    )
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    guard await DeferredSheetPresentation.waitForReveal() else { return }
+                    let vm = makeEditor()
+                    DeferredSheetPresentation.reveal {
                         editorViewModel = vm
                     }
                 }

@@ -67,7 +67,7 @@ import PersistenceModels
         #expect(firstResult.failed == 0)
         try destinationContext.save()
 
-        var imported = try try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
+        var imported = try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
         #expect(imported.invoiceEditorRevision == 0)
         #expect(imported.currencyCode == "AUD")
         #expect(imported.taxRate == 10)
@@ -95,7 +95,7 @@ import PersistenceModels
         #expect(secondResult.failed == 0)
         try destinationContext.save()
 
-        imported = try try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
+        imported = try #require(destinationContext.fetch(FetchDescriptor<Invoice>()).first)
         #expect(imported.invoiceEditorRevision == 1)
         #expect(imported.itemsArray.count == 1)
     }

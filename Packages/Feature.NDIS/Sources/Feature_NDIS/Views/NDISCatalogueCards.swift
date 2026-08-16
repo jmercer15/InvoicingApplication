@@ -79,13 +79,11 @@ struct NDISCatalogueNavigationNodeCard: View {
                 alignment: .topLeading
             )
             .contentShape(shape)
-            .background(
-                shape
-                    .fill(tint.opacity(StyleGuide.Opacity.subtle))
-                    .overlay(
-                        shape
-                            .stroke(isFocused ? Color.accentColor : tint.opacity(StyleGuide.Opacity.medium), lineWidth: isFocused ? ListRowTokens.selectedStrokeWidth : ListRowTokens.defaultStrokeWidth)
-                    )
+            .ndisInteractiveBorderedSurface(
+                fill: tint.opacity(StyleGuide.Opacity.subtle),
+                idleStroke: tint.opacity(StyleGuide.Opacity.medium),
+                isEmphasized: isFocused,
+                cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium
             )
         }
         .buttonStyle(.plain)
@@ -262,13 +260,11 @@ struct NDISCatalogueCard: View, Equatable {
                 alignment: .topLeading
             )
             .contentShape(shape)
-            .background(
-                shape
-                    .fill(StyleGuide.Colors.background)
-                    .overlay(
-                        shape
-                            .stroke(isFocused || isSelected ? Color.accentColor : StyleGuide.Colors.border, lineWidth: isFocused || isSelected ? ListRowTokens.selectedStrokeWidth : ListRowTokens.defaultStrokeWidth)
-                    )
+            .ndisInteractiveBorderedSurface(
+                fill: StyleGuide.Colors.background,
+                idleStroke: StyleGuide.Colors.border,
+                isEmphasized: isFocused || isSelected,
+                cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium
             )
         }
         .buttonStyle(.plain)

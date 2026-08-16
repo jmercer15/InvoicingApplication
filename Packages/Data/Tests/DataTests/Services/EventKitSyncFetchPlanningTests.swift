@@ -28,8 +28,8 @@ import PersistenceModels
 
     @Test func BuildSegmentsSplitsRangeByYearWindowUsingCalendar() throws {
         let cal = calendarUTC
-        let start = try try #require(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
-        let end = try try #require(cal.date(from: DateComponents(year: 2028, month: 1, day: 1)))
+        let start = try #require(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let end = try #require(cal.date(from: DateComponents(year: 2028, month: 1, day: 1)))
 
         let segments = EventKitSyncFetchPlanning.buildSegments(
             start: start,
@@ -40,7 +40,7 @@ import PersistenceModels
 
         #expect(segments.count == 2)
 
-        let boundary2027 = try try #require(cal.date(from: DateComponents(year: 2027, month: 1, day: 1)))
+        let boundary2027 = try #require(cal.date(from: DateComponents(year: 2027, month: 1, day: 1)))
 
         #expect(segments[0].start == start)
         #expect(segments[0].end == boundary2027)

@@ -156,7 +156,7 @@ import Testing
             clientName: "Updated Client"
         )
 
-        let refreshed = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        let refreshed = try #require(context.fetch(FetchDescriptor<Invoice>()).first)
         #expect(refreshed.clientName == "Updated Client")
         #expect(refreshed.invoiceEditorRevision == 1)
         #expect(refreshed.totalAmount == 1)

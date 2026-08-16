@@ -139,10 +139,10 @@ extension TravelChargeAutomationTestView {
                                 }
                                 // Show specific instance time for recurring sessions
                                 if session.recurrenceRuleData != nil {
-                                    Text("Instance: \(sessionInstance.instanceStart, formatter: Self.cellDateFormatter)").font(.caption2).foregroundColor(ColorSystem.Status.info)
-                                    Text("End: \(sessionInstance.instanceEnd, formatter: Self.cellDateFormatter)").font(.caption2).foregroundColor(ColorSystem.Status.info)
+                                    Text("Instance: \(DateFormatting.mediumDateTime(sessionInstance.instanceStart))").font(.caption2).foregroundColor(ColorSystem.Status.info)
+                                    Text("End: \(DateFormatting.mediumDateTime(sessionInstance.instanceEnd))").font(.caption2).foregroundColor(ColorSystem.Status.info)
                                 } else {
-                                    Text("\(sessionInstance.instanceStart, formatter: Self.cellDateFormatter)").font(.caption2)
+                                    Text("\(DateFormatting.mediumDateTime(sessionInstance.instanceStart))").font(.caption2)
                                 }
                                 // Check both location string and linked address entity
                                 Group {

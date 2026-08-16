@@ -236,9 +236,7 @@ public class PayeeDetailViewModel {
 
     // MARK: - Helpers
     func copyToClipboard(_ text: String?) {
-        guard let text = text, !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        ClipboardCopy.string(text)
     }
 
 } 

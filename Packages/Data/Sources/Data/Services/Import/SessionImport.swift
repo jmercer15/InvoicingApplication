@@ -35,9 +35,6 @@ struct SessionImport {
         var failed = 0
         var messages: [String] = []
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm"
         
@@ -48,7 +45,7 @@ struct SessionImport {
             uniquingKeysWith: { first, _ in first }
         )
         let candidateStartTimes = sessions.compactMap { session -> Date? in
-            guard let date = dateFormatter.date(from: session.date),
+            guard let date = ImportCalendarDate.date(from: session.date),
                   let time = timeFormatter.date(from: session.startTime)
             else { return nil }
             let components = Calendar.current.dateComponents([.hour, .minute], from: time)
@@ -82,7 +79,7 @@ struct SessionImport {
                     throw NSError(domain: "ValidationError", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Client name cannot be empty"])
                 }
                 
-                guard let date = dateFormatter.date(from: session.date) else {
+                guard let date = ImportCalendarDate.date(from: session.date) else {
                     throw NSError(domain: "ValidationError", code: 1002, userInfo: [NSLocalizedDescriptionKey: "Invalid date format. Expected YYYY-MM-DD"])
                 }
                 

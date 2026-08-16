@@ -5,12 +5,6 @@ import SharedUI
 struct ClientDetailServiceAgreementsCard: View {
     @Bindable var viewModel: ClientDetailViewModel
 
-    private static let serviceAgreementDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter
-    }()
-
     var body: some View {
         GroupBox {
             VStack(spacing: DetailSectionTokens.sectionListSpacing) {
@@ -30,15 +24,9 @@ struct ClientDetailServiceAgreementsCard: View {
                     }
                 }
 
-                HStack {
-                    Spacer()
-                    Button("Add Agreement") {
-                        viewModel.prepareToAddServiceAgreement()
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
+                DetailListTrailingActionFooter("Add Agreement") {
+                    viewModel.prepareToAddServiceAgreement()
                 }
-                .padding(DetailSectionTokens.listRowInsets)
             }
         } label: {
             DetailSectionHeader(icon: "doc.text", title: "Service Agreements")
@@ -47,9 +35,9 @@ struct ClientDetailServiceAgreementsCard: View {
     }
 
     private func serviceAgreementDateRange(_ agreement: ServiceAgreement) -> String {
-        let from = Self.serviceAgreementDateFormatter.string(from: agreement.effectiveFrom)
+        let from = DateFormatting.mediumDate(agreement.effectiveFrom)
         if let to = agreement.effectiveTo {
-            return "\(from) - \(Self.serviceAgreementDateFormatter.string(from: to))"
+            return "\(from) - \(DateFormatting.mediumDate(to))"
         }
         return "\(from) onwards"
     }

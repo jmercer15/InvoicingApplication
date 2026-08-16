@@ -1,6 +1,6 @@
 import SwiftUI
-import AppKit // For NSColor, NSPasteboard
-import MapKit // For address map view
+import AppKit
+import MapKit
 import SwiftData
 import Core
 import PersistenceModels
@@ -16,26 +16,12 @@ struct PlanManagerDetailView: View {
     let onOpenClient: (UUID) -> Void
     @State private var viewModel: PlanManagerDetailViewModel
 
-    // UI state only
-    @State private var activeSheet: PlanManagerDetailSheet?
-
-    private enum PlanManagerDetailSheet: Identifiable {
-        case map
-        case addressEditing
-
-        var id: Self { self }
-    }
-    
-    // Sorting state
+    @State private var activeSheet: RelationshipDetailActiveSheet?
     @State private var clientsSortOrder: ClientsSortOrder = .nameAsc
     @State private var invoicesSortOrder: InvoicesSortOrder = .dateDesc
-    
-    private var filteredInvoices: [Invoice] {
-        viewModel.relatedInvoices
-    }
-    
-    // MARK: - Computed Properties
-    
+
+    private var filteredInvoices: [Invoice] { viewModel.relatedInvoices }
+
     private var sortedClients: [Client] {
         viewModel.linkedClients.sorted(using: clientsSortOrder)
     }
@@ -90,11 +76,21 @@ struct PlanManagerDetailView: View {
         return viewModel.formattedAddressString(from: address)
     }
 
+    private var mapSheetBinding: Binding<Bool> {
+        RelationshipDetailSheetBindings.isPresented($activeSheet, equals: .map)
+    }
+
+    private var addressEditingSheetBinding: Binding<Bool> {
+        RelationshipDetailSheetBindings.isPresented($activeSheet, equals: .addressEditing)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             RelationshipDetailHeaderBar(
                 systemImage: "building.2.fill",
-                title: (viewModel.planManager.name ?? "").isEmpty ? "New Plan Manager" : (viewModel.planManager.name ?? "")
+                title: (viewModel.planManager.name ?? "").isEmpty
+                    ? "New Plan Manager"
+                    : (viewModel.planManager.name ?? "")
             )
 
             DetailCardsLayout(minCardWidth: DetailSectionTokens.detailCardMinimumWidth) {
@@ -106,7 +102,9 @@ struct PlanManagerDetailView: View {
                     showingMapSheet: mapSheetBinding,
                     showingAddressEditingSheet: addressEditingSheetBinding
                 )
-                PlanManagerDetailManagedClientsCard(
+                RelationshipDetailClientsCard(
+                    title: "Managed Clients",
+                    emptyMessage: "No clients are using this plan manager",
                     clients: sortedClients,
                     clientsSortOrder: $clientsSortOrder,
                     onOpenClient: onOpenClient
@@ -136,31 +134,14 @@ struct PlanManagerDetailView: View {
                     InteractiveMapView(address: viewModel.formattedAddressString(from: address))
                 }
             case .addressEditing:
-                PlanManagerAddressEditingSheetView(viewModel: viewModel, isPresented: addressEditingSheetBinding)
+                RelationshipAddressEditingSheetView(
+                    viewModel: viewModel,
+                    isPresented: addressEditingSheetBinding
+                )
             }
         }
-        
     }
 
-    private var mapSheetBinding: Binding<Bool> {
-        Binding(
-            get: { activeSheet == .map },
-            set: { activeSheet = $0 ? .map : nil }
-        )
-    }
-
-    private var addressEditingSheetBinding: Binding<Bool> {
-        Binding(
-            get: { activeSheet == .addressEditing },
-            set: { activeSheet = $0 ? .addressEditing : nil }
-        )
-    }
-    
-    // MARK: - Helper Functions
-    // Note: Most helper functions moved to ViewModel
-    
-    // MARK: - Label Width Calculation
-    
     private var maxLabelWidth: CGFloat {
         RelationshipDetailLabelMetrics.maxWidth(for: [
             "Name:",
@@ -169,60 +150,5 @@ struct PlanManagerDetailView: View {
             "Phone:",
             "Address:"
         ])
-    }
-
-}
-
-
-
-// MARK: - PlanManagerAddressEditingSheetView
-
-struct PlanManagerAddressEditingSheetView: View {
-    @Bindable var viewModel: PlanManagerDetailViewModel
-    @Binding var isPresented: Bool
-
-    @State private var form = AddressFormState()
-
-    var body: some View {
-        AddressFormSheet(
-            state: form,
-            isPresented: $isPresented,
-            hasAddressDataOverride: form.hasAddressData || viewModel.planManager.address != nil,
-            onSearchAddressSelected: { viewModel.updateAddressFromSearchResult($0) },
-            onCommit: {
-                syncFormToViewModel()
-                viewModel.commitAddressChanges(autosave: true)
-            }
-        )
-        .onAppear {
-            viewModel.loadAddressDetails()
-            syncViewModelToForm()
-            if let address = viewModel.planManager.address {
-                form.addressSearchText = viewModel.formattedAddressString(from: address)
-            }
-        }
-    }
-
-    private func syncViewModelToForm() {
-        form.unitNumber = viewModel.editableUnitNumber
-        form.streetNumber = viewModel.editableStreetNumber
-        form.streetName = viewModel.editableStreetName
-        form.suburb = viewModel.editableSuburb
-        form.postcode = viewModel.editablePostcode
-        form.state = viewModel.editableState
-        form.country = viewModel.editableCountry
-        form.poBox = viewModel.editablePoBox
-    }
-
-    private func syncFormToViewModel() {
-        viewModel.editableUnitNumber = form.unitNumber
-        viewModel.editableStreetNumber = form.streetNumber
-        viewModel.editableStreetName = form.streetName
-        viewModel.editableSuburb = form.suburb
-        viewModel.editableCity = form.suburb
-        viewModel.editablePostcode = form.postcode
-        viewModel.editableState = form.state
-        viewModel.editableCountry = form.country
-        viewModel.editablePoBox = form.poBox
     }
 }

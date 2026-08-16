@@ -1,30 +1,5 @@
 import PersistenceModels
-import SwiftData
 
-public enum PersistenceSchema {
-    public static let appModels: [any PersistentModel.Type] = [
-        Client.self,
-        Business.self,
-        Address.self,
-        Invoice.self,
-        InvoiceItem.self,
-        ClientService.self,
-        Payee.self,
-        PlanManager.self,
-        Session.self,
-        TravelCharge.self,
-        TravelChargeAuditLog.self,
-        TravelChargeReviewItem.self,
-        CreditHistoryEntry.self,
-        NDISItem.self,
-        RegionalPrice.self,
-        ServiceAgreement.self,
-        SupportLog.self,
-        BulkClaimBatch.self,
-        BulkClaimLine.self,
-        SoleTraderCredential.self,
-        BillableDraft.self,
-        ClaimableLine.self,
-        DraftIssue.self
-    ]
-}
+/// Re-exports the canonical model registry from PersistenceModels.
+/// Single source of truth lives in PersistenceModels.PersistenceSchema.
+public typealias PersistenceSchema = PersistenceModels.PersistenceSchema

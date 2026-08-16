@@ -37,8 +37,11 @@ struct CurrencyFormattingTests {
         let locale = Locale(identifier: "en_AU")
         let short = DateFormatting.shortDate(date, locale: locale)
         let medium = DateFormatting.mediumDate(date, locale: locale)
+        let mediumDateTime = DateFormatting.mediumDateTime(date, locale: locale)
         #expect(!short.isEmpty)
         #expect(!medium.isEmpty)
+        #expect(!mediumDateTime.isEmpty)
+        #expect(mediumDateTime.contains(medium) || mediumDateTime.count >= medium.count)
         #expect(short != medium || short.contains("2024"))
     }
 

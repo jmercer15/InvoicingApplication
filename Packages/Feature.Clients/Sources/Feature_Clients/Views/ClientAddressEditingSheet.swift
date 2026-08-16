@@ -24,29 +24,12 @@ struct ClientAddressEditingSheet: View {
     }
 
     private func loadExistingAddressData() {
-        form.unitNumber = viewModel.editableUnitNumber
-        form.streetNumber = viewModel.editableStreetNumber
-        form.streetName = viewModel.editableStreetName
-        form.suburb = viewModel.editableSuburb
-        form.postcode = viewModel.editablePostcode
-        form.state = viewModel.editableState
-        form.country = viewModel.editableCountry
-        form.poBox = viewModel.editablePoBox
-
+        form.loadStructuredFields(from: viewModel)
         form.rebuildAddressSearchText(includeCity: viewModel.editableCity)
     }
 
     private func commitAddressChanges() {
-        viewModel.editableUnitNumber = form.unitNumber
-        viewModel.editableStreetNumber = form.streetNumber
-        viewModel.editableStreetName = form.streetName
-        viewModel.editableSuburb = form.suburb
-        viewModel.editableCity = form.suburb
-        viewModel.editablePostcode = form.postcode
-        viewModel.editableState = form.state
-        viewModel.editableCountry = form.country
-        viewModel.editablePoBox = form.poBox
-
+        form.applyStructuredFields(to: viewModel)
         viewModel.commitAddressChanges()
     }
 }

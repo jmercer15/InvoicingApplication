@@ -4,50 +4,72 @@ import WorkspaceUI
 
 // MARK: - Session address editing sheet
 
-/// Wraps shared ``WorkspaceUI/AddressEditingSheet`` with session form bindings, cancel snapshot restore, and calendar chrome.
-struct AddressEditingSheet: View {
+/// Wraps shared ``WorkspaceUI/AddressFormSheet`` with session form bindings, cancel snapshot restore, and calendar chrome.
+struct SessionAddressEditingSheet: View {
     @Bindable var viewModel: NewSessionViewModel
     @Binding var isPresented: Bool
 
+    @State private var form = AddressFormState()
     @State private var addressUndoSnapshot: SessionFormModel.AddressEditingUndoSnapshot?
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    StyleGuide.Colors.background,
-                    StyleGuide.Colors.background.opacity(0.95),
-                    StyleGuide.Colors.background.opacity(0.9)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppSheetBackdrop()
+                .ignoresSafeArea()
 
-            WorkspaceUI.AddressEditingSheet(
+            AddressFormSheet(
+                state: form,
                 isPresented: $isPresented,
-                unitNumber: viewModel.formBinding(\.unitNumber),
-                streetNumber: viewModel.formBinding(\.streetNumber),
-                streetName: viewModel.formBinding(\.streetName),
-                suburb: viewModel.formBinding(\.suburb),
-                postcode: viewModel.formBinding(\.postcode),
-                state: viewModel.formBinding(\.state),
-                country: viewModel.formBinding(\.country),
-                poBox: viewModel.formBinding(\.poBox),
-                addressSearchText: viewModel.formBinding(\.addressSearchText),
-                selectedAddress: viewModel.formBinding(\.selectedAddress),
-                hasAddressData: viewModel.formModel.hasStructuredAddressInput,
-                onSearchAddressSelected: { viewModel.updateAddressFromSearchResult($0) },
-                onCommit: {},
-                onClear: { viewModel.clearFormAddress() },
-                onCancel: { restoreAddressFromUndoSnapshot() }
+                hasAddressDataOverride: viewModel.formModel.hasStructuredAddressInput,
+                onSearchAddressSelected: { addressData in
+                    viewModel.updateAddressFromSearchResult(addressData)
+                    loadFormFromViewModel()
+                },
+                onCommit: {
+                    commitFormToViewModel()
+                },
+                onCancel: {
+                    restoreAddressFromUndoSnapshot()
+                }
             )
+        }
+        .onAppear {
+            loadFormFromViewModel()
         }
         .onChange(of: isPresented) { _, isOpen in
             if isOpen {
                 addressUndoSnapshot = viewModel.formModel.addressEditingUndoSnapshot
+                loadFormFromViewModel()
             }
         }
+    }
+
+    private func loadFormFromViewModel() {
+        form.unitNumber = viewModel.formModel.unitNumber
+        form.streetNumber = viewModel.formModel.streetNumber
+        form.streetName = viewModel.formModel.streetName
+        form.suburb = viewModel.formModel.suburb
+        form.postcode = viewModel.formModel.postcode
+        form.state = viewModel.formModel.state
+        form.country = viewModel.formModel.country
+        form.poBox = viewModel.formModel.poBox
+        form.addressSearchText = viewModel.formModel.addressSearchText
+        form.selectedAddress = viewModel.formModel.selectedAddress
+    }
+
+    private func commitFormToViewModel() {
+        var updated = viewModel.formModel
+        updated.unitNumber = form.unitNumber
+        updated.streetNumber = form.streetNumber
+        updated.streetName = form.streetName
+        updated.suburb = form.suburb
+        updated.postcode = form.postcode
+        updated.state = form.state
+        updated.country = form.country
+        updated.poBox = form.poBox
+        updated.addressSearchText = form.addressSearchText
+        updated.selectedAddress = form.selectedAddress
+        viewModel.formModel = updated
     }
 
     private func restoreAddressFromUndoSnapshot() {
@@ -55,5 +77,6 @@ struct AddressEditingSheet: View {
         var updated = viewModel.formModel
         updated.restoreAddressEditingUndo(snapshot)
         viewModel.formModel = updated
+        loadFormFromViewModel()
     }
 }

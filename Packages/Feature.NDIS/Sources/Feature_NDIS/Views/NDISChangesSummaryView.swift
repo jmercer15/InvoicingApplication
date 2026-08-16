@@ -15,7 +15,7 @@ struct NDISChangesSummaryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if isLoading {
-                    VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
+                    NDISChangesStatusPanel(width: 320, height: 200) {
                         ProgressView {
                             Text("Analyzing NDIS changes...")
                                 .font(StyleGuide.Typography.itemTitle)
@@ -23,49 +23,31 @@ struct NDISChangesSummaryView: View {
                         }
                         .scaleEffect(1.2)
                     }
-                    .frame(width: 320, height: 200)
-                    .background(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
-                            .fill(PanelShellTokens.panelSecondaryBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
-                            .stroke(StyleGuide.Colors.border, lineWidth: ListRowTokens.defaultStrokeWidth)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.changesError != nil || viewModel.changesSummary == nil {
-                    VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(StyleGuide.Typography.hero)
-                            .foregroundStyle(ColorSystem.Status.error)
-                        
-                        Text("Failed to Analyze NDIS Changes")
-                            .font(StyleGuide.Typography.sectionTitle)
-                            .foregroundStyle(StyleGuide.Colors.text)
-                        
-                        Text(viewModel.changesError?.localizedDescription ?? "No changes summary data found.")
-                            .font(StyleGuide.Typography.caption)
-                            .foregroundStyle(StyleGuide.Colors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
-                        
-                        Button(action: {
-                            loadChangesSummary()
-                        }) {
-                            Label("Retry", systemImage: "arrow.clockwise")
+                    NDISChangesStatusPanel(width: 360, height: 240) {
+                        VStack(spacing: StyleGuide.Dimensions.paddingLarge) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(StyleGuide.Typography.hero)
+                                .foregroundStyle(ColorSystem.Status.error)
+
+                            Text("Failed to Analyze NDIS Changes")
+                                .font(StyleGuide.Typography.sectionTitle)
+                                .foregroundStyle(StyleGuide.Colors.text)
+
+                            Text(viewModel.changesError?.localizedDescription ?? "No changes summary data found.")
+                                .font(StyleGuide.Typography.caption)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
+
+                            Button(action: {
+                                loadChangesSummary()
+                            }) {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.glassProminent)
                         }
-                        .buttonStyle(.glassProminent)
                     }
-                    .frame(width: 360, height: 240)
-                    .background(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
-                            .fill(PanelShellTokens.panelSecondaryBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium, style: .continuous)
-                            .stroke(StyleGuide.Colors.border, lineWidth: ListRowTokens.defaultStrokeWidth)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         VStack(spacing: StyleGuide.Dimensions.paddingSheetContent) {
@@ -233,16 +215,25 @@ struct NDISChangesSummaryCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(StyleGuide.Dimensions.paddingLarge)
-        .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .fill(PanelShellTokens.panelSecondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                        .stroke(color.opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
-                )
+        .ndisBorderedSurface(
+            fill: PanelShellTokens.panelSecondaryBackground,
+            stroke: color.opacity(StyleGuide.Opacity.strong)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title): \(value). \(subtitle)")
+    }
+}
+
+private struct NDISChangesStatusPanel<Content: View>: View {
+    let width: CGFloat
+    let height: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(width: width, height: height)
+            .ndisPanelBorderedSurface()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -307,15 +298,10 @@ struct ChangeCard: View {
             }
             
             VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
-                // Use non-optional properties directly
                 if change.previousVersion.name != change.newVersion.name {
                     ChangeRow(label: "Name", oldValue: change.previousVersion.name, newValue: change.newVersion.name)
                 }
-                
-                if change.previousVersion.registrationGroup != change.newVersion.registrationGroup {
-                    ChangeRow(label: "Category", oldValue: change.previousVersion.registrationGroup ?? "", newValue: change.newVersion.registrationGroup ?? "")
-                }
-                
+
                 if change.previousVersion.unit != change.newVersion.unit {
                     ChangeRow(label: "Unit", oldValue: change.previousVersion.unit ?? "", newValue: change.newVersion.unit ?? "")
                 }
@@ -328,41 +314,16 @@ struct ChangeCard: View {
                     )
                 }
                 
-                // Add other attribute comparisons from NDISItem
-                // Note: itemDescription is not available in NDISItemSnapshot
-                
-                // Note: type property is not available in NDISItemSnapshot
-                
-                // Note: categoryNumber property is not available in NDISItemSnapshot
-                
-                // Note: categoryNamePACE property is not available in NDISItemSnapshot
-                
-                // Note: categoryNumberPACE property is not available in NDISItemSnapshot
-                
                 if change.previousVersion.registrationGroup != change.newVersion.registrationGroup {
                     ChangeRow(label: "Registration Group", oldValue: change.previousVersion.registrationGroup ?? "", newValue: change.newVersion.registrationGroup ?? "")
                 }
-                
-                // Note: registrationGroupNumber property is not available in NDISItemSnapshot
-                
-                // Note: nonFaceToFaceProvision property is not available in NDISItemSnapshot
-                
-                // Note: providerTravel property is not available in NDISItemSnapshot
-                
-                // Note: shortNoticeCancellations property is not available in NDISItemSnapshot
-                
-                // Note: ndiaRequestedReports property is not available in NDISItemSnapshot
-                
-                // Note: irregularSILSupports property is not available in NDISItemSnapshot
-                
-                // Handle features changes (string comparison)
+
                 let oldFeatures = (change.previousVersion.features ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let newFeatures = (change.newVersion.features ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if oldFeatures != newFeatures {
                     ChangeRow(label: "Features", oldValue: oldFeatures, newValue: newFeatures)
                 }
 
-                // Effective Date Changes
                 let oldStartDate = change.previousVersion.effectiveStartDate
                 let newStartDate = change.newVersion.effectiveStartDate
                 if oldStartDate != newStartDate {
@@ -379,13 +340,9 @@ struct ChangeCard: View {
             }
         }
         .padding(StyleGuide.Dimensions.paddingLarge)
-        .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .fill(StyleGuide.Colors.background)
-                .overlay(
-                    RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                        .stroke(colorForChangeType(change.changeType).opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
-                )
+        .ndisBorderedSurface(
+            fill: StyleGuide.Colors.background,
+            stroke: colorForChangeType(change.changeType).opacity(StyleGuide.Opacity.strong)
         )
         .accessibilityElement(children: .combine)
     }
@@ -430,46 +387,41 @@ struct ChangeRow: View {
                 .foregroundStyle(StyleGuide.Colors.textSecondary)
             
             HStack(spacing: StyleGuide.Dimensions.paddingMedium) {
-                HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
-                    Text("OLD")
-                        .font(StyleGuide.Typography.nano)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
-                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
-                        .background(ColorSystem.Status.error)
-                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall))
-                    
-                    Text(oldValue)
-                        .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundStyle(StyleGuide.Colors.text)
-                }
-                .padding(StyleGuide.Dimensions.paddingSmall)
-                .background(ColorSystem.Status.error.opacity(StyleGuide.Opacity.subtle))
-                .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
+                ChangeValuePill(label: "OLD", value: oldValue, color: ColorSystem.Status.error)
                 
                 Image(systemName: "arrow.right")
                     .foregroundColor(StyleGuide.Colors.textSecondary)
                 
-                HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
-                    Text("NEW")
-                        .font(StyleGuide.Typography.nano)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
-                        .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
-                        .background(ColorSystem.Status.success)
-                        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall))
-                    
-                    Text(newValue)
-                        .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundStyle(StyleGuide.Colors.text)
-                }
-                .padding(StyleGuide.Dimensions.paddingSmall)
-                .background(ColorSystem.Status.success.opacity(StyleGuide.Opacity.subtle))
-                .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
+                ChangeValuePill(label: "NEW", value: newValue, color: ColorSystem.Status.success)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) changed from \(oldValue) to \(newValue)")
+    }
+}
+
+private struct ChangeValuePill: View {
+    let label: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
+            Text(label)
+                .font(StyleGuide.Typography.nano)
+                .foregroundStyle(.white)
+                .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
+                .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
+                .background(color)
+                .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall))
+
+            Text(value)
+                .font(StyleGuide.Typography.itemSubtitle)
+                .foregroundStyle(StyleGuide.Colors.text)
+        }
+        .padding(StyleGuide.Dimensions.paddingSmall)
+        .background(color.opacity(StyleGuide.Opacity.subtle))
+        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
     }
 }
 
@@ -484,11 +436,10 @@ struct NDISChangesSectionHeader: View {
     
     var body: some View {
         HStack {
-                            Image(systemName: icon)
-                    .foregroundStyle(ColorSystem.Primary.blue)
+            Image(systemName: icon)
+                .foregroundStyle(ColorSystem.Primary.blue)
             Text(title)
                 .font(StyleGuide.Typography.sectionTitle)
         }
     }
 }
-

@@ -45,10 +45,7 @@ struct NDISGeoAndTimeModifierTests {
 
     @Test func GeoMultiplierDefaultsToOneWithoutCoordinates() throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
         let configService = harness.configService
-        let integration = harness.integration
 let location = NDISLocation(postcode: "0872", suburb: "Alice Springs", state: "NT")
         #expect(configService.getGeoMultiplier(for: location) == 1.0)
         #expect(configService.getMmmRating(for: location) == nil)
@@ -56,20 +53,14 @@ let location = NDISLocation(postcode: "0872", suburb: "Alice Springs", state: "N
 
     @Test func GeoMultiplierDefaultsToOneWithEmptyLocation() throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
         let configService = harness.configService
-        let integration = harness.integration
 let location = NDISLocation(postcode: "")
         #expect(configService.getGeoMultiplier(for: location) == 1.0)
     }
 
     @Test func applyGeoModifierDoesNotThrowWithoutCoordinates() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let inputVector = makeInputVector(
             agreedPrice: 50, latitude: nil,
             longitude: nil,
@@ -80,10 +71,7 @@ let inputVector = makeInputVector(
 
     @Test func applyGeoModifierUsesResolvedMetroCoordinatesAsOnePointZero() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 // Sydney CBD — metro MMM, multiplier 1.0 when lookup resolves.
         let inputVector = makeInputVector(
             agreedPrice: 50, latitude: -33.8688,
@@ -96,40 +84,22 @@ let inputVector = makeInputVector(
     // MARK: - Geo under-bill gate (A2)
 
     @Test func GeoBillingGateFailsWhenAddressPresentButMMMUnresolved() throws {
-        let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 #expect(
             NDISBillingIntegrationService.geoBillingGate(hasAddressOrPostcode: true, mmmRating: nil) == .failUnresolvedWithAddress)
     }
 
     @Test func GeoBillingGateAllowsFallbackWhenNoAddress() throws {
-        let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 #expect(NDISBillingIntegrationService.geoBillingGate(hasAddressOrPostcode: false, mmmRating: nil) == .proceedWithFallbackWarning)
     }
 
     @Test func GeoBillingGateProceedsWhenMMMResolved() throws {
-        let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 #expect(NDISBillingIntegrationService.geoBillingGate(hasAddressOrPostcode: true, mmmRating: 2) == .proceed)
         #expect(NDISBillingIntegrationService.geoBillingGate(hasAddressOrPostcode: false, mmmRating: 6) == .proceed)
     }
 
     @Test func centreCapitalSoftSkipsWhenMMMUnresolved() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let inputVector = makeInputVector(
             agreedPrice: 50,
             latitude: nil,
@@ -207,10 +177,7 @@ let inputVector = makeInputVector(
 
     @Test func TimeModifierDSWEveningAppliesLoading() throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
         let configService = harness.configService
-        let integration = harness.integration
 let evening = weekday(atHour: 18)
         let modifier = configService.getTimeModifier(
             for: evening, providerType: TravelChargeProviderType.dsw.rawValue)
@@ -219,10 +186,7 @@ let evening = weekday(atHour: 18)
 
     @Test func TimeModifierTherapistEveningDoesNotApplyDSWLoading() throws {
         let harness = try BillingHarness()
-        let context = harness.context
-        let billingService = harness.billingService
         let configService = harness.configService
-        let integration = harness.integration
 let evening = weekday(atHour: 18)
         let modifier = configService.getTimeModifier(
             for: evening, providerType: TravelChargeProviderType.therapist.rawValue)
@@ -231,10 +195,7 @@ let evening = weekday(atHour: 18)
 
     @Test func applyTimeModifierUsesProviderTypeFromContext() throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let evening = weekday(atHour: 18)
         let end = evening.addingTimeInterval(3600)
 
@@ -264,10 +225,7 @@ let evening = weekday(atHour: 18)
 
     @Test func agreedPriceCeilingStillThrowsWhenExceedsLimit() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let itemNumber = "15_001_0117_1_3"
         _ = try insertPricedItem(itemNumber: itemNumber, nationalPrice: 80, modelContext: harness.context)
 
@@ -293,10 +251,7 @@ let itemNumber = "15_001_0117_1_3"
 
     @Test func agreedPriceBillsWhenWithinLimitWithoutCoordinates() async throws {
         let harness = try BillingHarness()
-        let context = harness.context
         let billingService = harness.billingService
-        let configService = harness.configService
-        let integration = harness.integration
 let itemNumber = "15_002_0117_1_3"
         _ = try insertPricedItem(itemNumber: itemNumber, nationalPrice: 100, modelContext: harness.context)
 

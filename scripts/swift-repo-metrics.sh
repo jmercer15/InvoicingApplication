@@ -9,15 +9,15 @@ echo
 
 swift_files="$(
   find "${ROOT_DIR}" \
-    \( -path '*/.build/*' -o -path '*/DerivedData/*' -o -path '*/.git/*' \) -prune -o \
+    \( -path '*/.agents/*' -o -path '*/.build/*' -o -path '*/BuildData/*' -o -path '*/DerivedData/*' -o -path '*/SourcePackages/checkouts/*' -o -path '*/.git/*' \) -prune -o \
     -name '*.swift' -type f -print | wc -l | tr -d ' '
 )"
-echo "Swift files (*.swift, excluding .build/DerivedData/.git): ${swift_files}"
+echo "Owned Swift files (*.swift; .agents, build data, checkouts, DerivedData, and .git excluded): ${swift_files}"
 echo
 
 echo "Top 20 largest Swift sources by line count (wc -l):"
 find "${ROOT_DIR}" \
-  \( -path '*/.build/*' -o -path '*/DerivedData/*' -o -path '*/.git/*' \) -prune -o \
+  \( -path '*/.agents/*' -o -path '*/.build/*' -o -path '*/BuildData/*' -o -path '*/DerivedData/*' -o -path '*/SourcePackages/checkouts/*' -o -path '*/.git/*' \) -prune -o \
   -name '*.swift' -type f -print0 |
   xargs -0 wc -l 2>/dev/null | awk '!/ total$/' | sort -nr | head -20 || true
 
@@ -32,7 +32,10 @@ count_pattern() {
     grep -RE "${pattern}" \
       --include='*.swift' \
       --exclude-dir='.build' \
+      --exclude-dir='.agents' \
+      --exclude-dir='BuildData' \
       --exclude-dir='DerivedData' \
+      --exclude-dir='SourcePackages' \
       --exclude-dir='.git' \
       "${ROOT_DIR}" 2>/dev/null | wc -l | tr -d ' '
   )"

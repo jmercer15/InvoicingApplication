@@ -1,4 +1,3 @@
-import AppKit
 import SwiftData
 import SwiftUI
 import PersistenceModels
@@ -187,8 +186,6 @@ struct ClientDetailClientInformationCard<Address: View>: View {
     }
 
     private func copyToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        ClipboardCopy.string(text)
     }
 }

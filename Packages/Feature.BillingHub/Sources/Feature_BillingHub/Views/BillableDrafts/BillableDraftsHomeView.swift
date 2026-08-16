@@ -98,7 +98,7 @@ public struct BillableDraftsHomeView: View {
             )) {
                 Text("All").tag(DraftStatus?.none)
                 ForEach(DraftStatus.allCases, id: \.self) { status in
-                    Text(statusLabel(status)).tag(DraftStatus?.some(status))
+                    Text(status.displayName).tag(DraftStatus?.some(status))
                 }
             }
             .pickerStyle(.segmented)
@@ -121,16 +121,6 @@ public struct BillableDraftsHomeView: View {
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
         .background(BillingHubTheme.Surfaces.panelBase)
-    }
-
-    private func statusLabel(_ status: DraftStatus) -> String {
-        switch status {
-        case .open: return "Open"
-        case .needsInfo: return "Needs info"
-        case .needsReview: return "Needs review"
-        case .ready: return "Ready"
-        case .locked: return "Locked"
-        }
     }
 
     private var generateDraftsSheet: some View {

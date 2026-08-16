@@ -1,54 +1,20 @@
 import Foundation
+import SharedUI
 import SwiftUI
 
-enum InvoiceFilterAmountParseResult: Equatable {
-    case empty
-    case value(Double)
-    case invalid
-}
+typealias InvoiceFilterAmountParseResult = ValidatedDecimalParseResult<Double>
 
 enum InvoiceFilterAmountInput {
     static func parse(
         _ text: String,
         locale: Locale = .current
     ) -> InvoiceFilterAmountParseResult {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .empty }
-
-        let formatter = formatter(locale: locale)
-        var value: AnyObject?
-        var consumedRange = NSRange(location: 0, length: (trimmed as NSString).length)
-
-        do {
-            try formatter.getObjectValue(&value, for: trimmed, range: &consumedRange)
-        } catch {
-            return .invalid
-        }
-
-        guard consumedRange.location == 0,
-              consumedRange.length == (trimmed as NSString).length,
-              let number = value as? NSNumber,
-              number.doubleValue.isFinite,
-              number.doubleValue >= 0 else {
-            return .invalid
-        }
-        return .value(number.doubleValue)
+        ValidatedDecimalParser.parseFilterAmount(text, locale: locale)
     }
 
     static func string(for value: Double?, locale: Locale = .current) -> String {
         guard let value else { return "" }
-        return formatter(locale: locale).string(from: NSNumber(value: value)) ?? String(value)
-    }
-
-    private static func formatter(locale: Locale) -> NumberFormatter {
-        let formatter = NumberFormatter()
-        formatter.locale = locale
-        formatter.numberStyle = .decimal
-        formatter.isLenient = false
-        formatter.usesGroupingSeparator = true
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 2
-        return formatter
+        return ValidatedDecimalParser.string(for: value, locale: locale)
     }
 }
 

@@ -128,7 +128,10 @@ struct PaymentReceivedPanel: View {
                         )
                     }
 
-                    paymentComparisonLabel
+                    BillingHubPaymentComparisonLabel(
+                        comparison: paymentComparison,
+                        style: .recorded
+                    )
                 } else {
                     missingDetailLabel("Invoice payment details could not be loaded.")
                 }
@@ -184,7 +187,7 @@ struct PaymentReceivedPanel: View {
             }
 
             if let operationFeedback {
-                receiptFeedback(operationFeedback)
+                BillingHubOperationFeedbackSection(message: operationFeedback)
             }
 
             if !isLoadingInvoice && !hasReceiptPaymentDetails {
@@ -205,11 +208,12 @@ struct PaymentReceivedPanel: View {
                 requestSendReceipt()
             } label: {
                 if isSendingReceipt {
-                    Label {
-                        Text("Opening Mail…")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
+                    BillingHubBusyButtonLabel.titledProgress(
+                        isBusy: true,
+                        busyTitle: "Opening Mail…",
+                        idleTitle: "Send Receipt",
+                        systemImage: "envelope.badge"
+                    )
                 } else if receiptWasSent {
                     Label("Send Receipt Again", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity)
@@ -229,16 +233,12 @@ struct PaymentReceivedPanel: View {
             Button {
                 exportReceipt()
             } label: {
-                if isExporting {
-                    Label {
-                        Text("Preparing Receipt…")
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
-                } else {
-                    Label("Export Receipt PDF", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
+                BillingHubBusyButtonLabel.titledProgress(
+                    isBusy: isExporting,
+                    busyTitle: "Preparing Receipt…",
+                    idleTitle: "Export Receipt PDF",
+                    systemImage: "square.and.arrow.up"
+                )
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
@@ -350,39 +350,6 @@ struct PaymentReceivedPanel: View {
         hasReceiptPaymentDetails
             ? "Save the receipt as a PDF file"
             : "Record complete payment details before exporting a receipt"
-    }
-
-    @ViewBuilder
-    private var paymentComparisonLabel: some View {
-        switch paymentComparison {
-        case .underpayment(let difference):
-            Label(
-                "Partial payment · \(BillingHubPaymentAmount.currencyText(difference)) remains outstanding.",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(StyleGuide.Typography.itemSubtitle)
-            .foregroundStyle(ColorSystem.Status.warning)
-        case .overpayment(let difference):
-            Label(
-                "Overpayment recorded · \(BillingHubPaymentAmount.currencyText(difference)) above invoice total.",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(StyleGuide.Typography.itemSubtitle)
-            .foregroundStyle(ColorSystem.Status.warning)
-        case .matches, nil:
-            EmptyView()
-        }
-    }
-
-    private func receiptFeedback(_ message: String) -> some View {
-        let severity = BillingHubBulkFeedbackSeverity.classify(message)
-        return Section {
-            Label(message, systemImage: severity.symbolName)
-                .font(StyleGuide.Typography.itemSubtitle)
-                .foregroundStyle(severity.tint)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
     }
 
     private func sendReceipt() {

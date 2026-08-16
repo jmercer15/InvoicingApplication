@@ -30,15 +30,9 @@ struct ClientDetailServicesCard: View {
                     }
                 }
 
-                HStack {
-                    Spacer()
-                    Button("Assign Services") {
-                        showingServiceAssignment = true
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
+                DetailListTrailingActionFooter("Assign Services") {
+                    showingServiceAssignment = true
                 }
-                .padding(DetailSectionTokens.listRowInsets)
             }
         } label: {
             DetailSectionHeader(icon: "list.bullet", title: "Services") {

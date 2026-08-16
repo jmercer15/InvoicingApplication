@@ -188,13 +188,6 @@ struct TravelChargeViolationDetailsView: View {
     @State private var overrideReason: String = ""
     @State private var isProcessing = false
 
-    private static let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
-    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -218,7 +211,7 @@ struct TravelChargeViolationDetailsView: View {
                                     .font(.body)
                             }
                             if let timestamp = reviewItem.timestamp {
-                                Text("Date: \(timestamp, formatter: Self.dateFormatter)")
+                                Text("Date: \(DateFormatting.mediumDateTime(timestamp))")
                                     .font(.caption)
                                     .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
                             }

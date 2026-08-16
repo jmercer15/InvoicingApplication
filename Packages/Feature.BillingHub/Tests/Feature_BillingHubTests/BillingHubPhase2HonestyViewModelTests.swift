@@ -106,7 +106,7 @@ struct BillingHubPhase2HonestyViewModelTests {
             reference: "ABC"
         )
         #expect(saved)
-        let refreshed = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        let refreshed = try #require(context.fetch(FetchDescriptor<Invoice>()).first)
         #expect(refreshed.notes?.contains("42.50") == true)
         #expect(refreshed.status == Optional(.pending))
     }

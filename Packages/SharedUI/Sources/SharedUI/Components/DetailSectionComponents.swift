@@ -154,3 +154,24 @@ public struct DetailListBody<Rows: View>: View {
     }
 }
 
+/// Trailing glass-prominent action under a detail list body (Assign / Add patterns).
+public struct DetailListTrailingActionFooter: View {
+    let title: String
+    let action: () -> Void
+
+    public init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    public var body: some View {
+        HStack {
+            Spacer()
+            Button(title, action: action)
+                .buttonStyle(.glassProminent)
+                .controlSize(.small)
+        }
+        .padding(DetailSectionTokens.listRowInsets)
+    }
+}
+

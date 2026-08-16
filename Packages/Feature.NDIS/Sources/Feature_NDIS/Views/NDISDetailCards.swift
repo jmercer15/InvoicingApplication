@@ -151,12 +151,10 @@ struct ModernCombinedInfoCard: View {
             .padding(.horizontal, StyleGuide.Dimensions.paddingXMedium)
             .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
         }
-        .background(PanelShellTokens.panelSecondaryBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .stroke(StyleGuide.Colors.border.opacity(StyleGuide.Opacity.medium), lineWidth: ListRowTokens.defaultStrokeWidth)
+        .ndisBorderedSurface(
+            fill: PanelShellTokens.panelSecondaryBackground,
+            stroke: StyleGuide.Colors.border.opacity(StyleGuide.Opacity.medium)
         )
-        .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
     }
 }
 
@@ -217,22 +215,8 @@ struct ModernServiceDeliveryChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, StyleGuide.Dimensions.paddingMediumLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
-        .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .fill(
-                    isAvailable
-                        ? ColorSystem.Status.success.opacity(StyleGuide.Opacity.light)
-                        : ColorSystem.Status.error.opacity(StyleGuide.Opacity.light)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .stroke(
-                    isAvailable
-                        ? ColorSystem.Status.success.opacity(StyleGuide.Opacity.strong)
-                        : ColorSystem.Status.error.opacity(StyleGuide.Opacity.strong),
-                    lineWidth: ListRowTokens.defaultStrokeWidth
-                )
+        .ndisTintedBorderedSurface(
+            tint: isAvailable ? ColorSystem.Status.success : ColorSystem.Status.error
         )
     }
 }
@@ -286,16 +270,10 @@ struct ModernPriceChip: View {
             }
             .frame(maxWidth: .infinity)
             .padding(StyleGuide.Dimensions.paddingXMedium)
-            .background(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                    .stroke(
-                        isFocused || isSelected ? Color.accentColor : StyleGuide.Colors.border.opacity(StyleGuide.Opacity.medium),
-                        lineWidth: isFocused || isSelected ? ListRowTokens.selectedStrokeWidth : ListRowTokens.defaultStrokeWidth
-                    )
+            .ndisInteractiveBorderedSurface(
+                fill: isSelected ? Color.accentColor.opacity(0.15) : Color.clear,
+                idleStroke: StyleGuide.Colors.border.opacity(StyleGuide.Opacity.medium),
+                isEmphasized: isFocused || isSelected
             )
         }
         .buttonStyle(.plain)
@@ -326,13 +304,9 @@ struct NoPriceCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(StyleGuide.Dimensions.paddingXLarge)
-        .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
-                .fill(ColorSystem.Status.inactive.opacity(StyleGuide.Opacity.light))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium)
-                .stroke(ColorSystem.Status.inactive.opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
+        .ndisTintedBorderedSurface(
+            tint: ColorSystem.Status.inactive,
+            cornerRadius: StyleGuide.Dimensions.cornerRadiusMedium
         )
     }
 }
@@ -377,14 +351,7 @@ struct ModernFeatureChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, StyleGuide.Dimensions.paddingMediumLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingMedium)
-        .background(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .fill(ColorSystem.Secondary.green.opacity(StyleGuide.Opacity.light))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall)
-                .stroke(ColorSystem.Secondary.green.opacity(StyleGuide.Opacity.strong), lineWidth: ListRowTokens.defaultStrokeWidth)
-        )
+        .ndisTintedBorderedSurface(tint: ColorSystem.Secondary.green)
     }
 }
 

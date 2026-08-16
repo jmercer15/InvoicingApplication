@@ -19,8 +19,8 @@ import PersistenceModels
         let actor = BackfillModelActor(modelContainer: container)
         try await actor.backfillStatusTokensIfNeeded()
 
-        let refreshedSession = try try #require(context.fetch(FetchDescriptor<Session>()).first)
-        let refreshedInvoice = try try #require(context.fetch(FetchDescriptor<Invoice>()).first)
+        let refreshedSession = try #require(context.fetch(FetchDescriptor<Session>()).first)
+        let refreshedInvoice = try #require(context.fetch(FetchDescriptor<Invoice>()).first)
         #expect(refreshedSession.statusToken == SessionStatus.completed.rawValue)
         #expect(refreshedInvoice.statusToken == InvoiceStatus.readyToSend.rawValue)
     }

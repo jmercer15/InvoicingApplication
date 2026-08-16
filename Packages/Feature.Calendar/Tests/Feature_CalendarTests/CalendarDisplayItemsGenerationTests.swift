@@ -45,8 +45,9 @@ struct CalendarDisplayItemsGenerationTests {
         viewModel.displayItemsUpdateTask?.cancel()
         viewModel.displayItemsUpdateGeneration &+= 1
         viewModel.updateDisplayableItems()
-
-        try await Task.sleep(for: .milliseconds(80))
+        if let task = viewModel.displayItemsUpdateTask {
+            await task.value
+        }
 
         #expect(viewModel.displayItemsUpdateGeneration > staleGeneration)
         #expect(viewModel.isLoading == false)

@@ -2,14 +2,6 @@ import Core
 import SwiftUI
 
 extension InvoiceEditorInspector {
-    func navigate(to section: InvoiceInspectorSection, proxy: ScrollViewProxy) {
-        activeDeferredFocusLeaseID = nil
-        withAnimation(subtleAnimation) {
-            expand(section)
-            proxy.scrollTo(section, anchor: .top)
-        }
-    }
-
     func focus(
         _ request: InvoicePreviewInspectorInteraction.FocusRequest,
         proxy: ScrollViewProxy
@@ -40,16 +32,14 @@ extension InvoiceEditorInspector {
         case .currencyCode, .defaultTaxRate:
             section = .settings
         }
-        expandedSection = section
-        if let itemID = lineItemID(for: target) {
-            expandedLineItemID = itemID
-        }
         let lease = InvoiceInspectorDeferredFocusLease(
             id: request.id,
             documentID: viewModel.selectedInvoiceID
         )
         activeDeferredFocusLeaseID = lease.id
-        withAnimation(motionAnimation) { proxy.scrollTo(section, anchor: .top) }
+        if section != .settings {
+            withAnimation(motionAnimation) { proxy.scrollTo(section, anchor: .top) }
+        }
         Task { @MainActor in
             await Task.yield()
             previewInteraction.completeFocusRequest(id: request.id)
@@ -62,46 +52,6 @@ extension InvoiceEditorInspector {
             }
             focusedTarget = resolvedFocusTarget
         }
-    }
-
-    func expand(_ section: InvoiceInspectorSection) {
-        guard section != .validation else { return }
-        expandedSection = section
-    }
-
-    func collapseAllSections() {
-        activeDeferredFocusLeaseID = nil
-        expandedSection = nil
-        expandedLineItemID = nil
-        focusedTarget = nil
-    }
-
-    func isExpanded(_ section: InvoiceInspectorSection) -> Bool {
-        expandedSection == section
-    }
-
-    func expansionBinding(for section: InvoiceInspectorSection) -> Binding<Bool> {
-        Binding(
-            get: { isExpanded(section) },
-            set: { isNowExpanded in
-                activeDeferredFocusLeaseID = nil
-                withAnimation(motionAnimation) {
-                    expandedSection = isNowExpanded ? section : nil
-                }
-            }
-        )
-    }
-
-    func lineItemExpansionBinding(for itemID: UUID) -> Binding<Bool> {
-        Binding(
-            get: { expandedLineItemID == itemID },
-            set: { isNowExpanded in
-                activeDeferredFocusLeaseID = nil
-                withAnimation(motionAnimation) {
-                    expandedLineItemID = isNowExpanded ? itemID : nil
-                }
-            }
-        )
     }
 
     func lineItemID(for target: InvoiceInspectorFocusTarget) -> UUID? {
@@ -117,7 +67,6 @@ extension InvoiceEditorInspector {
     }
 
     func addLineItemFromCommand() {
-        expandedSection = .lineItems
         let itemID = addLineItem()
         let lease = InvoiceInspectorDeferredFocusLease(
             documentID: viewModel.selectedInvoiceID
@@ -147,11 +96,9 @@ extension InvoiceEditorInspector {
 
     @discardableResult
     func addLineItem() -> UUID {
-        let itemID = lineItemUndo.addLineItem(
+        lineItemUndo.addLineItem(
             to: viewModel,
             undoManager: undoManager
         )
-        expandedLineItemID = itemID
-        return itemID
     }
 }

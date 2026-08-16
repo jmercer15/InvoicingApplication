@@ -12,40 +12,26 @@ struct WeekHeaderView: View {
     let dayColumnWidth: CGFloat
 
     @ScaledMetric(relativeTo: .body) private var headerHeight: CGFloat = 42
-    @ScaledMetric(relativeTo: .body) private var cornerRadius: CGFloat = StyleGuide.Dimensions.cornerRadiusLarge + 4
 
     var body: some View {
         HStack(spacing: 0) {
             // Placeholder for the time column
             Color.clear
                 .frame(width: timeColumnWidth, height: headerHeight)
-                .overlay(
-                    Rectangle()
-                        .fill(StyleGuide.Colors.border.opacity(0.2))
-                        .frame(width: StyleGuide.Dimensions.hairlineWidth),
-                    alignment: .trailing
-                )
+                .overlay(CalendarHeaderColumnDivider(), alignment: .trailing)
 
             // Day headers
             ForEach(viewModel.currentWeekDayIdentities) { identity in
                 DayHeaderItemView(day: identity.resolvedDate())
                     .frame(width: dayColumnWidth)
-                    .overlay(
-                        Rectangle()
-                            .fill(StyleGuide.Colors.border.opacity(0.2))
-                            .frame(width: StyleGuide.Dimensions.hairlineWidth),
-                        alignment: .trailing
-                    )
+                    .overlay(CalendarHeaderColumnDivider(), alignment: .trailing)
             }
         }
-        .background(
-            UnevenRoundedRectangle(topLeadingRadius: cornerRadius, topTrailingRadius: cornerRadius)
-                .fill(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
-        )
+        .background {
+            CalendarHeaderBarBackground()
+        }
         .overlay(
-            Rectangle()
-                .fill(Color.secondary.opacity(0.2))
-                .frame(height: StyleGuide.Dimensions.hairlineWidth),
+            CalendarHeaderBottomHairline(fill: Color.secondary.opacity(0.2)),
             alignment: .bottom
         )
     }

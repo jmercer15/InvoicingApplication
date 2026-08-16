@@ -392,44 +392,11 @@ public actor EventKitSyncActor: ModelActor {
 
     // MARK: - Date formatting for watermarks
 
-    private let syncTagWriteFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private let syncTagReadFormatters: [ISO8601DateFormatter] = {
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        let internetDateTime = ISO8601DateFormatter()
-        internetDateTime.formatOptions = [.withInternetDateTime]
-
-        return [withFractional, internetDateTime]
-    }()
-
-    private let legacySyncTagFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        return formatter
-    }()
-
     private func encodeSyncTag(_ date: Date?) -> String? {
-        guard let date else { return nil }
-        return self.syncTagWriteFormatter.string(from: date)
+        EventKitSyncTagFormatting.encode(date)
     }
 
     private func decodeSyncTag(_ rawValue: String?) -> Date? {
-        guard let rawValue, !rawValue.isEmpty else { return nil }
-
-        for formatter in self.syncTagReadFormatters {
-            if let parsed = formatter.date(from: rawValue) {
-                return parsed
-            }
-        }
-
-        return self.legacySyncTagFormatter.date(from: rawValue)
+        EventKitSyncTagFormatting.decode(rawValue)
     }
 }

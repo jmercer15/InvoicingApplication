@@ -1,4 +1,5 @@
 import PersistenceModels
+import SharedUI
 
 /// Shared load/apply for relationship entity address editing (client, payee, plan manager).
 struct RelationshipAddressEditableFields: Equatable {
@@ -110,3 +111,47 @@ extension RelationshipAddressFieldStorage {
 extension ClientDetailViewModel: RelationshipAddressFieldStorage {}
 extension PayeeDetailViewModel: RelationshipAddressFieldStorage {}
 extension PlanManagerDetailViewModel: RelationshipAddressFieldStorage {}
+
+@MainActor
+protocol RelationshipAddressEditingViewModel: AnyObject, RelationshipAddressFieldStorage {
+    var persistedAddress: Address? { get }
+    func loadAddressDetails()
+    func commitAddressChanges(autosave: Bool)
+    func updateAddressFromSearchResult(_ address: AddressData)
+    func formattedAddressString(from address: Address) -> String
+}
+
+extension PayeeDetailViewModel: RelationshipAddressEditingViewModel {
+    var persistedAddress: Address? { payee.address }
+}
+
+extension PlanManagerDetailViewModel: RelationshipAddressEditingViewModel {
+    var persistedAddress: Address? { planManager.address }
+}
+
+extension AddressFormState {
+    /// Copies structured VM fields into the sheet form (search text left unchanged).
+    func loadStructuredFields(from storage: RelationshipAddressFieldStorage) {
+        unitNumber = storage.editableUnitNumber
+        streetNumber = storage.editableStreetNumber
+        streetName = storage.editableStreetName
+        suburb = storage.editableSuburb
+        postcode = storage.editablePostcode
+        state = storage.editableState
+        country = storage.editableCountry
+        poBox = storage.editablePoBox
+    }
+
+    /// Writes form fields back to the VM. ``editableCity`` mirrors suburb (sheet has no city field).
+    func applyStructuredFields(to storage: RelationshipAddressFieldStorage) {
+        storage.editableUnitNumber = unitNumber
+        storage.editableStreetNumber = streetNumber
+        storage.editableStreetName = streetName
+        storage.editableSuburb = suburb
+        storage.editableCity = suburb
+        storage.editablePostcode = postcode
+        storage.editableState = state
+        storage.editableCountry = country
+        storage.editablePoBox = poBox
+    }
+}

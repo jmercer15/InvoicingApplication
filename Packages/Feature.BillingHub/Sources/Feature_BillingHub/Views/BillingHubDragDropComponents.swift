@@ -8,9 +8,9 @@ private func highlightedText(_ text: String, searchingFor query: String) -> some
         let match = text[range]
         let suffix = text[range.upperBound...]
 
-        Text(String(prefix)) +
-        Text(String(match)).bold().foregroundStyle(Color.accentColor) +
-        Text(String(suffix))
+        Text(
+            "\(Text(String(prefix)))\(Text(String(match)).bold().foregroundStyle(Color.accentColor))\(Text(String(suffix)))"
+        )
     } else {
         Text(text)
     }

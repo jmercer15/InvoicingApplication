@@ -5,7 +5,7 @@ import Testing
 @Suite struct InvoiceCreationDefaultsTests {
     @Test func LoadsSharedPreferenceKeysAndClampsInvalidValues() throws {
         let suiteName = "InvoiceCreationDefaultsTests.\(UUID().uuidString)"
-        let preferences = try try #require(UserDefaults(suiteName: suiteName))
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
 
         preferences.set(-5, forKey: InvoicePreferenceKey.paymentTermsDays)
@@ -28,7 +28,7 @@ import Testing
 
     @Test func MissingPreferencesUseProductDefaults() throws {
         let suiteName = "InvoiceCreationDefaultsTests.\(UUID().uuidString)"
-        let preferences = try try #require(UserDefaults(suiteName: suiteName))
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
         defer { preferences.removePersistentDomain(forName: suiteName) }
 
         #expect(InvoiceCreationDefaults.load(from: preferences) == InvoiceCreationDefaults.standard)

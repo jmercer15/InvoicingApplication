@@ -19,6 +19,34 @@ public enum CurrencyFormatting {
         amount.formatted(.currency(code: code).locale(locale))
     }
 
+    public static func symbol(for code: String, locale: Locale = .current) -> String {
+        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if normalizedCode == "USD" { return "$" }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = normalizedCode
+        return formatter.currencySymbol ?? normalizedCode
+    }
+
+    public static func display(
+        _ amount: Decimal,
+        code: String = "AUD",
+        omitFractionIfWhole: Bool = false,
+        locale: Locale = .current
+    ) -> String {
+        if omitFractionIfWhole && isWholeNumber(amount) {
+            return amount.formatted(.currency(code: code).precision(.fractionLength(0)).locale(locale))
+        }
+        return amount.formatted(.currency(code: code).locale(locale))
+    }
+
+    private static func isWholeNumber(_ amount: Decimal) -> Bool {
+        var value = amount
+        var truncated = Decimal()
+        NSDecimalRound(&truncated, &value, 0, NSDecimalNumber.RoundingMode.down)
+        return amount == truncated
+    }
+
     /// Numeric text for editable amount fields (no currency symbol).
     public static func editableAmount(_ amount: Double, fractionDigits: Int = 2) -> String {
         amount.formatted(.number.precision(.fractionLength(fractionDigits)))
@@ -37,6 +65,11 @@ public enum DateFormatting {
 
     public static func mediumDate(_ date: Date, locale: Locale = .current) -> String {
         date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale))
+    }
+
+    /// Medium date + short time (e.g. review timestamps).
+    public static func mediumDateTime(_ date: Date, locale: Locale = .current) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale))
     }
 
     public static func longDate(_ date: Date, locale: Locale = .current) -> String {

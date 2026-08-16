@@ -109,12 +109,10 @@ public struct EditingPanel: View {
                     Button {
                         saveInvoiceDetails()
                     } label: {
-                        if isSavingDetails {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Done")
-                        }
+                        BillingHubBusyButtonLabel.progressOrText(
+                            isBusy: isSavingDetails,
+                            title: "Done"
+                        )
                     }
                     .disabled(isSavingDetails || !hasValidInvoiceDetails)
                 }

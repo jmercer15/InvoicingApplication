@@ -101,13 +101,4 @@ struct TravelChargeAutomationTestView: View {
             TravelChargeReviewContainer(viewModel: reviewViewModel)
         }
     }
-
-
-
-    static let cellDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        return df
-    }()
 }

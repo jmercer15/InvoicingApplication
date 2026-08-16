@@ -6,7 +6,7 @@ enum CalendarSessionDragLoading {
         from provider: NSItemProvider,
         interactionHandler: CalendarInteractionHandler
     ) {
-        provider.loadTransferable(type: SessionDragPayload.self) { result in
+        _ = provider.loadTransferable(type: SessionDragPayload.self) { result in
             Task { @MainActor in
                 guard case .success(let payload) = result else { return }
                 interactionHandler.startDragging(

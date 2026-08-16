@@ -100,14 +100,15 @@ private struct CompanySectionView: View {
     @Environment(\.geocodingService) private var geocodingService
 
     var body: some View {
-        if let persistence = businessPersisting, let geo = geocodingService {
-            CompanySectionLoaded(businessPersisting: persistence, geocodingService: geo)
-        } else {
-            EmptyStateView(
-                icon: "building.2.crop.circle",
-                title: "Company settings unavailable",
-                message: "Business persistence or geocoding is not configured for this window."
-            )
+        SettingsServiceGate(
+            isAvailable: businessPersisting != nil && geocodingService != nil,
+            icon: "building.2.crop.circle",
+            title: "Company settings unavailable",
+            message: "Business persistence or geocoding is not configured for this window."
+        ) {
+            if let persistence = businessPersisting, let geo = geocodingService {
+                CompanySectionLoaded(businessPersisting: persistence, geocodingService: geo)
+            }
         }
     }
 }
@@ -134,18 +135,19 @@ private struct CalendarSectionView: View {
     let sessionWiper: any CalendarSessionWiping
 
     var body: some View {
-        if let store = calendarPreferencesStore, let eventKit = eventKitSyncService {
-            CalendarSectionLoaded(
-                preferencesStore: store,
-                eventKitService: eventKit,
-                sessionWiper: sessionWiper
-            )
-        } else {
-            EmptyStateView(
-                icon: "calendar.badge.exclamationmark",
-                title: "Calendar services unavailable",
-                message: "Calendar preferences or EventKit sync is not configured for this window."
-            )
+        SettingsServiceGate(
+            isAvailable: calendarPreferencesStore != nil && eventKitSyncService != nil,
+            icon: "calendar.badge.exclamationmark",
+            title: "Calendar services unavailable",
+            message: "Calendar preferences or EventKit sync is not configured for this window."
+        ) {
+            if let store = calendarPreferencesStore, let eventKit = eventKitSyncService {
+                CalendarSectionLoaded(
+                    preferencesStore: store,
+                    eventKitService: eventKit,
+                    sessionWiper: sessionWiper
+                )
+            }
         }
     }
 }
@@ -196,24 +198,28 @@ private struct TravelChargeTestSectionView: View {
     let automation: any TravelChargeAutomating
 
     var body: some View {
-        if let geo = geocodingService,
-           let mmm = mmmZoneLookup,
-           let recurrence = recurrenceRuleManager,
-           let reviewFetching = travelChargeReviewFetching {
-            TravelChargeTestSectionLoaded(
-                modelContext: modelContext,
-                automation: automation,
-                geocodingService: geo,
-                mmmZoneLookup: mmm,
-                recurrenceRuleManager: recurrence,
-                reviewFetching: reviewFetching
-            )
-        } else {
-            EmptyStateView(
-                icon: "road.lanes",
-                title: "Travel automation prerequisites missing",
-                message: "Geocoding, MMM lookup, recurrence, or review fetching is not configured for this window."
-            )
+        SettingsServiceGate(
+            isAvailable: geocodingService != nil
+                && mmmZoneLookup != nil
+                && recurrenceRuleManager != nil
+                && travelChargeReviewFetching != nil,
+            icon: "road.lanes",
+            title: "Travel automation prerequisites missing",
+            message: "Geocoding, MMM lookup, recurrence, or review fetching is not configured for this window."
+        ) {
+            if let geo = geocodingService,
+               let mmm = mmmZoneLookup,
+               let recurrence = recurrenceRuleManager,
+               let reviewFetching = travelChargeReviewFetching {
+                TravelChargeTestSectionLoaded(
+                    modelContext: modelContext,
+                    automation: automation,
+                    geocodingService: geo,
+                    mmmZoneLookup: mmm,
+                    recurrenceRuleManager: recurrence,
+                    reviewFetching: reviewFetching
+                )
+            }
         }
     }
 }
@@ -261,21 +267,24 @@ private struct TravelChargeReviewSectionView: View {
     let automation: any TravelChargeAutomating
 
     var body: some View {
-        if let reviewFetching = travelChargeReviewFetching,
-           let mmm = mmmZoneLookup,
-           let recurrence = recurrenceRuleManager {
-            TravelChargeReviewSectionLoaded(
-                automation: automation,
-                mmmZoneLookup: mmm,
-                recurrenceRuleManager: recurrence,
-                reviewFetching: reviewFetching
-            )
-        } else {
-            EmptyStateView(
-                icon: "road.lanes",
-                title: "Travel review prerequisites missing",
-                message: "Review fetching, MMM lookup, or recurrence services are not configured for this window."
-            )
+        SettingsServiceGate(
+            isAvailable: travelChargeReviewFetching != nil
+                && mmmZoneLookup != nil
+                && recurrenceRuleManager != nil,
+            icon: "road.lanes",
+            title: "Travel review prerequisites missing",
+            message: "Review fetching, MMM lookup, or recurrence services are not configured for this window."
+        ) {
+            if let reviewFetching = travelChargeReviewFetching,
+               let mmm = mmmZoneLookup,
+               let recurrence = recurrenceRuleManager {
+                TravelChargeReviewSectionLoaded(
+                    automation: automation,
+                    mmmZoneLookup: mmm,
+                    recurrenceRuleManager: recurrence,
+                    reviewFetching: reviewFetching
+                )
+            }
         }
     }
 }

@@ -129,8 +129,8 @@ extension AllDataFactories {
         cs.ndisCode = dict["ndisCode"] as? String
         cs.isActive = dict["isActive"] as? Bool ?? true
 
-        if let s = dict["startDate"] as? String { cs.startDate = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["endDate"]   as? String { cs.endDate   = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["startDate"] as? String { cs.startDate = ImportISO8601.date(from: s) }
+        if let s = dict["endDate"]   as? String { cs.endDate   = ImportISO8601.date(from: s) }
 
         if let id = dict["client"] as? String, let c = entityMapping[id] as? Client {
             cs.client = c
@@ -159,10 +159,10 @@ extension AllDataFactories {
         agreement.notes                           = dict["notes"]                       as? String
         agreement.isArchived                      = dict["isArchived"]                  as? Bool   ?? false
 
-        if let s = dict["effectiveFrom"]               as? String { agreement.effectiveFrom               = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["effectiveTo"]                 as? String { agreement.effectiveTo                 = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["pricingDisclosureAcceptedAt"] as? String { agreement.pricingDisclosureAcceptedAt = ISO8601DateFormatter().date(from: s) }
-        if let s = dict["signedAt"]                    as? String { agreement.signedAt                    = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["effectiveFrom"]               as? String { agreement.effectiveFrom               = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["effectiveTo"]                 as? String { agreement.effectiveTo                 = ImportISO8601.date(from: s) }
+        if let s = dict["pricingDisclosureAcceptedAt"] as? String { agreement.pricingDisclosureAcceptedAt = ImportISO8601.date(from: s) }
+        if let s = dict["signedAt"]                    as? String { agreement.signedAt                    = ImportISO8601.date(from: s) }
 
         if let id = dict["client"] as? String, let c = entityMapping[id] as? Client {
             agreement.client = c
@@ -188,10 +188,10 @@ extension AllDataFactories {
         log.cancellationReasonCode = dict["cancellationReasonCode"] as? String
         log.notes                 = dict["notes"]                 as? String
 
-        if let s = dict["deliveredFrom"] as? String { log.deliveredFrom = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["deliveredTo"]   as? String { log.deliveredTo   = ISO8601DateFormatter().date(from: s) ?? log.deliveredFrom }
-        if let s = dict["attestedAt"]    as? String { log.attestedAt    = ISO8601DateFormatter().date(from: s) ?? Date() }
-        if let s = dict["signedAt"]      as? String { log.signedAt      = ISO8601DateFormatter().date(from: s) }
+        if let s = dict["deliveredFrom"] as? String { log.deliveredFrom = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["deliveredTo"]   as? String { log.deliveredTo   = ImportISO8601.date(from: s) ?? log.deliveredFrom }
+        if let s = dict["attestedAt"]    as? String { log.attestedAt    = ImportISO8601.date(from: s) ?? Date() }
+        if let s = dict["signedAt"]      as? String { log.signedAt      = ImportISO8601.date(from: s) }
 
         if let id = dict["client"] as? String, let c = entityMapping[id] as? Client { log.client = c }
         else if let id = dict["clientId"] as? String, let c = entityMapping[id] as? Client { log.client = c }
@@ -236,7 +236,7 @@ extension AllDataFactories {
         entry.type   = CreditHistoryType(rawValue: dict["type"] as? String ?? "Usage") ?? .credit
         entry.notes  = dict["description"] as? String ?? dict["reason"] as? String
 
-        if let s = dict["date"] as? String { entry.date = ISO8601DateFormatter().date(from: s) ?? Date() }
+        if let s = dict["date"] as? String { entry.date = ImportISO8601.date(from: s) ?? Date() }
 
         if let id = dict["client"] as? String, let c = entityMapping[id] as? Client { entry.client = c }
         else if let id = dict["clientId"] as? String, let c = entityMapping[id] as? Client { entry.client = c }

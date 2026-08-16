@@ -3,39 +3,51 @@ import Observation
 import SwiftUI
 
 extension InvoiceEditorInspector {
-    var documentActionsSection: some View {
-        Section {
+    @ToolbarContentBuilder
+    var documentToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .automatic) {
             let stage = InvoiceEditorBillingStagePresentation.resolve(viewModel.status)
-            LabeledContent("Billing stage") {
+            let activityState = InvoiceEditorActivityState.resolve(viewModel)
+            if activityState.isActive {
+                Label {
+                    Text(activityState.title)
+                } icon: {
+                    ProgressView().controlSize(.small)
+                }
+                .foregroundStyle(.secondary)
+            } else if activityState == .conflict {
+                Label(activityState.title, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            } else if activityState == .unsaved {
+                Label("Not saved", systemImage: "circle.fill")
+                    .foregroundStyle(.orange)
+            } else {
                 Label(stage.title, systemImage: stage.systemImage)
                     .foregroundStyle(.secondary)
+                    .help(stage.guidance)
             }
 
-            Text(stage.guidance)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            LabeledContent("Changes") {
-                let activityState = InvoiceEditorActivityState.resolve(viewModel)
-                if activityState.isActive {
-                    Label {
-                        Text(activityState.title)
-                    } icon: {
-                        ProgressView().controlSize(.small)
-                    }
-                    .foregroundStyle(.secondary)
-                } else if activityState == .conflict {
-                    Label(activityState.title, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                } else if activityState == .unsaved {
-                    Label("Not saved", systemImage: "circle.fill")
-                        .foregroundStyle(.orange)
-                } else {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+            TextField("Currency", text: $viewModel.currencyCode)
+                .frame(minWidth: InspectorLayout.minimumFieldWidth)
+                .accessibilityLabel("Currency")
+                .focused($focusedTarget, equals: .currencyCode)
+                .onSubmit {
+                    viewModel.currencyCode = InvoiceCurrencyCode.normalized(viewModel.currencyCode)
                 }
-            }
+                .help("Invoice currency code")
+
+            validatedDecimalField(
+                "Tax %",
+                value: $viewModel.defaultTaxRate,
+                inputID: "invoice.defaultTaxRate",
+                focusTarget: .defaultTaxRate,
+                showsValidationMessage: false,
+                step: 1,
+                minimumValue: 0
+            )
+            .frame(minWidth: InspectorLayout.minimumFieldWidth)
+            .accessibilityLabel("Default Tax Rate")
+            .help("Default tax rate for new line items")
 
             Button {
                 Task { await viewModel.saveCurrentInvoice() }
@@ -51,8 +63,6 @@ extension InvoiceEditorInspector {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
             .disabled(!viewModel.hasUnsavedChanges || viewModel.isBusy)
             .help(
                 viewModel.hasUnsavedChanges
@@ -63,11 +73,8 @@ extension InvoiceEditorInspector {
             Button {
                 Task { await viewModel.exportCurrentInvoicePDF() }
             } label: {
-                Label("Export Invoice PDF", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
+                Label("Export PDF", systemImage: "square.and.arrow.up")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
             .disabled(viewModel.isBusy || viewModel.hasRevisionConflict)
             .help(
                 viewModel.hasRevisionConflict
@@ -75,54 +82,32 @@ extension InvoiceEditorInspector {
                     : "Save valid edits, then export the invoice PDF"
             )
 
-            HStack {
-                Text("Export saves valid edits first.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            Menu("More", systemImage: "ellipsis.circle") {
+                Button("Duplicate Invoice", systemImage: "doc.on.doc") {
+                    Task { await viewModel.duplicateSelectedInvoice() }
+                }
+                Button("Print", systemImage: "printer") {
+                    Task { await viewModel.printCurrentInvoice() }
+                }
+                .disabled(viewModel.hasRevisionConflict)
 
-                Menu("More", systemImage: "ellipsis.circle") {
-                    Button("Duplicate Invoice", systemImage: "doc.on.doc") {
-                        Task { await viewModel.duplicateSelectedInvoice() }
-                    }
-                    Button("Print", systemImage: "printer") {
-                        Task { await viewModel.printCurrentInvoice() }
-                    }
-                    .disabled(viewModel.hasRevisionConflict)
-
+                if let openTemplateEditor {
                     Divider()
 
-                    Button("Delete Invoice", systemImage: "trash", role: .destructive) {
-                        toolbarState.showsDeleteConfirmation = true
+                    Button("Edit New-Invoice Template", systemImage: "paintbrush") {
+                        openTemplateEditor()
                     }
+                    .disabled(viewModel.isBusy || isPreparingWorkspaceHandoff)
                 }
-                .menuStyle(.borderlessButton)
-                .disabled(viewModel.isBusy)
-            }
 
-            if let openTemplateEditor {
-                Button {
-                    openTemplateEditor()
-                } label: {
-                    if isPreparingWorkspaceHandoff {
-                        Label {
-                            Text("Opening Template Editor…")
-                        } icon: {
-                            ProgressView().controlSize(.small)
-                        }
-                    } else {
-                        Label("Edit New-Invoice Template", systemImage: "paintbrush")
-                    }
+                Divider()
+
+                Button("Delete Invoice", systemImage: "trash", role: .destructive) {
+                    toolbarState.showsDeleteConfirmation = true
                 }
-                .buttonStyle(.bordered)
-                .disabled(viewModel.isBusy || isPreparingWorkspaceHandoff)
-                .help("Open Template Editor. Changes apply to newly created invoices only.")
-                .accessibilityHint("Opens Template Editor without changing this invoice")
             }
-        } header: {
-            Label("Invoice", systemImage: "doc.text")
-        } footer: {
-            Text("Edit document data here. Billing Hub controls approval, delivery, payment, and receipts.")
+            .menuStyle(.borderlessButton)
+            .disabled(viewModel.isBusy)
         }
     }
 }

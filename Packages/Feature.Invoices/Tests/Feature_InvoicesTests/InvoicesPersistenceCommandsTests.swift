@@ -249,7 +249,7 @@ import Testing
         #expect(viewModel.actionErrorMessage == nil)
         #expect(!(viewModel.isCreatingInvoice))
 
-        let duplicate = try try #require(viewModel.loadedInvoicesByID[duplicateID])
+        let duplicate = try #require(viewModel.loadedInvoicesByID[duplicateID])
         #expect(duplicate.effectiveStatus == .reviewDraft)
         #expect(duplicate.invoiceNumber != source.invoiceNumber)
         #expect(duplicate.clientName == "Acme")
@@ -515,7 +515,7 @@ import Testing
         let editorDescriptor = FetchDescriptor<Invoice>(
             predicate: #Predicate<Invoice> { $0.id == invoiceID }
         )
-        let editorInvoice = try try #require(editorContext.fetch(editorDescriptor).first)
+        let editorInvoice = try #require(editorContext.fetch(editorDescriptor).first)
         editorInvoice.invoiceNumber = "INV-AFTER"
         try editorContext.save()
 

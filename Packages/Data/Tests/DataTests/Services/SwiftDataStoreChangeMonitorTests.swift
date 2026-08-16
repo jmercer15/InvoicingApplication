@@ -23,24 +23,25 @@ import PersistenceModels
 
         workspaceContext.insert(Business(abn: "11 111 111 111"))
         try workspaceContext.save()
-        try await waitForRevision(monitor, atLeast: 1)
+        try await waitForRevision(monitor, observedRevisions: observedRevisions, atLeast: 1)
 
         settingsContext.insert(Business(abn: "22 222 222 222"))
         try settingsContext.save()
-        try await waitForRevision(monitor, atLeast: 2)
+        try await waitForRevision(monitor, observedRevisions: observedRevisions, atLeast: 2)
 
         #expect(observedRevisions.max() ?? 0 >= 2)
     }
 
     private func waitForRevision(
         _ monitor: SwiftDataStoreChangeMonitor,
+        observedRevisions: @autoclosure () -> [Int],
         atLeast expected: Int,
-        timeout: TimeInterval = 2.0
+        timeout: TimeInterval = 5.0
     ) async throws {
         let deadline = Date().addingTimeInterval(timeout)
-        while monitor.revision < expected {
+        while monitor.revision < expected || (observedRevisions().max() ?? 0) < expected {
             if Date() >= deadline {
-                Issue.record("Expected revision >= \(expected), got \(monitor.revision)")
+                Issue.record("Expected revision >= \(expected), got monitor.revision \(monitor.revision), observedRevisions max \(observedRevisions().max() ?? 0)")
                 return
             }
             await Task.yield()

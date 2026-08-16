@@ -17,24 +17,19 @@ struct MonthHeaderView: View {
                 MonthDayHeaderItemView(day: day)
                     .frame(maxWidth: .infinity)
                     // Add left border to all but the first day header
-                    .overlay(
-                        index > 0 ?
-                        Rectangle().frame(width: StyleGuide.Dimensions.hairlineWidth, height: nil).foregroundStyle(StyleGuide.Colors.border.opacity(0.3))
-                        : nil // No border for the first item
-                        , alignment: .leading
-                    )
+                    .overlay(alignment: .leading) {
+                        if index > 0 {
+                            CalendarHeaderColumnDivider(opacity: 0.3)
+                        }
+                    }
             }
         }
         .background {
-            UnevenRoundedRectangle(
-                topLeadingRadius: StyleGuide.Dimensions.cornerRadiusLarge + 4,
-                topTrailingRadius: StyleGuide.Dimensions.cornerRadiusLarge + 4
-            )
-                .fill(StyleGuide.Colors.background.opacity(StyleGuide.Opacity.strong))
+            CalendarHeaderBarBackground()
         }
         // Add bottom border only to the day headers section
         .overlay(
-            Rectangle().frame(width: nil, height: 1).foregroundStyle(StyleGuide.Colors.border.opacity(0.2)),
+            CalendarHeaderBottomHairline(height: 1),
             alignment: .bottom
         )
     }
