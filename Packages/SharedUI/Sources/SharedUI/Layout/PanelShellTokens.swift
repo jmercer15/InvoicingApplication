@@ -37,7 +37,7 @@ public enum PanelShellTokens {
     }
 
     public static var sidebarDividerColor: Color {
-        Color(NSColor.separatorColor).opacity(0.45)
+        Color(nsColor: NSColor.separatorColor).opacity(0.45)
     }
 
     public static var panelBackground: Color {
@@ -45,7 +45,7 @@ public enum PanelShellTokens {
     }
 
     public static var panelSecondaryBackground: Color {
-        Color(NSColor.controlBackgroundColor).opacity(0.35)
+        Color(nsColor: NSColor.controlBackgroundColor).opacity(0.35)
     }
 
     private static func dynamicPanelColor(

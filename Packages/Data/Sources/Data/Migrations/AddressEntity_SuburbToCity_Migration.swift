@@ -1,3 +1,5 @@
+import os
+import Core
 //
 //  Address_SuburbToCity_Migration.swift
 //  InvoicingApplication
@@ -45,7 +47,7 @@ public struct Address_SuburbToCity_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting Address.suburb -> city migration (v\(version))")
+        Logger.migration.info("🔄 Starting Address.suburb -> city migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -57,7 +59,7 @@ public struct Address_SuburbToCity_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ Address.suburb -> city migration completed successfully")
+        Logger.migration.info("✅ Address.suburb -> city migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -73,11 +75,11 @@ public struct Address_SuburbToCity_Migration {
         let addresses = try modelContext.fetch(descriptor)
         
         if addresses.isEmpty {
-            print("ℹ️ No Address records found - migration not needed")
+            Logger.migration.info("ℹ️ No Address records found - migration not needed")
             return
         }
         
-        print("📊 Found \(addresses.count) Address records to migrate")
+        Logger.migration.info("📊 Found \(addresses.count) Address records to migrate")
     }
     
     /// Perform the actual migration
@@ -96,7 +98,7 @@ public struct Address_SuburbToCity_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -117,7 +119,7 @@ public struct Address_SuburbToCity_Migration {
             let _ = address.city
         }
         
-        print("✅ Migration validation successful - all \(addresses.count) records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(addresses.count) records accessible")
     }
     
     /// Rollback the migration
@@ -128,12 +130,12 @@ public struct Address_SuburbToCity_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Rolling back Address.suburb -> city migration")
+        Logger.migration.info("🔄 Rolling back Address.suburb -> city migration")
         
         // For Swift Data, rollback is handled by reverting the entity definition
         // and using @Attribute(.originalName) with the new property name
         // This is a development-time operation only
         
-        print("⚠️ Rollback completed - entity definition reverted")
+        Logger.migration.warning("⚠️ Rollback completed - entity definition reverted")
     }
 }

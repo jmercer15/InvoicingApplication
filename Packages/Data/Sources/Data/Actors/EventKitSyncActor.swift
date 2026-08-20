@@ -1,3 +1,4 @@
+import os
 import Core
 import PersistenceModels
 import CoreLocation
@@ -290,7 +291,7 @@ public actor EventKitSyncActor: ModelActor {
             )
         } catch {
             inFlightReverseGeocodes[cacheKey] = nil
-            print("[EventKitSyncActor] Reverse geocode failed for snapshot \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
+            Logger.calendar.warning("[EventKitSyncActor] Reverse geocode failed for snapshot \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
             return baseParsedLocation
         }
     }

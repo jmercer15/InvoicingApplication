@@ -232,7 +232,7 @@ struct MonthDayCellView: View {
                             .padding(.horizontal, StyleGuide.Dimensions.paddingXSmall)
                             .padding(.vertical, StyleGuide.Dimensions.calendarBadgeVerticalPadding)
                             .background(Color.accentColor.opacity(StyleGuide.Opacity.faint))
-                            .cornerRadius(StyleGuide.Dimensions.calendarBadgeCornerRadius)
+                            .clipShape(.rect(cornerRadius: StyleGuide.Dimensions.calendarBadgeCornerRadius))
                         Spacer()
                     }
                     .padding(.top, StyleGuide.Dimensions.calendarBadgeTopPadding)

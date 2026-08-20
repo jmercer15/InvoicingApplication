@@ -4,7 +4,7 @@ import Core
 public struct OpenWorkspaceTabIntent: AppIntent {
     public static let title: LocalizedStringResource = "Open Workspace Tab"
     public static let description = IntentDescription("Opens a workspace tab in Invoicing Application.")
-    public static let openAppWhenRun = true
+    public static var supportedModes: IntentModes { .foreground }
 
     @Parameter(title: "Tab", default: .relationships)
     public var tab: WorkspaceTabAppEnum

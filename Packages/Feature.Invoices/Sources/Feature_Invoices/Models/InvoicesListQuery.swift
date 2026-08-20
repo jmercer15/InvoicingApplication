@@ -31,13 +31,18 @@ enum InvoiceListRowPresentation {
         return number.isEmpty ? "Untitled Invoice" : number
     }
 
-    static func subtitle(for invoice: Invoice) -> String {
+    static func client(for invoice: Invoice) -> String {
         let trimmedClient = invoice.clientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let client = trimmedClient.isEmpty ? "No Client" : trimmedClient
-        let status = AppConstants.invoiceStatusDisplayName(for: invoice.effectiveStatus.rawValue)
+        return trimmedClient.isEmpty ? "No Client" : trimmedClient
+    }
+
+    static func status(for invoice: Invoice) -> String {
+        AppConstants.invoiceStatusDisplayName(for: invoice.effectiveStatus.rawValue)
+    }
+
+    static func amount(for invoice: Invoice) -> String {
         let currencyCode = InvoiceCurrencyCode.normalizedOrDefault(invoice.currencyCode)
-        let amount = invoice.totalAmount.formatted(.currency(code: currencyCode))
-        return "\(client) · \(status) · \(amount)"
+        return invoice.totalAmount.formatted(.currency(code: currencyCode))
     }
 }
 
@@ -395,7 +400,9 @@ enum InvoicesListQueryEngine {
         TreeItem(
             id: "invoice_\(invoice.id)",
             title: InvoiceListRowPresentation.title(for: invoice),
-            subtitle: InvoiceListRowPresentation.subtitle(for: invoice),
+            subtitle: InvoiceListRowPresentation.client(for: invoice),
+            trailingTitle: InvoiceListRowPresentation.amount(for: invoice),
+            trailingSubtitle: InvoiceListRowPresentation.status(for: invoice),
             children: nil,
             entityID: invoice.id.uuidString,
             entityType: "invoice",

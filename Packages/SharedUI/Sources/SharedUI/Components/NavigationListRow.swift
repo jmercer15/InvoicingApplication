@@ -9,6 +9,8 @@ public struct NavigationListRow: View {
 
     let title: String
     let subtitle: String?
+    let trailingTitle: String?
+    let trailingSubtitle: String?
     let style: Style
     let isHighlighted: Bool
     let onTap: () -> Void
@@ -16,12 +18,16 @@ public struct NavigationListRow: View {
     public init(
         title: String,
         subtitle: String? = nil,
+        trailingTitle: String? = nil,
+        trailingSubtitle: String? = nil,
         style: Style,
         isHighlighted: Bool = false,
         onTap: @escaping () -> Void
     ) {
         self.title = title
         self.subtitle = subtitle
+        self.trailingTitle = trailingTitle
+        self.trailingSubtitle = trailingSubtitle
         self.style = style
         self.isHighlighted = isHighlighted
         self.onTap = onTap
@@ -67,7 +73,9 @@ public struct NavigationListRow: View {
 
             Spacer()
 
-            if let entityType {
+            if trailingTitle != nil || trailingSubtitle != nil {
+                trailingBlock(entityTint: entityTint)
+            } else if let entityType {
                 HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
                     Circle()
                         .fill(entityTint)
@@ -81,6 +89,31 @@ public struct NavigationListRow: View {
             }
         }
         .animation(.spring(response: 0.12, dampingFraction: 0.85), value: isHighlighted)
+    }
+
+    private func trailingBlock(entityTint: Color) -> some View {
+        VStack(alignment: .trailing, spacing: ListRowTokens.titleSubtitleSpacing) {
+            if let trailingTitle, !trailingTitle.isEmpty {
+                Text(trailingTitle)
+                    .font(StyleGuide.Typography.compactRowTitle)
+                    .foregroundStyle(StyleGuide.Colors.text)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+
+            if let trailingSubtitle, !trailingSubtitle.isEmpty {
+                HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
+                    Circle()
+                        .fill(entityTint)
+                        .frame(width: ListRowTokens.entityDotSize, height: ListRowTokens.entityDotSize)
+
+                    Text(trailingSubtitle)
+                        .font(StyleGuide.Typography.caption)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
     }
 
     private func titleBlock(titleFont: Font, titleColor: Color) -> some View {

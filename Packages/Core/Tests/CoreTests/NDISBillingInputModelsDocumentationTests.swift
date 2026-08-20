@@ -1,6 +1,7 @@
 import Core
 import Foundation
 import Testing
+import CoreTesting
 
 @Suite(.tags(.unit))
 struct NDISBillingInputModelsDocumentationTests {

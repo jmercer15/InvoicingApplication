@@ -95,23 +95,47 @@ public struct NDISCatalogueContentColumn: View {
     private var refineMenu: some View {
         Menu {
             Section("Category") {
-                Button("All Categories") {
+                Button {
                     viewModel.selectedCategoryId = nil
+                } label: {
+                    HStack {
+                        Text("All Categories")
+                        Spacer()
+                        AppToolbarMenuCheckmark(isSelected: viewModel.selectedCategoryId == nil)
+                    }
                 }
                 ForEach(projection.categories, id: \.self) { category in
-                    Button(category) {
+                    Button {
                         viewModel.selectedCategoryId = category
+                    } label: {
+                        HStack {
+                            Text(category)
+                            Spacer()
+                            AppToolbarMenuCheckmark(isSelected: viewModel.selectedCategoryId == category)
+                        }
                     }
                 }
             }
 
             Section("Region") {
-                Button("All Regions") {
+                Button {
                     viewModel.selectedRegistrationGroup = nil
+                } label: {
+                    HStack {
+                        Text("All Regions")
+                        Spacer()
+                        AppToolbarMenuCheckmark(isSelected: viewModel.selectedRegistrationGroup == nil)
+                    }
                 }
                 ForEach(projection.registrationGroupsForMenu, id: \.self) { group in
-                    Button(group) {
+                    Button {
                         viewModel.selectedRegistrationGroup = group
+                    } label: {
+                        HStack {
+                            Text(group)
+                            Spacer()
+                            AppToolbarMenuCheckmark(isSelected: viewModel.selectedRegistrationGroup == group)
+                        }
                     }
                 }
             }
@@ -131,7 +155,7 @@ public struct NDISCatalogueContentColumn: View {
                         }
                     }
                     Divider()
-                    Button("Clear Feature Filters", role: .destructive) {
+                    Button("Clear Feature Filters") {
                         viewModel.clearFeatureFilters()
                     }
                 }

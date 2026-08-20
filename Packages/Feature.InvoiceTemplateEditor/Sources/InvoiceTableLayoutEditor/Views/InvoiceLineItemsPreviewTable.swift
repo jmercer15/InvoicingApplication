@@ -219,7 +219,7 @@ struct InvoiceLineItemsPreviewTable: View {
 
             if visibility.showUnit {
                 centeredCell(column: .unit, width: widths.unit, zebra: zebra) {
-                    Text(item.unit)
+                    Text(InvoiceUnitFormatter.string(for: item.unit))
                         .font(cellFont)
                         .lineLimit(1)
                 }

@@ -40,7 +40,7 @@ public struct ReconciliationDashboardView: View {
         return Group {
             if filtered.isEmpty {
                 Text("No \(selectedTab.rawValue.lowercased()) lines.")
-                    .foregroundStyle(Color(NSColor.tertiaryLabelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.tertiaryLabelColor))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(filtered) {

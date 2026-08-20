@@ -14,13 +14,6 @@ public extension Task where Success == Never, Failure == Never {
     }
 
     static func waitUnlessCancelled(nanoseconds: UInt64) async -> Bool {
-        do {
-            try await Task.sleep(nanoseconds: nanoseconds)
-            return !Task.isCancelled
-        } catch is CancellationError {
-            return false
-        } catch {
-            return false
-        }
+        await waitUnlessCancelled(for: .nanoseconds(Int64(nanoseconds)))
     }
 }

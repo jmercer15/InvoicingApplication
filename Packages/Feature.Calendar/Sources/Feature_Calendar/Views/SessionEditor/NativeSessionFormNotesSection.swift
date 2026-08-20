@@ -14,7 +14,7 @@ struct NativeSessionFormNotesSection: View {
                 TextEditor(text: viewModel.formBinding(\.notes))
                     .textFieldStyle(.roundedBorder)
                     .foregroundStyle(StyleGuide.Colors.text)
-                    .accentColor(ColorSystem.Primary.blue)
+                    .tint(ColorSystem.Primary.blue)
                     .frame(minHeight: 80)
                     .scrollContentBackground(.hidden)
                     .background(StyleGuide.Colors.background.opacity(0.3))

@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import AppKit
 import MapKit
@@ -227,7 +228,7 @@ public class PayeeDetailViewModel {
             }
             try modelContext.save()
         } catch {
-            print("❌ [PayeeDetailViewModel] Error updating client associations: \(error)")
+            Logger.clients.warning("❌ [PayeeDetailViewModel] Error updating client associations: \(error)")
             alertTitle = "Update Error"
             alertMessage = "Could not update client associations: \(error.localizedDescription)"
             showAlert = true

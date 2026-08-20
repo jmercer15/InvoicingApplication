@@ -32,7 +32,7 @@ struct ProfileView: View {
                                 if let error = viewModel.validationErrors["name"] {
                                     Text(error)
                                         .font(.caption)
-                                        .foregroundColor(.red)
+                                        .foregroundStyle(.red)
                                 }
                             }
                         }
@@ -55,7 +55,7 @@ struct ProfileView: View {
                                 if let error = viewModel.validationErrors["email"] {
                                     Text(error)
                                         .font(.caption)
-                                        .foregroundColor(.red)
+                                        .foregroundStyle(.red)
                                 }
                             }
                         }

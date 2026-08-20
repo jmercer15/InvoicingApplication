@@ -57,14 +57,16 @@ public struct ClaimBatchDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 AppToolbarActionsMenu(help: "Batch export, validation, and reconciliation") {
-                    Section("Export") {
+                    Section("Validation") {
                         Button {
                             runPreflight()
                         } label: {
                             Label("Run Preflight", systemImage: "checkmark.shield")
                         }
                         .disabled(isBusy)
+                    }
 
+                    Section("Submission") {
                         Button {
                             exportCSV()
                         } label: {
@@ -77,7 +79,7 @@ public struct ClaimBatchDetailView: View {
                         } label: {
                             Label("Mark Submitted", systemImage: "paperplane.fill")
                         }
-                        .disabled(isBusy)
+                        .disabled(isBusy || lines.isEmpty)
                     }
 
                     Section("Reconciliation") {
@@ -86,13 +88,14 @@ public struct ClaimBatchDetailView: View {
                         } label: {
                             Label("Import BPRF…", systemImage: "doc.badge.arrow.up")
                         }
+                        .disabled(isBusy)
 
                         Button {
                             sheetDestination = .reconciliation
                         } label: {
                             Label("Reconciliation", systemImage: "arrow.triangle.merge")
                         }
-                        .disabled(lines.isEmpty)
+                        .disabled(isBusy || lines.isEmpty)
                     }
                 }
             }

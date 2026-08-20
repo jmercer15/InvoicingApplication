@@ -1,3 +1,4 @@
+import os
 import Core
 import DataInterfaces
 import Foundation
@@ -45,7 +46,7 @@ public final class ClaimBatchesViewModel {
         do {
             return try persistence.fetchLines(forBatch: batchId)
         } catch {
-            print("Failed to fetch lines for batch: \(error)")
+            Logger.data.warning("Failed to fetch lines for batch: \(error)")
             return []
         }
     }

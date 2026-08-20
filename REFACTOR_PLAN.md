@@ -229,7 +229,7 @@ However, key architectural debt, code duplication, file bloat, and state managem
   - `Packages/Feature.NDIS/Tests/Feature_NDISTests/TestTags.swift`
   - `Packages/SharedUI/Tests/SharedUITests/TestTags.swift`
 - **Consolidation Plan**:
-  Declare `public extension Tag` for `@Tag static var unit: Self` and `@Tag static var integration: Self` inside `Packages/Core/Sources/Core/Testing/TestTags.swift`.
+  Declare `public extension Tag` for `@Tag static var unit: Self` and `@Tag static var integration: Self` inside test-only `Packages/Core/Sources/CoreTesting/TestTags.swift`; production `Core` must not link Swift Testing.
   Delete the 13 duplicate `TestTags.swift` files across all other test packages.
 
 ---
@@ -321,6 +321,8 @@ Certification completed August 17, 2026:
   -destination 'platform=macOS'` passed.
 - Repository-owned warning scan passed with zero warnings. Tool-only destination-selection
   and App Intents metadata notices remain documented outside repository-warning scope.
+- Shared Swift Testing tags live in test-only `CoreTesting`; production app launcher and
+  debug dylib were verified to contain no `Testing.framework` runtime dependency.
 - Owned-source metric reported 944 Swift files; `.agents`, build data, dependency checkouts,
   DerivedData, and `.git` excluded.
 - `git diff --check -- . ':(exclude).agents/**'` passed before commit.

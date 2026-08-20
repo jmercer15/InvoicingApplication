@@ -164,7 +164,7 @@ struct KanbanBoardView: View {
 
                     Divider()
 
-                    ScrollView(.horizontal, showsIndicators: true) {
+                    ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: 12) {
                             ForEach(sectionPresentations) { section in
                                 BillingHubDemoSectionContainer(
@@ -181,6 +181,7 @@ struct KanbanBoardView: View {
                         .padding(BillingHubTheme.Dimensions.boardPadding)
                         .frame(maxHeight: .infinity, alignment: .topLeading)
                     }
+                    .scrollIndicators(.visible)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .onChange(of: focusedCardTarget) { _, target in

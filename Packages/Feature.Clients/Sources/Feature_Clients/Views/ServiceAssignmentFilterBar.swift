@@ -160,12 +160,12 @@ struct ServiceAssignmentFilterBar: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .foregroundColor(ColorSystem.Status.error)
+        .foregroundStyle(ColorSystem.Status.error)
         .pointerStyle(.link)
     }
 
     private var activeFiltersView: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack {
                 ForEach(activeFilterChips, id: \.id) { filter in
                     HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
@@ -183,10 +183,11 @@ struct ServiceAssignmentFilterBar: View {
                     .background(ColorSystem.Primary.blue.opacity(StyleGuide.Opacity.medium))
                     .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
                     .buttonStyle(.plain)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                 }
             }
         }
+        .scrollIndicators(.hidden)
     }
 
     private func toggleFeature(_ feature: String) {

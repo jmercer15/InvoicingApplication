@@ -1,3 +1,4 @@
+import os
 import Foundation
 import EventKit
 import CoreLocation
@@ -116,7 +117,7 @@ extension EventKitSyncService {
                 preferredLocationOverride: preferredLocationOverride
             )
         } catch {
-            print("[EventKitSyncService] Reverse geocode failed for EKEvent \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
+            Logger.calendar.warning("[EventKitSyncService] Reverse geocode failed for EKEvent \(remoteEvent.eventIdentifier ?? "<unknown>"): \(error.localizedDescription)")
             return baseParsedLocation
         }
     }

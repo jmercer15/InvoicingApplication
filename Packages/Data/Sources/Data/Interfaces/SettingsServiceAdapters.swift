@@ -92,9 +92,10 @@ public final class SwiftDataClientRelationshipDeleter: ClientRelationshipDeletin
         descriptor.fetchLimit = 1
         guard let client = try modelContext.fetch(descriptor).first else { return }
         if deleteSessions {
-            for session in client.sessions ?? [] {
-                modelContext.delete(session)
-            }
+            try? modelContext.delete(
+                model: Session.self,
+                where: #Predicate { $0.client?.id == clientID }
+            )
         }
         modelContext.delete(client)
         try modelContext.save()

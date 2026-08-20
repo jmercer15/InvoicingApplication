@@ -29,7 +29,7 @@ let package = Package(
         ),
         .testTarget(
             name: "Feature_ClientsTests",
-            dependencies: ["Feature_Clients", "Core", "PersistenceModels", "Data", "SharedUI", "WorkspaceUI"],
+            dependencies: ["Feature_Clients", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels", "Data", "SharedUI", "WorkspaceUI"],
             swiftSettings: strictConcurrencySettings
         )
     ]

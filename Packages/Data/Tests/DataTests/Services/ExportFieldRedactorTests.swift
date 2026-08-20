@@ -3,6 +3,7 @@ import PersistenceModels
 @testable import Data
 import Foundation
 import Testing
+import CoreTesting
 
 @Suite(.tags(.integration))
 struct ExportFieldRedactorTests {

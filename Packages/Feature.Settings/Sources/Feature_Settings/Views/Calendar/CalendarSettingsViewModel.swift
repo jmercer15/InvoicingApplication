@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftUI
 import EventKit
@@ -198,19 +199,19 @@ public class CalendarSettingsViewModel {
     // MARK: - Actions
     @MainActor
     func requestAccess() async {
-        print("[CalendarSettingsViewModel] User requested calendar access")
+        Logger.calendar.info("[CalendarSettingsViewModel] User requested calendar access")
         isLoading = true
         errorMessage = nil
         
         let granted = await eventKitService.requestAccess()
-        print("[CalendarSettingsViewModel] Access request completed: granted=\(granted)")
+        Logger.calendar.info("[CalendarSettingsViewModel] Access request completed: granted=\(granted)")
         
         isLoading = false
         if !granted {
             errorMessage = "Calendar access was not granted."
-            print("[CalendarSettingsViewModel] Access denied, showing error message")
+            Logger.calendar.warning("[CalendarSettingsViewModel] Access denied, showing error message")
         } else {
-            print("[CalendarSettingsViewModel] Access granted successfully")
+            Logger.calendar.info("[CalendarSettingsViewModel] Access granted successfully")
             errorMessage = nil
         }
     }
@@ -227,12 +228,12 @@ public class CalendarSettingsViewModel {
 
     @MainActor
     func checkCurrentAccessStatus() {
-        print("[CalendarSettingsViewModel] Current access status check:")
-        print("  - Access granted: \(accessGranted)")
-        print("  - Available calendars: \(writableCalendars.count)")
-        print("  - Selected calendar: \(preferences.selectedCalendarIdentifier)")
-        print("  - Sync enabled: \(preferences.syncEnabled)")
-        print("  - Sync direction: \(preferences.syncDirection.rawValue)")
+        Logger.calendar.info("[CalendarSettingsViewModel] Current access status check:")
+        Logger.calendar.info("  - Access granted: \(self.accessGranted)")
+        Logger.calendar.info("  - Available calendars: \(self.writableCalendars.count)")
+        Logger.calendar.info("  - Selected calendar: \(self.preferences.selectedCalendarIdentifier)")
+        Logger.calendar.info("  - Sync enabled: \(self.preferences.syncEnabled)")
+        Logger.calendar.info("  - Sync direction: \(self.preferences.syncDirection.rawValue)")
     }
 
     @MainActor

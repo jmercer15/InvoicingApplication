@@ -1,4 +1,5 @@
 import Testing
+import CoreTesting
 @testable import SharedUI
 
 @Suite(.tags(.unit))

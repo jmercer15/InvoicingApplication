@@ -9,6 +9,7 @@
 //  in business logic and have been removed from the entity definitions.
 //
 
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -49,7 +50,7 @@ public struct RemoveUnusedProperties_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting unused properties removal migration (v\(version))")
+        Logger.migration.info("🔄 Starting unused properties removal migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -61,7 +62,7 @@ public struct RemoveUnusedProperties_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ Unused properties removal migration completed successfully")
+        Logger.migration.info("✅ Unused properties removal migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -81,11 +82,11 @@ public struct RemoveUnusedProperties_Migration {
         let travelCharges = try modelContext.fetch(travelChargeDescriptor)
         
         if sessions.isEmpty && travelCharges.isEmpty {
-            print("ℹ️ No Session or TravelCharge records found - migration not needed")
+            Logger.migration.info("ℹ️ No Session or TravelCharge records found - migration not needed")
             return
         }
         
-        print("📊 Found \(sessions.count) Session records and \(travelCharges.count) TravelCharge records to migrate")
+        Logger.migration.info("📊 Found \(sessions.count) Session records and \(travelCharges.count) TravelCharge records to migrate")
     }
     
     /// Perform the actual migration
@@ -104,7 +105,7 @@ public struct RemoveUnusedProperties_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -160,7 +161,7 @@ public struct RemoveUnusedProperties_Migration {
             let _ = travelCharge.travelDirection
         }
         
-        print("✅ Migration validation successful - all \(sessions.count) Session and \(travelCharges.count) TravelCharge records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(sessions.count) Session and \(travelCharges.count) TravelCharge records accessible")
     }
     
     /// Rollback the migration
@@ -172,7 +173,7 @@ public struct RemoveUnusedProperties_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Attempting to rollback unused properties removal migration")
+        Logger.migration.info("🔄 Attempting to rollback unused properties removal migration")
         
         // For property removal migrations, rollback is not supported
         // as the properties are permanently removed from the entity definitions
@@ -189,7 +190,7 @@ public struct UnusedPropertiesMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing unused properties removal migration")
+        Logger.migration.info("🧪 Testing unused properties removal migration")
         
         // Create test Session data
         let testSession = Session(id: UUID())
@@ -258,7 +259,7 @@ public struct UnusedPropertiesMigrationTestUtils {
         modelContext.delete(testTravelCharge)
         try modelContext.save()
         
-        print("✅ Unused properties removal migration test completed successfully")
+        Logger.migration.info("✅ Unused properties removal migration test completed successfully")
     }
 }
 #endif

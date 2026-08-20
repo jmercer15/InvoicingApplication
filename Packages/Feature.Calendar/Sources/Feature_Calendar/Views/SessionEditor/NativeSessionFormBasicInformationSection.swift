@@ -17,7 +17,7 @@ struct NativeSessionFormBasicInformationSection: View {
                         TextField("Session title", text: viewModel.formBinding(\.title))
                             .textFieldStyle(.roundedBorder)
                             .foregroundStyle(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .tint(ColorSystem.Primary.blue)
                             .font(StyleGuide.Typography.sectionTitle)
                             .fontWeight(.semibold)
                             .onChange(of: viewModel.formModel.title) { _, newValue in
@@ -53,7 +53,7 @@ struct NativeSessionFormBasicInformationSection: View {
                             .datePickerStyle(.compact)
                             .labelsHidden()
                             .foregroundStyle(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .tint(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.formModel.startTime) { _, newValue in
                                 var updated = viewModel.formModel
                                 if updated.isAllDay {
@@ -102,7 +102,7 @@ struct NativeSessionFormBasicInformationSection: View {
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
                                 .foregroundStyle(StyleGuide.Colors.text)
-                                .accentColor(ColorSystem.Primary.blue)
+                                .tint(ColorSystem.Primary.blue)
                                 .onChange(of: viewModel.formModel.startTime) { _, newValue in
                                     var updated = viewModel.formModel
                                     if !updated.isAllDay && updated.endTime <= newValue {
@@ -118,7 +118,7 @@ struct NativeSessionFormBasicInformationSection: View {
                                 .datePickerStyle(.compact)
                                 .labelsHidden()
                                 .foregroundStyle(StyleGuide.Colors.text)
-                                .accentColor(ColorSystem.Primary.blue)
+                                .tint(ColorSystem.Primary.blue)
                                 .onChange(of: viewModel.formModel.endTime) { _, newValue in
                                     var updated = viewModel.formModel
                                     if !updated.isAllDay && newValue <= updated.startTime {

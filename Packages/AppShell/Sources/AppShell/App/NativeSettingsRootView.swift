@@ -13,7 +13,7 @@ import Feature_Settings
 struct NativeSettingsRootView: View {
     @State private var settingsWorkspaceViewModel = SettingsWorkspaceViewModel()
     @SceneStorage("Settings.ColumnVisibility") private var columnVisibilityRaw = "automatic"
-    @SceneStorage("Settings.PreferredCompactColumn") private var preferredCompactColumnRaw = "detail"
+
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
@@ -26,26 +26,9 @@ struct NativeSettingsRootView: View {
         )
     }
 
-    private var preferredCompactColumn: Binding<NavigationSplitViewColumn> {
-        Binding(
-            get: {
-                NavigationSplitViewStateCodec.decodePreferredCompactColumn(
-                    preferredCompactColumnRaw,
-                    fallback: .detail
-                )
-            },
-            set: { newValue in
-                let encoded = NavigationSplitViewStateCodec.encodePreferredCompactColumn(newValue)
-                guard preferredCompactColumnRaw != encoded else { return }
-                preferredCompactColumnRaw = encoded
-            }
-        )
-    }
-
     var body: some View {
         NavigationSplitView(
-            columnVisibility: columnVisibility,
-            preferredCompactColumn: preferredCompactColumn
+            columnVisibility: columnVisibility
         ) {
             SettingsContentColumn(viewModel: settingsWorkspaceViewModel)
                 .standardPanelShell(role: .contentPanel)

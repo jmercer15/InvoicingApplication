@@ -16,18 +16,18 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: DetailSectionTokens.formRowSpacing) {
                     Text("Name:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack {
                         TextField("Enter client name", text: $viewModel.editableFullName)
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                            .tint(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.editableFullName) { viewModel.updateAndSaveClient() }
 
                         Button(action: { copyToClipboard(viewModel.editableFullName) }) {
                             Image(systemName: "doc.on.doc")
-                                .foregroundColor(ColorSystem.Neutral.gray500)
+                                .foregroundStyle(ColorSystem.Neutral.gray500)
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -40,18 +40,18 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: DetailSectionTokens.formRowSpacing) {
                     Text("Email:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack {
                         TextField("Enter email address", text: $viewModel.emailValidator.email)
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                            .tint(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.emailValidator.email) { viewModel.updateAndSaveClient() }
 
                         Button(action: { copyToClipboard(viewModel.emailValidator.email) }) {
                             Image(systemName: "doc.on.doc")
-                                .foregroundColor(ColorSystem.Neutral.gray500)
+                                .foregroundStyle(ColorSystem.Neutral.gray500)
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -64,18 +64,18 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: DetailSectionTokens.formRowSpacing) {
                     Text("Phone:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack {
                         TextField("Enter phone number", text: $viewModel.phoneFormatter.phoneNumber)
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                            .tint(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.phoneFormatter.phoneNumber) { viewModel.updateAndSaveClient() }
 
                         Button(action: { copyToClipboard(viewModel.phoneFormatter.phoneNumber) }) {
                             Image(systemName: "doc.on.doc")
-                                .foregroundColor(ColorSystem.Neutral.gray500)
+                                .foregroundStyle(ColorSystem.Neutral.gray500)
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -95,11 +95,11 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                 HStack(alignment: .center, spacing: DetailSectionTokens.formRowSpacing) {
                     Text("Has NDIS Plan:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     Toggle("", isOn: $viewModel.editableHasNdisPlan)
                         .toggleStyle(.switch)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                         .labelsHidden()
                         .onChange(of: viewModel.editableHasNdisPlan) { viewModel.updateAndSaveClient() }
                 }
@@ -109,18 +109,18 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                     HStack(alignment: .firstTextBaseline, spacing: DetailSectionTokens.formRowSpacing) {
                         Text("NDIS:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         HStack {
                             TextField("Enter NDIS number", text: $viewModel.editableNdisNumber)
                                 .textFieldStyle(.roundedBorder)
-                                .foregroundColor(StyleGuide.Colors.text)
-                                .accentColor(ColorSystem.Primary.blue)
+                                .foregroundStyle(StyleGuide.Colors.text)
+                                .tint(ColorSystem.Primary.blue)
                                 .onChange(of: viewModel.editableNdisNumber) { viewModel.updateAndSaveClient() }
 
                             Button(action: { copyToClipboard(viewModel.editableNdisNumber) }) {
                                 Image(systemName: "doc.on.doc")
-                                    .foregroundColor(ColorSystem.Neutral.gray500)
+                                    .foregroundStyle(ColorSystem.Neutral.gray500)
                                     .contentShape(.rect)
                             }
                             .buttonStyle(.plain)
@@ -136,7 +136,7 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Type:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         Picker("", selection: Binding(
                             get: { viewModel.editablePlanManagementType ?? "Self-Managed" },
@@ -156,7 +156,7 @@ struct ClientDetailClientInformationCard<Address: View>: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Plan Manager:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         Picker("", selection: Binding(
                             get: { viewModel.selectedPlanManager?.id },

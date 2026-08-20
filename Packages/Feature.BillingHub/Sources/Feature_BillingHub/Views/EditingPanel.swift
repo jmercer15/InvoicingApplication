@@ -115,6 +115,7 @@ public struct EditingPanel: View {
                         )
                     }
                     .disabled(isSavingDetails || !hasValidInvoiceDetails)
+                    .keyboardShortcut(.defaultAction)
                 }
             }
         }

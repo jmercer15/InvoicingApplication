@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CoreTesting
 @testable import SharedUI
 import Core
 

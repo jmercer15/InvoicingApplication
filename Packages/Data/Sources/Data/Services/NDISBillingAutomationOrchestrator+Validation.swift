@@ -1,3 +1,4 @@
+import os
 import Foundation
 import Core
 import PersistenceModels
@@ -7,7 +8,7 @@ extension NDISBillingAutomationOrchestrator {
     // MARK: - Step 1: Session Data Validation
 
     func validateSessionData(_ session: Session, result: inout AutomationResult) async -> Bool {
-        print("🔍 [NDIS Automation] Step 1: Validating session data")
+        Logger.automation.info("🔍 [NDIS Automation] Step 1: Validating session data")
         result.updateStatus(.validating)
 
         guard let startTime = session.startTime else {
@@ -33,25 +34,25 @@ extension NDISBillingAutomationOrchestrator {
             result.addError("Session end time is before start time")
             return false
         }
-        print("✅ [NDIS Automation] Session data validation passed")
+        Logger.automation.info("✅ [NDIS Automation] Session data validation passed")
         return true
     }
 
     // MARK: - Step 2: Coordinate Availability
 
     func ensureCoordinatesAvailable(for session: Session, result: inout AutomationResult) async -> Bool {
-        print("🌍 [NDIS Automation] Step 2: Ensuring coordinates are available")
+        Logger.automation.info("🌍 [NDIS Automation] Step 2: Ensuring coordinates are available")
         result.updateStatus(.geocoding)
 
         if hasValidCoordinates(session) {
-            print("✅ [NDIS Automation] Session already has valid coordinates")
+            Logger.automation.info("✅ [NDIS Automation] Session already has valid coordinates")
             return true
         }
         guard let location = getSessionLocation(session) else {
             result.addError("Session has no location data to geocode")
             return false
         }
-        print("🌍 [NDIS Automation] Geocoding session location: \(location)")
+        Logger.automation.info("🌍 [NDIS Automation] Geocoding session location: \(location)")
         let sessionId = session.id
         let geocodingSuccess = await NDISBillingAutomationOrchestrator.performGeocodingForSession(
             sessionId: sessionId,
@@ -59,9 +60,9 @@ extension NDISBillingAutomationOrchestrator {
             modelContext: self.modelContext
         )
         if geocodingSuccess {
-            print("✅ [NDIS Automation] Session coordinates set successfully")
+            Logger.automation.info("✅ [NDIS Automation] Session coordinates set successfully")
         } else {
-            print("❌ [NDIS Automation] Failed to geocode session location")
+            Logger.automation.error("❌ [NDIS Automation] Failed to geocode session location")
             result.addError("Failed to geocode session location")
         }
         if geocodingSuccess && !hasValidCoordinates(session) {

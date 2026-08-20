@@ -16,6 +16,20 @@ import Data
 @MainActor
 @Suite struct InvoicesPolishAndAccessibilityTests {
 
+    @Test func InvoiceListOmitsRevenueSummaryStrip() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: packageRoot
+                .appendingPathComponent("Sources/Feature_Invoices/Views/InvoicesViewList.swift"),
+            encoding: .utf8
+        )
+
+        #expect(!source.contains("RevenueAnalyticsSummaryView"))
+    }
+
     // MARK: - 1. Active Filter Summary Generation Tests
 
     @Test func ActiveFilterDescriptionsAndSummaryGeneration() {

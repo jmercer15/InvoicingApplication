@@ -14,12 +14,12 @@ extension TravelChargeAutomationTestView {
             Text("Travel Charge Automation Test")
                 .font(.title.bold())
             Text("Select one or more sessions and run the automation. Or search for an address below to test MMM zone lookup.")
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
         }
     }
 
     var instructionsSection: some View {
-            GroupBox(label: Label("Instructions", systemImage: "info.circle")) {
+            GroupBox {
                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     Text("• Sessions must have a location set to create travel charges")
                     Text("• Business address must be configured in Settings → Company Details")
@@ -27,19 +27,21 @@ extension TravelChargeAutomationTestView {
                     Text("• Travel charges are created for first/last sessions of the day")
                 }
                 .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
+            } label: {
+                Label("Instructions", systemImage: "info.circle")
             }
             .padding(.bottom, 8)
     }
 
     var businessAddressSection: some View {
-            GroupBox(label: Label("Business Address Status", systemImage: "building.2")) {
+            GroupBox {
                 if viewModel.isLoadingBusinessAddress {
                     HStack(spacing: FormSectionTokens.fieldStackSpacing) {
                         ProgressView()
                         Text("Checking business address...")
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     }
                 } else if let info = viewModel.businessAddressInfo {
                     if info.hasBusiness {
@@ -47,24 +49,24 @@ extension TravelChargeAutomationTestView {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             HStack {
                                 Image(systemName: hasAddress ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(hasAddress ? .green : .red)
+                                    .foregroundStyle(hasAddress ? .green : .red)
                                     Text(hasAddress ? "Business address is set" : "Business address is missing or empty")
                                     .font(.caption)
                             }
                             if hasAddress {
                                 Text("Address: \(info.fullFormattedAddress)")
                                     .font(.caption2)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             } else {
                                 Text("Address fields are empty - please set business address in Company settings")
                                     .font(.caption2)
-                                    .foregroundColor(ColorSystem.Status.warning)
+                                    .foregroundStyle(ColorSystem.Status.warning)
                             }
                         }
                     } else {
                         HStack {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(ColorSystem.Status.error)
+                                .foregroundStyle(ColorSystem.Status.error)
                             Text("No business entity or address found")
                                 .font(.caption)
                         }
@@ -72,17 +74,19 @@ extension TravelChargeAutomationTestView {
                 } else {
                     HStack {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(ColorSystem.Status.error)
+                            .foregroundStyle(ColorSystem.Status.error)
                         Text("No business entity or address found")
                             .font(.caption)
                     }
                 }
+            } label: {
+                Label("Business Address Status", systemImage: "building.2")
             }
             .padding(.bottom, 8)
     }
 
     var addressSearchSection: some View {
-            GroupBox(label: Label("Address Search (MapKit)", systemImage: "magnifyingglass")) {
+            GroupBox {
                 VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     SettingsRow(label: "Address Search:", labelWidth: maxLabelWidth) {
                         NativeAddressSearchField(
@@ -117,9 +121,11 @@ extension TravelChargeAutomationTestView {
                         .pointerStyle(.link)
                     }
                     if let zone = viewModel.mmmZoneForAddress {
-                        Text("MMM Zone: \(zone)").foregroundColor(ColorSystem.Status.info)
+                        Text("MMM Zone: \(zone)").foregroundStyle(ColorSystem.Status.info)
                     }
                 }
+            } label: {
+                Label("Address Search (MapKit)", systemImage: "magnifyingglass")
             }
             .padding(.bottom, 8)
     }
@@ -139,19 +145,19 @@ extension TravelChargeAutomationTestView {
                                 }
                                 // Show specific instance time for recurring sessions
                                 if session.recurrenceRuleData != nil {
-                                    Text("Instance: \(DateFormatting.mediumDateTime(sessionInstance.instanceStart))").font(.caption2).foregroundColor(ColorSystem.Status.info)
-                                    Text("End: \(DateFormatting.mediumDateTime(sessionInstance.instanceEnd))").font(.caption2).foregroundColor(ColorSystem.Status.info)
+                                    Text("Instance: \(DateFormatting.mediumDateTime(sessionInstance.instanceStart))").font(.caption2).foregroundStyle(ColorSystem.Status.info)
+                                    Text("End: \(DateFormatting.mediumDateTime(sessionInstance.instanceEnd))").font(.caption2).foregroundStyle(ColorSystem.Status.info)
                                 } else {
                                     Text("\(DateFormatting.mediumDateTime(sessionInstance.instanceStart))").font(.caption2)
                                 }
                                 // Check both location string and linked address entity
                                 Group {
                                     if let loc = session.location, !loc.isEmpty {
-                                        Text(loc).font(.caption2).foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        Text(loc).font(.caption2).foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                     } else if let address = session.address {
-                                        Text(address.fullFormattedAddress).font(.caption2).foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        Text(address.fullFormattedAddress).font(.caption2).foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                     } else {
-                                        Text("No location set").font(.caption2).foregroundColor(ColorSystem.Status.error)
+                                        Text("No location set").font(.caption2).foregroundStyle(ColorSystem.Status.error)
                                     }
                                 }
                             }
@@ -160,17 +166,17 @@ extension TravelChargeAutomationTestView {
                                 // Check if session has any location data
                                 if !((session.location != nil && !session.location!.isEmpty) || session.address != nil) {
                                     Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(ColorSystem.Status.warning)
+                                        .foregroundStyle(ColorSystem.Status.warning)
                                         .help("Session has no location set")
                                 }
                                 if session.recurrenceRuleData != nil {
                                     Image(systemName: "repeat.circle.fill")
-                                        .foregroundColor(ColorSystem.Status.info)
+                                        .foregroundStyle(ColorSystem.Status.info)
                                         .help("Recurring session instance")
                                 }
                                 // Use the unique instance ID for selection
                                 if viewModel.selectedSessionInstances.contains(sessionInstance.uniqueInstanceId) {
-                                    Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor)
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                                 }
                             }
                         }
@@ -232,10 +238,10 @@ extension TravelChargeAutomationTestView {
                 ProgressView("Running automation...")
             }
             if let error = viewModel.errorMessage {
-                Text(error).foregroundColor(ColorSystem.Status.error)
+                Text(error).foregroundStyle(ColorSystem.Status.error)
             }
             if let mmmZone = viewModel.mmmZoneResult {
-                Text("MMM Zone: \(mmmZone)").foregroundColor(ColorSystem.Status.info)
+                Text("MMM Zone: \(mmmZone)").foregroundStyle(ColorSystem.Status.info)
             }
         }
     }
@@ -250,11 +256,11 @@ extension TravelChargeAutomationTestView {
                         Spacer()
                         Text("\(viewModel.testChargeSummaries.count) charges")
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             .padding(.horizontal, paddingMedium)
                             .padding(.vertical, paddingSmall)
                             .background(Color.blue.opacity(StyleGuide.Opacity.light))
-                            .cornerRadius(cornerRadiusXSmall)
+                            .clipShape(.rect(cornerRadius: cornerRadiusXSmall))
                     }
 
                     ScrollView {
@@ -263,13 +269,13 @@ extension TravelChargeAutomationTestView {
                                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                     Text("Travel Charge #\(index + 1)")
                                         .font(.headline)
-                                        .foregroundColor(.accentColor)
+                                        .foregroundStyle(Color.accentColor)
 
                                     Text(summary)
                                         .font(.caption)
                                         .padding(StyleGuide.Dimensions.paddingMedium)
                                         .background(Color.gray.opacity(StyleGuide.Opacity.light))
-                                        .cornerRadius(cornerRadiusSmall)
+                                        .clipShape(.rect(cornerRadius: cornerRadiusSmall))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .padding(.bottom, 8)
@@ -288,11 +294,11 @@ extension TravelChargeAutomationTestView {
                         Spacer()
                         Text("\(viewModel.testReviewSummaries.count) items")
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             .padding(.horizontal, paddingMedium)
                             .padding(.vertical, paddingSmall)
                             .background(Color.orange.opacity(StyleGuide.Opacity.light))
-                            .cornerRadius(cornerRadiusXSmall)
+                            .clipShape(.rect(cornerRadius: cornerRadiusXSmall))
                     }
 
                     ScrollView {
@@ -301,14 +307,14 @@ extension TravelChargeAutomationTestView {
                                 VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                     Text("Review Item #\(index + 1)")
                                         .font(.headline)
-                                        .foregroundColor(ColorSystem.Status.warning)
+                                        .foregroundStyle(ColorSystem.Status.warning)
 
                                     Text(summary)
                                         .font(.caption)
-                                        .foregroundColor(ColorSystem.Status.warning)
+                                        .foregroundStyle(ColorSystem.Status.warning)
                                         .padding(StyleGuide.Dimensions.paddingMedium)
                                         .background(Color.orange.opacity(StyleGuide.Opacity.light))
-                                        .cornerRadius(cornerRadiusSmall)
+                                        .clipShape(.rect(cornerRadius: cornerRadiusSmall))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .padding(.bottom, 6)

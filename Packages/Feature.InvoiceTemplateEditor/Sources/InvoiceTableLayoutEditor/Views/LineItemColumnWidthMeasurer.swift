@@ -14,11 +14,11 @@ enum LineItemTableColumn: Int, CaseIterable, Hashable {
 
     var headerTitle: String {
         switch self {
-        case .date: "Service Date"
+        case .date: "Date"
         case .description: "Description"
         case .qty: "Qty"
         case .unit: "Unit"
-        case .rate: "Unit Price"
+        case .rate: "Rate"
         case .total: "Total"
         }
     }
@@ -162,8 +162,9 @@ enum LineItemColumnWidthMeasurer {
             let qtyText = InvoiceDecimalFormatter.string(for: item.quantity)
             qtyCell = max(qtyCell, textWidth(qtyText, font: numericCellFont) + numericChrome)
 
-            if !item.unit.isEmpty {
-                unitCell = max(unitCell, textWidth(item.unit, font: cellFont))
+            let unitText = InvoiceUnitFormatter.string(for: item.unit)
+            if !unitText.isEmpty {
+                unitCell = max(unitCell, textWidth(unitText, font: cellFont))
             }
 
             let rateAffix = presentation == .editable ? moneyAffixWidth : 0

@@ -1,3 +1,4 @@
+import os
 import AppKit
 import Core
 import PersistenceModels
@@ -109,7 +110,7 @@ public struct ClaimBatchBuildWizardView: View {
                     await applyInitialDrafts(ids: ids)
                 }
             } catch {
-                print("Failed to load reference data for wizard: \(error)")
+                Logger.data.warning("Failed to load reference data for wizard: \(error)")
             }
         }
         .task(id: draftTaskId) {
@@ -152,17 +153,17 @@ public struct ClaimBatchBuildWizardView: View {
                 let isPast = s.rawValue < step.rawValue
                 Text(stepTitle(s))
                     .font(.caption)
-                    .foregroundColor(isActive ? Color(NSColor.controlAccentColor) : (isPast ? Color(NSColor.secondaryLabelColor) : Color(NSColor.tertiaryLabelColor)))
+                    .foregroundStyle(isActive ? Color(nsColor: NSColor.controlAccentColor) : (isPast ? Color(nsColor: NSColor.secondaryLabelColor) : Color(nsColor: NSColor.tertiaryLabelColor)))
                 if index < WizardStep.allCases.count - 1 {
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                        .foregroundStyle(Color(nsColor: NSColor.tertiaryLabelColor))
                 }
             }
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingXMedium)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color(nsColor: NSColor.controlBackgroundColor))
     }
 
     private func stepTitle(_ s: WizardStep) -> String {
@@ -178,7 +179,7 @@ public struct ClaimBatchBuildWizardView: View {
         VStack(alignment: .leading, spacing: FormSectionTokens.formGroupSpacing) {
             Text("Set the date range for sessions included in the batch.")
                 .font(.body)
-                .foregroundColor(Color(NSColor.secondaryLabelColor))
+                .foregroundStyle(Color(nsColor: NSColor.secondaryLabelColor))
             HStack(spacing: FormSectionTokens.formGroupSpacing) {
                 DatePicker("From", selection: $fromDate, displayedComponents: .date)
                 DatePicker("To", selection: $toDate, displayedComponents: .date)
@@ -191,10 +192,10 @@ public struct ClaimBatchBuildWizardView: View {
         VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
             Text("Select drafts to include. Only ready or locked drafts are listed.")
                 .font(.body)
-                .foregroundColor(Color(NSColor.secondaryLabelColor))
+                .foregroundStyle(Color(nsColor: NSColor.secondaryLabelColor))
             if drafts.isEmpty {
                 Text("No drafts in range.")
-                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.tertiaryLabelColor))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
@@ -217,13 +218,13 @@ public struct ClaimBatchBuildWizardView: View {
         VStack(alignment: .leading, spacing: FormSectionTokens.sectionStackSpacing) {
             if let batch = createdBatch {
                 Label("Batch created: \(batch.rowCount) lines.", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(Color(NSColor.systemGreen))
+                    .foregroundStyle(Color(nsColor: NSColor.systemGreen))
             } else if isBuilding {
                 ProgressView("Building batch…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text("Build the batch from the selected drafts.")
-                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.secondaryLabelColor))
             }
             Spacer(minLength: 0)
         }
@@ -233,12 +234,12 @@ public struct ClaimBatchBuildWizardView: View {
         VStack(alignment: .leading, spacing: FormSectionTokens.sectionStackSpacing) {
             if let name = exportFileName {
                 Label("Exported as \(name)", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(Color(NSColor.systemGreen))
+                    .foregroundStyle(Color(nsColor: NSColor.systemGreen))
             } else if isExporting {
                 ProgressView("Preparing export…")
             } else if createdBatch != nil {
                 Text("Export the batch as a CSV file for submission.")
-                    .foregroundColor(Color(NSColor.secondaryLabelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.secondaryLabelColor))
             }
             Spacer(minLength: 0)
         }
@@ -249,7 +250,7 @@ public struct ClaimBatchBuildWizardView: View {
             if let msg = errorMessage {
                 Text(msg)
                     .font(.caption)
-                    .foregroundColor(Color(NSColor.systemRed))
+                    .foregroundStyle(Color(nsColor: NSColor.systemRed))
             }
             Spacer(minLength: 0)
             if step.rawValue > 0 {
@@ -268,7 +269,7 @@ public struct ClaimBatchBuildWizardView: View {
         }
         .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
         .padding(.vertical, StyleGuide.Dimensions.paddingXMedium)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color(nsColor: NSColor.controlBackgroundColor))
     }
 
     private var nextDisabled: Bool {

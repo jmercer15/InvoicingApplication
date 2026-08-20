@@ -12,13 +12,13 @@ struct RelationshipDetailAddressRow: View {
         HStack(alignment: .firstTextBaseline, spacing: StyleGuide.Dimensions.paddingSmall) {
             Text("Address:")
                 .frame(width: maxLabelWidth, alignment: .trailing)
-                .foregroundColor(StyleGuide.Colors.text)
+                .foregroundStyle(StyleGuide.Colors.text)
 
             HStack(alignment: .firstTextBaseline, spacing: StyleGuide.Dimensions.paddingMedium) {
                 if hasAddressData {
                     Text(addressText)
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
@@ -26,7 +26,7 @@ struct RelationshipDetailAddressRow: View {
                 } else {
                     Text("No address added")
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
@@ -37,7 +37,7 @@ struct RelationshipDetailAddressRow: View {
                     HStack(spacing: StyleGuide.Dimensions.paddingXSmall) {
                         Button { showingMapSheet = true } label: {
                             Image(systemName: "map")
-                                .foregroundColor(ColorSystem.Primary.blue)
+                                .foregroundStyle(ColorSystem.Primary.blue)
                                 .font(StyleGuide.Typography.caption)
                                 .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                                 .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
@@ -50,7 +50,7 @@ struct RelationshipDetailAddressRow: View {
 
                         Button { showingAddressEditingSheet = true } label: {
                             Image(systemName: "pencil")
-                                .foregroundColor(ColorSystem.Status.warning)
+                                .foregroundStyle(ColorSystem.Status.warning)
                                 .font(StyleGuide.Typography.caption)
                                 .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                                 .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
@@ -64,7 +64,7 @@ struct RelationshipDetailAddressRow: View {
                 } else {
                     Button { showingAddressEditingSheet = true } label: {
                         Image(systemName: "plus")
-                            .foregroundColor(ColorSystem.Status.success)
+                            .foregroundStyle(ColorSystem.Status.success)
                             .font(StyleGuide.Typography.caption)
                             .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                             .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)

@@ -419,7 +419,9 @@ import PersistenceModels
         invoice.currencyCode = "aud"
 
         let title = InvoiceListRowPresentation.title(for: invoice)
-        let subtitle = InvoiceListRowPresentation.subtitle(for: invoice)
+        let client = InvoiceListRowPresentation.client(for: invoice)
+        let status = InvoiceListRowPresentation.status(for: invoice)
+        let amount = InvoiceListRowPresentation.amount(for: invoice)
         let projection = InvoicesListQueryEngine.project(
             invoices: [invoice],
             spec: InvoicesListQuerySpec(
@@ -437,11 +439,13 @@ import PersistenceModels
         )
 
         #expect(title == "Untitled Invoice")
-        #expect(subtitle.contains("No Client"))
-        #expect(subtitle.contains("Pending"))
-        #expect(subtitle.contains("125"))
+        #expect(client == "No Client")
+        #expect(status == "Pending")
+        #expect(amount.contains("125"))
         #expect(projection.treeItems.first?.title == title)
-        #expect(projection.treeItems.first?.subtitle == subtitle)
+        #expect(projection.treeItems.first?.subtitle == client)
+        #expect(projection.treeItems.first?.trailingTitle == amount)
+        #expect(projection.treeItems.first?.trailingSubtitle == status)
     }
 
     @Test func ListRowPresentationUsesSharedDefaultForMalformedCurrency() {
@@ -453,12 +457,12 @@ import PersistenceModels
         )
         invoice.currencyCode = "12!"
 
-        let subtitle = InvoiceListRowPresentation.subtitle(for: invoice)
+        let amount = InvoiceListRowPresentation.amount(for: invoice)
         let expectedAmount = invoice.totalAmount.formatted(
             .currency(code: InvoiceCurrencyCode.defaultValue)
         )
 
-        #expect(subtitle.contains(expectedAmount))
+        #expect(amount == expectedAmount)
     }
 
     @Test func ProjectAndPersistenceSpecDefensivelyOrderInvertedRanges() {

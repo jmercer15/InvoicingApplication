@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import SwiftData
 import Core
@@ -47,7 +48,7 @@ extension NDISContainerViewModel {
             self.changesSummary = summary
             self.changesError = nil
         } catch {
-            print("Error fetching changes summary: \(error)")
+            Logger.automation.warning("Error fetching changes summary: \(error)")
             self.changesError = error
         }
     }
@@ -61,7 +62,7 @@ extension NDISContainerViewModel {
             let changes = try await catalogueFetching.analyzeItemChanges(itemNumber: itemNumber)
             self.itemChanges = changes
         } catch {
-            print("Error loading item history for \(itemNumber): \(error)")
+            Logger.automation.warning("Error loading item history for \(itemNumber): \(error)")
         }
     }
 }

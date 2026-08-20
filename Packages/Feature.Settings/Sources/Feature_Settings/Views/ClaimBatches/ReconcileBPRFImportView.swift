@@ -33,10 +33,10 @@ public struct ReconcileBPRFImportView: View {
             } else {
                 if let err = parseError {
                     Text(err)
-                        .foregroundColor(Color(NSColor.systemRed))
+                        .foregroundStyle(Color(nsColor: NSColor.systemRed))
                 } else {
                     Text("\(parsedResults.count) result lines loaded. Review and confirm import.")
-                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .foregroundStyle(Color(nsColor: NSColor.secondaryLabelColor))
                     Table(parsedResults) {
                         TableColumn("Claim reference") { row in Text(row.line.claimReference) }
                         TableColumn("Status") { row in Text(row.line.submissionStatus) }
@@ -50,11 +50,11 @@ public struct ReconcileBPRFImportView: View {
             }
             if let result = importResult {
                 Text("Updated \(result.updatedLineCount) lines.")
-                    .foregroundColor(Color(NSColor.systemGreen))
+                    .foregroundStyle(Color(nsColor: NSColor.systemGreen))
                 if !result.unmatchedReferences.isEmpty {
                     Text("Unmatched: \(result.unmatchedReferences.prefix(5).joined(separator: ", "))\(result.unmatchedReferences.count > 5 ? "…" : "")")
                         .font(.caption)
-                        .foregroundColor(Color(NSColor.orange))
+                        .foregroundStyle(Color(nsColor: NSColor.orange))
                 }
             }
             Spacer(minLength: 0)

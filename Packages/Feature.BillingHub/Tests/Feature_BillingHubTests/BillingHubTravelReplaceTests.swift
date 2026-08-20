@@ -4,6 +4,7 @@ import Data
 import Foundation
 import SwiftData
 import Testing
+import CoreTesting
 @testable import Feature_BillingHub
 
 @MainActor

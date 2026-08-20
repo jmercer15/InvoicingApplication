@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import SwiftData
 import Core
@@ -35,7 +36,7 @@ public struct RelationshipsDetailColumn: View {
 
     public var body: some View {
         detailContent
-            .toolbar(content: deletionToolbar)
+            .toolbar(content: relationshipActionsToolbar)
             .alert(deleteAlertTitle, isPresented: $showingDeleteAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) { deleteAction?() }
@@ -142,9 +143,27 @@ public struct RelationshipsDetailColumn: View {
     }
 
     @ToolbarContentBuilder
-    private func deletionToolbar() -> some ToolbarContent {
-        ToolbarItem(placement: .destructiveAction) {
-            deletionButton
+    private func relationshipActionsToolbar() -> some ToolbarContent {
+        if canDeleteResolvedSelection {
+            ToolbarItem(placement: .automatic) {
+                AppToolbarActionsMenu(help: "Relationship actions") {
+                    deletionButton
+                }
+            }
+        }
+    }
+
+    private var canDeleteResolvedSelection: Bool {
+        guard !viewModel.isCreatingNewEntity else { return false }
+        return switch viewModel.detailState {
+        case .client(let objectID):
+            resolvedClient?.id == objectID
+        case .payee(let objectID):
+            resolvedPayee?.id == objectID
+        case .planManager(let objectID):
+            resolvedPlanManager?.id == objectID
+        case .newClient, .newPayee, .newPlanManager, .none:
+            false
         }
     }
 
@@ -198,7 +217,7 @@ public struct RelationshipsDetailColumn: View {
         Task {
             do {
                 guard let entity = resolvedClient else {
-                    print("❌ Error deleting client: resolved model missing")
+                    Logger.clients.warning("❌ Error deleting client: resolved model missing")
                     return
                 }
                 try await viewModel.deleteClient(entity, deleteSessions: deleteSessions)
@@ -206,7 +225,7 @@ public struct RelationshipsDetailColumn: View {
                     viewModel.detailState = .none
                 }
             } catch {
-                print("❌ Error deleting client: \(error)")
+                Logger.clients.warning("❌ Error deleting client: \(error)")
             }
         }
     }
@@ -218,7 +237,7 @@ public struct RelationshipsDetailColumn: View {
             Task {
                 do {
                     guard let entity = resolvedPayee, entity.id == id else {
-                        print("❌ Error deleting payee: resolved model missing")
+                        Logger.clients.warning("❌ Error deleting payee: resolved model missing")
                         return
                     }
                     try await viewModel.deletePayee(entity)
@@ -226,7 +245,7 @@ public struct RelationshipsDetailColumn: View {
                         viewModel.detailState = .none
                     }
                 } catch {
-                    print("❌ Error deleting payee: \(error)")
+                    Logger.clients.warning("❌ Error deleting payee: \(error)")
                 }
             }
         }
@@ -240,7 +259,7 @@ public struct RelationshipsDetailColumn: View {
             Task {
                 do {
                     guard let entity = resolvedPlanManager, entity.id == id else {
-                        print("❌ Error deleting plan manager: resolved model missing")
+                        Logger.clients.warning("❌ Error deleting plan manager: resolved model missing")
                         return
                     }
                     try await viewModel.deletePlanManager(entity)
@@ -248,7 +267,7 @@ public struct RelationshipsDetailColumn: View {
                         viewModel.detailState = .none
                     }
                 } catch {
-                    print("❌ Error deleting plan manager: \(error)")
+                    Logger.clients.warning("❌ Error deleting plan manager: \(error)")
                 }
             }
         }

@@ -23,6 +23,26 @@ else
 fi
 
 echo
+echo "==> Checking Swift Testing isolation from production targets"
+if rg -n "^\s*import\s+Testing\b" \
+  "${ROOT_DIR}/Packages" \
+  --glob "**/Sources/**/*.swift" 2>/dev/null | while read -r match; do
+  case "$match" in
+    *"/Packages/Core/Sources/CoreTesting/"*)
+      continue
+      ;;
+    *)
+      echo "$match"
+      ;;
+  esac
+done | grep -q "."; then
+  echo "❌ Swift Testing imported by production source. Move test utilities into CoreTesting."
+  FAILED=1
+else
+  echo "✅ Swift Testing remains isolated to CoreTesting and test targets."
+fi
+
+echo
 echo "==> Checking direct workspaceStandardServicesEnvironment callsites"
 if rg -n "workspaceStandardServicesEnvironment\\(" "${ROOT_DIR}"/Packages --glob "*.swift" | while read -r match; do
   case "$match" in

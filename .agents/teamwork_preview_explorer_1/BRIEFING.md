@@ -1,53 +1,50 @@
-# BRIEFING — 2026-07-24T10:07:39Z
+# BRIEFING — 2026-08-10T14:01:08+10:00
 
 ## Mission
-Explore and analyze `Packages/Feature.Invoices`: data structures/views/viewmodels, Revenue & Status Analytics Summary, Invoice Duplication Workflow, Batch Data Export, and existing/needed unit tests.
+Explore and analyze all UI and Feature packages in InvoicingApplication, focusing on macro-level architecture, micro-level code duplication, file organization, and consolidation opportunities in UI components.
 
 ## 🔒 My Identity
-- Archetype: Explorer
-- Roles: Teamwork explorer
+- Archetype: explorer
+- Roles: teamwork_preview_explorer_1
 - Working directory: /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_1
-- Original parent: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Milestone: feature_invoices_analysis
+- Original parent: e6053af5-68b0-4784-af56-a50e01e13b95
+- Milestone: UI and Feature package analysis
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement
-- Network Restrictions: CODE_ONLY mode
+- Read-only investigation — do NOT implement code changes
+- Write findings only to working directory (.agents/teamwork_preview_explorer_1)
+- Report findings with exact file paths and line numbers/code references
 
 ## Current Parent
-- Conversation ID: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Updated: 2026-07-24T10:07:39Z
+- Conversation ID: e6053af5-68b0-4784-af56-a50e01e13b95
+- Updated: 2026-08-10T14:01:08+10:00
 
 ## Investigation State
 - **Explored paths**:
-  - `Packages/Feature.Invoices/Package.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/InvoicesWorkspaceFactory.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Models/InvoicesListQuery.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel+List.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel+Detail.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesView.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesContentToolbar.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesColumns.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoiceFilterPopoverContent.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoiceFilterAmountField.swift`
-  - `Packages/Feature.Invoices/Sources/Feature_Invoices/Support/InvoiceAccessibilityAnnouncement.swift`
-  - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoicesListQueryTests.swift`
-  - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoicesPersistenceCommandsTests.swift`
-  - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoiceSnapshotRelatedDataTests.swift`
-  - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoicesPolishAndAccessibilityTests.swift`
-  - `Packages/Core/Sources/Core/Models/Invoice.swift`
+  - `Packages/Feature.Invoices`
+  - `Packages/Feature.InvoiceTemplateEditor` (target `InvoiceTableLayoutEditor`)
+  - `Packages/SharedUI`
+  - `Packages/WorkspaceUI`
+  - `Packages/Feature.Clients`
+  - `Packages/Feature.BillingHub`
+  - `Packages/Feature.Calendar`
+  - `Packages/Feature.NDIS`
+  - `Packages/Feature.Settings`
 - **Key findings**:
-  - `Feature_Invoices` relies on `InvoicesContainerViewModel` + `InvoicesListQueryEngine` for state management, filtering, grouping, and natural sorting.
-  - Revenue Analytics can be added via `InvoiceAnalyticsEngine` computing metrics grouped by `currencyCode`.
-  - Duplication Workflow can be implemented via `duplicateInvoice(_ sourceInvoice: Invoice)` using `InvoiceNumberGenerator` and deep item cloning.
-  - Batch Data Export can expand existing PDF bulk action flow to support CSV (RFC 4180) and JSON (ISO-8601) formats.
-  - Detailed new unit test suites designed for analytics calculation, number auto-increment/cloning, and CSV/JSON exporting.
-- **Unexplored areas**: None.
+  - 100% duplicated Decimal/Double input parsing between `InvoiceFilterAmountInput` (in `Feature.Invoices`) and `InvoiceDecimalInput` / `InvoiceDoubleInput` (in `InvoiceTableLayoutEditor`).
+  - Inconsistent Address sheet wrappers and local struct naming collision in `Feature.Calendar` (`SessionAddressEditingSheet.swift`).
+  - Ad-hoc `NumberFormatter` & `DateFormatter` instantiations in views and formatters ignoring `SharedUI` formatters.
+  - Bloated files exceeding 1000 lines (`InvoiceDocumentSections.swift`: 1845 lines, `InvoiceFormatting.swift`: 1078 lines, `InvoiceDocumentPreview.swift`: 939 lines, `InvoiceRootView.swift`: 810 lines).
+  - PDF rendering & save panel dialog logic embedded inside preview view file `InvoiceDocumentPreview.swift` instead of dedicated files.
+  - Mismatched top header comments (e.g. `InvoicesViewList.swift`).
+  - Macro architecture state initialization anti-pattern (`@State private var viewModel` initialized from initializer parameter in `InvoiceRootView.swift`).
+- **Unexplored areas**: None within scope.
 
 ## Key Decisions Made
-- Complete detailed analysis report written to `handoff.md`.
+- Completed systematic analysis across macro architecture, micro duplication, file organization, and consolidation plan.
 
 ## Artifact Index
-- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_1/handoff.md — Handoff report and analysis
-- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_1/progress.md — Progress log
+- ORIGINAL_REQUEST.md — Original mission directive
+- BRIEFING.md — Current briefing state
+- progress.md — Step execution log
+- handoff.md — Comprehensive handoff report

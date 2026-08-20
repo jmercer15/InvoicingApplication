@@ -1,3 +1,5 @@
+import os
+import Core
 import Foundation
 
 extension CalendarViewModel {
@@ -26,12 +28,12 @@ extension CalendarViewModel {
 
         if reconciledVisible.isEmpty && !currentIds.isEmpty {
             // All saved IDs were stale — fall back to showing everything
-            print("[CalendarViewModel] All saved calendar IDs are stale (\(savedSet.count) saved, 0 matched \(currentIds.count) current). Resetting to show all.")
+            Logger.calendar.info("[CalendarViewModel] All saved calendar IDs are stale (\(savedSet.count) saved, 0 matched \(currentIds.count) current). Resetting to show all.")
             visibleCalendarIdentifiers = currentIds
         } else {
             visibleCalendarIdentifiers = reconciledVisible.union(newCalendars)
             if !newCalendars.isEmpty {
-                print("[CalendarViewModel] Auto-enabled \(newCalendars.count) new calendar(s).")
+                Logger.calendar.info("[CalendarViewModel] Auto-enabled \(newCalendars.count) new calendar(s).")
             }
         }
 

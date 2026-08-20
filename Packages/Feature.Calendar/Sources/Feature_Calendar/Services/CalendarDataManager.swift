@@ -1,3 +1,5 @@
+import os
+import Core
 //
 //  CalendarDataManager.swift
 //  InvoicingApplication
@@ -34,7 +36,7 @@ public class CalendarDataManager {
             guard let eventID, !eventID.isEmpty else {
                 // Some EventKit instances may not have a stable identifier materialized.
                 // Keep them visible in the calendar (we just can't exclude via session linkage).
-                print("[CalendarDataManager] EKEvent has no stable identifier (eventIdentifier/external). Keeping: \(event.title ?? "Untitled")")
+                Logger.calendar.info("[CalendarDataManager] EKEvent has no stable identifier (eventIdentifier/external). Keeping: \(event.title ?? "Untitled")")
                 return true
             }
             
@@ -58,7 +60,7 @@ public class CalendarDataManager {
             excludingSessionEventIDs: excludingEventIDs
         )
 
-        print("[CalendarDataManager] Using \(sessions.count) sessions (from query) and \(events.count) events for range \(startDate) to \(endDate)")
+        Logger.calendar.info("[CalendarDataManager] Using \(sessions.count) sessions (from query) and \(events.count) events for range \(startDate) to \(endDate)")
 
         return (sessions: sessions, events: events)
     }

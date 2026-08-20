@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftData
 import Core
@@ -23,14 +24,14 @@ extension EventKitSyncService {
     /// and applies any changes to matched local sessions.
     /// Does **not** auto-create new sessions for unmatched remote events.
     public func handleExternalChangesWithContext(_ modelContext: ModelContext) async {
-        print("[SyncService] Processing external changes with background actor")
+        Logger.calendar.info("[SyncService] Processing external changes with background actor")
         guard accessGranted, syncEnabled else {
-            print("[SyncService] Skipping external changes - access not granted or sync disabled")
+            Logger.calendar.info("[SyncService] Skipping external changes - access not granted or sync disabled")
             return
         }
 
         guard canPerformReadWriteEventOperations() else {
-            print("[SyncService] Skipping external changes fetch — cannot read calendar")
+            Logger.calendar.info("[SyncService] Skipping external changes fetch — cannot read calendar")
             return
         }
 
@@ -53,9 +54,9 @@ extension EventKitSyncService {
                 accessGranted: accessGranted
             )
             self.externalChangeSnapshot = newSnapshot
-            print("[SyncService] Updated \(updatedCount) local sessions from remote events in the background.")
+            Logger.calendar.info("[SyncService] Updated \(updatedCount) local sessions from remote events in the background.")
         } catch {
-            print("[SyncService] Error saving after pull: \(error.localizedDescription)")
+            Logger.calendar.warning("[SyncService] Error saving after pull: \(error.localizedDescription)")
             self.error = error
             self.syncStatus = .error
         }

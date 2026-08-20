@@ -1,11 +1,12 @@
 import Core
 import Observation
+import SharedUI
 import SwiftUI
 
 extension InvoiceEditorInspector {
     @ToolbarContentBuilder
     var documentToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .automatic) {
+        ToolbarItem(placement: .status) {
             let stage = InvoiceEditorBillingStagePresentation.resolve(viewModel.status)
             let activityState = InvoiceEditorActivityState.resolve(viewModel)
             if activityState.isActive {
@@ -26,29 +27,9 @@ extension InvoiceEditorInspector {
                     .foregroundStyle(.secondary)
                     .help(stage.guidance)
             }
+        }
 
-            TextField("Currency", text: $viewModel.currencyCode)
-                .frame(minWidth: InspectorLayout.minimumFieldWidth)
-                .accessibilityLabel("Currency")
-                .focused($focusedTarget, equals: .currencyCode)
-                .onSubmit {
-                    viewModel.currencyCode = InvoiceCurrencyCode.normalized(viewModel.currencyCode)
-                }
-                .help("Invoice currency code")
-
-            validatedDecimalField(
-                "Tax %",
-                value: $viewModel.defaultTaxRate,
-                inputID: "invoice.defaultTaxRate",
-                focusTarget: .defaultTaxRate,
-                showsValidationMessage: false,
-                step: 1,
-                minimumValue: 0
-            )
-            .frame(minWidth: InspectorLayout.minimumFieldWidth)
-            .accessibilityLabel("Default Tax Rate")
-            .help("Default tax rate for new line items")
-
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 Task { await viewModel.saveCurrentInvoice() }
             } label: {
@@ -69,7 +50,9 @@ extension InvoiceEditorInspector {
                     ? "Save invoice changes"
                     : "Invoice has no unsaved changes"
             )
+        }
 
+        AppToolbarUtilityGroup {
             Button {
                 Task { await viewModel.exportCurrentInvoicePDF() }
             } label: {

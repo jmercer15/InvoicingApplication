@@ -1,4 +1,5 @@
 import Testing
+import CoreTesting
 import Core
 import PersistenceModels
 @testable import Data

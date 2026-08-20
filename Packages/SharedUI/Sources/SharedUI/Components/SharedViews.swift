@@ -40,7 +40,7 @@ import AppKit
 //                            Color.secondary.opacity(0.15),
 //                            lineWidth: 1)
 //            )
-//            .foregroundColor(configuration.isPressed ? .accentColor : .primary)
+//            .foregroundStyle(configuration.isPressed ? .accentColor : .primary)
 //            .contentShape(Rectangle())
 //    }
 //}
@@ -109,7 +109,7 @@ public struct InteractiveMapView: View {
             HStack {
                 Text("Location")
                     .font(.headline)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundStyle(Color("Text", bundle: .sharedUI))
                 
                 Spacer()
                 

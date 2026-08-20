@@ -97,28 +97,29 @@ public struct AppToolbarPrimaryCreateButton: View {
 
 public struct AppToolbarIconButton: View {
     private let systemName: String
+    private let accessibilityLabel: String
     private let help: String?
     private let isDisabled: Bool
     private let action: () -> Void
 
     public init(
         systemName: String,
+        accessibilityLabel: String? = nil,
         help: String? = nil,
         isDisabled: Bool = false,
         action: @escaping () -> Void
     ) {
         self.systemName = systemName
+        self.accessibilityLabel = accessibilityLabel ?? help ?? "Toolbar action"
         self.help = help
         self.isDisabled = isDisabled
         self.action = action
     }
 
     public var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-        }
-        .disabled(isDisabled)
-        .appToolbarLinkStyle(help: help)
+        Button(accessibilityLabel, systemImage: systemName, action: action)
+            .disabled(isDisabled)
+            .appToolbarLinkStyle(help: help)
     }
 }
 
@@ -142,11 +143,12 @@ public struct AppToolbarToggleButton: View {
 
     public var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            Label(help, systemImage: systemName)
                 .symbolVariant(isOn ? .fill : .none)
                 .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
         }
         .appToolbarLinkStyle(help: help)
+        .accessibilityValue(isOn ? "On" : "Off")
     }
 }
 
@@ -225,19 +227,34 @@ public struct AppToolbarActionsMenu<MenuContent: View>: View {
 /// Dismiss-only sheet toolbar (`cancellationAction` placement).
 public struct AppToolbarSheetDismissBar: ToolbarContent {
     private let title: String
+    private let isCancellation: Bool
     private let action: () -> Void
 
-    public init(_ title: String = "Done", action: @escaping () -> Void) {
+    public init(
+        _ title: String = "Done",
+        isCancellation: Bool = false,
+        action: @escaping () -> Void
+    ) {
         self.title = title
+        self.isCancellation = isCancellation
         self.action = action
     }
 
     public var body: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            AppToolbarSheetCancellationButton(title, action: action)
-            #if os(macOS)
-            .keyboardShortcut(.cancelAction)
-            #endif
+        if isCancellation {
+            ToolbarItem(placement: .cancellationAction) {
+                AppToolbarSheetCancellationButton(title, action: action)
+                #if os(macOS)
+                .keyboardShortcut(.cancelAction)
+                #endif
+            }
+        } else {
+            ToolbarItem(placement: .confirmationAction) {
+                AppToolbarSheetConfirmationButton(title, action: action)
+                #if os(macOS)
+                .keyboardShortcut(.defaultAction)
+                #endif
+            }
         }
     }
 }
@@ -437,18 +454,16 @@ public struct AppToolbarPeriodNavigation: ToolbarContent {
     public var body: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             ControlGroup {
-                Button(action: onPrevious) {
-                    Image(systemName: "chevron.left")
-                }
-                .help("Previous period")
+                Button("Previous period", systemImage: "chevron.left", action: onPrevious)
+                    .labelStyle(.iconOnly)
+                    .help("Previous period")
 
                 Button("Today", action: onToday)
                     .help("Jump to today")
 
-                Button(action: onNext) {
-                    Image(systemName: "chevron.right")
-                }
-                .help("Next period")
+                Button("Next period", systemImage: "chevron.right", action: onNext)
+                    .labelStyle(.iconOnly)
+                    .help("Next period")
             }
             .controlGroupStyle(.navigation)
         }

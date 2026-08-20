@@ -67,43 +67,47 @@ public struct BillableDraftDetailView: View {
         }
         .navigationTitle("Draft Detail")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                AppToolbarActionsMenu(help: "Draft workflow actions") {
-                    if let d = draft, d.draftStatus != DraftStatus.locked.rawValue {
-                        Section("Workflow") {
-                            if d.draftStatus != DraftStatus.ready.rawValue {
+            if hasToolbarActions {
+                ToolbarItem(placement: .primaryAction) {
+                    AppToolbarActionsMenu(help: "Draft workflow actions") {
+                        if let d = draft, d.draftStatus != DraftStatus.locked.rawValue {
+                            Section("Workflow") {
+                                if d.draftStatus != DraftStatus.ready.rawValue {
+                                    Button {
+                                        markReady()
+                                    } label: {
+                                        Label("Mark Ready", systemImage: "checkmark.circle")
+                                    }
+                                    .disabled(isBusy)
+                                }
                                 Button {
-                                    markReady()
+                                    lockDraft()
                                 } label: {
-                                    Label("Mark Ready", systemImage: "checkmark.circle")
+                                    Label("Lock Draft", systemImage: "lock.fill")
                                 }
                                 .disabled(isBusy)
                             }
-                            Button {
-                                lockDraft()
-                            } label: {
-                                Label("Lock Draft", systemImage: "lock.fill")
-                            }
-                            .disabled(isBusy)
                         }
-                    }
 
-                    if onAddToClaimBatch != nil || onCreateInvoice != nil {
-                        Section("Billing") {
-                            if onAddToClaimBatch != nil,
-                               draft?.draftStatus == DraftStatus.ready.rawValue
-                               || draft?.draftStatus == DraftStatus.locked.rawValue {
-                                Button {
-                                    onAddToClaimBatch?(draftId)
-                                } label: {
-                                    Label("Add to Claim Batch", systemImage: "tray.and.arrow.down")
+                        if onAddToClaimBatch != nil || onCreateInvoice != nil {
+                            Section("Billing") {
+                                if onAddToClaimBatch != nil,
+                                   draft?.draftStatus == DraftStatus.ready.rawValue
+                                   || draft?.draftStatus == DraftStatus.locked.rawValue {
+                                    Button {
+                                        onAddToClaimBatch?(draftId)
+                                    } label: {
+                                        Label("Add to Claim Batch", systemImage: "tray.and.arrow.down")
+                                    }
+                                    .disabled(isBusy)
                                 }
-                            }
-                            if onCreateInvoice != nil {
-                                Button {
-                                    onCreateInvoice?(draftId)
-                                } label: {
-                                    Label("Create Invoice", systemImage: "doc.badge.plus")
+                                if onCreateInvoice != nil {
+                                    Button {
+                                        onCreateInvoice?(draftId)
+                                    } label: {
+                                        Label("Create Invoice", systemImage: "doc.badge.plus")
+                                    }
+                                    .disabled(isBusy)
                                 }
                             }
                         }
@@ -124,6 +128,13 @@ public struct BillableDraftDetailView: View {
             descriptor.fetchLimit = 1
             draft = try? modelContext.fetch(descriptor).first
         }
+    }
+
+    private var hasToolbarActions: Bool {
+        guard let draft else { return false }
+        return draft.draftStatus != DraftStatus.locked.rawValue
+            || onAddToClaimBatch != nil
+            || onCreateInvoice != nil
     }
 
     private func markReady() {

@@ -4,6 +4,7 @@ import Data
 import Foundation
 import SwiftData
 import Testing
+import CoreTesting
 @testable import InvoiceTableLayoutEditor
 
 /// Phase 1.4: editor save must not strip NDIS claimType / session / clientService lineage.

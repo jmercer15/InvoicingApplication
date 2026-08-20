@@ -1,3 +1,4 @@
+import os
 import Foundation
 import Core
 import PersistenceModels
@@ -128,7 +129,7 @@ extension NDISBillingAutomationOrchestrator {
         do {
             return try entityResolver.resolveNDISItem(byItemNumber: itemNumber)
         } catch {
-            print("DEBUG: Error finding NDIS item with item number \(itemNumber): \(error)")
+            Logger.automation.warning("DEBUG: Error finding NDIS item with item number \(itemNumber): \(error)")
             return nil
         }
     }

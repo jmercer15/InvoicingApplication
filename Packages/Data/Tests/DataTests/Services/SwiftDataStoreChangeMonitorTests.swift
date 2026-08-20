@@ -45,7 +45,7 @@ import PersistenceModels
                 return
             }
             await Task.yield()
-            try await Task.sleep(nanoseconds: 10_000_000)
+            try await Task.sleep(for: .milliseconds(10))
         }
     }
 }

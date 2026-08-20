@@ -101,13 +101,21 @@ struct InvoicesContentToolbar: ToolbarContent {
                 Button {
                     viewModel.sortDirection = .ascending
                 } label: {
-                    Label("Ascending", systemImage: "arrow.up")
+                    HStack {
+                        Label("Ascending", systemImage: "arrow.up")
+                        Spacer()
+                        AppToolbarMenuCheckmark(isSelected: viewModel.sortDirection == .ascending)
+                    }
                 }
 
                 Button {
                     viewModel.sortDirection = .descending
                 } label: {
-                    Label("Descending", systemImage: "arrow.down")
+                    HStack {
+                        Label("Descending", systemImage: "arrow.down")
+                        Spacer()
+                        AppToolbarMenuCheckmark(isSelected: viewModel.sortDirection == .descending)
+                    }
                 }
             }
         } label: {

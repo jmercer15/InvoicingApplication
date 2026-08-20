@@ -75,7 +75,7 @@ struct ServiceBulkEditorView: View {
                 Text("Configure New Services")
                     .font(StyleGuide.Typography.hero)
                 Text("Review and edit the details for the \(templates.count) services you are about to assign.")
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
             .padding(StyleGuide.Dimensions.paddingMedium)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,7 +101,7 @@ struct ServiceBulkEditorView: View {
                                         height: StyleGuide.Dimensions.indexBadgeSize
                                     )
                                     .background(Circle().fill(ColorSystem.Primary.blue.opacity(0.7)))
-                                    .foregroundColor(StyleGuide.Colors.text)
+                                    .foregroundStyle(StyleGuide.Colors.text)
                                     .accessibilityLabel("Template number \(index + 1)")
 
                                 ServiceTemplateRow(template: binding(for: template))
@@ -188,7 +188,7 @@ struct ServiceTemplateRow: View {
             .overlay(
                 Rectangle()
                     .frame(height: 1)
-                    .foregroundColor(StyleGuide.Colors.border),
+                    .foregroundStyle(StyleGuide.Colors.border),
                 alignment: .bottom
             )
 
@@ -237,7 +237,7 @@ struct ServiceTemplateRow: View {
                         }
                     } else {
                         Text("No NDIS price available.")
-                            .foregroundColor(StyleGuide.Colors.textSecondary)
+                            .foregroundStyle(StyleGuide.Colors.textSecondary)
                             .font(StyleGuide.Typography.caption)
                             .frame(maxHeight: .infinity, alignment: .center)
                     }
@@ -279,7 +279,7 @@ struct ServiceTemplateDeleteButton: View {
                     height: StyleGuide.Dimensions.indexBadgeSize
                 )
                 .background(Circle().fill(ColorSystem.Status.error.opacity(0.7)))
-                .foregroundColor(StyleGuide.Colors.text)
+                .foregroundStyle(StyleGuide.Colors.text)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

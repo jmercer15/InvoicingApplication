@@ -1,3 +1,5 @@
+import os
+import Core
 import SwiftUI
 import SharedUI
 import Observation
@@ -277,7 +279,7 @@ struct DayColumnDropDelegate: DropDelegate {
                 }
                 guard case .success(let payload) = result else {
                     if case .failure(let error) = result {
-                        print("Failed to load drag payload: \(error)")
+                        Logger.calendar.warning("Failed to load drag payload: \(error)")
                     }
                     return
                 }

@@ -18,7 +18,7 @@ struct WorkspaceSidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section(header: featuresHeader) {
+            Section {
                 ForEach(AppTab.allCases) { feature in
                     SidebarItemRow(
                         icon: feature.iconName,
@@ -27,6 +27,8 @@ struct WorkspaceSidebarView: View {
                     )
                     .tag(feature)
                 }
+            } header: {
+                featuresHeader
             }
         }
         .listStyle(.sidebar)

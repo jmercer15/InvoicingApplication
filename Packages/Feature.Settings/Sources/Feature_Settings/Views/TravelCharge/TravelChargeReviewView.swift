@@ -54,7 +54,7 @@ struct TravelChargeReviewView: View {
                     }
                     
                     Text("Review and resolve travel charge compliance violations")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
                 .standardCardStyle()
                 
@@ -76,7 +76,7 @@ struct TravelChargeReviewView: View {
                     
                     Text("\(filteredReviewItems.count) items")
                         .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
                 .standardCardStyle()
                 
@@ -85,11 +85,11 @@ struct TravelChargeReviewView: View {
                     VStack(spacing: FormSectionTokens.formGroupSpacing) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(StyleGuide.Typography.emptyStateIcon)
-                            .foregroundColor(ColorSystem.Status.success)
+                            .foregroundStyle(ColorSystem.Status.success)
                         Text("No Review Items")
                             .font(.title2.bold())
                         Text("All travel charges are compliant or have been resolved.")
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -106,12 +106,13 @@ struct TravelChargeReviewView: View {
                         .padding(.horizontal)
                     }
                 }
-        }
-        .sheet(isPresented: $showingViolationDetails) {
-            if let reviewItem = selectedReviewItem {
-                TravelChargeViolationDetailsView(viewModel: viewModel, reviewItem: reviewItem)
             }
-        }
+            .inspector(isPresented: $showingViolationDetails) {
+                if let reviewItem = selectedReviewItem {
+                    TravelChargeViolationDetailsView(viewModel: viewModel, reviewItem: reviewItem)
+                        .inspectorColumnWidth(min: 280, ideal: 340, max: 440)
+                }
+            }
         .sheet(isPresented: $showingReviewSheet) {
             TravelChargeReviewSheetView(pendingReviews: pendingReviewItems)
         }
@@ -132,12 +133,12 @@ struct ReviewItemCard: View {
                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                         Text(reviewItem.sessionTitle ?? "Unknown Session")
                             .font(.headline)
-                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                            .foregroundStyle(Color("Text", bundle: .sharedUI))
                         
                         if let clientName = reviewItem.clientName {
                             Text("Client: \(clientName)")
                                 .font(.body)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         }
                     }
                     
@@ -149,7 +150,7 @@ struct ReviewItemCard: View {
                 if let reason = reviewItem.reason {
                     Text(reason)
                         .font(.body)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .foregroundStyle(Color("Text", bundle: .sharedUI))
                         .lineLimit(2)
                 }
                 
@@ -157,7 +158,7 @@ struct ReviewItemCard: View {
                     if reviewItem.hasViolations {
                         Label("\(reviewItem.violationCount) violations", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
-                            .foregroundColor(ColorSystem.Status.error)
+                            .foregroundStyle(ColorSystem.Status.error)
                     }
                     
                     Spacer()
@@ -165,7 +166,7 @@ struct ReviewItemCard: View {
                     if let timestamp = reviewItem.timestamp {
                         Text(timestamp, style: .relative)
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     }
                 }
             }
@@ -197,7 +198,7 @@ struct TravelChargeViolationDetailsView: View {
                         Text("Compliance Violations")
                             .font(.title2.bold())
                         Text("Review and resolve compliance violations for this travel charge")
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     
@@ -213,7 +214,7 @@ struct TravelChargeViolationDetailsView: View {
                             if let timestamp = reviewItem.timestamp {
                                 Text("Date: \(DateFormatting.mediumDateTime(timestamp))")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             }
                         }
                     }
@@ -225,7 +226,7 @@ struct TravelChargeViolationDetailsView: View {
                                 ForEach(violations, id: \.self) { violation in
                                     HStack {
                                         Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(ColorSystem.Status.error)
+                                            .foregroundStyle(ColorSystem.Status.error)
                                         Text(violation)
                                             .font(.body)
                                         Spacer()
@@ -241,7 +242,7 @@ struct TravelChargeViolationDetailsView: View {
                             VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                                 Text("Select an override option if you want to proceed despite violations:")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                 
                                 ForEach(overrideOptions, id: \.self) { option in
                                     Button(action: {
@@ -249,9 +250,9 @@ struct TravelChargeViolationDetailsView: View {
                                     }) {
                                         HStack {
                                             Image(systemName: selectedOverride == option ? "checkmark.circle.fill" : "circle")
-                                                .foregroundColor(selectedOverride == option ? .accentColor : .secondary)
+                                                .foregroundStyle(selectedOverride == option ? Color.accentColor : Color.secondary)
                                             Text(option)
-                                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                                                .foregroundStyle(Color("Text", bundle: .sharedUI))
                                             Spacer()
                                         }
                                         .contentShape(Rectangle())
@@ -275,7 +276,7 @@ struct TravelChargeViolationDetailsView: View {
                                 ForEach(suggestedActions, id: \.self) { action in
                                     HStack {
                                         Image(systemName: "arrow.right.circle.fill")
-                                            .foregroundColor(ColorSystem.Status.info)
+                                            .foregroundStyle(ColorSystem.Status.info)
                                         Text(action)
                                             .font(.body)
                                         Spacer()
@@ -372,7 +373,7 @@ struct TravelChargeReviewSheetView: View {
                     }
                     
                     Text("\(pendingReviews.count) items require attention")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
                 .padding(.horizontal)
                 
@@ -381,11 +382,11 @@ struct TravelChargeReviewSheetView: View {
                     VStack(spacing: FormSectionTokens.formGroupSpacing) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(StyleGuide.Typography.emptyStateIcon)
-                            .foregroundColor(ColorSystem.Status.success)
+                            .foregroundStyle(ColorSystem.Status.success)
                         Text("No Pending Reviews")
                             .font(.title2.bold())
                         Text("All travel charge reviews have been resolved.")
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

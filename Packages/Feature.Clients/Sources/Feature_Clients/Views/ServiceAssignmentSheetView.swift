@@ -129,7 +129,7 @@ struct ServiceAssignmentSheetView: View {
                             updateFilteredItems()
                         }
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                 }
                 .padding(.horizontal, StyleGuide.Dimensions.paddingMedium)
                 .frame(maxWidth: 400)
@@ -139,7 +139,7 @@ struct ServiceAssignmentSheetView: View {
                 if !filteredItems.isEmpty {
                     Text("\(selectedItemIDs.count) of \(filteredItems.count)")
                         .font(StyleGuide.Typography.itemSubtitle)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                 }
             }
             .standardCardStyle()
@@ -211,19 +211,19 @@ struct ServiceAssignmentSheetView: View {
                     Text("\(CurrencyFormatting.display(minPrice)) - \(CurrencyFormatting.display(maxPrice))")
                         .font(StyleGuide.Typography.bodyMedium)
                 }
-                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
+                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundStyle(StyleGuide.Colors.textSecondary)
             }
         } else if let price = item.price, price > 0 {
             VStack(alignment: .trailing, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text(CurrencyFormatting.display(price))
                     .font(StyleGuide.Typography.bodyMedium)
-                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
+                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundStyle(StyleGuide.Colors.textSecondary)
             }
         } else {
             VStack(alignment: .trailing, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text("No Price")
                     .font(StyleGuide.Typography.caption)
-                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundColor(StyleGuide.Colors.textSecondary)
+                Text("/ \(item.unit ?? "")").font(StyleGuide.Typography.caption).foregroundStyle(StyleGuide.Colors.textSecondary)
             }
         }
     }

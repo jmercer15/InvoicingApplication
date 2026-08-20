@@ -5,6 +5,7 @@
 //  Service for calculating travel details using MapKit directions
 //
 
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -184,7 +185,7 @@ extension MapKitTravelService {
               let address = business.address,
               address.latitude != 0,
               address.longitude != 0 else {
-            print("🗺️ [MapKit Travel] No business address with coordinates found")
+            Logger.data.info("🗺️ [MapKit Travel] No business address with coordinates found")
             return nil
         }
         return CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude)

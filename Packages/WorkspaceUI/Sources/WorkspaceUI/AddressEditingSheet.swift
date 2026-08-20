@@ -72,11 +72,11 @@ public struct AddressEditingSheet: View {
                 Text("Address")
                     .font(.title2)
                     .fontWeight(.semibold)
-                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                    .foregroundStyle(Color("Text", bundle: .sharedUI))
 
                 Text("Find a match, review the fields below, then tap Done — or enter details manually.")
                     .font(.subheadline)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -108,7 +108,7 @@ public struct AddressEditingSheet: View {
 
                             Text("Pick a result to fill the form. You can edit fields before tapping Done.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             HStack {
@@ -128,7 +128,7 @@ public struct AddressEditingSheet: View {
                                 HStack {
                                     Text("Address details")
                                         .font(.title3.weight(.bold))
-                                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                                        .foregroundStyle(Color("Text", bundle: .sharedUI))
 
                                     Spacer()
 
@@ -141,7 +141,7 @@ public struct AddressEditingSheet: View {
 
                                 Text("Edit any field, then tap Done.")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             }
                             .padding(.bottom, 4)
 
@@ -192,7 +192,7 @@ public struct AddressEditingSheet: View {
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
-                .foregroundColor(Color(NSColor.systemRed))
+                .foregroundStyle(Color(nsColor: NSColor.systemRed))
             }
             .padding(.bottom, 4)
 
@@ -200,31 +200,31 @@ public struct AddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Unit:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 TextField("Unit number (optional)", text: $unitNumber)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color(NSColor.labelColor))
-                    .accentColor(Color(NSColor.systemBlue))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                    .tint(Color(nsColor: NSColor.systemBlue))
             }
 
             // Street Number and Name
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Street:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     TextField("Number", text: $streetNumber)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color(NSColor.labelColor))
-                        .accentColor(Color(NSColor.systemBlue))
+                        .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                        .tint(Color(nsColor: NSColor.systemBlue))
                         .frame(width: 80)
 
                     TextField("Street name", text: $streetName)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color(NSColor.labelColor))
-                        .accentColor(Color(NSColor.systemBlue))
+                        .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                        .tint(Color(nsColor: NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -233,30 +233,30 @@ public struct AddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Suburb:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 TextField("Enter suburb", text: $suburb)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color(NSColor.labelColor))
-                    .accentColor(Color(NSColor.systemBlue))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                    .tint(Color(nsColor: NSColor.systemBlue))
             }
 
             // State and Postcode
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("State:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     TextField("State", text: $state)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color(NSColor.labelColor))
-                        .accentColor(Color(NSColor.systemBlue))
+                        .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                        .tint(Color(nsColor: NSColor.systemBlue))
 
                     TextField("Postcode", text: $postcode)
                         .textFieldStyle(.roundedBorder)
-                        .foregroundColor(Color(NSColor.labelColor))
-                        .accentColor(Color(NSColor.systemBlue))
+                        .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                        .tint(Color(nsColor: NSColor.systemBlue))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -265,24 +265,24 @@ public struct AddressEditingSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Country:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 TextField("Enter country", text: $country)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color(NSColor.labelColor))
-                    .accentColor(Color(NSColor.systemBlue))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                    .tint(Color(nsColor: NSColor.systemBlue))
             }
 
             // PO Box
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("PO Box:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color(NSColor.labelColor))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
 
                 TextField("PO Box number (optional)", text: $poBox)
                     .textFieldStyle(.roundedBorder)
-                    .foregroundColor(Color(NSColor.labelColor))
-                    .accentColor(Color(NSColor.systemBlue))
+                    .foregroundStyle(Color(nsColor: NSColor.labelColor))
+                    .tint(Color(nsColor: NSColor.systemBlue))
             }
         }
     }

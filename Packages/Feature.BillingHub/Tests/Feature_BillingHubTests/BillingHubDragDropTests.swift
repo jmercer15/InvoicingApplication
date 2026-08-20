@@ -3,6 +3,7 @@ import PersistenceModels
 import Foundation
 import SwiftUI
 import Testing
+import CoreTesting
 @testable import Feature_BillingHub
 
 @MainActor

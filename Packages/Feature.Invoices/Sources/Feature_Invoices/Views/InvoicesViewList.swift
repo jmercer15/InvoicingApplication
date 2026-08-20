@@ -17,9 +17,6 @@ extension InvoicesView {
     var invoiceList: some View {
         VStack(spacing: 0) {
             if containerViewModel.totalInvoiceCount > 0 {
-                RevenueAnalyticsSummaryView(summary: containerViewModel.analyticsSummary)
-                    .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
-                    .padding(.top, StyleGuide.Dimensions.paddingSmall)
                 listContextBar
             }
 
@@ -335,7 +332,7 @@ private struct ScrollableInvoicesList<ContextMenu: View>: View {
                             .font(StyleGuide.Typography.caption)
                             .foregroundStyle(StyleGuide.Colors.textSecondary)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
+                        ScrollView(.horizontal) {
                             HStack(spacing: StyleGuide.Dimensions.paddingSmall) {
                                 ForEach(activeFilterTags, id: \.id) { tag in
                                     HStack(spacing: StyleGuide.Dimensions.paddingXXSmall) {
@@ -363,6 +360,7 @@ private struct ScrollableInvoicesList<ContextMenu: View>: View {
                             }
                             .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                         }
+                        .scrollIndicators(.hidden)
                     }
                     .padding(.horizontal, StyleGuide.Dimensions.paddingLarge)
                 }

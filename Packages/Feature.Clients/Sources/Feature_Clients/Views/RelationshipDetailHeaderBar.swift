@@ -10,18 +10,18 @@ struct RelationshipDetailHeaderBar: View {
             HStack(spacing: DetailToolbarTokens.titleBadgeSpacing) {
                 Image(systemName: systemImage)
                     .font(StyleGuide.Typography.detailHeaderIcon)
-                    .foregroundColor(StyleGuide.Colors.text.opacity(0.9))
+                    .foregroundStyle(StyleGuide.Colors.text.opacity(0.9))
 
                 VStack(alignment: .leading, spacing: DetailToolbarTokens.titleSubtitleSpacing) {
                     Text(title)
                         .font(StyleGuide.Typography.hero)
                         .kerning(5.0)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
                         .lineLimit(1)
 
                     Rectangle()
                         .frame(height: 2)
-                        .foregroundColor(StyleGuide.Colors.textSecondary.opacity(StyleGuide.Opacity.strong))
+                        .foregroundStyle(StyleGuide.Colors.textSecondary.opacity(StyleGuide.Opacity.strong))
                 }
                 .fixedSize(horizontal: true, vertical: true)
                 Spacer()

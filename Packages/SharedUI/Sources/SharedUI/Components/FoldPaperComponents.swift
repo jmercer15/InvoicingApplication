@@ -224,6 +224,8 @@ extension FoldPaperContainer {
                 NavigationListRow(
                     title: item.title,
                     subtitle: item.subtitle,
+                    trailingTitle: item.trailingTitle,
+                    trailingSubtitle: item.trailingSubtitle,
                     style: .leaf(
                         entityType: item.entityType,
                         entityTint: colorFor(

@@ -54,16 +54,16 @@ public struct NativeAddressSearchField: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Find:")
                     .frame(width: 80, alignment: .trailing)
-                    .foregroundColor(Color("White", bundle: .sharedUI))
+                    .foregroundStyle(Color("White", bundle: .sharedUI))
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         TextField("Street, suburb, or place", text: $searchText)
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(Color("White", bundle: .sharedUI))
+                            .foregroundStyle(Color("White", bundle: .sharedUI))
                             .accessibilityLabel("Address search")
                             .accessibilityHint("Type to search. Pick a result to fill address fields.")
-                            .accentColor(service.errorMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Draft", bundle: .sharedUI))
+                            .tint(service.errorMessage != nil ? Color("Cancelled", bundle: .sharedUI) : Color("Draft", bundle: .sharedUI))
                             .onChange(of: searchText) { _, newValue in
                                 if suppressedSearchTextChangeCount > 0 {
                                     suppressedSearchTextChangeCount -= 1
@@ -81,14 +81,14 @@ public struct NativeAddressSearchField: View {
                         if service.isSearching {
                             ProgressView()
                                 .scaleEffect(0.8)
-                                .foregroundColor(Color("White", bundle: .sharedUI))
+                                .foregroundStyle(Color("White", bundle: .sharedUI))
                         }
                     }
 
                     // Error message
                     if let error = service.errorMessage {
                         Text(error)
-                            .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                            .foregroundStyle(Color("Cancelled", bundle: .sharedUI))
                             .font(.caption)
                             .padding(.top, StyleGuide.Dimensions.paddingXSmall)
                     }
@@ -238,17 +238,17 @@ private struct AddressSearchResultsList: View {
                     }) {
                         HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
                             Image(systemName: "location.fill")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                                 .font(StyleGuide.Typography.itemSubtitle)
 
                             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                                 Text(result.title)
-                                    .foregroundColor(Color("Text", bundle: .sharedUI))
+                                    .foregroundStyle(Color("Text", bundle: .sharedUI))
                                     .font(StyleGuide.Typography.bodyMedium)
                                     .lineLimit(1)
 
                                 Text(result.subtitle)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                     .font(StyleGuide.Typography.itemSubtitle)
                                     .lineLimit(1)
                             }
@@ -272,7 +272,7 @@ private struct AddressSearchResultsList: View {
         }
         .frame(maxHeight: 200)
         .background(Color("White15", bundle: .sharedUI))
-        .cornerRadius(StyleGuide.Dimensions.cornerRadiusSmall)
+        .clipShape(.rect(cornerRadius: StyleGuide.Dimensions.cornerRadiusSmall))
         .padding(.top, StyleGuide.Dimensions.paddingXSmall)
     }
 }

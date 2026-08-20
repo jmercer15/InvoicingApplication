@@ -29,7 +29,7 @@ let package = Package(
         ),
         .testTarget(
             name: "Feature_CalendarTests",
-            dependencies: ["Feature_Calendar", "Core", "Data"],
+            dependencies: ["Feature_Calendar", "Core", .product(name: "CoreTesting", package: "Core"), "Data"],
             swiftSettings: strictConcurrencySettings
         ),
     ]

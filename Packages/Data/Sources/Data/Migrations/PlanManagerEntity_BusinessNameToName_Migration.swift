@@ -1,3 +1,5 @@
+import os
+import Core
 //
 //  PlanManager_BusinessNameToName_Migration.swift
 //  InvoicingApplication
@@ -45,7 +47,7 @@ public struct PlanManager_BusinessNameToName_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting PlanManager.businessName -> name migration (v\(version))")
+        Logger.migration.info("🔄 Starting PlanManager.businessName -> name migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -57,7 +59,7 @@ public struct PlanManager_BusinessNameToName_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ PlanManager.businessName -> name migration completed successfully")
+        Logger.migration.info("✅ PlanManager.businessName -> name migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -73,11 +75,11 @@ public struct PlanManager_BusinessNameToName_Migration {
         let planManagers = try modelContext.fetch(descriptor)
         
         if planManagers.isEmpty {
-            print("ℹ️ No PlanManager records found - migration not needed")
+            Logger.migration.info("ℹ️ No PlanManager records found - migration not needed")
             return
         }
         
-        print("📊 Found \(planManagers.count) PlanManager records to migrate")
+        Logger.migration.info("📊 Found \(planManagers.count) PlanManager records to migrate")
     }
     
     /// Perform the actual migration
@@ -96,7 +98,7 @@ public struct PlanManager_BusinessNameToName_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -117,7 +119,7 @@ public struct PlanManager_BusinessNameToName_Migration {
             let _ = planManager.name
         }
         
-        print("✅ Migration validation successful - all \(planManagers.count) records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(planManagers.count) records accessible")
     }
     
     /// Rollback the migration
@@ -128,13 +130,13 @@ public struct PlanManager_BusinessNameToName_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Rolling back PlanManager.businessName -> name migration")
+        Logger.migration.info("🔄 Rolling back PlanManager.businessName -> name migration")
         
         // For Swift Data, rollback is handled by reverting the entity definition
         // and using @Attribute(.originalName) with the new property name
         // This is a development-time operation only
         
-        print("⚠️ Rollback completed - entity definition reverted")
+        Logger.migration.warning("⚠️ Rollback completed - entity definition reverted")
     }
 }
 
@@ -147,7 +149,7 @@ public struct PlanManagerMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing PlanManager.businessName -> name migration")
+        Logger.migration.info("🧪 Testing PlanManager.businessName -> name migration")
         
         // Create test data
         let testPlanManager = PlanManager(id: UUID(), abn: "12345678901")
@@ -177,7 +179,7 @@ public struct PlanManagerMigrationTestUtils {
         modelContext.delete(testPlanManager)
         try modelContext.save()
         
-        print("✅ PlanManager migration test completed successfully")
+        Logger.migration.info("✅ PlanManager migration test completed successfully")
     }
 }
 #endif

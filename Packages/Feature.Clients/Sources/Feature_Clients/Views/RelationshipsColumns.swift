@@ -159,12 +159,35 @@ public struct RelationshipsContentColumn: View {
             Menu {
                 Section("Entity Type") {
                     ForEach(Array(EntityFilter.allCases), id: \.self) { filter in
-                        Button(filter.displayName) { selectedFilter = filter }
+                        Button {
+                            selectedFilter = filter
+                        } label: {
+                            HStack {
+                                Text(filter.displayName)
+                                Spacer()
+                                AppToolbarMenuCheckmark(isSelected: selectedFilter == filter)
+                            }
+                        }
                     }
                 }
                 Section("Status") {
                     ForEach(Array(StatusFilter.allCases), id: \.self) { status in
-                        Button(status.displayName) { selectedStatus = status }
+                        Button {
+                            selectedStatus = status
+                        } label: {
+                            HStack {
+                                Text(status.displayName)
+                                Spacer()
+                                AppToolbarMenuCheckmark(isSelected: selectedStatus == status)
+                            }
+                        }
+                    }
+                }
+                if relationshipsFilterIsActive {
+                    Divider()
+                    Button("Clear Filters", systemImage: "line.3.horizontal.decrease.circle") {
+                        selectedFilter = .all
+                        selectedStatus = .all
                     }
                 }
             } label: {

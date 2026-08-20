@@ -282,7 +282,7 @@ extension BillingHubAddTravelPanel {
     }
 
     func suggestedMetricsView(for session: SessionKanbanCardData) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
                 if let rate = session.travelRate {
                     InfoChip(
@@ -311,6 +311,7 @@ extension BillingHubAddTravelPanel {
             }
             .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
         }
+        .scrollIndicators(.hidden)
     }
 
     func currencyString(_ value: Double) -> String {

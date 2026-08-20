@@ -9,6 +9,7 @@
 //  architectural guidelines and have been removed from entity definitions.
 //
 
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -49,7 +50,7 @@ public struct RemoveColorHexColumns_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting colorHex columns removal migration (v\(version))")
+        Logger.migration.info("🔄 Starting colorHex columns removal migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -61,7 +62,7 @@ public struct RemoveColorHexColumns_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ ColorHex columns removal migration completed successfully")
+        Logger.migration.info("✅ ColorHex columns removal migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -81,11 +82,11 @@ public struct RemoveColorHexColumns_Migration {
         let payees = try modelContext.fetch(payeeDescriptor)
         
         if clients.isEmpty && payees.isEmpty {
-            print("ℹ️ No Client or Payee records found - migration not needed")
+            Logger.migration.info("ℹ️ No Client or Payee records found - migration not needed")
             return
         }
         
-        print("📊 Found \(clients.count) Client records and \(payees.count) Payee records to migrate")
+        Logger.migration.info("📊 Found \(clients.count) Client records and \(payees.count) Payee records to migrate")
     }
     
     /// Perform the actual migration
@@ -104,7 +105,7 @@ public struct RemoveColorHexColumns_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -154,7 +155,7 @@ public struct RemoveColorHexColumns_Migration {
             let _ = payee.status
         }
         
-        print("✅ Migration validation successful - all \(clients.count) Client and \(payees.count) Payee records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(clients.count) Client and \(payees.count) Payee records accessible")
     }
     
     /// Rollback the migration
@@ -166,7 +167,7 @@ public struct RemoveColorHexColumns_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Attempting to rollback colorHex columns removal migration")
+        Logger.migration.info("🔄 Attempting to rollback colorHex columns removal migration")
         
         // For property removal migrations, rollback is not supported
         // as the properties are permanently removed from the entity definitions
@@ -183,7 +184,7 @@ public struct ColorHexColumnsMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing colorHex columns removal migration")
+        Logger.migration.info("🧪 Testing colorHex columns removal migration")
         
         // Create test Client data
         let testClient = Client(id: UUID(), ndisNumber: "123456789", fullName: "Test Client", status: .active)
@@ -239,7 +240,7 @@ public struct ColorHexColumnsMigrationTestUtils {
         modelContext.delete(testPayee)
         try modelContext.save()
         
-        print("✅ ColorHex columns removal migration test completed successfully")
+        Logger.migration.info("✅ ColorHex columns removal migration test completed successfully")
     }
 }
 #endif

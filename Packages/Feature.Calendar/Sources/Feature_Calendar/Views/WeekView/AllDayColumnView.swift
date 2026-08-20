@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import EventKit
 import SharedUI
@@ -161,7 +162,7 @@ struct AllDayDropDelegate: DropDelegate {
                 }
                 guard case .success(let payload) = result else {
                     if case .failure(let error) = result {
-                        print("Failed to load drag payload in AllDayDropDelegate: \(error)")
+                        Logger.calendar.warning("Failed to load drag payload in AllDayDropDelegate: \(error)")
                     }
                     return
                 }

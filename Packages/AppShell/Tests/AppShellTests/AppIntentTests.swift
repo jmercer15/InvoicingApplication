@@ -6,11 +6,16 @@ import Foundation
 import SharedUI
 import SwiftData
 import Testing
+import CoreTesting
 @testable import AppShell
 
 @MainActor
 @Suite(.tags(.integration))
 struct AppIntentTests {
+    @Test func openWorkspaceTabIntentRunsInForeground() {
+        #expect(OpenWorkspaceTabIntent.supportedModes == .foreground)
+    }
+
     @Test func modelAccessFindsExistingClient() async throws {
         let modelAccess = AppIntentModelAccess()
         let container = try ModelContainerFactory.makeInMemoryContainer()
@@ -35,9 +40,7 @@ struct AppIntentTests {
         let access = AppIntentModelAccess()
         let container = try ModelContainerFactory.makeInMemoryContainer()
 
-        let readyTask = Task {
-            try await access.requireReadyContainer(timeout: .seconds(1))
-        }
+        let readyTask = Task { try await access.requireReadyContainer() }
 
         try await Task.sleep(for: .milliseconds(25))
         await access.adopt(container: container)
@@ -46,12 +49,33 @@ struct AppIntentTests {
         #expect(resolved === container)
     }
 
-    @Test func modelAccessReadinessTimesOutWhenNeverAdopted() async throws {
-        let access = AppIntentModelAccess()
+    @Test func modelAccessBootstrapsWithoutSceneAdoption() async throws {
+        let container = try ModelContainerFactory.makeInMemoryContainer()
+        let access = AppIntentModelAccess(containerProvider: { container })
 
-        await #expect(throws: AppIntentModelAccessError.containerUnavailable) {
-            _ = try await access.requireReadyContainer(timeout: .milliseconds(100))
+        let resolved = try await access.requireReadyContainer()
+
+        #expect(resolved === container)
+    }
+
+    @Test func clientSearchIncludesMatchesBeyondFormerScanLimit() async throws {
+        let modelAccess = AppIntentModelAccess()
+        let container = try ModelContainerFactory.makeInMemoryContainer()
+        await modelAccess.adopt(container: container)
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+
+        for index in 0 ..< 501 {
+            let client = Client(fullName: String(format: "A %03d", index))
+            context.insert(client)
         }
+        let target = Client(fullName: "Zed Target")
+        context.insert(target)
+        try context.save()
+
+        let matches = try await modelAccess.searchClients(matching: "zed")
+
+        #expect(matches.contains(where: { $0.id == target.id }))
     }
 
     @Test func deliveryCenterQueuesTabAndClientNavigation() {

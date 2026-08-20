@@ -1,3 +1,5 @@
+import os
+import Core
 import PersistenceModels
 import Foundation
 import SwiftData
@@ -20,7 +22,7 @@ public enum BackfillSupportLogSessionId_v1 {
         if rewrites > 0 {
             try modelContext.save()
         }
-        print("BackfillSupportLogSessionId_v1 updated \(rewrites) support logs")
+        Logger.migration.info("BackfillSupportLogSessionId_v1 updated \(rewrites) support logs")
     }
 
     public static func rollback(modelContext: ModelContext) throws {

@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import DataInterfaces
 import Core
@@ -131,7 +132,7 @@ public final class TravelChargeAutomationViewModel {
                 updateBusiness(nil)
             }
         } catch {
-            print("Failed to load travel charge bootstrap data: \(error)")
+            Logger.automation.warning("Failed to load travel charge bootstrap data: \(error)")
         }
     }
     

@@ -53,10 +53,17 @@ public struct SwiftDataExportService {
 }
 
 /// Export format options
-public enum SwiftDataExportFormat {
+public enum SwiftDataExportFormat: Sendable {
     case json
     case csv
     case excel
+}
+
+/// Errors occurring during export operations
+public enum ExportError: Error, Sendable {
+    case serializationFailed(String)
+    case unhandledFormat
+    case storeCorrupted(String)
 }
 
 // MARK: - Private Helpers

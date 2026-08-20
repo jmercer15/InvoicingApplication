@@ -9,16 +9,21 @@ let package = Package(
     name: "Core",
     platforms: [.macOS("26.0")],
     products: [
-        .library(name: "Core", targets: ["Core"])
+        .library(name: "Core", targets: ["Core"]),
+        .library(name: "CoreTesting", targets: ["CoreTesting"]),
     ],
     targets: [
         .target(
             name: "Core",
             swiftSettings: strictConcurrencySettings
         ),
+        .target(
+            name: "CoreTesting",
+            swiftSettings: strictConcurrencySettings
+        ),
         .testTarget(
             name: "CoreTests",
-            dependencies: ["Core"],
+            dependencies: ["Core", "CoreTesting"],
             swiftSettings: strictConcurrencySettings
         )
     ]

@@ -1,3 +1,4 @@
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -34,7 +35,7 @@ public class SessionFactory {
         session.sessionLatitude = 0.0
         session.sessionLongitude = 0.0
 
-        print("[SessionFactory] Created base session with id: \(session.id.uuidString)")
+        Logger.data.info("[SessionFactory] Created base session with id: \(session.id.uuidString)")
         return session
     }
 
@@ -86,7 +87,7 @@ public class SessionFactory {
         // Apply specific changes (e.g., new times)
         changes(session)
 
-        print("[SessionFactory] Created detached instance for master: \(masterSnapshot.id.uuidString) at date: \(occurrenceDate)")
+        Logger.data.info("[SessionFactory] Created detached instance for master: \(masterSnapshot.id.uuidString) at date: \(occurrenceDate)")
         return session
     }
 }

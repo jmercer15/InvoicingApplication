@@ -1,4 +1,5 @@
 import Testing
+import CoreTesting
 import SwiftData
 import Core
 import PersistenceModels

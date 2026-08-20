@@ -26,7 +26,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SharedUITests",
-            dependencies: ["SharedUI", "Core"],
+            dependencies: ["SharedUI", "Core", .product(name: "CoreTesting", package: "Core")],
             path: "Tests/SharedUITests",
             swiftSettings: strictConcurrencySettings
         )

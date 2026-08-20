@@ -1,3 +1,4 @@
+import os
 import Foundation
 import EventKit
 import SwiftData
@@ -225,7 +226,7 @@ extension EventKitSyncService {
                 detached.status = snapshot.status
                 detached.recurrenceRuleData = nil
                 detached.ekRecurrenceRuleDescription = nil
-                print("[SyncService] Created detached instance from remote: \(detached.title) @ \(work.date)")
+                Logger.calendar.info("[SyncService] Created detached instance from remote: \(detached.title) @ \(work.date)")
             }
 
             guard !pushWork.isEmpty else { return }
@@ -256,12 +257,12 @@ extension EventKitSyncService {
                         session: work.local,
                         includeCoreFields: false
                     )
-                    print("[SyncService] Pushed detached instance to calendar: \(work.eventTitle) @ \(work.date)")
+                    Logger.calendar.info("[SyncService] Pushed detached instance to calendar: \(work.eventTitle) @ \(work.date)")
                 }
             } catch is CancellationError {
                 return
             } catch {
-                print("[SyncService] Error pushing detached instances: \(error.localizedDescription)")
+                Logger.calendar.warning("[SyncService] Error pushing detached instances: \(error.localizedDescription)")
             }
         }
     }
@@ -313,11 +314,11 @@ extension EventKitSyncService {
                         session: local,
                         includeCoreFields: false
                     )
-                    print("[SyncService] Pushed detached instance to calendar (user preferApp): \(eventTitle) @ \(date)")
+                    Logger.calendar.info("[SyncService] Pushed detached instance to calendar (user preferApp): \(eventTitle) @ \(date)")
                 } catch is CancellationError {
                     return
                 } catch {
-                    print("[SyncService] Error pushing detached instance (user preferApp): \(error.localizedDescription)")
+                    Logger.calendar.warning("[SyncService] Error pushing detached instance (user preferApp): \(error.localizedDescription)")
                 }
             case .preferCalendar:
                 guard let remote = remote else { return }
@@ -346,7 +347,7 @@ extension EventKitSyncService {
                 detached.status = snapshot.status
                 detached.recurrenceRuleData = nil
                 detached.ekRecurrenceRuleDescription = nil
-                print("[SyncService] Pulled detached instance from calendar (user preferCalendar): \(detached.title) @ \(date)")
+                Logger.calendar.info("[SyncService] Pulled detached instance from calendar (user preferCalendar): \(detached.title) @ \(date)")
             case .skip:
                 break
             }

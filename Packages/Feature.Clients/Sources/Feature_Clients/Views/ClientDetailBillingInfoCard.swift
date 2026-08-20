@@ -15,11 +15,11 @@ struct ClientDetailBillingInfoCard: View {
                     HStack(alignment: .center, spacing: DetailSectionTokens.formRowSpacing) {
                         Text("Is Minor:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         Toggle("", isOn: $viewModel.editableIsMinor)
                             .toggleStyle(.switch)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
                             .labelsHidden()
                             .onChange(of: viewModel.editableIsMinor) { _, isMinor in
                                 if isMinor {
@@ -37,7 +37,7 @@ struct ClientDetailBillingInfoCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Authority:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     Picker("", selection: Binding(
                         get: { viewModel.editableBillingAuthority },
@@ -57,7 +57,7 @@ struct ClientDetailBillingInfoCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("Parent/Guardian:")
                             .frame(width: maxLabelWidth, alignment: .trailing)
-                            .foregroundColor(StyleGuide.Colors.text)
+                            .foregroundStyle(StyleGuide.Colors.text)
 
                         Picker("", selection: Binding(
                             get: { viewModel.selectedPayee?.id },
@@ -80,18 +80,18 @@ struct ClientDetailBillingInfoCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: DetailSectionTokens.formRowSpacing) {
                     Text("Credit:")
                         .frame(width: maxLabelWidth, alignment: .trailing)
-                        .foregroundColor(StyleGuide.Colors.text)
+                        .foregroundStyle(StyleGuide.Colors.text)
 
                     HStack {
                         TextField("0.00", text: $viewModel.editableCreditAmountString)
                             .textFieldStyle(.roundedBorder)
-                            .foregroundColor(StyleGuide.Colors.text)
-                            .accentColor(ColorSystem.Primary.blue)
+                            .foregroundStyle(StyleGuide.Colors.text)
+                            .tint(ColorSystem.Primary.blue)
                             .onChange(of: viewModel.editableCreditAmountString) { viewModel.updateAndSaveClient() }
 
                         Button(action: { copyToClipboard(viewModel.editableCreditAmountString) }) {
                             Image(systemName: "doc.on.doc")
-                                .foregroundColor(ColorSystem.Neutral.gray500)
+                                .foregroundStyle(ColorSystem.Neutral.gray500)
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -112,10 +112,10 @@ struct ClientDetailBillingInfoCard: View {
                             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                                 Text(viewModel.client.fullName)
                                     .font(StyleGuide.Typography.label)
-                                    .foregroundColor(StyleGuide.Colors.text)
+                                    .foregroundStyle(StyleGuide.Colors.text)
                                 Text(clientEmail)
                                     .font(StyleGuide.Typography.caption)
-                                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
@@ -134,10 +134,10 @@ struct ClientDetailBillingInfoCard: View {
                             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                                 Text(payee.fullName)
                                     .font(StyleGuide.Typography.label)
-                                    .foregroundColor(StyleGuide.Colors.text)
+                                    .foregroundStyle(StyleGuide.Colors.text)
                                 Text(payeeEmail)
                                     .font(StyleGuide.Typography.caption)
-                                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
@@ -159,10 +159,10 @@ struct ClientDetailBillingInfoCard: View {
                             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                                 Text(planManager.name ?? "")
                                     .font(StyleGuide.Typography.label)
-                                    .foregroundColor(StyleGuide.Colors.text)
+                                    .foregroundStyle(StyleGuide.Colors.text)
                                 Text(planManagerEmail)
                                     .font(StyleGuide.Typography.caption)
-                                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
@@ -182,10 +182,10 @@ struct ClientDetailBillingInfoCard: View {
                         HStack(spacing: StyleGuide.Dimensions.paddingMedium) {
                             Image(systemName: "envelope.badge.shield")
                                 .font(.title3)
-                                .foregroundColor(ColorSystem.Neutral.gray500)
+                                .foregroundStyle(ColorSystem.Neutral.gray500)
                             Text("No email addresses available. Add email addresses to the relevant entities to configure invoice recipients.")
                                 .font(StyleGuide.Typography.caption)
-                                .foregroundColor(StyleGuide.Colors.textSecondary)
+                                .foregroundStyle(StyleGuide.Colors.textSecondary)
                         }
                         .standardCardStyle()
                     }

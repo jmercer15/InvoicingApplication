@@ -1,44 +1,40 @@
-# BRIEFING — 2026-07-24T10:10:37Z
+# BRIEFING — 2026-08-10T04:01:26Z
 
 ## Mission
-Analyze system integration, architecture scripts, test suite setup, and shared model boundaries in InvoicingApplication.
+Explore and analyze overall repository architecture, package boundaries, main app targets, scripts, and test suites.
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: read-only investigator, architecture analyst
+- Roles: Teamwork preview explorer 3
 - Working directory: /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_3
-- Original parent: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Milestone: system integration & architecture investigation
+- Original parent: e6053af5-68b0-4784-af56-a50e01e13b95
+- Milestone: overall repository architecture and structure analysis
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement source code changes
-- Keep reports in .agents/teamwork_preview_explorer_3/
-- Send summary to parent agent b43259db-55e5-4500-a5c6-8862d60f4ba3
+- Read-only investigation — do NOT implement code changes
+- Document findings with exact file paths, line numbers, and evidence
+- Output handoff report to handoff.md in working directory
+- Keep progress.md updated as heartbeat
 
 ## Current Parent
-- Conversation ID: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Updated: 2026-07-24T10:10:37Z
+- Conversation ID: e6053af5-68b0-4784-af56-a50e01e13b95
+- Updated: 2026-08-10T04:01:26Z
 
 ## Investigation State
-- **Explored paths**:
-  - `Packages/Feature.Invoices` (`Package.swift`, `InvoicesContainerViewModel.swift`, `InvoiceDataExporter.swift`)
-  - `Packages/Feature.InvoiceTemplateEditor` (`Package.swift`, `TableLayoutInvoiceEditorView.swift`, `CoreInvoiceAdapter.swift`)
-  - `Packages/AppShell` (`WorkspaceFeatureRegistries.swift`, `WorkspaceFeatureColumns.swift`)
-  - `./scripts/architecture-check.sh`
-  - `.cursor/rules/` (`swiftdata/concurrency-model.mdc`, `swiftui/application-architecture.mdc`)
-  - Project schemes & test targets (`InvoicingApplication.xcodeproj`, `xcodebuild`, `swift test`)
+- **Explored paths**: `Packages/*`, `InvoicingApplication/*`, `InvoicingApplicationTests/*`, `scripts/*`, `InvoicingApplication.xcodeproj`, root directory structure.
 - **Key findings**:
-  1. `Feature.Invoices` and `Feature.InvoiceTemplateEditor` integrate via `InvoiceTableLayoutEditor` and `WorkspaceFeatureColumns` in `AppShell`.
-  2. Architecture script (`architecture-check.sh`) enforces 6 rules against improper imports, ModelContainer leaks, and persistent identifier traps.
-  3. SPM test commands (`swift test`) run 74 unit tests in `Feature.Invoices` and 146 unit tests in `Feature.InvoiceTemplateEditor` (100% green).
-  4. `xcodebuild test` reveals a static concurrency compilation error in `InvoiceDataExporter.swift` (`private static let isoDateFormatter: ISO8601DateFormatter`).
-  5. Cross-package interaction uses snapshot mapping (`InvoiceSnapshot`), `CoreInvoiceAdapter`, and JSON document configuration envelopes (`InvoiceDocumentConfigurationEnvelope`).
-- **Unexplored areas**: None (all 4 requested points fully investigated).
+  1. Package dependency graph mapped across 14 packages; `Packages/DTOMacros` missing `Package.swift` and empty.
+  2. Main app target (`InvoicingApplicationApp.swift`) is a ~40-line host wrapper around `AppShell`.
+  3. `scripts/architecture-check.sh` is active and passing.
+  4. Micro-redundancies found: 14 duplicate `TestTags.swift` files, 13 legacy single-use Python migration scripts in `scripts/`, incomplete `refactor-verify.sh`.
+  5. Top-level file pollution identified: `default.profraw`, `scratch_build*.log`, non-compliant `Agents/` root folder vs `.agents/`.
+- **Unexplored areas**: None, full repo boundary scan complete.
 
 ## Key Decisions Made
-- Performed thorough read-only investigation.
-- Generated handoff report in `.agents/teamwork_preview_explorer_3/handoff.md`.
+- Finalized comprehensive handoff report at `.agents/teamwork_preview_explorer_3/handoff.md`.
 
 ## Artifact Index
 - ORIGINAL_REQUEST.md — Original task prompt
-- handoff.md — Comprehensive 5-component analysis report
+- BRIEFING.md — Working context index
+- progress.md — Task execution log / heartbeat
+- handoff.md — Final investigation findings and recommendations report

@@ -2,11 +2,15 @@ import Foundation
 
 /// JSON model for the student-payee relationship format
 struct ClientPayeeImportJSON: Codable {
+    let clientID: UUID?
+    let payeeID: UUID?
     let payeeName: String
     let studentName: String
     let ndisNumber: String
     
     enum CodingKeys: String, CodingKey {
+        case clientID = "Client ID"
+        case payeeID = "Payee ID"
         case payeeName = "Payee Name"
         case studentName = "Student Name"
         case ndisNumber = "NDIS No."
@@ -15,6 +19,7 @@ struct ClientPayeeImportJSON: Codable {
 
 /// JSON model for the modern client import format
 struct ClientImportJSON: Codable {
+    let id: UUID?
     let fullName: String
     let email: String?
     let mobile: String?
@@ -28,6 +33,7 @@ struct ClientImportJSON: Codable {
     let ndisNumber: String?
     
     enum CodingKeys: String, CodingKey {
+        case id = "ID"
         case fullName = "Full Name"
         case email = "Email"
         case mobile = "Mobile"
@@ -45,6 +51,7 @@ struct ClientImportJSON: Codable {
     func toClientJSON() -> ClientJSON {
         return ClientJSON(
             fullName: fullName,
+            id: id,
             email: email,
             phone: mobile,
             address: nil,

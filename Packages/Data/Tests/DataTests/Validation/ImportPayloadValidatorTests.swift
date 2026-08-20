@@ -2,6 +2,7 @@ import Core
 @testable import Data
 import Foundation
 import Testing
+import CoreTesting
 import PersistenceModels
 
 @Suite(.tags(.unit))

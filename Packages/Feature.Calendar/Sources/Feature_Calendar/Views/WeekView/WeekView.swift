@@ -109,7 +109,7 @@ private struct ScrollableWeekGrid: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView([.vertical], showsIndicators: false) {
+            ScrollView(.vertical) {
                 VStack(spacing: 0) {
                     let currentDate = Date()
                     let weekIdentities = viewModel.currentWeekDayIdentities
@@ -167,6 +167,7 @@ private struct ScrollableWeekGrid: View {
                     }
                 }
             }
+            .scrollIndicators(.hidden)
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y
             } action: { _, contentOffsetY in

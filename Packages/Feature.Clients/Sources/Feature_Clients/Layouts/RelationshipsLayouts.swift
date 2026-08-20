@@ -122,14 +122,14 @@ struct RelationshipGroupCard: View, Equatable {
                     .overlay(
                         Image(systemName: iconName)
                             .font(StyleGuide.Typography.entityGridIcon)
-                            .foregroundColor(tint)
+                            .foregroundStyle(tint)
                     )
                 
                 Spacer()
                 
                 Text("\(count)")
                     .font(StyleGuide.Typography.sectionTitle)
-                    .foregroundColor(tint)
+                    .foregroundStyle(tint)
                     .padding(.horizontal, StyleGuide.Dimensions.paddingXMedium)
                     .padding(.vertical, StyleGuide.Dimensions.paddingXSmall)
                     .background(tint.opacity(StyleGuide.Opacity.light))
@@ -141,7 +141,7 @@ struct RelationshipGroupCard: View, Equatable {
             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
                 Text(node.title)
                     .font(StyleGuide.Typography.sectionTitle)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Text(node.subtitle ?? "Group")
                     .font(StyleGuide.Typography.itemSubtitle)
@@ -151,13 +151,13 @@ struct RelationshipGroupCard: View, Equatable {
             HStack {
                 Text("Browse Group")
                     .font(StyleGuide.Typography.caption)
-                    .foregroundColor(tint)
+                    .foregroundStyle(tint)
                 
                 Spacer()
                 
                 Image(systemName: "chevron.right")
                     .font(StyleGuide.Typography.caption)
-                    .foregroundColor(tint.opacity(0.7))
+                    .foregroundStyle(tint.opacity(0.7))
             }
             .padding(.top, StyleGuide.Dimensions.paddingMedium)
         }
@@ -263,13 +263,13 @@ struct RelationshipCard: View, Equatable {
         HStack(spacing: StyleGuide.Dimensions.paddingMediumLarge) {
             Image(systemName: iconName)
                 .font(StyleGuide.Typography.sectionTitle)
-                .foregroundColor(tint.opacity(0.8))
+                .foregroundStyle(tint.opacity(0.8))
                 .frame(width: StyleGuide.Dimensions.entityListIconWidth)
             
             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text(title)
                     .font(StyleGuide.Typography.bodyMedium)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 
                 if let sub = subtitle {
@@ -302,7 +302,7 @@ struct RelationshipCard: View, Equatable {
             
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(tint)
+                    .foregroundStyle(tint)
                     .font(StyleGuide.Typography.itemSubtitle)
             }
         }
@@ -315,7 +315,7 @@ struct RelationshipCard: View, Equatable {
                 VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
                     Text(title)
                         .font(StyleGuide.Typography.itemTitle)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(2)
                     
                     if let sub = subtitle {
@@ -329,7 +329,7 @@ struct RelationshipCard: View, Equatable {
                 
                 Image(systemName: iconName)
                     .font(StyleGuide.Typography.sectionTitle)
-                    .foregroundColor(tint.opacity(0.8))
+                    .foregroundStyle(tint.opacity(0.8))
             }
             
             Spacer(minLength: 0)
@@ -357,7 +357,7 @@ struct RelationshipCard: View, Equatable {
                 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(tint)
+                        .foregroundStyle(tint)
                 }
             }
         }

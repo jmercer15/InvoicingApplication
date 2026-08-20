@@ -112,7 +112,7 @@ struct PayeeDetailView: View {
                 )
             }
         }
-        .foregroundColor(StyleGuide.Colors.text)
+        .foregroundStyle(StyleGuide.Colors.text)
         .task(id: viewModel.payee.id) {
             await viewModel.refreshRelatedInvoices()
         }

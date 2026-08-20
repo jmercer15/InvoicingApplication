@@ -51,7 +51,7 @@ struct MonthDayGridView: View {
                         .font(.caption)
                         .frame(width: StyleGuide.Dimensions.entityListIconWidth, height: StyleGuide.Dimensions.entityListIconWidth)
                         .background(selectedDays.contains(day) ? Color.blue : Color.clear)
-                        .foregroundColor(selectedDays.contains(day) ? .white : .primary)
+                        .foregroundStyle(selectedDays.contains(day) ? .white : .primary)
                         .clipShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
                         .contentShape(RoundedRectangle(cornerRadius: StyleGuide.Dimensions.cornerRadiusXSmall, style: .continuous))
                 }
@@ -151,7 +151,7 @@ struct RecurrenceWeeklyOptionsCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("On Days")
                 .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     ForEach(SelectableWeekday.allCases, id: \.self) { weekday in
@@ -164,7 +164,7 @@ struct RecurrenceWeeklyOptionsCard: View {
                                 }
                             }) {
                                 Image(systemName: preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? .blue : .gray)
+                                    .foregroundStyle(preferences.defaultSelectedWeekdays.contains(weekday.rawValue) ? .blue : .gray)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -214,7 +214,7 @@ struct RecurrenceMonthlyOptionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Select Days")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 MonthDayGridView(selectedDays: Binding(get: {
                     preferences.defaultSelectedMonthDaysNumbers
                 }, set: { newSet in
@@ -232,7 +232,7 @@ struct RecurrenceMonthlyOptionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Positional Rule")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 OrdinalPickerView(
                     ordinalSelection: Binding<OrdinalSelection?>(
                         get: { OrdinalSelection(intValue: preferences.defaultSelectedOrdinal) },
@@ -280,7 +280,7 @@ struct RecurrenceYearlyOptionsCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("In Months")
                 .font(.caption)
-                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                     ForEach(SelectableMonth.allCases, id: \.self) { month in
@@ -293,7 +293,7 @@ struct RecurrenceYearlyOptionsCard: View {
                                 }
                             }) {
                                 Image(systemName: preferences.defaultSelectedYearMonths.contains(month.rawValue) ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(preferences.defaultSelectedYearMonths.contains(month.rawValue) ? .blue : .gray)
+                                    .foregroundStyle(preferences.defaultSelectedYearMonths.contains(month.rawValue) ? .blue : .gray)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -314,7 +314,7 @@ struct RecurrenceYearlyOptionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Select Days")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 MonthDayGridView(selectedDays: Binding(get: {
                     preferences.defaultSelectedYearlyDaysNumbers
                 }, set: { newSet in
@@ -332,7 +332,7 @@ struct RecurrenceYearlyOptionsCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Positional Rule")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 OrdinalPickerView(
                     ordinalSelection: Binding<OrdinalSelection?>(
                         get: { OrdinalSelection(intValue: preferences.defaultSelectedOrdinal) },

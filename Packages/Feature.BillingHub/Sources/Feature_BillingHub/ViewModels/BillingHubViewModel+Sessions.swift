@@ -1,3 +1,4 @@
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -195,7 +196,7 @@ extension BillingHubViewModel {
                 let result = try await workflow.moveSession(modelID: modelID, to: .grouped)
                 if result == .success { movedIDs.append(session.id) }
             } catch {
-                print("❌ [BillingHubViewModel] Bulk move-to-grouped error: \(error)")
+                Logger.billing.warning("❌ [BillingHubViewModel] Bulk move-to-grouped error: \(error)")
             }
             bulkProgress.bulkActionProgress = BillingHubBulkActionProgress(
                 action: "Moving to Grouped",

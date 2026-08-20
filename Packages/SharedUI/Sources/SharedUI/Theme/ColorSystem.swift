@@ -11,37 +11,37 @@ public struct ColorSystem {
     
     /// Primary brand colors - using system colors for better adaptation
     public struct Primary {
-        public static let blue = Color(NSColor.systemBlue)
-        public static let darkBlue = Color(NSColor.systemBlue).opacity(0.8)
-        public static let lightBlue = Color(NSColor.systemBlue).opacity(0.6)
+        public static let blue = Color(nsColor: NSColor.systemBlue)
+        public static let darkBlue = Color(nsColor: NSColor.systemBlue).opacity(0.8)
+        public static let lightBlue = Color(nsColor: NSColor.systemBlue).opacity(0.6)
     }
     
     /// Secondary brand colors - using system colors for better adaptation
     public struct Secondary {
-        public static let green = Color(NSColor.systemGreen)
-        public static let orange = Color(NSColor.systemOrange)
-        public static let purple = Color(NSColor.systemPurple)
+        public static let green = Color(nsColor: NSColor.systemGreen)
+        public static let orange = Color(nsColor: NSColor.systemOrange)
+        public static let purple = Color(nsColor: NSColor.systemPurple)
     }
     
     // MARK: - Navigation Colors
 
     /// Tint colors for hierarchical navigation (breadcrumbs, tree nodes).
     public struct Navigation {
-        public static let categoryTint = Color(NSColor.systemPurple)
-        public static let groupTint = Color(NSColor.systemIndigo)
+        public static let categoryTint = Color(nsColor: NSColor.systemPurple)
+        public static let groupTint = Color(nsColor: NSColor.systemIndigo)
     }
 
     // MARK: - Session Colors
 
     /// Status colors for calendar session display.
     public struct Session {
-        public static let completed = Color(NSColor.systemGreen)
-        public static let cancelled = Color(NSColor.systemRed)
-        public static let past = Color(NSColor.systemGray)
-        public static let confirmed = Color(NSColor.systemBlue)
-        public static let pending = Color(NSColor.systemOrange)
-        public static let therapist = Color(NSColor.systemPurple)
-        public static let defaultAccent = Color(NSColor.systemBlue)
+        public static let completed = Color(nsColor: NSColor.systemGreen)
+        public static let cancelled = Color(nsColor: NSColor.systemRed)
+        public static let past = Color(nsColor: NSColor.systemGray)
+        public static let confirmed = Color(nsColor: NSColor.systemBlue)
+        public static let pending = Color(nsColor: NSColor.systemOrange)
+        public static let therapist = Color(nsColor: NSColor.systemPurple)
+        public static let defaultAccent = Color(nsColor: NSColor.systemBlue)
     }
 
     // MARK: - Invoice Colors
@@ -66,10 +66,10 @@ public struct ColorSystem {
 
     /// Entity-type tint colors for relationship navigation cards.
     public struct Relationships {
-        public static let clientTint = Color(NSColor.systemBlue)
-        public static let payeeTint = Color(NSColor.systemOrange)
-        public static let planManagerTint = Color(NSColor.systemGreen)
-        public static let unknownTint = Color(NSColor.systemGray)
+        public static let clientTint = Color(nsColor: NSColor.systemBlue)
+        public static let payeeTint = Color(nsColor: NSColor.systemOrange)
+        public static let planManagerTint = Color(nsColor: NSColor.systemGreen)
+        public static let unknownTint = Color(nsColor: NSColor.systemGray)
 
         public static func tint(forEntityType type: String) -> Color {
             switch type {
@@ -92,46 +92,46 @@ public struct ColorSystem {
     
     /// Status indicator colors - using system colors for better adaptation
     public struct Status {
-        public static let success = Color(NSColor.systemGreen)
-        public static let warning = Color(NSColor.systemOrange)
-        public static let error = Color(NSColor.systemRed)
-        public static let info = Color(NSColor.systemBlue)
-        public static let highlight = Color(NSColor.systemYellow)
-        public static let new = Color(NSColor.systemMint)
-        public static let inactive = Color(NSColor.systemGray)
-        public static let groupChange = Color(NSColor.systemTeal)
+        public static let success = Color(nsColor: NSColor.systemGreen)
+        public static let warning = Color(nsColor: NSColor.systemOrange)
+        public static let error = Color(nsColor: NSColor.systemRed)
+        public static let info = Color(nsColor: NSColor.systemBlue)
+        public static let highlight = Color(nsColor: NSColor.systemYellow)
+        public static let new = Color(nsColor: NSColor.systemMint)
+        public static let inactive = Color(nsColor: NSColor.systemGray)
+        public static let groupChange = Color(nsColor: NSColor.systemTeal)
     }
     
     // MARK: - Neutral Colors
     
     /// Neutral grayscale colors - using system colors for better adaptation
     public struct Neutral {
-        public static let white = Color(NSColor.windowBackgroundColor)
-        public static let black = Color(NSColor.labelColor)
-        public static let gray50 = Color(NSColor.quinarySystemFill)
-        public static let gray100 = Color(NSColor.quaternarySystemFill)
-        public static let gray200 = Color(NSColor.tertiarySystemFill)
-        public static let gray300 = Color(NSColor.secondarySystemFill)
-        public static let gray400 = Color(NSColor.systemFill)
-        public static let gray500 = Color(NSColor.systemGray)
-        public static let gray600 = Color(NSColor.systemGray).opacity(0.8)
-        public static let gray700 = Color(NSColor.systemGray).opacity(0.6)
-        public static let gray800 = Color(NSColor.systemGray).opacity(0.4)
-        public static let gray900 = Color(NSColor.systemGray).opacity(0.2)
+        public static let white = Color(nsColor: NSColor.windowBackgroundColor)
+        public static let black = Color(nsColor: NSColor.labelColor)
+        public static let gray50 = Color(nsColor: NSColor.quinarySystemFill)
+        public static let gray100 = Color(nsColor: NSColor.quaternarySystemFill)
+        public static let gray200 = Color(nsColor: NSColor.tertiarySystemFill)
+        public static let gray300 = Color(nsColor: NSColor.secondarySystemFill)
+        public static let gray400 = Color(nsColor: NSColor.systemFill)
+        public static let gray500 = Color(nsColor: NSColor.systemGray)
+        public static let gray600 = Color(nsColor: NSColor.systemGray).opacity(0.8)
+        public static let gray700 = Color(nsColor: NSColor.systemGray).opacity(0.6)
+        public static let gray800 = Color(nsColor: NSColor.systemGray).opacity(0.4)
+        public static let gray900 = Color(nsColor: NSColor.systemGray).opacity(0.2)
     }
     
     // MARK: - Client Colors
     
     /// Predefined colors for client identification - using system colors
     public struct Client {
-        public static let color1 = Color(NSColor.systemBlue)
-        public static let color2 = Color(NSColor.systemGreen)
-        public static let color3 = Color(NSColor.systemOrange)
-        public static let color4 = Color(NSColor.systemPurple)
-        public static let color5 = Color(NSColor.systemRed)
-        public static let color6 = Color(NSColor.systemCyan)
-        public static let color7 = Color(NSColor.systemPink)
-        public static let color8 = Color(NSColor.systemYellow)
+        public static let color1 = Color(nsColor: NSColor.systemBlue)
+        public static let color2 = Color(nsColor: NSColor.systemGreen)
+        public static let color3 = Color(nsColor: NSColor.systemOrange)
+        public static let color4 = Color(nsColor: NSColor.systemPurple)
+        public static let color5 = Color(nsColor: NSColor.systemRed)
+        public static let color6 = Color(nsColor: NSColor.systemCyan)
+        public static let color7 = Color(nsColor: NSColor.systemPink)
+        public static let color8 = Color(nsColor: NSColor.systemYellow)
         
         /// Array of all available client colors
         public static let allColors: [Color] = [
@@ -159,14 +159,14 @@ public struct ColorSystem {
     
     /// Predefined colors for payee identification - using system colors
     public struct Payee {
-        public static let color1 = Color(NSColor.systemBlue).opacity(0.8)
-        public static let color2 = Color(NSColor.systemGreen).opacity(0.8)
-        public static let color3 = Color(NSColor.systemOrange).opacity(0.8)
-        public static let color4 = Color(NSColor.systemPurple).opacity(0.8)
-        public static let color5 = Color(NSColor.systemRed).opacity(0.8)
-        public static let color6 = Color(NSColor.systemCyan).opacity(0.8)
-        public static let color7 = Color(NSColor.systemPink).opacity(0.8)
-        public static let color8 = Color(NSColor.systemYellow).opacity(0.8)
+        public static let color1 = Color(nsColor: NSColor.systemBlue).opacity(0.8)
+        public static let color2 = Color(nsColor: NSColor.systemGreen).opacity(0.8)
+        public static let color3 = Color(nsColor: NSColor.systemOrange).opacity(0.8)
+        public static let color4 = Color(nsColor: NSColor.systemPurple).opacity(0.8)
+        public static let color5 = Color(nsColor: NSColor.systemRed).opacity(0.8)
+        public static let color6 = Color(nsColor: NSColor.systemCyan).opacity(0.8)
+        public static let color7 = Color(nsColor: NSColor.systemPink).opacity(0.8)
+        public static let color8 = Color(nsColor: NSColor.systemYellow).opacity(0.8)
         
         /// Array of all available payee colors
         public static let allColors: [Color] = [

@@ -59,4 +59,13 @@ public extension View {
     func standardContentPanelBreadcrumbInsets() -> some View {
         modifier(ContentPanelBreadcrumbInsetsModifier())
     }
+
+    @ViewBuilder
+    func standardPanelScrollEdgeEffect() -> some View {
+        if #available(macOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.automatic, for: .top)
+        } else {
+            self
+        }
+    }
 }

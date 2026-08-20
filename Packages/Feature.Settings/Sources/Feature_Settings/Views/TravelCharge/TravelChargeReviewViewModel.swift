@@ -1,3 +1,4 @@
+import os
 import Foundation
 import Core
 import DataInterfaces
@@ -41,7 +42,7 @@ public final class TravelChargeReviewViewModel {
         do {
             reviewItemEntities = try reviewFetching.fetchAllReviewItems()
         } catch {
-            print("❌ [TravelChargeReviewViewModel] Error fetching reviews: \(error)")
+            Logger.automation.warning("❌ [TravelChargeReviewViewModel] Error fetching reviews: \(error)")
         }
     }
 
@@ -59,7 +60,7 @@ public final class TravelChargeReviewViewModel {
             )
             await refreshReviews()
         } catch {
-            print("❌ [TravelChargeReviewViewModel] Error resolving with override: \(error)")
+            Logger.automation.warning("❌ [TravelChargeReviewViewModel] Error resolving with override: \(error)")
         }
     }
 
@@ -71,7 +72,7 @@ public final class TravelChargeReviewViewModel {
             try await automationActor.resolveReviewBySkipping(reviewModelID: reviewModelID, reason: nil)
             await refreshReviews()
         } catch {
-            print("❌ [TravelChargeReviewViewModel] Error skipping review: \(error)")
+            Logger.automation.warning("❌ [TravelChargeReviewViewModel] Error skipping review: \(error)")
         }
     }
 }

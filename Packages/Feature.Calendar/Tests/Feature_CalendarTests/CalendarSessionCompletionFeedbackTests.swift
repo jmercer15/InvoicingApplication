@@ -3,6 +3,7 @@ import Core
 import PersistenceModels
 @testable import Feature_Calendar
 import Testing
+import CoreTesting
 
 @Suite(.tags(.integration))
 struct CalendarSessionCompletionFeedbackTests {

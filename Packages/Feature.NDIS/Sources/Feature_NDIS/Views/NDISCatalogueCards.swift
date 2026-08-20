@@ -41,7 +41,7 @@ struct NDISCatalogueNavigationNodeCard: View {
                         .overlay(
                             Image(systemName: iconName)
                                 .font(StyleGuide.Typography.sectionTitle)
-                                .foregroundColor(tint)
+                                .foregroundStyle(tint)
                         )
 
                     VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXSmall) {
@@ -62,7 +62,7 @@ struct NDISCatalogueNavigationNodeCard: View {
                 HStack {
                     Label("Browse \(count) \(count == 1 ? "item" : "items")", systemImage: "rectangle.3.group")
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(tint)
+                        .foregroundStyle(tint)
                         .labelStyle(.titleAndIcon)
 
                     Spacer(minLength: 0)
@@ -233,7 +233,7 @@ struct NDISCatalogueCard: View, Equatable {
 
                 Text(item.itemNumber)
                     .font(StyleGuide.Typography.itemSubtitle)
-                    .foregroundColor(subtitleColor)
+                    .foregroundStyle(subtitleColor)
 
                 Spacer(minLength: 0)
 
@@ -243,14 +243,14 @@ struct NDISCatalogueCard: View, Equatable {
                 HStack(alignment: .center) {
                     Label(priceText, systemImage: priceIcon)
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(priceColor)
+                        .foregroundStyle(priceColor)
                         .labelStyle(.titleAndIcon)
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(subtitleColor.opacity(ListRowTokens.hoverStrokeOpacity))
+                        .foregroundStyle(subtitleColor.opacity(ListRowTokens.hoverStrokeOpacity))
                 }
             }
             .padding(StyleGuide.Dimensions.paddingXLarge)

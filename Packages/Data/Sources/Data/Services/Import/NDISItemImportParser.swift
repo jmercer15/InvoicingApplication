@@ -1,3 +1,5 @@
+import os
+import Core
 import Foundation
 
 enum NDISItemImportDateParser {
@@ -50,17 +52,17 @@ enum NDISItemImportParser {
     static func parse(data: Data, messages: inout [String]) throws -> [NDISItemData] {
         if let jsonDict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
            let currentItems = jsonDict["Current Support Items"] as? [[String: Any]] {
-            print("Parsing as NDIS Catalogue structure...")
+            Logger.importExport.info("Parsing as NDIS Catalogue structure...")
             return parseNDISCatalogueFormat(items: currentItems, messages: &messages)
         }
 
         if let simpleItems = try? JSONDecoder().decode([NDISItemJSON].self, from: data) {
-            print("Parsing as simple NDISItemJSON array...")
+            Logger.importExport.info("Parsing as simple NDISItemJSON array...")
             return simpleItems.map(simpleItemData)
         }
 
         if let singleItem = try? JSONDecoder().decode(NDISItemJSON.self, from: data) {
-            print("Parsing as single NDISItemJSON object...")
+            Logger.importExport.info("Parsing as single NDISItemJSON object...")
             return [simpleItemData(from: singleItem)]
         }
 

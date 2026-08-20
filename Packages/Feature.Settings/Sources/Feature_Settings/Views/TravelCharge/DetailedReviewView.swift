@@ -1,3 +1,5 @@
+import os
+import Core
 import SwiftUI
 import SharedUI
 
@@ -18,7 +20,7 @@ struct DetailedReviewView: View {
                 Text("Detailed Review")
                     .font(.title2.bold())
                 Text("Review and resolve the flagged item")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
@@ -27,7 +29,7 @@ struct DetailedReviewView: View {
                 VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                     Text(reviewItem)
                         .font(.body)
-                        .foregroundColor(ColorSystem.Status.warning)
+                        .foregroundStyle(ColorSystem.Status.warning)
                     
                     // Parse the review item to show structured information
                     if let parsedInfo = parseReviewItem(reviewItem) {
@@ -40,7 +42,7 @@ struct DetailedReviewView: View {
                             }
                         }
                         .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     }
                 }
             }
@@ -57,7 +59,7 @@ struct DetailedReviewView: View {
                     
                     Text("Notes")
                         .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     
                     TextEditor(text: $notes)
                         .frame(height: 100)
@@ -117,8 +119,8 @@ struct DetailedReviewView: View {
     }
     
     private func applyAction() {
-        print("Simulating action '\(suggestedAction)' for review item: \(reviewItem)")
-        print("Notes: \(notes)")
+        Logger.automation.info("Simulating action '\(suggestedAction)' for review item: \(reviewItem)")
+        Logger.automation.info("Notes: \(notes)")
         
         // Simulate action application (test mode only)
         let simulationResult = """
@@ -128,7 +130,7 @@ struct DetailedReviewView: View {
         - Result: Action would be processed in production
         """
         
-        print(simulationResult)
+        Logger.automation.info("\(simulationResult)")
         
         // In production, this would:
         // - Fix Location: Open session editor

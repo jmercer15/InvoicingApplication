@@ -66,7 +66,7 @@ struct RecurringScopePickerSheet: View {
             .listStyle(.inset)
             .navigationTitle(title)
             .toolbar {
-                AppToolbarSheetDismissBar { dismiss() }
+                AppToolbarSheetDismissBar("Cancel", isCancellation: true) { dismiss() }
             }
         }
         .frame(minWidth: StyleGuide.Dimensions.recurringScopeSheetMinWidth, idealWidth: StyleGuide.Dimensions.recurringScopeSheetIdealWidth, minHeight: StyleGuide.Dimensions.recurringScopeSheetMinHeight, idealHeight: StyleGuide.Dimensions.recurringScopeSheetIdealHeight)

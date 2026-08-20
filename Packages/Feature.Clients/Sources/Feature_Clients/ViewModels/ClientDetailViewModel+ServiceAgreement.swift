@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftData
 import Core
@@ -89,7 +90,7 @@ extension ClientDetailViewModel {
                 agreement.isArchived = true
                 try modelContext.save()
             } catch {
-                print("❌ [ClientDetailViewModel] Error archiving agreement: \(error)")
+                Logger.clients.warning("❌ [ClientDetailViewModel] Error archiving agreement: \(error)")
             }
         }
     }
@@ -172,7 +173,7 @@ extension ClientDetailViewModel {
                 }
                 try modelContext.save()
             } catch {
-                print("❌ [ClientDetailViewModel] Error committing services: \(error)")
+                Logger.clients.warning("❌ [ClientDetailViewModel] Error committing services: \(error)")
                 alertTitle   = "Save Error"
                 alertMessage = "Could not save services: \(error.localizedDescription)"
                 showAlert    = true

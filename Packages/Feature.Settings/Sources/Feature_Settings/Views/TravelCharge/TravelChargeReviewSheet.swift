@@ -30,7 +30,7 @@ struct TravelChargeReviewSheet: View {
                 }
                 
                 Text("Review automation results and resolve any issues")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
@@ -89,11 +89,11 @@ struct TravelChargeReviewSheet: View {
                 VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(StyleGuide.Typography.emptyStateIcon)
-                        .foregroundColor(Color("Active", bundle: .sharedUI))
+                        .foregroundStyle(Color("Active", bundle: .sharedUI))
                     Text("No Travel Charges Created")
                         .font(.title2.bold())
                     Text("All sessions passed validation and no travel charges were needed.")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -127,11 +127,11 @@ struct TravelChargeReviewSheet: View {
                 VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(StyleGuide.Typography.emptyStateIcon)
-                        .foregroundColor(Color("Active", bundle: .sharedUI))
+                        .foregroundStyle(Color("Active", bundle: .sharedUI))
                     Text("No Review Items")
                         .font(.title2.bold())
                     Text("All sessions passed validation without issues.")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -150,7 +150,7 @@ struct TravelChargeReviewSheet: View {
                                     VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                                         Text(summary)
                                             .font(.body)
-                                            .foregroundColor(Color("Text", bundle: .sharedUI))
+                                            .foregroundStyle(Color("Text", bundle: .sharedUI))
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                     .padding()
@@ -174,11 +174,11 @@ struct TravelChargeReviewSheet: View {
                 VStack(spacing: FormSectionTokens.formGroupSpacing) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(StyleGuide.Typography.emptyStateIcon)
-                        .foregroundColor(Color("Active", bundle: .sharedUI))
+                        .foregroundStyle(Color("Active", bundle: .sharedUI))
                     Text("No Detailed Reviews")
                         .font(.title2.bold())
                     Text("No compliance violations were detected.")
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -209,32 +209,32 @@ struct TravelChargeReviewSheet: View {
                 HStack {
                     Text(reviewItem.sessionTitle)
                         .font(.headline)
-                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                        .foregroundStyle(Color("Text", bundle: .sharedUI))
                     Spacer()
                     Text("\(reviewItem.violations.count) violations")
                         .font(.caption)
-                        .foregroundColor(Color("Cancelled", bundle: .sharedUI))
+                        .foregroundStyle(Color("Cancelled", bundle: .sharedUI))
                 }
                 
                 if let clientName = reviewItem.clientName {
                     Text("Client: \(clientName)")
                         .font(.body)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
                 
                 Text("Date: \(DateFormatting.mediumDateTime(reviewItem.timestamp))")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 
                 // Show first violation as preview
                 if let firstViolation = reviewItem.violations.first {
                     HStack {
                         Image(systemName: firstViolation.severity == .warning ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(firstViolation.severity == .warning ? Color("Inactive", bundle: .sharedUI) : Color("Cancelled", bundle: .sharedUI))
+                            .foregroundStyle(firstViolation.severity == .warning ? Color("Inactive", bundle: .sharedUI) : Color("Cancelled", bundle: .sharedUI))
                             .font(.caption)
                         Text(firstViolation.rule)
                             .font(.caption)
-                            .foregroundColor(firstViolation.severity == .warning ? Color("Inactive", bundle: .sharedUI) : Color("Cancelled", bundle: .sharedUI))
+                            .foregroundStyle(firstViolation.severity == .warning ? Color("Inactive", bundle: .sharedUI) : Color("Cancelled", bundle: .sharedUI))
                         Spacer()
                     }
                 }

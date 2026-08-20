@@ -1,3 +1,4 @@
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -65,6 +66,7 @@ struct PayeeImportJSON: Codable {
         let addressString = addressComponents.isEmpty ? nil : addressComponents.joined(separator: ", ")
         
         return PayeeJSON(
+            id: nil,
             payeeName: fullName,
             email: email,
             phone: mobile == "N/A" ? nil : mobile,
@@ -130,15 +132,21 @@ struct PayeeImport {
                         NSLocalizedDescriptionKey: "Payee name cannot be empty"
                     ])
                 }
-                // Find if the payee exists based on name
-                let payeeName = payee.payeeName
-                let descriptor = FetchDescriptor<Payee>(predicate: #Predicate<Payee> { $0.fullName == payeeName })
-                let existingPayees = try context.fetch(descriptor)
-                // Either update existing or create new
                 let payeeModel: Payee
-                if let existingPayee = existingPayees.first {
-                    payeeModel = existingPayee
-                    messages.append("Updated payee: \(payee.payeeName)")
+                if let id = payee.id {
+                    let descriptor = FetchDescriptor<Payee>(predicate: #Predicate<Payee> { $0.id == id })
+                    let matches = try context.fetch(descriptor)
+                    guard matches.count <= 1 else {
+                        throw NSError(domain: "ImportIdentityError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Multiple payees use import identifier \(id.uuidString)."])
+                    }
+                    if let existingPayee = matches.first {
+                        payeeModel = existingPayee
+                        messages.append("Updated payee: \(payee.payeeName)")
+                    } else {
+                        payeeModel = Payee(id: id, fullName: payee.payeeName)
+                        context.insert(payeeModel)
+                        messages.append("Created payee: \(payee.payeeName)")
+                    }
                 } else {
                     payeeModel = Payee(id: UUID(), fullName: payee.payeeName)
                     context.insert(payeeModel)
@@ -156,7 +164,7 @@ struct PayeeImport {
                 // Bank details cannot be stored - Payee.notes has been removed per architectural guidelines
                 // Note: Bank details from import are discarded as payees should not store notes
                 if payee.bankAccount != nil || payee.bankBSB != nil {
-                    print("⚠️ [PayeeImport] Bank details for \(payee.payeeName) cannot be stored - Payee.notes removed per architectural guidelines")
+                    Logger.importExport.warning("⚠️ [PayeeImport] Bank details for \(payee.payeeName) cannot be stored - Payee.notes removed per architectural guidelines")
                 }
                 // Set default status
                 payeeModel.status = payee.status ?? "Active"

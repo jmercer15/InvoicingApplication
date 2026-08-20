@@ -215,7 +215,7 @@ enum InvoiceLineItemsTableStyle {
     InvoiceDocumentDesign.accent.opacity(0.35)
   }
 
-  static let cellHorizontalPadding: CGFloat = 10
+  static let cellHorizontalPadding: CGFloat = 6
   static let cellVerticalPadding: CGFloat = 3
   /// Extra vertical inset for the column-header row only (body cells stay at `cellVerticalPadding`).
   static let headerCellVerticalPadding: CGFloat = 5

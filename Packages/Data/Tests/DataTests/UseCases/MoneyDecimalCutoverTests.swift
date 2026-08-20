@@ -3,6 +3,7 @@ import Core
 import PersistenceModels
 import SwiftData
 import Testing
+import CoreTesting
 @testable import Data
 
 @MainActor

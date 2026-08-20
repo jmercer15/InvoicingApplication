@@ -121,6 +121,8 @@ struct InvoicePreviewZoomControls: View {
   @Bindable var toolbarState: InvoiceEditorToolbarState
 
   var body: some View {
+    let percentLabel = toolbarState.zoom.percentLabel(fitScale: toolbarState.viewport.fitScale)
+
     HStack(spacing: 8) {
       Button("Zoom Out", systemImage: "minus.magnifyingglass") {
         toolbarState.zoom.zoomOut(relativeTo: toolbarState.viewport.fitScale)
@@ -129,11 +131,12 @@ struct InvoicePreviewZoomControls: View {
       .disabled(!toolbarState.zoom.canZoomOut(relativeTo: toolbarState.viewport.fitScale))
       .help("Zoom out")
 
-      Text(toolbarState.zoom.percentLabel(fitScale: toolbarState.viewport.fitScale))
+      Text(percentLabel)
         .font(.caption.monospacedDigit())
         .foregroundStyle(.secondary)
         .frame(minWidth: 44)
         .accessibilityLabel("Preview zoom")
+        .accessibilityValue(percentLabel)
 
       Button("Zoom In", systemImage: "plus.magnifyingglass") {
         toolbarState.zoom.zoomIn(relativeTo: toolbarState.viewport.fitScale)

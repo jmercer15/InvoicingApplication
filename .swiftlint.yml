@@ -9,6 +9,8 @@ excluded:
   - Carthage
   - Pods
   - DerivedData
+  - BuildData
+  - .agents
   - .swiftpm
   - "Packages/*/.swiftpm"
 

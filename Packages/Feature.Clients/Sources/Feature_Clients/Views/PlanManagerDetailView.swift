@@ -117,7 +117,7 @@ struct PlanManagerDetailView: View {
                 )
             }
         }
-        .foregroundColor(StyleGuide.Colors.text)
+        .foregroundStyle(StyleGuide.Colors.text)
         .task(id: viewModel.planManager.id) {
             await viewModel.refreshRelatedInvoices()
         }

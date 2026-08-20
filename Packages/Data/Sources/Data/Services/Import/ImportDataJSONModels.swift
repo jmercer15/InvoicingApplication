@@ -18,6 +18,7 @@ struct DynamicCodingKeys: CodingKey {
 }
 
 public struct ClientJSON: Codable {
+    var id: UUID?
     var fullName: String
     var email: String?
     var phone: String?
@@ -36,6 +37,7 @@ public struct ClientJSON: Codable {
     var ndis_number: String?
     
     enum CodingKeys: String, CodingKey {
+        case id
         case fullName = "fullName"
         case email
         case phone
@@ -58,6 +60,8 @@ public struct ClientJSON: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
+        self.id = try? container.decode(UUID.self, forKey: .id)
+
         // Handle different client name fields
         if let name = try? container.decode(String.self, forKey: .fullName) {
             self.fullName = name
@@ -123,6 +127,7 @@ public struct ClientJSON: Codable {
     
     // Custom initializer for direct creation
     public init(fullName: String, 
+         id: UUID? = nil,
          email: String? = nil, 
          phone: String? = nil, 
          address: String? = nil,
@@ -139,6 +144,7 @@ public struct ClientJSON: Codable {
          ndisNumber: String? = nil, 
          ndis_number: String? = nil) {
         
+        self.id = id
         self.fullName = fullName
         self.email = email
         self.phone = phone
@@ -159,6 +165,7 @@ public struct ClientJSON: Codable {
 }
 
 public struct PayeeJSON: Codable {
+    public let id: UUID?
     public let payeeName: String
     public let email: String?
     public let phone: String?
@@ -167,6 +174,28 @@ public struct PayeeJSON: Codable {
     public let bankBSB: String?
     public let status: String?
     public let relationToClient: String?
+
+    public init(
+        id: UUID? = nil,
+        payeeName: String,
+        email: String? = nil,
+        phone: String? = nil,
+        address: String? = nil,
+        bankAccount: String? = nil,
+        bankBSB: String? = nil,
+        status: String? = nil,
+        relationToClient: String? = nil
+    ) {
+        self.id = id
+        self.payeeName = payeeName
+        self.email = email
+        self.phone = phone
+        self.address = address
+        self.bankAccount = bankAccount
+        self.bankBSB = bankBSB
+        self.status = status
+        self.relationToClient = relationToClient
+    }
 }
 
 public struct ServiceJSON: Codable {

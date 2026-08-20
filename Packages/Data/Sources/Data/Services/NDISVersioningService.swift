@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftData
 import Core
@@ -71,7 +72,7 @@ public class NDISVersioningService {
         
         try context.save()
         
-        print("Updated current status: \(currentIdentifiers.count) items marked as current across \(groupedItems.count) item numbers")
+        Logger.automation.info("Updated current status: \(currentIdentifiers.count) items marked as current across \(groupedItems.count) item numbers")
     }
     
     /// Determines which versions within a single item number should be marked as current
@@ -276,7 +277,7 @@ public class NDISVersioningService {
     
     /// Recalculates 'isCurrent' flags for all NDIS items and returns the count of updated items
     public static func recalculateAllCurrentFlags(context: ModelContext) throws -> Int {
-        print("Manually recalculating isCurrent flags for all NDIS items...")
+        Logger.automation.info("Manually recalculating isCurrent flags for all NDIS items...")
         try updateCurrentStatusForAllItems(in: context)
         // Return 0 as exact count is tricky to propagate without changing return type of update helper
         // But for UI feedback, just success is often enough, or we check the logs

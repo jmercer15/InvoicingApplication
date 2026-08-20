@@ -666,7 +666,7 @@ struct ResizeHandleView: View {
                     .padding(.vertical, paddingXSmall)
                     .background(Color.accentColor)
                     .foregroundStyle(Color.white)
-                    .cornerRadius(cornerRadiusXSmall)
+                    .clipShape(.rect(cornerRadius: cornerRadiusXSmall))
                     .offset(y: edge == .top ? -20 : 20)
                     .zIndex(1)
                     .allowsHitTesting(false)

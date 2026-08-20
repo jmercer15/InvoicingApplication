@@ -2,6 +2,7 @@ import Core
 import Foundation
 import SharedUI
 import Testing
+import CoreTesting
 @testable import AppShell
 
 @MainActor

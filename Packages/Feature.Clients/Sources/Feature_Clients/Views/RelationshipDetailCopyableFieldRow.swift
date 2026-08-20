@@ -24,7 +24,7 @@ struct RelationshipDetailCopyableFieldRow: View {
                     TextField(placeholder, text: $text)
                         .textFieldStyle(.roundedBorder)
                         .foregroundStyle(errorMessage != nil ? ColorSystem.Status.error : StyleGuide.Colors.text)
-                        .accentColor(errorMessage != nil ? ColorSystem.Status.error : ColorSystem.Status.info)
+                        .tint(errorMessage != nil ? ColorSystem.Status.error : ColorSystem.Status.info)
                         .onChange(of: text) { _, _ in onTextChange() }
 
                     Button(action: onCopy) {

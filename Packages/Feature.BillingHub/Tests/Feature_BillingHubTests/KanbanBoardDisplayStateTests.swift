@@ -1,4 +1,5 @@
 import Testing
+import CoreTesting
 @testable import Feature_BillingHub
 
 @Suite(.tags(.integration))

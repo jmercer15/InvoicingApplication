@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CoreTesting
 @testable import Feature_Calendar
 
 @Suite(.tags(.unit))

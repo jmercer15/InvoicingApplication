@@ -1,3 +1,4 @@
+import os
 import Foundation
 import EventKit
 import SwiftData
@@ -15,12 +16,12 @@ extension EventKitSyncService {
 
     func checkInitialAccessAndFetchCalendars() {
         let status = EKEventStore.authorizationStatus(for: .event)
-        print("[EventKitSyncService] Initial authorization status: \(status)")
-        if #available(iOS 17.0, macOS 14.0, *), status == .writeOnly {
-            print("[EventKitSyncService] Write-only Calendar access detected. Full access is required for sync and recurrence management.")
+        Logger.calendar.debug("[EventKitSyncService] Initial authorization status: \(status.rawValue)")
+        if status == .writeOnly {
+            Logger.calendar.warning("[EventKitSyncService] Write-only Calendar access detected. Full access is required for sync and recurrence management.")
         }
         let isAuthorized = canPerformReadWriteEventOperations()
-        print("[EventKitSyncService] Is authorized: \(isAuthorized)")
+        Logger.calendar.debug("[EventKitSyncService] Is authorized: \(isAuthorized)")
         self.accessGranted = isAuthorized
         if isAuthorized && self.syncEnabled {
             Task { await self.fetchAvailableCalendars() }
@@ -35,14 +36,16 @@ extension EventKitSyncService {
 
     /// Request full-access permission to the user's calendars.
     public func requestAccess() async -> Bool {
-        print("[EventKitSyncService] Requesting calendar access...")
+        Logger.calendar.info("[EventKitSyncService] Requesting calendar access...")
         let session = EventKitAuthorizationSession()
         return await withTaskCancellationHandler {
             await session.wait {
-            if #available(iOS 17.0, macOS 14.0, *) {
-                print("[EventKitSyncService] Using requestFullAccessToEvents (iOS 17+/macOS 14+)")
                 eventStore.requestFullAccessToEvents { [weak self] granted, error in
-                    print("[EventKitSyncService] Full access request result: granted=\(granted), error=\(error?.localizedDescription ?? "none")")
+                    if let error {
+                        Logger.calendar.error("[EventKitSyncService] Full access request error: \(error.localizedDescription)")
+                    } else {
+                        Logger.calendar.info("[EventKitSyncService] Full access request result: granted=\(granted)")
+                    }
                     Task { @MainActor in
                         if granted {
                             self?.accessGranted = true
@@ -56,24 +59,6 @@ extension EventKitSyncService {
                         session.finish(granted)
                     }
                 }
-            } else {
-                print("[EventKitSyncService] Using requestAccess(to: .event) (legacy OS)")
-                eventStore.requestAccess(to: .event) { [weak self] granted, error in
-                    print("[EventKitSyncService] Basic access request result: granted=\(granted), error=\(error?.localizedDescription ?? "none")")
-                    Task { @MainActor in
-                        if granted {
-                            self?.accessGranted = true
-                            if self?.syncEnabled == true {
-                                await self?.fetchAvailableCalendars()
-                            }
-                        } else {
-                            self?.accessGranted = false
-                            self?.availableCalendars = []
-                        }
-                        session.finish(granted)
-                    }
-                }
-            }
             }
         } onCancel: {
             Task { @MainActor in session.finish(false) }
@@ -84,22 +69,22 @@ extension EventKitSyncService {
 
     /// Fetch all writable calendars from EventKit and publish them.
     public func fetchAvailableCalendars() async {
-        print("[EventKitSyncService] Fetching available calendars...")
+        Logger.calendar.debug("[EventKitSyncService] Fetching available calendars...")
         let allCalendars = eventStore.calendars(for: .event)
-        print("[EventKitSyncService] Total calendars found: \(allCalendars.count)")
+        Logger.calendar.debug("[EventKitSyncService] Total calendars found: \(allCalendars.count)")
         let calendars = allCalendars.filter { $0.allowsContentModifications }
-        print("[EventKitSyncService] Writable calendars found: \(calendars.count)")
+        Logger.calendar.debug("[EventKitSyncService] Writable calendars found: \(calendars.count)")
 
         self.availableCalendars = calendars
         if calendars.isEmpty {
-            print("[EventKitSyncService] No writable calendars found")
+            Logger.calendar.warning("[EventKitSyncService] No writable calendars found")
             self.error = NSError(
                 domain: "EventKitSyncService",
                 code: 100,
                 userInfo: [NSLocalizedDescriptionKey: "No writable calendars found. Please check your calendar accounts and permissions."]
             )
         } else {
-            print("[EventKitSyncService] Successfully loaded \(calendars.count) writable calendars")
+            Logger.calendar.info("[EventKitSyncService] Successfully loaded \(calendars.count) writable calendars")
             self.error = nil
         }
     }

@@ -207,7 +207,7 @@ struct CompanyView: View {
                             } else {
                                 HStack {
                                     Text(viewModel.business?.address?.fullFormattedAddress ?? "No address provided.")
-                                        .foregroundColor((viewModel.business?.address?.fullFormattedAddress ?? "").isEmpty ? .secondary : .primary)
+                                        .foregroundStyle((viewModel.business?.address?.fullFormattedAddress ?? "").isEmpty ? .secondary : .primary)
                                     Spacer()
                                     Button("Edit") {
                                         viewModel.isEditingAddress = true

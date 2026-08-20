@@ -2,7 +2,7 @@ import SwiftUI
 import SharedUI
 
 struct CreateCalendarSheet: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     @State private var title: String = ""
     @State private var color: Color = .accentColor
     @State private var showError: Bool = false
@@ -16,25 +16,25 @@ struct CreateCalendarSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Title")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 TextField("Calendar Title", text: $title)
                     .textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Color")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 ColorPicker("", selection: $color)
             }
             if showError {
                 Text("Title is required.")
-                    .foregroundColor(ColorSystem.Status.error)
+                    .foregroundStyle(ColorSystem.Status.error)
                     .font(.caption)
             }
             HStack {
                 Button("Cancel") {
                     onCancel?()
-                    presentationMode.wrappedValue.dismiss()
+                    dismiss()
                 }
                 .buttonStyle(.glass)
                 .pointerStyle(.link)
@@ -47,7 +47,7 @@ struct CreateCalendarSheet: View {
                     } else {
                         showError = false
                         onCreate(title, color.cgColor)
-                        presentationMode.wrappedValue.dismiss()
+                        dismiss()
                     }
                 }
                 .keyboardShortcut(.defaultAction)

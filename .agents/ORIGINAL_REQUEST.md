@@ -63,3 +63,74 @@ Integrity mode: development
 - [ ] `xcodebuild test -scheme InvoicingApplication -destination 'platform=macOS'` passes with 0 failures
 - [ ] `./scripts/architecture-check.sh` passes with 0 violations
 
+## 2026-08-10T03:58:18Z
+
+# Teamwork Project Prompt — Draft
+
+> Status: Launched
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview
+
+Map out the current architecture of the codebase and identify concrete opportunities for streamlining and consolidation to produce an actionable refactor plan for production.
+
+Working directory: ~/teamwork_projects/architecture_refactor_plan
+Integrity mode: benchmark
+
+## Verification Resources
+- Existing test suites and evaluation scripts within the codebase. Use these to understand current behavior and ensure proposed architectural changes do not violate expected behavior.
+
+## Requirements
+
+### R1. Comprehensive Architecture Analysis
+Analyze the current codebase to identify architectural bottlenecks, overly complex data flows, duplicated code, and disorganized file structures.
+
+### R2. Actionable Refactor Plan
+Produce a detailed markdown document that outlines specific refactoring steps. The plan must include explicit file paths, proposed structural changes, and strategies for deduplication and consolidation.
+
+## Acceptance Criteria
+
+### Analysis Quality
+- [ ] The analysis covers both macro-level architecture (data flow, component boundaries) and micro-level issues (code duplication, file organization).
+- [ ] At least three concrete areas for consolidation or deduplication are identified.
+
+### Plan Actionability
+- [ ] The refactor plan is presented as a markdown file.
+- [ ] Every proposed change includes the specific file paths involved.
+- [ ] The plan clearly distinguishes between structural changes, file reorganizations, and code deduplication.
+
+## 2026-08-12T20:59:17Z
+
+# Teamwork Project Prompt — Draft
+
+> Status: Launched
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview
+
+Implement the entire refactoring plan outlined in `REFACTOR_PLAN.md` to improve the application's architecture, including macro-architecture fixes, file decompositions, and code deduplication.
+
+Working directory: /Users/user/Developer/InvoicingApplication/InvoicingApplication
+Integrity mode: development
+
+## Verification Resources
+- `xcodebuild test` for unit and UI tests
+- `refactor-verify.sh` and `architecture-check.sh` scripts in the repository
+
+## Requirements
+
+### R1. Complete Implementation of REFACTOR_PLAN.md
+Execute all refactoring tasks outlined in the `REFACTOR_PLAN.md` file. This includes fixing `@State` initialization hazards, splitting the 4 mapped bloated files, and completing the 4 specified deduplications in `SharedUI` and `Core`.
+
+### R2. Maintain Existing Functionality
+The implementation must not break existing features. The app must continue to function exactly as before, with changes restricted to structural and architectural improvements.
+
+## Acceptance Criteria
+
+### Verification Passing
+- [ ] `xcodebuild test` passes with a 100% success rate.
+- [ ] `refactor-verify.sh` runs and completes successfully.
+- [ ] `architecture-check.sh` runs with no new violations.
+
+### Refactoring Completeness
+- [ ] The bloated files identified in the plan have been successfully split.
+- [ ] Code duplication in `SharedUI` and `Core` has been consolidated as per the plan.
+
+
+

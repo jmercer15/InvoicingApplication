@@ -1,3 +1,4 @@
+import os
 import Foundation
 import UniformTypeIdentifiers
 import CoreXLSX
@@ -29,7 +30,7 @@ class ExcelParser {
             return try parseXLSXNatively(url: url)
         } catch {
             // If native parsing fails, fall back to conversion approaches
-            print("Native XLSX parsing failed: \(error.localizedDescription)")
+            Logger.importExport.warning("Native XLSX parsing failed: \(error.localizedDescription)")
             
             // Attempt 2: Try to use system conversion tools
             if let csvData = try? convertExcelToCSVUsingSystemTools(url: url) {
@@ -73,11 +74,11 @@ class ExcelParser {
                        name.contains("sheet1") || name == "sheet1.xml"
             }) {
                 worksheetPath = currentSheet
-                print("Found preferred sheet for NDIS data: \(worksheetPath)")
+                Logger.importExport.info("Found preferred sheet for NDIS data: \(worksheetPath)")
             } else {
                 // Use first sheet as fallback
                 worksheetPath = worksheets.first!
-                print("Using first sheet as fallback: \(worksheetPath)")
+                Logger.importExport.info("Using first sheet as fallback: \(worksheetPath)")
             }
         } else {
             worksheetPath = worksheets.first!
@@ -94,7 +95,7 @@ class ExcelParser {
             headers = headerRow.cells.compactMap { cell in
                 return cell.stringValue(sharedStrings)
             }
-            print("Excel headers found: \(headers)")
+            Logger.importExport.info("Excel headers found: \(headers)")
         }
         
         // Process data rows (skip header row)
@@ -114,7 +115,7 @@ class ExcelParser {
             result.append(rowDict)
         }
         
-        print("Excel parsing completed: \(result.count) rows extracted")
+        Logger.importExport.info("Excel parsing completed: \(result.count) rows extracted")
         return result
     }
     

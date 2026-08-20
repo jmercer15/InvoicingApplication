@@ -10,7 +10,7 @@ public final class AddressSearchService: NSObject, @MainActor MKLocalSearchCompl
     public var errorMessage: String?
 
     private let completer: MKLocalSearchCompleter
-    private var debounceTimer: Timer?
+    private var searchTask: Task<Void, Never>?
     private var searchGeneration = 0
 
     public override init() {
@@ -22,7 +22,7 @@ public final class AddressSearchService: NSObject, @MainActor MKLocalSearchCompl
     }
 
     public func performSearch(query: String) {
-        debounceTimer?.invalidate()
+        searchTask?.cancel()
         searchGeneration &+= 1
         let activeGeneration = searchGeneration
 
@@ -37,22 +37,25 @@ public final class AddressSearchService: NSObject, @MainActor MKLocalSearchCompl
         self.isSearching = true
         self.errorMessage = nil
 
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.completer.queryFragment = trimmed
-                do {
-                    try await Task.sleep(for: .seconds(3))
-                } catch is CancellationError {
-                    return
-                } catch {
-                    return
-                }
-                guard self.searchGeneration == activeGeneration else { return }
-                if self.searchResults.isEmpty && self.isSearching {
-                    self.isSearching = false
-                    self.errorMessage = "Search timed out. Please try again."
-                }
+        searchTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.completer.queryFragment = trimmed
+            do {
+                try await Task.sleep(for: .seconds(3))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+            guard self.searchGeneration == activeGeneration else { return }
+            if self.searchResults.isEmpty && self.isSearching {
+                self.isSearching = false
+                self.errorMessage = "Search timed out. Please try again."
             }
         }
     }

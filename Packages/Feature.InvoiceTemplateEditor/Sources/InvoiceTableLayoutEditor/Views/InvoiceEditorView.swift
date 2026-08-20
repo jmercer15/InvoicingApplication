@@ -97,11 +97,10 @@ struct InvoiceEditorView: View {
         )
         .toolbar {
             if mode == .invoice {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .automatic) {
                     Button("Preview", systemImage: "doc.text.magnifyingglass") {
                         isPreviewPresented = true
                     }
-                    .buttonStyle(.borderedProminent)
                     .help("Preview invoice document")
                     .accessibilityHint("Opens a read-only invoice document preview in a sheet")
                 }

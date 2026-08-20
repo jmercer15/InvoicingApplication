@@ -160,14 +160,14 @@ private extension View {
         if let style {
             self
                 .font(style.font)
-                .foregroundColor(style.color)
+                .foregroundStyle(style.color)
                 .opacity(style.opacity)
                 .tracking(style.letterSpacing)
                 .baselineOffset(style.baselineOffset)
         } else {
             self
                 .font(StyleGuide.Typography.breadcrumb)
-                .foregroundColor(Color.primary)
+                .foregroundStyle(Color.primary)
         }
     }
 }

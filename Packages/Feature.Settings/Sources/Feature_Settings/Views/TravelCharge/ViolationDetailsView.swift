@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import Core
 import SharedUI
@@ -22,7 +23,7 @@ struct ViolationDetailsView: View {
                 Text("Compliance Violations")
                     .font(.title2.bold())
                 Text("Review and resolve compliance violations for this travel charge")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
@@ -37,7 +38,7 @@ struct ViolationDetailsView: View {
                     }
                     Text("Date: \(DateFormatting.mediumDateTime(detailedReview.timestamp))")
                         .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
             }
             
@@ -48,36 +49,36 @@ struct ViolationDetailsView: View {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             HStack {
                                 Image(systemName: violation.severity == .warning ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
-                                    .foregroundColor(violation.severity == .warning ? .orange : .red)
+                                    .foregroundStyle(violation.severity == .warning ? .orange : .red)
                                 Text(violation.rule)
                                     .font(.headline)
-                                    .foregroundColor(violation.severity == .warning ? .orange : .red)
+                                    .foregroundStyle(violation.severity == .warning ? .orange : .red)
                                 Spacer()
                             }
                             
                             Text(violation.description)
                                 .font(.body)
-                                .foregroundColor(Color("Text", bundle: .sharedUI))
+                                .foregroundStyle(Color("Text", bundle: .sharedUI))
                             
                             HStack {
                                 Text("Current: \(violation.currentValue)")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                 Spacer()
                                 Text("Limit: \(violation.limit)")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             }
                             
                             // Special styling for distance adjustments
                             if violation.rule == "Distance Adjustment" {
                                 HStack {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(ColorSystem.Status.success)
+                                        .foregroundStyle(ColorSystem.Status.success)
                                         .font(.caption)
                                     Text("This automatic adjustment prevents overcharging and ensures compliance with business rules.")
                                         .font(.caption)
-                                        .foregroundColor(ColorSystem.Status.success)
+                                        .foregroundStyle(ColorSystem.Status.success)
                                         .italic()
                                 }
                                 .padding(.top, 4)
@@ -90,7 +91,7 @@ struct ViolationDetailsView: View {
                             violation.severity == .warning ? Color.orange.opacity(0.1) : 
                             Color.red.opacity(0.1)
                         )
-                        .cornerRadius(cornerRadiusSmall)
+                        .clipShape(.rect(cornerRadius: cornerRadiusSmall))
                     }
                 }
             }
@@ -101,7 +102,7 @@ struct ViolationDetailsView: View {
                     VStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
                         Text("Select an override option if you want to proceed despite violations:")
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         
                         ForEach(detailedReview.overrideOptions, id: \.self) { option in
                             Button(action: {
@@ -109,9 +110,9 @@ struct ViolationDetailsView: View {
                             }) {
                                 HStack {
                                     Image(systemName: selectedOverride == option ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(selectedOverride == option ? .accentColor : .secondary)
+                                        .foregroundStyle(selectedOverride == option ? Color.accentColor : Color.secondary)
                                     Text(option)
-                                        .foregroundColor(Color("Text", bundle: .sharedUI))
+                                        .foregroundStyle(Color("Text", bundle: .sharedUI))
                                     Spacer()
                                 }
                                 .contentShape(Rectangle())
@@ -135,7 +136,7 @@ struct ViolationDetailsView: View {
                         ForEach(detailedReview.suggestedActions, id: \.self) { action in
                             HStack {
                                 Image(systemName: "arrow.right.circle.fill")
-                                    .foregroundColor(ColorSystem.Status.info)
+                                    .foregroundStyle(ColorSystem.Status.info)
                                 Text(action)
                                     .font(.body)
                                 Spacer()
@@ -186,8 +187,8 @@ struct ViolationDetailsView: View {
         - Violations: \(detailedReview.violations.map { $0.rule }.joined(separator: ", "))
         """
         
-        print("[ViolationDetails] Creating travel charge with override:")
-        print("[ViolationDetails] \(overrideDetails)")
+        Logger.automation.info("[ViolationDetails] Creating travel charge with override:")
+        Logger.automation.info("[ViolationDetails] \(overrideDetails)")
 
         onOverride?(
             detailedReview,
@@ -206,8 +207,8 @@ struct ViolationDetailsView: View {
         - Violations: \(detailedReview.violations.map { $0.rule }.joined(separator: ", "))
         """
         
-        print("[ViolationDetails] Skipping travel charge:")
-        print("[ViolationDetails] \(skipDetails)")
+        Logger.automation.info("[ViolationDetails] Skipping travel charge:")
+        Logger.automation.info("[ViolationDetails] \(skipDetails)")
 
         onSkip?(detailedReview, "User chose to skip due to violations")
         

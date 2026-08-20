@@ -122,3 +122,31 @@ enum InvoiceDateFormatter {
     }
   }
 }
+
+/// Compact display labels for invoice line-item units. Persisted values remain unchanged.
+enum InvoiceUnitFormatter {
+  static func string(for unit: String) -> String {
+    let trimmed = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    return switch trimmed.lowercased() {
+    case "h", "hr", "hrs", "hour", "hours":
+      "hr"
+    case "km", "kms", "kilometer", "kilometers", "kilometre", "kilometres":
+      "km"
+    case "min", "mins", "minute", "minutes":
+      "min"
+    case "ea", "each":
+      "ea"
+    case "wk", "wks", "week", "weeks":
+      "wk"
+    case "mo", "mos", "month", "months":
+      "mo"
+    case "yr", "yrs", "year", "years":
+      "yr"
+    case "sess", "session", "sessions":
+      "sess"
+    default:
+      trimmed
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftData
 import Core
@@ -9,10 +10,10 @@ struct AllDataImportService {
     static func importAllData(from data: Data, context: ModelContext) throws -> [ImportResult] {
         var results: [ImportResult] = []
         
-        print("Starting AllData import process...")
+        Logger.importExport.info("Starting AllData import process...")
         
         let payload = try AllDataImportPayload(data: data)
-        print("JSON structure keys: \(payload.sortedKeys)")
+        Logger.importExport.info("JSON structure keys: \(payload.sortedKeys)")
         
         // Create a mapping of object URIs to actual entities for relationship resolution
         var entityMapping: [String: Any] = [:]
@@ -21,16 +22,16 @@ struct AllDataImportService {
         
         // 1. Import Address first (no dependencies)
         if let addressData = payload.rows(for: .address) {
-            print("Importing \(addressData.count) Address records...")
+            Logger.importExport.info("Importing \(addressData.count) Address records...")
             let addressResult = try importAddressEntities(addressData, context: context, entityMapping: &entityMapping)
             results.append(addressResult)
         } else {
-            print("WARNING: No Address data found in JSON")
+            Logger.importExport.warning("WARNING: No Address data found in JSON")
         }
         
         // 2. Import Payee (depends on Address)
         if let payeeData = payload.rows(for: .payee) {
-            print("Importing \(payeeData.count) Payee records...")
+            Logger.importExport.info("Importing \(payeeData.count) Payee records...")
             let payeeResult = try importPayeeEntities(payeeData, context: context, entityMapping: &entityMapping)
             results.append(payeeResult)
         }
@@ -49,14 +50,14 @@ struct AllDataImportService {
         
         // 5. Import Business (no dependencies)
         if let businessData = payload.rows(for: .business) {
-            print("Importing \(businessData.count) Business records...")
+            Logger.importExport.info("Importing \(businessData.count) Business records...")
             let businessResult = try importBusinessEntities(businessData, context: context, entityMapping: &entityMapping)
             results.append(businessResult)
         }
         
         // 6. Import Client (depends on Payee, Address, PlanManager)
         if let clientData = payload.rows(for: .client) {
-            print("Importing \(clientData.count) Client records...")
+            Logger.importExport.info("Importing \(clientData.count) Client records...")
             let clientResult = try importClientEntities(clientData, context: context, entityMapping: &entityMapping)
             results.append(clientResult)
         }
@@ -144,13 +145,13 @@ struct AllDataImportService {
             try context.save()
             let totalImported = results.reduce(0) { $0 + $1.successful }
             let totalFailed = results.reduce(0) { $0 + $1.failed }
-            print("Successfully imported and saved \(totalImported) total entities across \(results.count) entity types to SwiftData store")
+            Logger.importExport.info("Successfully imported and saved \(totalImported) total entities across \(results.count) entity types to SwiftData store")
             
             if totalFailed > 0 {
-                print("WARNING: \(totalFailed) entities failed to import")
+                Logger.importExport.warning("WARNING: \(totalFailed) entities failed to import")
             }
         } catch {
-            print("Error saving imported entities: \(error)")
+            Logger.importExport.warning("Error saving imported entities: \(error)")
         }
         
         return results

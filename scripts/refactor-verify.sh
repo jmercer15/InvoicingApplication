@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/refactor-verify.XXXXXX")"
 trap 'rm -rf "${LOG_DIR}"' EXIT
 STEP_NUMBER=0
+APP_DERIVED_DATA="${ROOT_DIR}/BuildData/RefactorVerification"
+APP_BUNDLE="${APP_DERIVED_DATA}/Build/Products/Debug/InvoicingApplication.app"
 
 check_repository_warnings() {
   local log_file="$1"
@@ -48,8 +50,40 @@ run_step() {
   echo "==> ${label} completed in $((end - start))s"
 }
 
+verify_app_runtime_linkage() {
+  local binaries=(
+    "${APP_BUNDLE}/Contents/MacOS/InvoicingApplication"
+    "${APP_BUNDLE}/Contents/MacOS/InvoicingApplication.debug.dylib"
+  )
+
+  local binary
+  for binary in "${binaries[@]}"; do
+    if [[ ! -x "${binary}" ]]; then
+      echo "Missing built app binary: ${binary}" >&2
+      return 1
+    fi
+    if otool -L "${binary}" | grep -q '@rpath/Testing\.framework'; then
+      echo "Production app binary links Swift Testing: ${binary}" >&2
+      return 1
+    fi
+  done
+
+  echo "Production app binaries contain no Swift Testing runtime dependency."
+}
+
+run_swiftlint() {
+  (
+    cd "${ROOT_DIR}"
+    swiftlint lint --strict --quiet --no-cache \
+      --config .swiftlint.yml \
+      --baseline .swiftlint-baseline.json \
+      InvoicingApplication Packages
+  )
+}
+
 run_step "Swift LOC / pattern counts" bash "${ROOT_DIR}/scripts/swift-repo-metrics.sh"
 run_step "Architecture guardrails" bash "${ROOT_DIR}/scripts/architecture-check.sh"
+run_step "SwiftLint" run_swiftlint
 
 # Core & Infrastructure Packages
 run_step "Core tests" swift test --package-path "${ROOT_DIR}/Packages/Core"
@@ -78,5 +112,7 @@ run_step "App tests" xcodebuild \
   -project "${ROOT_DIR}/InvoicingApplication.xcodeproj" \
   -scheme InvoicingApplication \
   -configuration Debug \
+  -derivedDataPath "${APP_DERIVED_DATA}" \
   -destination 'platform=macOS' \
   test
+run_step "App runtime linkage" verify_app_runtime_linkage

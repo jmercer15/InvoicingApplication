@@ -1,106 +1,98 @@
-# Handoff Report: InvoiceTemplateEditor Analysis
+# Domain, Core, and Data Layer Architecture & Code Duplication Report
 
-## Observation
+## 1. Observation
 
-### 1. Current Architecture & Models in `Packages/Feature.InvoiceTemplateEditor`
-- **Domain Persistence Model**: `InvoiceDocument` (`Sources/InvoiceTableLayoutEditor/Models/InvoiceDocument.swift:3-601`). Holds invoice content + formatting fields (`accentThemeRaw`, `customAccentRed/Green/Blue/Opacity`, `marginPresetRaw`, `customMarginPoints`, `customPageWidthPoints`, `customPageHeightPoints`, `typographyDensityRaw`, `customTypographyScale`, `headerStyleRaw`, `partyLayoutRaw`, `tableStyleRaw`, `fontFamilyRaw`, `logoPlacementRaw`, `borderWeightRaw`, `currencyDisplayStyleRaw`, `totalsEmphasisRaw`).
-- **Configuration Snapshot**: `InvoiceTemplateConfiguration` (`Sources/InvoiceTableLayoutEditor/Models/InvoiceEnums.swift:770-828`). `Codable & Equatable` struct wrapping all formatting fields. Features resilient decoding (`InvoiceEnums.swift:897-980`) with key-by-key fallbacks and range clamping via `InvoiceTemplateLayoutLimits` (`InvoiceEnums.swift:832-874`).
-- **Preset Serialization & Store**:
-  - `InvoiceTemplatePreset` (`InvoiceEnums.swift:686-767`): Static `enum` (`.classic`, `.compact`, `.minimal`, `.modern`) with hardcoded `configuration` getters.
-  - `InvoiceTemplateDefaults` (`Data/InvoiceTemplatePreferenceStore.swift:6-96`): Envelope holding `version: Int = 2`, `paperSize`, `pageOrientation`, `configuration`.
-  - `InvoiceTemplatePreferenceStore` (`Data/InvoiceTemplatePreferenceStore.swift:99-141`): Manages persistence to `UserDefaults` under key `"InvoiceTemplateEditor.TemplateConfiguration.v1"`.
-- **Editor State & View Model**:
-  - `InvoiceEditorViewModel` (`Views/InvoiceEditorViewModel.swift:47-450`): `@Observable @MainActor` store holding draft attributes, pagination status, status messages, activity states, and published properties for visual settings.
-  - `InvoiceTemplateRibbon` (`Views/InvoiceTemplateRibbon.swift:112-726`): Form inspector categorized into 5 sections (`.template`, `.layout`, `.design`, `.content`, `.lineItems`).
-- **Document Preview & Pagination**:
-  - `InvoiceDocumentPreview` (`Views/InvoiceDocumentPreview.swift:7-178`): Scaled preview with geometry calculation, pinch/command-scroll zoom, and off-screen `InvoicePaginationMeasurer` (`Views/InvoicePaginationMeasurer.swift:9-154`).
-  - `InvoiceDocumentPreviewPage` (`Views/InvoiceDocumentPreview.swift:377-553`): Card renderer applying margins, borders, shadows, headers (`InvoiceDocumentSections.swift:97-200`), parties, line items table, and payment footer.
-  - `InvoicePagination` (`Views/InvoicePagination.swift:17-314`): Pure pagination algorithm computing content bounds, page breaks, and footer positioning.
+Direct observations from examining package sources, models, schemas, formatters, and service implementations across `Packages/Core`, `Packages/Data`, `Packages/DataInterfaces`, and `Packages/PersistenceModels`:
 
----
+### Macro-Level Architecture & Layer Boundaries
+- **Core Snapshot DTO Pattern**: `Packages/Core/Sources/Core/Models/Snapshots/` defines ~19 value-type (`Sendable`, `Codable`) snapshot structs (`InvoiceSnapshot`, `ClientSnapshot`, `SessionSnapshot`, `BulkClaimLineSnapshot`, etc.). `Packages/PersistenceModels/Sources/PersistenceModels/SnapshotMapping.swift` (485 lines) maps live `@Model` instances into these thread-safe snapshots, successfully creating a concurrency barrier between background actors and main-thread UI components.
+- **Background `@ModelActor` Isolation**: SwiftData context execution is separated via background `@ModelActor`s (`BulkClaimBuilderActor.swift`, `NDISComplianceValidator.swift`, `DataExporterActor.swift`, `DataImporterActor.swift`, `EventKitSyncActor.swift`, `TravelChargeAutomationActor.swift`) and ephemeral context creation (`ModelContainerFactory.makeEphemeralContext`).
+- **Interface Segregation**: `Packages/DataInterfaces/Sources/DataInterfaces/` defines 25+ protocol interfaces (`BusinessPersisting`, `ClaimBatchBuilding`, `ClaimBatchPersisting`, `ImportExportCoordinating`, `NDISCatalogueFetching`, etc.) separating feature targets from concrete data persistence.
 
-## Logic Chain
+### Micro-Level Code Duplication & Misplaced Code
+- **Duplicate `PersistenceSchema` Declaration**:
+  - `Packages/PersistenceModels/Sources/PersistenceModels/PersistenceSchema.swift:5-30`: Declares `public enum PersistenceSchema { public static let appModels: [any PersistentModel.Type] = [ Client.self, ... ] }`.
+  - `Packages/Data/Sources/Data/Persistence/PersistenceSchema.swift:5-30`: Duplicate 26-line copy of the exact same array `public static let appModels: [any PersistentModel.Type]` instead of reusing or typealiasing `PersistenceModels.PersistenceSchema`.
+- **Misplaced Domain Pricing Logic & Currency Formatting in Persistence Layer**:
+  - `Packages/PersistenceModels/Sources/PersistenceModels/Utilities/NDISPriceUtilities.swift:6-153`: Defines `NDISPriceUtilities`, `NDISPriceError`, `PriceFallbackStrategy`, price comparisons, AND a `private static let priceFormatter: NumberFormatter` with Australian dollar currency formatting (`formatPrice`, `formatPriceRange`). This mixes domain pricing algorithms and UI string formatting directly inside the persistence model package.
+- **Misplaced Pure Domain Validation in Data Layer**:
+  - `Packages/Data/Sources/Data/Services/BulkClaimValidationService.swift:4-142`: Validates `BulkClaimLineSnapshot` instances using pure domain rules (registration number presence, NDIS numeric check, GST codes, HHH:MM hours formatting, provider ABN length). It imports no SwiftData types or DB context, but is located in `Packages/Data` instead of `Packages/Core`.
+- **Redundant Re-export Files**:
+  - `Packages/Data/Sources/Data/Models/CalendarPreferences.swift:3` (`public typealias CalendarPreferences = Core.CalendarPreferences`).
+  - `Packages/Data/Sources/Data/Models/CalendarPreferencesStore.swift:3-5` (`public typealias CalendarPreferencesStore = Core.CalendarPreferencesStore`).
+  - `Packages/Data/Sources/Data/Persistence/EntityPredicateBuilders.swift:4` (`public typealias EntityPredicateBuilders = PersistenceModels.EntityPredicateBuilders`).
+- **Redundant Local Formatter Instantiations**:
+  - Local `NumberFormatter` instances constructed across features instead of sharing locale-aware formatters:
+    - `Packages/PersistenceModels/Sources/PersistenceModels/Utilities/NDISPriceUtilities.swift:74-81`
+    - `Packages/Core/Sources/Core/Formatting/ExportMachineFormatting.swift:88-94`
+    - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceFormatting.swift:414-522`
+    - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceValidatedDecimalField.swift:49-213`
+    - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoiceFilterAmountField.swift:43-44`
+    - `Packages/Feature.Settings/Sources/Feature_Settings/Views/NDIS/NDISBillingSettingsView.swift:10-11`
 
-### 2. Implementing Template Preset Management
-- **Observation**: `InvoiceTemplatePreset` (`InvoiceEnums.swift:686`) is currently a fixed hardcoded enum. `InvoiceTemplatePreferenceStore` (`InvoiceTemplatePreferenceStore.swift:99`) only saves default settings, not user-saved preset collections.
-- **Logic**:
-  1. Define `struct InvoiceCustomTemplatePreset: Identifiable, Codable, Equatable`:
-     - Fields: `id: UUID`, `name: String`, `paperSize: PaperSize`, `pageOrientation: PageOrientation`, `configuration: InvoiceTemplateConfiguration`, `createdAt: Date`.
-  2. Storage Layer:
-     - Add `InvoiceCustomPresetStore` (or extend `InvoiceTemplatePreferenceStore`) with `UserDefaults` key `"InvoiceTemplateEditor.CustomPresets.v1"`.
-     - Implement `loadCustomPresets() -> [InvoiceCustomTemplatePreset]` and `saveCustomPresets(_ presets: [InvoiceCustomTemplatePreset])`.
-  3. View Model Integration:
-     - Add `customPresets: [InvoiceCustomTemplatePreset]` to `InvoiceEditorViewModel`.
-     - Expose `saveCurrentAsPreset(named: String)`, `deleteCustomPreset(id: UUID)`, `applyCustomPreset(_ preset: InvoiceCustomTemplatePreset)`.
-  4. Ribbon UI (`InvoiceTemplateRibbon.swift:335-377`):
-     - Replace single-enum picker with grouped menu in `templateTab`: Built-in (`Classic`, `Compact`, `Minimal`, `Modern`) + User Presets.
-     - Add "Save Current Preset..." button opening name-prompt sheet.
-     - Add "Manage Custom Presets..." modal sheet for preset deletion/renaming.
-
-### 3. Implementing Brand Accent & Logo Customization
-- **Observation**: Accent colors are controlled via `InvoiceAccentTheme` enum (`InvoiceEnums.swift:156`) or `customAccentColor: InvoiceCustomAccentColor?` (`InvoiceEnums.swift:983`) edited by `ColorPicker` in `designTab` (`InvoiceTemplateRibbon.swift:456`). Logo support is limited to `logoPlacement: InvoiceLogoPlacement` (`InvoiceEnums.swift:614`) rendering monogram initials via `InvoiceBrandMark` (`Views/InvoiceBrandMark.swift:3-12`).
-- **Logic**:
-  1. Accent Color Extensions:
-     - Add brand palette presets (swatches) + Hex string input (`#HEX`) in `designTab`.
-     - Add optional `secondaryAccentColor` or derived tinting for zebra rows, table borders, and header backgrounds.
-  2. Logo Customization:
-     - Extend `InvoiceTemplateConfiguration` with `logoStyle: InvoiceLogoStyle` (`.monogram`, `.customImage`), `logoImageData: Data?`, and `logoScale: Double` (range `0.5...2.0`).
-     - Update `InvoiceDocumentSections.businessMark` (`InvoiceDocumentSections.swift:97-200`) to render `NSImage(data: logoImageData)` if `.customImage` selected, falling back to `InvoiceBrandMark.initials`.
-     - Expand `logoPlacement` options to support `.leading`, `.trailing`, `.centerAboveTitle`, `.hidden`.
-     - Add a "Branding & Logo" control card in `InvoiceTemplateRibbon` with image picker button, placement dropdown, and scale slider.
-
-### 4. Implementing Page Margin & Pagination Controls
-- **Observation**: Margins are set via `marginPreset` or `customMarginPoints` (`InvoiceEnums.swift:192`) in text field (`InvoiceTemplateRibbon.swift:422`). Document preview (`InvoiceDocumentPreviewPage`, `InvoiceDocumentPreview.swift:377`) applies static `.padding(margin)`. Pagination is computed silently off-screen without breakpoint indicators.
-- **Logic**:
-  1. Interactive Page Margin Adjustments:
-     - In `InvoiceDocumentPreviewPage` (`InvoiceDocumentPreview.swift:413`), overlay interactive dashed margin guide lines when layout mode or hover is active.
-     - Add `DragGesture` on top/bottom/left/right margin handles inside preview.
-     - Translate drag gesture translation in points into updated `customMarginPoints`, clamped live via `InvoiceTemplateLayoutLimits.effectiveMargin(requested, pageSize: pageSize)`.
-  2. Pagination Breakpoint Markers:
-     - In `InvoiceDocumentPreview`, calculate cumulative line-item heights vs `printableHeight`.
-     - Overlay visual breakpoint markers: dashed accent lines with badges (e.g., `Page 1 Break (88% filled)`) between table rows in preview.
-     - Support optional manual page break flags (`forcePageBreakBefore: Bool` on `InvoiceLineItem`) and pass to `InvoicePagination.splitLineItemsAcrossPages`.
-
-### 5. Unit Test Strategy
-- **Observation**: Existing tests cover pagination row splitting (`InvoicePaginationTests.swift`), error presentation, double input parsing, filename escaping, and command context (`InvoiceEditorSeparationTests.swift`).
-- **Logic**: New features require dedicated unit tests:
-  1. Preset Management:
-     - Test custom preset encoding/decoding resilience.
-     - Test saving, loading, and deleting custom presets in `InvoiceTemplatePreferenceStore`.
-     - Test applying custom preset updates all `InvoiceEditorViewModel` configuration properties cleanly.
-  2. Brand Accent & Logo:
-     - Test hex color parsing and `InvoiceCustomAccentColor` conversion.
-     - Test logo image data serialization resilience in `InvoiceTemplateConfiguration`.
-     - Test `InvoiceDocumentSections.businessMark` rendering selection (custom image vs monogram fallback).
-  3. Interactive Margins & Pagination Breakpoints:
-     - Test margin drag gesture delta conversion and `InvoiceTemplateLayoutLimits` clamping.
-     - Test calculation of page break row indices in `InvoicePagination.paginate`.
-     - Test manual page break insertion flags (`forcePageBreakBefore`).
+### File Organization & Service Bloat
+- **Monolithic Service Bloat**:
+  - `Packages/Data/Sources/Data/Services/NDISBillingIntegrationService.swift`: **1,028 lines** in a single file combining SwiftData fetching, ephemeral context management, invoice creation, input vector construction, travel charge calculation, entity resolution, and report generation.
+  - `Packages/Data/Sources/Data/Services/EventKitSyncService.swift` and 11 extension files (19 total files under `Data/Services/` for EventKit sync).
+  - `Packages/Core/Sources/Core/Models/CalendarPreferencesStore.swift`: **408 lines** class manually managing 25+ individual `UserDefaults` observation keys and properties.
+- **Split Service Protocols Across Packages**:
+  - `ComplianceValidating.swift` and `ServiceProtocols.swift` live in `Packages/Core/Sources/Core/Protocols/`, while all other data/persistence protocols live in `Packages/DataInterfaces/Sources/DataInterfaces/`.
 
 ---
 
-## Caveats
-- No source code modifications executed per read-only task assignment.
-- AppKit dependency (`NSImage`, `NSColor`, `NSHostingView`) requires tests running on macOS target.
-- PDF export/print features depend on PDFKit frame calculations, which must remain synchronized with SwiftUI measurement passes.
+## 2. Logic Chain
+
+1. **Observation**: `Packages/Data/Sources/Data/Persistence/PersistenceSchema.swift` recreates the `appModels` array word-for-word from `Packages/PersistenceModels/Sources/PersistenceModels/PersistenceSchema.swift`.
+   - **Reasoning**: `EntityPredicateBuilders.swift` in `Data` correctly uses a typealias `public typealias EntityPredicateBuilders = PersistenceModels.EntityPredicateBuilders`. `PersistenceSchema` was copied during a past refactor.
+   - **Deduction**: `PersistenceSchema.swift` in `Data` can be simplified to a single-line typealias.
+
+2. **Observation**: `NDISPriceUtilities.swift` lives inside `Packages/PersistenceModels`.
+   - **Reasoning**: `PersistenceModels` should contain only SwiftData `@Model` class declarations and snapshot mappers. `NDISPriceUtilities` performs domain price validation, handles strategy-based price resolution (`PriceFallbackStrategy`), and formats currency strings using `NumberFormatter`.
+   - **Deduction**: This violates clean architecture layer boundaries. Placing domain calculation and string formatting inside the persistence model package forces UI/domain callers to rely on persistence utilities.
+
+3. **Observation**: `BulkClaimValidationService.swift` in `Packages/Data/Sources/Data/Services` takes `[BulkClaimLineSnapshot]` and returns `BulkClaimValidationResult`.
+   - **Reasoning**: The inputs and outputs are pure Core snapshots, and the validation logic is 100% pure domain rule checking (ABN digits, NDIS number check, GST code validation, time format parsing). It makes zero SwiftData calls and accesses no database context.
+   - **Deduction**: Moving `BulkClaimValidationService` to `Packages/Core/Sources/Core/Domain/` allows `Core` or offline feature validation to run without dragging in `Data` dependencies.
+
+4. **Observation**: `NDISBillingIntegrationService.swift` spans 1,028 lines and handles DB context setup, invoice creation, vector mapping, session linking, and report generation.
+   - **Reasoning**: Single responsibility principle is violated. Combining data persistence, domain vector transformation, and invoice construction in one class makes unit testing difficult and increases refactoring risk.
+   - **Deduction**: Decomposing `NDISBillingIntegrationService` into sub-components (`NDISInvoiceBuilder`, `NDISSessionClaimProcessor`) will improve testability and maintainability.
 
 ---
 
-## Conclusion
-- Current architecture in `Packages/Feature.InvoiceTemplateEditor` provides clean separation between `InvoiceDocument` persistence, `InvoiceTemplateConfiguration` snapshotting, `InvoiceEditorViewModel` state management, and `InvoicePagination` engine.
-- Implementation of Template Preset Management, Brand Accent & Logo Customization, and Interactive Page Margin/Pagination Controls can be achieved by expanding `InvoiceTemplateConfiguration`, `InvoiceTemplatePreferenceStore`, `InvoiceEditorViewModel`, `InvoiceTemplateRibbon`, `InvoiceDocumentPreview`, and `InvoicePagination` without breaking existing schema or migration compatibility.
+## 3. Caveats
+
+- **CloudKit Schema Stability**: `Invoice.swift` and `Client.swift` physical attribute names must remain stable due to CloudKit sync compatibility (documented in `DEVELOPER_NOTES.md`). Any refactoring of model properties must preserve existing `@Attribute(originalName:)` annotations.
+- **`DataInterfaces` Payload Exceptions**: As documented in `Packages/DataInterfaces/Sources/DataInterfaces/InterfacePayloadExceptions.md`, a few specific protocols (`ClaimBatchPersisting`, `BusinessPersisting`, `TravelChargeReviewFetching`, `ClientRelationshipDeleting`) intentionally retain live `@Model` types or `PersistentIdentifier` for UI `@Query` binding.
 
 ---
 
-## Verification Method
-- **Inspect Files**:
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Models/InvoiceDocument.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Models/InvoiceEnums.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Data/InvoiceTemplatePreferenceStore.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceEditorViewModel.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceTemplateRibbon.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceDocumentPreview.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoicePagination.swift`
-  - `Packages/Feature.InvoiceTemplateEditor/Tests/InvoiceTableLayoutEditorTests/InvoicePaginationTests.swift`
-- **Build & Test Command**:
-  - `swift test --package-path Packages/Feature.InvoiceTemplateEditor`
+## 4. Conclusion
+
+The Domain, Core, and Data architecture is logically sound around snapshot isolation (`SnapshotMapping.swift`) and background actor boundaries (`ModelActor`). However, concrete technical debt exists in four areas:
+
+1. **Direct Code Duplication**: `PersistenceSchema.swift` in `Data` duplicates `PersistenceSchema` in `PersistenceModels`.
+2. **Layer Inversion / Misplaced Logic**:
+   - `NDISPriceUtilities.swift` (domain pricing & formatting) is misplaced in `PersistenceModels`.
+   - `BulkClaimValidationService.swift` (pure snapshot validation) is misplaced in `Data`.
+3. **Service Monoliths**: `NDISBillingIntegrationService.swift` (1,028 lines) is overloaded with multi-domain responsibilities.
+4. **Formatter Instantiation Overhead**: Scatter of local `NumberFormatter` instantiations across feature views and data services instead of centralizing locale-aware currency formatters.
+
+---
+
+## 5. Verification Method
+
+To verify findings and validate future consolidation:
+
+1. **Verify `PersistenceSchema` duplication**:
+   - Inspect `Packages/PersistenceModels/Sources/PersistenceModels/PersistenceSchema.swift:5-30` and `Packages/Data/Sources/Data/Persistence/PersistenceSchema.swift:5-30`.
+2. **Verify `BulkClaimValidationService` independence from Data**:
+   - Inspect `Packages/Data/Sources/Data/Services/BulkClaimValidationService.swift`. Note lack of SwiftData/ModelContext imports.
+3. **Verify build and test suite execution**:
+   - Run swift test on target packages:
+     ```bash
+     swift test --package-path Packages/Core
+     swift test --package-path Packages/PersistenceModels
+     swift test --package-path Packages/DataInterfaces
+     swift test --package-path Packages/Data
+     ```

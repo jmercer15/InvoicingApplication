@@ -1,3 +1,5 @@
+import os
+import Core
 //
 //  RemovePayeeNotesColumn_Migration.swift
 //  InvoicingApplication
@@ -47,7 +49,7 @@ public struct RemovePayeeNotesColumn_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting Payee.notes column removal migration (v\(version))")
+        Logger.migration.info("🔄 Starting Payee.notes column removal migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -59,7 +61,7 @@ public struct RemovePayeeNotesColumn_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ Payee.notes column removal migration completed successfully")
+        Logger.migration.info("✅ Payee.notes column removal migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -75,11 +77,11 @@ public struct RemovePayeeNotesColumn_Migration {
         let payees = try modelContext.fetch(payeeDescriptor)
         
         if payees.isEmpty {
-            print("ℹ️ No Payee records found - migration not needed")
+            Logger.migration.info("ℹ️ No Payee records found - migration not needed")
             return
         }
         
-        print("📊 Found \(payees.count) Payee records to migrate")
+        Logger.migration.info("📊 Found \(payees.count) Payee records to migrate")
     }
     
     /// Perform the actual migration
@@ -98,7 +100,7 @@ public struct RemovePayeeNotesColumn_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -124,7 +126,7 @@ public struct RemovePayeeNotesColumn_Migration {
             let _ = payee.status
         }
         
-        print("✅ Migration validation successful - all \(payees.count) Payee records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(payees.count) Payee records accessible")
     }
     
     /// Rollback the migration
@@ -136,7 +138,7 @@ public struct RemovePayeeNotesColumn_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Attempting to rollback Payee.notes column removal migration")
+        Logger.migration.info("🔄 Attempting to rollback Payee.notes column removal migration")
         
         // For property removal migrations, rollback is not supported
         // as the properties are permanently removed from the entity definitions
@@ -153,7 +155,7 @@ public struct PayeeNotesColumnMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing Payee.notes column removal migration")
+        Logger.migration.info("🧪 Testing Payee.notes column removal migration")
         
         // Create test Payee data
         let testPayee = Payee(id: UUID(), fullName: "Test Payee")
@@ -184,7 +186,7 @@ public struct PayeeNotesColumnMigrationTestUtils {
         modelContext.delete(testPayee)
         try modelContext.save()
         
-        print("✅ Payee.notes column removal migration test completed successfully")
+        Logger.migration.info("✅ Payee.notes column removal migration test completed successfully")
     }
 }
 #endif

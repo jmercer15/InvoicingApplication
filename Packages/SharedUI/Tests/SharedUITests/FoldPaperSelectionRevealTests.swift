@@ -1,6 +1,7 @@
 import PersistenceModels
 @testable import SharedUI
 import Testing
+import CoreTesting
 
 @Suite(.tags(.unit))
 struct FoldPaperSelectionRevealTests {

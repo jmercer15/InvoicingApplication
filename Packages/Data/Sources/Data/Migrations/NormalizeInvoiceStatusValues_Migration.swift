@@ -1,3 +1,4 @@
+import os
 import Core
 import PersistenceModels
 import Foundation
@@ -8,7 +9,7 @@ public enum NormalizeInvoiceStatusValues_Migration {
     public static let version = "1.0.0"
 
     public static func execute(modelContext: ModelContext) throws {
-        print("🔄 Starting invoice status normalization migration (v\(version))")
+        Logger.migration.info("🔄 Starting invoice status normalization migration (v\(version))")
 
         let descriptor = FetchDescriptor<Invoice>()
         let invoices = try modelContext.fetch(descriptor)
@@ -24,7 +25,7 @@ public enum NormalizeInvoiceStatusValues_Migration {
             try modelContext.save()
         }
 
-        print("✅ Invoice status normalization migration completed (\(rewrites) rewritten)")
+        Logger.migration.info("✅ Invoice status normalization migration completed (\(rewrites) rewritten)")
     }
 
     public static func rollback(modelContext _: ModelContext) throws {

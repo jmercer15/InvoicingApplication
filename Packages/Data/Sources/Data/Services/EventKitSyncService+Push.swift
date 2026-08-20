@@ -1,3 +1,4 @@
+import os
 import Foundation
 import EventKit
 import SwiftData
@@ -225,7 +226,7 @@ extension EventKitSyncService {
                    remoteModDate > lastSyncTag,
                    !localChanged {
                     let msg = "Conflict detected for '\(snapshot.title)'. Remote event is newer. Aborting push."
-                    print("[SyncService] \(msg)")
+                    Logger.calendar.info("[SyncService] \(msg)")
                     self.error = NSError(domain: "EventKitSyncService", code: 105,
                                         userInfo: [NSLocalizedDescriptionKey: msg])
                     self.syncStatus = .error
@@ -272,10 +273,10 @@ extension EventKitSyncService {
                         includeCoreFields: false
                     )
                     if previousIdentifier != sessionModel.eventIdentifier {
-                        print("[SyncService] Event identifier rebased after save span \(span): \(previousIdentifier) -> \(sessionModel.eventIdentifier)")
+                        Logger.calendar.info("[SyncService] Event identifier rebased after save span \(span.rawValue): \(previousIdentifier) -> \(sessionModel.eventIdentifier)")
                     }
                 }
-                print("[SyncService] Successfully synced session: \(eventTitle)")
+                Logger.calendar.info("[SyncService] Successfully synced session: \(eventTitle)")
                 self.syncStatus = .idle
                 self.lastSyncDate = Date()
                 self.syncProgress = 1.0
@@ -287,7 +288,7 @@ extension EventKitSyncService {
                 return
             } catch {
                 let msg = "Failed to save event to calendar: \(error.localizedDescription)"
-                print("[SyncService] \(msg)")
+                Logger.calendar.info("[SyncService] \(msg)")
                 self.error = NSError(domain: "EventKitSyncService", code: 106,
                                      userInfo: [NSLocalizedDescriptionKey: msg])
                 self.syncStatus = .error
@@ -341,7 +342,7 @@ extension EventKitSyncService {
                 )
                 switch result {
                 case .deleted:
-                    print("[SyncService] Successfully deleted event from calendar.")
+                    Logger.calendar.info("[SyncService] Successfully deleted event from calendar.")
                     self.error = nil
                 case .notFound:
                     let msg = "Event not found in calendar. It may have already been deleted."
@@ -352,7 +353,7 @@ extension EventKitSyncService {
                 return
             } catch {
                 let msg = "Error deleting event: \(error.localizedDescription)"
-                print("[SyncService] \(msg)")
+                Logger.calendar.info("[SyncService] \(msg)")
                 self.error = NSError(domain: "EventKitSyncService", code: 109,
                                      userInfo: [NSLocalizedDescriptionKey: msg])
             }

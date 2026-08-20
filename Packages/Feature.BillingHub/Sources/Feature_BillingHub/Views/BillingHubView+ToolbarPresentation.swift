@@ -13,35 +13,51 @@ extension BillingHubView {
             }
         }
 
-        AppToolbarStatusGroup {
-            if isBulkActionInFlight {
-                bulkProgressPill(progress: viewModel.bulkProgress.bulkActionProgress)
-            }
-
-            if let feedback = viewModel.bulkActionFeedback {
-                bulkFeedbackPill(text: feedback)
-            }
-
-            if viewModel.canUndoLastBulkAction {
-                undoBulkButton
-            }
-        }
-
-        if completedSessionCount > 0 || groupedDraftBatchCount > 0 || readyToSendCount > 0 || pendingPaymentCount > 0 {
-            ToolbarItem(placement: .primaryAction) {
-                bulkActionsMenu
-            }
-        }
-
-        if let selectedCardID = viewModel.selectedCardID,
-           viewModel.boardProjection.card(for: selectedCardID) != nil {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Open Selected", systemImage: "rectangle.portrait.and.arrow.forward") {
-                    viewModel.presentedCardID = selectedCardID
+        if isBulkActionInFlight
+            || viewModel.bulkActionFeedback != nil
+            || viewModel.canUndoLastBulkAction {
+            AppToolbarStatusGroup {
+                if isBulkActionInFlight {
+                    bulkProgressPill(progress: viewModel.bulkProgress.bulkActionProgress)
                 }
-                .appToolbarLinkStyle(help: "Open selected billing card. You can also press Return while its card is focused.")
+
+                if let feedback = viewModel.bulkActionFeedback {
+                    bulkFeedbackPill(text: feedback)
+                }
+
+                if viewModel.canUndoLastBulkAction {
+                    undoBulkButton
+                }
             }
         }
+
+        if hasAvailableBulkActions || selectedCardCanOpen {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if hasAvailableBulkActions {
+                    bulkActionsMenu
+                }
+
+                if let selectedCardID = viewModel.selectedCardID,
+                   viewModel.boardProjection.card(for: selectedCardID) != nil {
+                    Button("Open Selected", systemImage: "rectangle.portrait.and.arrow.forward") {
+                        viewModel.presentedCardID = selectedCardID
+                    }
+                    .appToolbarLinkStyle(help: "Open selected billing card. You can also press Return while its card is focused.")
+                }
+            }
+        }
+    }
+
+    var hasAvailableBulkActions: Bool {
+        completedSessionCount > 0
+            || groupedDraftBatchCount > 0
+            || readyToSendCount > 0
+            || pendingPaymentCount > 0
+    }
+
+    var selectedCardCanOpen: Bool {
+        guard let selectedCardID = viewModel.selectedCardID else { return false }
+        return viewModel.boardProjection.card(for: selectedCardID) != nil
     }
 
     /// Any bulk action in flight — disables the whole menu so a rapid double-click can't
@@ -52,7 +68,7 @@ extension BillingHubView {
 
     @ViewBuilder
     var bulkActionsMenu: some View {
-        if completedSessionCount > 0 || groupedDraftBatchCount > 0 || readyToSendCount > 0 || pendingPaymentCount > 0 {
+        if hasAvailableBulkActions {
             AppToolbarActionsMenu(
                 title: "Bulk Actions",
                 systemImage: isBulkActionInFlight ? "hourglass" : "tray.2.fill",

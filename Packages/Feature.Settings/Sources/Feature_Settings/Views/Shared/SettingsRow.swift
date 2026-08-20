@@ -28,7 +28,7 @@ struct SettingsRow<Content: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .foregroundColor(Color("Text", bundle: .sharedUI))
+                .foregroundStyle(Color("Text", bundle: .sharedUI))
                 .frame(width: scaledLabelWidth, alignment: .trailing)
                 .lineLimit(1)
             

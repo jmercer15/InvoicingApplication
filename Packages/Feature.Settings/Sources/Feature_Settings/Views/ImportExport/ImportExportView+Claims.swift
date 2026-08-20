@@ -14,7 +14,7 @@ extension ImportExportView {
             ) {
                 Text("Claim CSV exports include participant identifiers, NDIS item codes, service dates, and payment amounts. Store exported files securely.")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     .padding(.bottom, StyleGuide.Dimensions.paddingSmall)
 
                 SettingsCard(title: "Batch Setup") {
@@ -70,7 +70,7 @@ extension ImportExportView {
                 if let message = viewModel.claimExportStatusMessage {
                     Text(message)
                         .font(.caption)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
 
                 if let batch = viewModel.claimBatch {
@@ -83,7 +83,7 @@ extension ImportExportView {
                         }
                         SettingsRow(label: "Errors:", labelWidth: maxLabelWidth) {
                             Text("\(batch.errorCount)")
-                                .foregroundColor(batch.errorCount > 0 ? .red : .green)
+                                .foregroundStyle(batch.errorCount > 0 ? .red : .green)
                         }
                     }
                 }
@@ -95,7 +95,7 @@ extension ImportExportView {
                                 ForEach(Array(viewModel.claimPreviewLines.enumerated()), id: \.element.id) { index, line in
                                     Text("\(index + 1). \(line.ndisNumber) · \(line.supportNumber) · \(ExportMachineFormatting.exportDecimal2(line.unitPrice)) · \(line.isValid ? "valid" : "invalid")")
                                         .font(.caption)
-                                        .foregroundColor(line.isValid ? Color("TextSecondary", bundle: .sharedUI) : .red)
+                                        .foregroundStyle(line.isValid ? Color("TextSecondary", bundle: .sharedUI) : .red)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,13 +155,13 @@ extension ImportExportView {
             if let historyMessage = viewModel.claimHistoryStatusMessage {
                 Text(historyMessage)
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
 
             if viewModel.filteredClaimBatchHistoryRows.isEmpty {
                 Text("No batches match the current filters.")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: FormSectionTokens.fieldStackSpacing) {
@@ -261,7 +261,7 @@ extension ImportExportView {
                     Section {
                         Text(message)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

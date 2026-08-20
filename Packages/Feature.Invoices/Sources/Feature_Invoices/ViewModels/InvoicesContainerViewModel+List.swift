@@ -1,5 +1,6 @@
 // swift-tools-version:5.9
 
+import os
 import Foundation
 import SwiftData
 import Core
@@ -124,7 +125,7 @@ extension InvoicesContainerViewModel {
                 for: error,
                 fallback: "Invoice data could not be refreshed. Try again."
             )
-            print("❌ [InvoicesContainerViewModel] Failed loading invoices: \(error)")
+            Logger.billing.warning("❌ [InvoicesContainerViewModel] Failed loading invoices: \(error)")
             return .failed
         }
     }
@@ -215,7 +216,7 @@ extension InvoicesContainerViewModel {
                 fallback: "Invoice data could not be read. Try again."
             )
             reportActionError("Invoice couldn't be opened. \(detail)")
-            print("❌ [InvoicesContainerViewModel] Error selecting invoice for deep link: \(error)")
+            Logger.billing.warning("❌ [InvoicesContainerViewModel] Error selecting invoice for deep link: \(error)")
         }
     }
 

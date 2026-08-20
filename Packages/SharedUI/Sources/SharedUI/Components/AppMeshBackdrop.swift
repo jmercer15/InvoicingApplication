@@ -13,7 +13,7 @@ public struct AppMeshBackdrop: View {
                     height: 3,
                     points: Self.meshPoints,
                     colors: Self.meshColors,
-                    background: Color(NSColor.windowBackgroundColor),
+                    background: Color(nsColor: NSColor.windowBackgroundColor),
                     smoothsColors: true
                 )
                 .blur(radius: 40)
@@ -29,7 +29,7 @@ public struct AppMeshBackdrop: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(NSColor.windowBackgroundColor),
+                    Color(nsColor: NSColor.windowBackgroundColor),
                     Color(.sRGB, red: 0.16, green: 0.29, blue: 0.62, opacity: 0.3),
                     Color(.sRGB, red: 0.08, green: 0.18, blue: 0.45, opacity: 0.35)
                 ],

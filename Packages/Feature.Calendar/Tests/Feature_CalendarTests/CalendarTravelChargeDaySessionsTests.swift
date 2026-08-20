@@ -5,6 +5,7 @@ import Data
 import EventKit
 import SwiftData
 import Testing
+import CoreTesting
 @testable import Feature_Calendar
 
 @MainActor

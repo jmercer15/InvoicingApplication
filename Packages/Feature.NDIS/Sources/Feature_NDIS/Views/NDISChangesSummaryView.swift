@@ -206,7 +206,7 @@ struct NDISChangesSummaryCard: View {
             
             Text(value)
                 .font(StyleGuide.Typography.hero)
-                .foregroundColor(color)
+                .foregroundStyle(color)
             
             Text(subtitle)
                 .font(StyleGuide.Typography.micro)
@@ -288,7 +288,7 @@ struct ChangeCard: View {
             HStack {
                 Text(change.changeType.rawValue)
                     .font(StyleGuide.Typography.sectionTitle)
-                    .foregroundColor(colorForChangeType(change.changeType))
+                    .foregroundStyle(colorForChangeType(change.changeType))
                 
                 Spacer()
                 
@@ -390,7 +390,7 @@ struct ChangeRow: View {
                 ChangeValuePill(label: "OLD", value: oldValue, color: ColorSystem.Status.error)
                 
                 Image(systemName: "arrow.right")
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                 
                 ChangeValuePill(label: "NEW", value: newValue, color: ColorSystem.Status.success)
             }

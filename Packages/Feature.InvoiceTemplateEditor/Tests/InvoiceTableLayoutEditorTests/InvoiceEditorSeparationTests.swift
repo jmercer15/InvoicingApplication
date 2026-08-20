@@ -42,6 +42,27 @@ import Testing
         )
         #expect(sectionsFacade.contains("enum InvoiceDocumentSections"))
         #expect(!sectionsFacade.contains("static func"))
+
+        let rootView = try String(
+            contentsOf: views.appendingPathComponent("InvoiceRootView.swift"),
+            encoding: .utf8
+        )
+        #expect(!rootView.contains(".clipped()"))
+
+        let documentActions = try String(
+            contentsOf: views.appendingPathComponent("InvoiceEditorInspector+DocumentActions.swift"),
+            encoding: .utf8
+        )
+        let header = try String(
+            contentsOf: views.appendingPathComponent("InvoiceEditorInspector+Header.swift"),
+            encoding: .utf8
+        )
+        #expect(documentActions.contains("ToolbarItem(placement: .status)"))
+        #expect(documentActions.contains("ToolbarItem(placement: .primaryAction)"))
+        #expect(documentActions.contains("AppToolbarUtilityGroup"))
+        #expect(!documentActions.contains("TextField(\"Currency\""))
+        #expect(header.contains("TextField(\"Currency\""))
+        #expect(header.contains("defaultTaxRateField"))
     }
 
     @MainActor
@@ -190,6 +211,16 @@ import Testing
                 currencyCode: "invalid",
                 displayStyle: .iso
             ) == "AUD")
+    }
+
+    @Test func InvoiceTableUsesConciseHeadingsAndUnitLabels() {
+        #expect(LineItemTableColumn.date.headerTitle == "Date")
+        #expect(LineItemTableColumn.rate.headerTitle == "Rate")
+        #expect(InvoiceLineItemsTableStyle.cellHorizontalPadding == 6)
+        #expect(InvoiceUnitFormatter.string(for: "Kilometre") == "km")
+        #expect(InvoiceUnitFormatter.string(for: "hours") == "hr")
+        #expect(InvoiceUnitFormatter.string(for: "Each") == "ea")
+        #expect(InvoiceUnitFormatter.string(for: "custom unit") == "custom unit")
     }
 
     @Test func AtomicPDFWriterReplacesExistingExport() throws {

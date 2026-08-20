@@ -1,3 +1,4 @@
+import os
 import Foundation
 import CoreLocation
 import Core
@@ -8,11 +9,11 @@ extension NDISBillingAutomationOrchestrator {
     // MARK: - Step 4: Geographic Context
 
     func determineGeographicContext(for session: Session, context: inout NDISBillingContext, result: inout AutomationResult) async {
-        print("🌍 [NDIS Automation] Step 4: Determining geographic context")
+        Logger.automation.debug("🌍 [NDIS Automation] Step 4: Determining geographic context")
         result.updateStatus(.determiningGeographic)
 
         guard hasValidCoordinates(session) else {
-            print("⚠️ [NDIS Automation] Cannot determine geographic context - no valid coordinates")
+            Logger.automation.warning("⚠️ [NDIS Automation] Cannot determine geographic context - no valid coordinates")
             result.addWarning("Cannot determine geographic context - no valid coordinates")
             return
         }
@@ -22,33 +23,33 @@ extension NDISBillingAutomationOrchestrator {
             coordinate = CLLocationCoordinate2D(latitude: session.sessionLatitude, longitude: session.sessionLongitude)
         } else if let address = session.address, address.latitude != 0.0 && address.longitude != 0.0 {
             coordinate = CLLocationCoordinate2D(latitude: address.latitude, longitude: address.longitude)
-            print("🌍 [NDIS Automation] Using session address coordinates for geographic context")
+            Logger.automation.info("🌍 [NDIS Automation] Using session address coordinates for geographic context")
         } else {
-            print("⚠️ [NDIS Automation] No coordinates available for geographic context")
+            Logger.automation.warning("⚠️ [NDIS Automation] No coordinates available for geographic context")
             result.addWarning("No coordinates available for geographic context")
             return
         }
 
         if let mmmCode = mmmZoneLookup.mmm(for: coordinate) {
-            print("🌍 [NDIS Automation] MMM zone found: \(mmmCode)")
+            Logger.automation.info("🌍 [NDIS Automation] MMM zone found: \(mmmCode)")
             switch mmmCode {
             case 4:
                 context.isRemoteArea     = true
                 context.isVeryRemoteArea = false
-                print("✅ [NDIS Automation] Set Remote Area (MMM Zone 4)")
+                Logger.automation.info("✅ [NDIS Automation] Set Remote Area (MMM Zone 4)")
             case 5:
                 context.isRemoteArea     = false
                 context.isVeryRemoteArea = true
-                print("✅ [NDIS Automation] Set Very Remote Area (MMM Zone 5)")
+                Logger.automation.info("✅ [NDIS Automation] Set Very Remote Area (MMM Zone 5)")
             default:
                 context.isRemoteArea     = false
                 context.isVeryRemoteArea = false
-                print("✅ [NDIS Automation] No geographic modifier applied (MMM Zone \(mmmCode))")
+                Logger.automation.info("✅ [NDIS Automation] No geographic modifier applied (MMM Zone \(mmmCode))")
             }
             context.autoDeterminedValues.insert(.remoteArea)
             context.autoDeterminedValues.insert(.veryRemoteArea)
         } else {
-            print("⚠️ [NDIS Automation] No MMM zone found for coordinates")
+            Logger.automation.warning("⚠️ [NDIS Automation] No MMM zone found for coordinates")
             result.addWarning("No MMM zone found for session coordinates")
             context.isRemoteArea     = false
             context.isVeryRemoteArea = false
@@ -60,7 +61,7 @@ extension NDISBillingAutomationOrchestrator {
     // MARK: - Step 5: Time Context
 
     func determineTimeContext(for session: Session, context: inout NDISBillingContext, result: inout AutomationResult) async {
-        print("⏰ [NDIS Automation] Step 5: Determining time context")
+        Logger.automation.debug("⏰ [NDIS Automation] Step 5: Determining time context")
         result.updateStatus(.determiningTime)
 
         guard let startTime = session.startTime else {
@@ -91,13 +92,13 @@ extension NDISBillingAutomationOrchestrator {
 
         context.isPublicHoliday = false
         context.autoDeterminedValues.insert(.publicHoliday)
-        print("✅ [NDIS Automation] Time context determined")
+        Logger.automation.info("✅ [NDIS Automation] Time context determined")
     }
 
     // MARK: - Step 6: Travel Context
 
     func determineTravelContext(for session: Session, context: inout NDISBillingContext, result: inout AutomationResult) async {
-        print("🚗 [NDIS Automation] Step 6: Determining travel context")
+        Logger.automation.debug("🚗 [NDIS Automation] Step 6: Determining travel context")
         result.updateStatus(.determiningTravel)
 
         let shouldSetProviderTravel = determineProviderTravelEligibility(for: session, context: context)
@@ -110,13 +111,13 @@ extension NDISBillingAutomationOrchestrator {
         context.autoDeterminedValues.insert(.activityTransport)
         if isActivityTransport { print("✅ [NDIS Automation] Set Activity Transport") }
 
-        print("✅ [NDIS Automation] Travel context determined")
+        Logger.automation.info("✅ [NDIS Automation] Travel context determined")
     }
 
     // MARK: - Step 7: Service Type Context
 
     func determineServiceTypeContext(for session: Session, context: inout NDISBillingContext, result: inout AutomationResult) async {
-        print("🏥 [NDIS Automation] Step 7: Determining service type context")
+        Logger.automation.debug("🏥 [NDIS Automation] Step 7: Determining service type context")
         result.updateStatus(.determiningServiceType)
 
         let attendeesCount = session.attendeesCount
@@ -131,6 +132,6 @@ extension NDISBillingAutomationOrchestrator {
         context.autoDeterminedValues.insert(.shortNoticeCancellation)
         if isCancelled { print("✅ [NDIS Automation] Set Short Notice Cancellation") }
 
-        print("✅ [NDIS Automation] Service type context determined")
+        Logger.automation.info("✅ [NDIS Automation] Service type context determined")
     }
 }

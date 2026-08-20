@@ -203,7 +203,6 @@ struct InvoiceRootView: View {
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
         .toolbar {
             InvoiceRootToolbarContent(
                 showsBackToBillingHub: onBackToBillingHub != nil,

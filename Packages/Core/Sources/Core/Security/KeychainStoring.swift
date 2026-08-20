@@ -5,13 +5,13 @@ import Foundation
 /// No call sites are required today; adopt when a feature persists secrets outside SwiftData.
 public protocol KeychainStoring: Sendable {
     /// Reads generic-password bytes for `service` + `account`. Returns `nil` when absent.
-    func read(account: String, service: String) throws -> Data?
+    func read(account: String, service: String) async throws -> Data?
 
     /// Inserts or updates generic-password bytes for `service` + `account`.
-    func save(_ data: Data, account: String, service: String) throws
+    func save(_ data: Data, account: String, service: String) async throws
 
     /// Deletes the generic-password item when present.
-    func delete(account: String, service: String) throws
+    func delete(account: String, service: String) async throws
 }
 
 /// Errors surfaced by ``KeychainStore``.

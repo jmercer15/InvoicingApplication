@@ -13,7 +13,8 @@ extension ClientDetailViewModel {
         Task { await saveClientUpdates() }
     }
 
-    func saveClientUpdates() async {
+    @discardableResult
+    func saveClientUpdates() async -> Bool {
         client.ndisNumber          = editableNdisNumber
         client.fullName            = editableFullName.trimmingCharacters(in: .whitespacesAndNewlines)
         client.status              = ClientStatus(rawValue: editableStatus.lowercased()) ?? client.status
@@ -38,11 +39,13 @@ extension ClientDetailViewModel {
             try modelContext.save()
             selectedPlanManager = client.planManager
             selectedPayee       = client.payee
+            return true
         } catch {
             let nsError = error as NSError
             alertTitle   = "Save Error"
             alertMessage = "Could not save changes: \(nsError.localizedDescription)"
             showAlert    = true
+            return false
         }
     }
 
@@ -54,8 +57,13 @@ extension ClientDetailViewModel {
         if let v = sendInvoicesToClient      { client.sendInvoicesToClient      = v }
         if let v = sendInvoicesToPayee       { client.sendInvoicesToPayee       = v }
         if let v = sendInvoicesToPlanManager { client.sendInvoicesToPlanManager = v }
-        do { try modelContext.save() } catch {
-            print("❌ [ClientDetailViewModel] Error updating client toggles: \(error)")
+        do {
+            try modelContext.save()
+        } catch {
+            let nsError = error as NSError
+            alertTitle = "Save Error"
+            alertMessage = "Could not update invoice recipient preferences: \(nsError.localizedDescription)"
+            showAlert = true
         }
     }
 
@@ -89,12 +97,17 @@ extension ClientDetailViewModel {
         }
 
         Task {
-            if isCreatingNew { await createNewClient() } else { await saveClientUpdates() }
-            if isCreatingNew { dismiss() }
+            let didSave = if isCreatingNew {
+                await createNewClient()
+            } else {
+                await saveClientUpdates()
+            }
+            if isCreatingNew, didSave { dismiss() }
         }
     }
 
-    func createNewClient() async {
+    @discardableResult
+    func createNewClient() async -> Bool {
         client.ndisNumber          = editableNdisNumber
         client.fullName            = editableFullName.trimmingCharacters(in: .whitespacesAndNewlines)
         client.status              = ClientStatus(rawValue: editableStatus.lowercased()) ?? client.status
@@ -118,11 +131,13 @@ extension ClientDetailViewModel {
         modelContext.insert(client)
         do {
             try modelContext.save()
+            return true
         } catch {
             let nsError = error as NSError
             alertTitle   = "Save Error"
             alertMessage = "Could not save client: \(nsError.localizedDescription)"
             showAlert    = true
+            return false
         }
     }
 }

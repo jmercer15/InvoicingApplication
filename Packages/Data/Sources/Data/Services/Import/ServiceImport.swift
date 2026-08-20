@@ -5,6 +5,8 @@ import SwiftData
 
 // Add struct for services.json format
 struct ServicesImportJSON: Codable {
+    let clientID: UUID?
+    let clientNDISNumber: String?
     let parentName: String
     let studentName: String
     let taskName: String
@@ -14,6 +16,8 @@ struct ServicesImportJSON: Codable {
     let defaultQuantity: Int?
     
     enum CodingKeys: String, CodingKey {
+        case clientID = "Client ID"
+        case clientNDISNumber = "Client NDIS Number"
         case parentName = "Parent Name"
         case studentName = "Student Name"
         case taskName = "Task Name"
@@ -59,11 +63,7 @@ struct ServiceImport {
         
         for item in servicesImport {
             do {
-                let studentName = item.studentName
-                let clientDescriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.fullName == studentName })
-                guard let clientModel = try context.fetch(clientDescriptor).first else {
-                    throw NSError(domain: "ImportError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Client not found: \(item.studentName)"])
-                }
+                let clientModel = try resolveClient(for: item, context: context)
                 
                 let serviceName = item.taskName
                 let linkDescriptor = FetchDescriptor<ClientService>(predicate: #Predicate<ClientService> { $0.serviceName == serviceName })
@@ -134,5 +134,27 @@ struct ServiceImport {
         guard !trimmed.isEmpty else { return nil }
         let descriptor = FetchDescriptor<NDISItem>(predicate: #Predicate<NDISItem> { $0.itemNumber == trimmed })
         return try context.fetch(descriptor).first
+    }
+
+    private static func resolveClient(for item: ServicesImportJSON, context: ModelContext) throws -> Client {
+        if let id = item.clientID {
+            let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.id == id })
+            let matches = try context.fetch(descriptor)
+            guard matches.count == 1 else {
+                throw NSError(domain: "ImportIdentityError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Service import needs one matching Client ID for \(item.studentName)."])
+            }
+            return matches[0]
+        }
+
+        let ndisNumber = (item.clientNDISNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ndisNumber.isEmpty else {
+            throw NSError(domain: "ImportIdentityError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Service import needs Client ID or Client NDIS Number for \(item.studentName); name matching is not supported."])
+        }
+        let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.ndisNumber == ndisNumber })
+        let matches = try context.fetch(descriptor)
+        guard matches.count == 1 else {
+            throw NSError(domain: "ImportIdentityError", code: 1003, userInfo: [NSLocalizedDescriptionKey: "Service import needs one matching Client NDIS Number for \(item.studentName)."])
+        }
+        return matches[0]
     }
 }

@@ -18,10 +18,10 @@
 		CE2FF0222E827C1900F48B8C /* Feature_BillingHub in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0212E827C1900F48B8C /* Feature_BillingHub */; };
 		CE2FF0252E827C3300F48B8C /* Feature_Calendar in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0242E827C3300F48B8C /* Feature_Calendar */; };
 		CE59D5442E8291710097C66D /* Feature_NDIS in Frameworks */ = {isa = PBXBuildFile; productRef = CE59D5432E8291710097C66D /* Feature_NDIS */; };
-		CE5D31E52E8284E300CC8CBD /* CoreXLSX in Frameworks */ = {isa = PBXBuildFile; productRef = CE5D31E42E8284E300CC8CBD /* CoreXLSX */; };
 		CEAA100A2F00000000000001 /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = CE2FF0152E827BB700F48B8C /* Core */; };
 		CEAA100B2F00000000000001 /* Data in Frameworks */ = {isa = PBXBuildFile; productRef = CE2F05D02E82826000F48B8C /* Data */; };
 		CEDEF9A92E82DC5100684839 /* SharedUI in Frameworks */ = {isa = PBXBuildFile; productRef = CEDEF9A82E82DC5100684839 /* SharedUI */; };
+		CEE03EE030332F86007F428F /* CoreXLSX in Frameworks */ = {isa = PBXBuildFile; productRef = CEE03EDF30332F86007F428F /* CoreXLSX */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,8 +44,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Core/Configuration/Info.plist,
-				Core/Configuration/InvoicingApplication.entitlements,
-				Core/Configuration/InvoicingApplicationRelease.entitlements,
 			);
 			target = CEFD0A9F2D8FC981008338E9 /* InvoicingApplication */;
 		};
@@ -83,11 +81,11 @@
 				CE2FF0192E827BD000F48B8C /* Feature_Settings in Frameworks */,
 				CE2FF0162E827BB700F48B8C /* Core in Frameworks */,
 				CE2FF0252E827C3300F48B8C /* Feature_Calendar in Frameworks */,
-				CE5D31E52E8284E300CC8CBD /* CoreXLSX in Frameworks */,
 				CE2FF0222E827C1900F48B8C /* Feature_BillingHub in Frameworks */,
 				CE2FF01F2E827C0800F48B8C /* Feature_Clients in Frameworks */,
 				CE2F05D42E8282FA00F48B8C /* SharedUI in Frameworks */,
 				CE2FF01C2E827BF900F48B8C /* Feature_Invoices in Frameworks */,
+				CEE03EE030332F86007F428F /* CoreXLSX in Frameworks */,
 				CEDEF9A92E82DC5100684839 /* SharedUI in Frameworks */,
 				CE2F05D12E82826000F48B8C /* Data in Frameworks */,
 				CE59D5442E8291710097C66D /* Feature_NDIS in Frameworks */,
@@ -186,9 +184,9 @@
 				CE2FF0242E827C3300F48B8C /* Feature_Calendar */,
 				CE2F05D02E82826000F48B8C /* Data */,
 				CE2F05D32E8282FA00F48B8C /* SharedUI */,
-				CE5D31E42E8284E300CC8CBD /* CoreXLSX */,
 				CE59D5432E8291710097C66D /* Feature_NDIS */,
 				CEDEF9A82E82DC5100684839 /* SharedUI */,
+				CEE03EDF30332F86007F428F /* CoreXLSX */,
 			);
 			productName = InvoicingApplication;
 			productReference = CEFD0AA02D8FC981008338E9 /* InvoicingApplication.app */;
@@ -233,9 +231,9 @@
 				CE2FF0232E827C3300F48B8C /* XCLocalSwiftPackageReference "Packages/Feature.Calendar" */,
 				CE2F05CF2E82826000F48B8C /* XCLocalSwiftPackageReference "Packages/Data" */,
 				CE2F05D22E8282FA00F48B8C /* XCLocalSwiftPackageReference "Packages/SharedUI" */,
-				CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */,
 				CE59D53F2E8291560097C66D /* XCLocalSwiftPackageReference "Packages/Feature.InvoiceTemplateEditor" */,
 				CE59D5422E8291710097C66D /* XCLocalSwiftPackageReference "Packages/Feature.NDIS" */,
+				CEE03EDE30332F86007F428F /* XCRemoteSwiftPackageReference "CoreXLSX" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = CEFD0AA12D8FC981008338E9 /* Products */;
@@ -657,7 +655,7 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */ = {
+		CEE03EDE30332F86007F428F /* XCRemoteSwiftPackageReference "CoreXLSX" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/CoreOffice/CoreXLSX.git";
 			requirement = {
@@ -768,15 +766,15 @@
 			package = CE59D5422E8291710097C66D /* XCLocalSwiftPackageReference "Packages/Feature.NDIS" */;
 			productName = Feature_NDIS;
 		};
-		CE5D31E42E8284E300CC8CBD /* CoreXLSX */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CE5D31E32E8284E300CC8CBD /* XCRemoteSwiftPackageReference "CoreXLSX" */;
-			productName = CoreXLSX;
-		};
 		CEDEF9A82E82DC5100684839 /* SharedUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CE2F05D22E8282FA00F48B8C /* XCLocalSwiftPackageReference "Packages/SharedUI" */;
 			productName = SharedUI;
+		};
+		CEE03EDF30332F86007F428F /* CoreXLSX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CEE03EDE30332F86007F428F /* XCRemoteSwiftPackageReference "CoreXLSX" */;
+			productName = CoreXLSX;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

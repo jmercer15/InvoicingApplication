@@ -4,6 +4,7 @@ import PersistenceModels
 import Data
 import SwiftData
 import Testing
+import CoreTesting
 @testable import Feature_BillingHub
 
 @MainActor

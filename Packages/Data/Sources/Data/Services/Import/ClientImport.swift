@@ -67,26 +67,7 @@ struct ClientImport {
                     ])
                 }
                 
-                let addressForComparison = formatAddressForComparison(client: client)
-                let fullName = client.fullName
-                let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.fullName == fullName })
-                let existingClients = try context.fetch(descriptor)
-                
-                let matchingClient = existingClients.first { existingClient in
-                    guard let address = existingClient.address else { return false }
-                    
-                    let existingAddress = [
-                        address.streetNumber,
-                        address.streetName,
-                        address.suburb,
-                        address.state,
-                        address.postcode
-                    ].compactMap { $0 }.joined(separator: " ")
-                    .lowercased()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    return existingAddress == addressForComparison || existingAddress.isEmpty
-                }
+                let matchingClient = try resolveExistingClient(for: client, context: context)
                 
                 let clientModel: Client
                 if let existingClient = matchingClient {
@@ -173,37 +154,30 @@ struct ClientImport {
         
         for clientPayee in clientPayeeData {
             do {
-                let payeeName = clientPayee.payeeName
-                let payeeDescriptor = FetchDescriptor<Payee>(predicate: #Predicate<Payee> { $0.fullName == payeeName })
-                let existingPayees = try context.fetch(payeeDescriptor)
-                
                 let payeeModel: Payee
-                if let existingPayee = existingPayees.first {
-                    payeeModel = existingPayee
-                    messages.append("Using existing payee: \(clientPayee.payeeName)")
+                if let payeeID = clientPayee.payeeID {
+                    let descriptor = FetchDescriptor<Payee>(predicate: #Predicate<Payee> { $0.id == payeeID })
+                    let matches = try context.fetch(descriptor)
+                    guard matches.count <= 1 else {
+                        throw ImportIdentityError.ambiguousPayeeIdentifier(payeeID)
+                    }
+                    if let existingPayee = matches.first {
+                        payeeModel = existingPayee
+                        messages.append("Using existing payee: \(clientPayee.payeeName)")
+                    } else {
+                        payeeModel = Payee(id: payeeID, fullName: clientPayee.payeeName)
+                        context.insert(payeeModel)
+                        payeeModel.status = "Active"
+                        messages.append("Created payee: \(clientPayee.payeeName)")
+                    }
                 } else {
-                    payeeModel = Payee(id: UUID(), fullName: "")
+                    payeeModel = Payee(id: UUID(), fullName: clientPayee.payeeName)
                     context.insert(payeeModel)
-                    payeeModel.fullName = clientPayee.payeeName
                     payeeModel.status = "Active"
                     messages.append("Created payee: \(clientPayee.payeeName)")
                 }
-                
-                let studentName = clientPayee.studentName
-                let clientDescriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.fullName == studentName })
-                let existingClients = try context.fetch(clientDescriptor)
-                
-                let clientModel: Client
-                if let existingClient = existingClients.first {
-                    clientModel = existingClient
-                    messages.append("Updated client: \(clientPayee.studentName)")
-                } else {
-                    clientModel = Client(id: UUID(), ndisNumber: "", fullName: "", status: .active)
-                    context.insert(clientModel)
-                    clientModel.fullName = clientPayee.studentName
-                    clientModel.status = .active
-                    messages.append("Created client: \(clientPayee.studentName)")
-                }
+
+                let clientModel = try resolveOrCreateClient(for: clientPayee, context: context, messages: &messages)
                 
                 if clientPayee.ndisNumber != "N/A" {
                     clientModel.ndisNumber = clientPayee.ndisNumber
@@ -227,5 +201,73 @@ struct ClientImport {
             messages: messages,
             fileName: fileName
         )
+    }
+
+    private static func resolveExistingClient(for payload: ClientJSON, context: ModelContext) throws -> Client? {
+        if let id = payload.id {
+            let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.id == id })
+            let matches = try context.fetch(descriptor)
+            guard matches.count <= 1 else { throw ImportIdentityError.ambiguousClientIdentifier(id) }
+            return matches.first
+        }
+
+        let ndisNumber = (payload.ndisNumber ?? payload.ndis_number ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ndisNumber.isEmpty else { return nil }
+        let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.ndisNumber == ndisNumber })
+        let matches = try context.fetch(descriptor)
+        guard matches.count <= 1 else { throw ImportIdentityError.ambiguousNDISNumber(ndisNumber) }
+        return matches.first
+    }
+
+    private static func resolveOrCreateClient(
+        for payload: ClientPayeeImportJSON,
+        context: ModelContext,
+        messages: inout [String]
+    ) throws -> Client {
+        let stableNDISNumber = payload.ndisNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let clientID = payload.clientID {
+            let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.id == clientID })
+            let matches = try context.fetch(descriptor)
+            guard matches.count <= 1 else { throw ImportIdentityError.ambiguousClientIdentifier(clientID) }
+            if let existing = matches.first {
+                messages.append("Updated client: \(payload.studentName)")
+                return existing
+            }
+            let client = Client(id: clientID, ndisNumber: stableNDISNumber == "N/A" ? "" : stableNDISNumber, fullName: payload.studentName, status: .active)
+            context.insert(client)
+            messages.append("Created client: \(payload.studentName)")
+            return client
+        }
+
+        guard stableNDISNumber.isEmpty == false, stableNDISNumber != "N/A" else {
+            throw ImportIdentityError.missingClientIdentifier(payload.studentName)
+        }
+        let descriptor = FetchDescriptor<Client>(predicate: #Predicate<Client> { $0.ndisNumber == stableNDISNumber })
+        let matches = try context.fetch(descriptor)
+        guard matches.count <= 1 else { throw ImportIdentityError.ambiguousNDISNumber(stableNDISNumber) }
+        if let existing = matches.first {
+            messages.append("Updated client: \(payload.studentName)")
+            return existing
+        }
+        let client = Client(id: UUID(), ndisNumber: stableNDISNumber, fullName: payload.studentName, status: .active)
+        context.insert(client)
+        messages.append("Created client: \(payload.studentName)")
+        return client
+    }
+}
+
+private enum ImportIdentityError: LocalizedError {
+    case ambiguousClientIdentifier(UUID)
+    case ambiguousPayeeIdentifier(UUID)
+    case ambiguousNDISNumber(String)
+    case missingClientIdentifier(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .ambiguousClientIdentifier(id): "Multiple clients use import identifier \(id.uuidString)."
+        case let .ambiguousPayeeIdentifier(id): "Multiple payees use import identifier \(id.uuidString)."
+        case let .ambiguousNDISNumber(number): "Multiple clients use NDIS number \(number)."
+        case let .missingClientIdentifier(name): "Client \(name) needs a Client ID or NDIS number; name matching is not supported."
+        }
     }
 }

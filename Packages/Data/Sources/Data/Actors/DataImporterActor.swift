@@ -69,12 +69,12 @@ public actor DataImporterActor: ModelActor {
     public func clearAllNDISItems() async throws -> (deletedItems: Int, deletedPrices: Int) {
         try withAutosaveDisabled { context in
             context.autosaveEnabled = false
-            let items = try context.fetch(FetchDescriptor<NDISItem>())
-            let prices = try context.fetch(FetchDescriptor<RegionalPrice>())
-            for price in prices { context.delete(price) }
-            for item in items { context.delete(item) }
+            let itemsCount = try context.fetchCount(FetchDescriptor<NDISItem>())
+            let pricesCount = try context.fetchCount(FetchDescriptor<RegionalPrice>())
+            try context.delete(model: RegionalPrice.self)
+            try context.delete(model: NDISItem.self)
             try context.save()
-            return (deletedItems: items.count, deletedPrices: prices.count)
+            return (deletedItems: itemsCount, deletedPrices: pricesCount)
         }
     }
     

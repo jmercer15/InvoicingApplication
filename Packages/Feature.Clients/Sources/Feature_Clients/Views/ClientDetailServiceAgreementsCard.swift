@@ -56,7 +56,7 @@ private struct ServiceAgreementRowCard: View {
                 Text(dateRange)
                     .font(StyleGuide.Typography.itemTitle)
                     .fontWeight(.bold)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                 
                 Text("Cancellation: \(agreement.cancellationPolicyType)")
                     .font(StyleGuide.Typography.caption)
@@ -84,7 +84,7 @@ private struct ServiceAgreementRowCard: View {
                         .padding(.horizontal, StyleGuide.Dimensions.paddingSmall)
                         .padding(.vertical, 2)
                         .background(ColorSystem.Status.warning.opacity(0.2))
-                        .foregroundColor(ColorSystem.Status.warning)
+                        .foregroundStyle(ColorSystem.Status.warning)
                         .clipShape(Capsule())
                 }
             }
@@ -99,7 +99,7 @@ private struct ServiceAgreementRowCard: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.title3)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)

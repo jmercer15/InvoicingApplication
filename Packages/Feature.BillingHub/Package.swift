@@ -33,6 +33,7 @@ let package = Package(
             dependencies: [
                 "Feature_BillingHub",
                 "Core",
+                .product(name: "CoreTesting", package: "Core"),
                 "Data",
                 "SharedUI"
             ],

@@ -1,257 +1,156 @@
-# Handoff Report: Packages/Feature.Invoices Analysis & Feature Extension Strategy
+# Comprehensive Handoff Report: UI and Feature Package Analysis
 
 ## 1. Observation
 
-### 1.1 Package Structure & Target Configuration
-- **Package Path**: `Packages/Feature.Invoices`
-- **Package.swift Dependencies** (`Packages/Feature.Invoices/Package.swift`, lines 14–19, 23–30):
-  ```swift
-  dependencies: [
-      .package(path: "../Core"),
-      .package(path: "../Data"),
-      .package(path: "../SharedUI"),
-      .package(path: "../Feature.InvoiceTemplateEditor")
-  ]
-  ```
-- **Targets**: `Feature_Invoices` (library target) and `Feature_InvoicesTests` (test target). Strict concurrency enabled (`StrictConcurrency`).
+### 1.1 Micro-Level Code Duplication
 
-### 1.2 Data Structures & Domain Models
-- **Core Domain Model (`Invoice`)** (`Packages/Core/Sources/Core/Models/Invoice.swift`):
-  - Model attributes: `id: UUID`, `invoiceNumber: String`, `totalAmount: Double`, `taxRate: Double`, `creditApplied: Double`, `discount: Double`, `date: Date`, `dueDate: Date?`, `issueDate: Date`, `notes: String?`, `paidDate: Date?`, `sentDate: Date?`, `currencyCode: String = "AUD"`, `statusToken: String`, `effectiveStatus: InvoiceStatus`.
-  - Financial properties: `financialTotals: InvoiceFinancialCalculator.Totals`, `calculatedTotal: Double`, `subtotal: Double`, `taxAmount: Double`, `discountAmount: Double`.
-  - Related entity snapshots: `businessName`, `businessABN`, `businessAddressSnapshot`, `clientName`, `clientNDISNumber`, `clientAddressSnapshot`, `billToName`, `billToEmail`, `billToAddressSnapshot`, `payeeName`, `payeeEmail`, `payeeAddressSnapshot`.
-  - Relationships: `items: [InvoiceItem]?`, `client: Client?`, `payee: Payee?`, `business: Business?`, `sessions: [Session]?`.
-- **Query & Projection Models** (`Packages/Feature.Invoices/Sources/Feature_Invoices/Models/InvoicesListQuery.swift`):
-  - `InvoicesListQuerySpec` (lines 7–18): `searchText`, `statuses`, `filterStartDate`, `filterEndDate`, `minimumAmount`, `maximumAmount`, `clientNames`, `sortField`, `sortDirection`, `groupBy`.
-  - `InvoicesListProjection` (lines 20–25): `filteredInvoices: [Invoice]`, `groupedInvoices: [String: [Invoice]]`, `treeItems: [TreeItem]`, `availableClientNames: [String]`.
-  - `InvoicePersistenceQuerySpec` (lines 43–51) & `InvoicePersistenceMembershipSpec` (lines 53–59): Bounded constraints for SwiftData predicates.
-  - `InvoicesListQueryEngine` (lines 90–439): In-memory and predicate filtering, natural sorting (`compareLocalized`), grouping (`by: status | client | month | quarter | none`), tree item materialization (`makeTreeItems`).
-- **View State Models** (`Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel.swift` & `Views/InvoicesView.swift`):
-  - `InvoiceFilterTag` (lines 13–28): Categorized filter tokens (`search`, `status`, `date`, `amount`, `client`).
-  - `GroupBy` enum (lines 31–38): `.none`, `.status`, `.client`, `.month`, `.quarter`.
-  - `InvoiceCreationPhase` (lines 57–73): `.idle`, `.preparing`, `.savingCurrentInvoice`, `.creating`.
-  - `InvoiceBulkActionActivity` & `InvoiceBulkActionOperation` (`InvoicesView.swift`, lines 21–82): `.export`, `.email`, `.delete` tracking phase, progress, and cancellation capability.
+#### A. Number & Decimal Input Parsing Duplication
+- **Location 1**: `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoiceFilterAmountField.swift` (lines 10–53)
+  - `InvoiceFilterAmountInput` parses input using `NumberFormatter` (`.decimal` style, `isLenient = false`, `usesGroupingSeparator = true`), attempts `getObjectValue(&value, for: trimmed, range: &consumedRange)`, checks `consumedRange.location == 0` and length match, and returns `.value(Double)` or `.invalid`.
+- **Location 2**: `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceValidatedDecimalField.swift` (lines 5–58 and lines 179–220)
+  - `InvoiceDecimalInput` (lines 5–58) and `InvoiceDoubleInput` (lines 179–220) duplicate the exact same `NumberFormatter` configuration, `getObjectValue(&value, for: text, range: &consumedRange)`, range verification, and string formatting logic.
+- **Direct Evidence**:
+  - `InvoiceFilterAmountField.swift:23`: `try formatter.getObjectValue(&value, for: trimmed, range: &consumedRange)`
+  - `InvoiceValidatedDecimalField.swift:36`: `try formatter.getObjectValue(&value, for: text, range: &consumedRange)`
+  - `InvoiceValidatedDecimalField.swift:193`: `try formatter.getObjectValue(&value, for: trimmed, range: &consumedRange)`
 
-### 1.3 View Models & Architecture
-- **`InvoicesContainerViewModel`** (`Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel.swift`):
-  - `@Observable @MainActor` coordinator. Holds dependencies: `modelContext`, `editorSession: InvoiceEditorSession`, `persistenceCommands: InvoicesPersistenceCommands`, `listFetcher: any InvoiceListFetching`.
-  - Subscribes to `SwiftDataStoreChangeMonitor` for reactive updates across windows/tabs.
-  - Controls list filter state (`invoiceSearchText`, `invoiceFilterStatus`, `filterStartDate`, `filterEndDate`, `filterMinAmount`, `filterMaxAmount`, `filterClients`).
-  - Manages deep-linking selection via `selectInvoiceForDeepLink(id: UUID)` (lines 150–190 in `InvoicesContainerViewModel+List.swift`).
-  - Handles feature-owned invoice creation via `createInvoice()` (lines 38–58 in `InvoicesContainerViewModel+List.swift`).
-  - Handles editor mutation notifications via `reconcileEditorMutation(_ mutation: InvoiceEditorMutation)` (`inserted`, `updated`, `deleted`).
-- **`InvoicesPersistenceCommands`** (`InvoicesContainerViewModel.swift`, lines 385–413):
-  - MainActor helper executing SwiftData fetches (`fetchInvoice`, `fetchInvoices`) and deletes (`deleteInvoices`).
-- **`InvoiceListFetchActor`** (`InvoicesContainerViewModel.swift`, lines 420–429):
-  - `@ModelActor` executing off-main-thread candidate ID fetching and count queries.
+#### B. Address Editing Sheet & Form Wrapper Inconsistencies
+- **Location 1**: `Packages/WorkspaceUI/Sources/WorkspaceUI/AddressEditingSheet.swift` (lines 5–290)
+  - Public primitive sheet taking individual bindings (`@Binding unitNumber: String`, `@Binding streetNumber: String`, etc.).
+- **Location 2**: `Packages/WorkspaceUI/Sources/WorkspaceUI/AddressFormSheet.swift` (lines 5–51)
+  - Higher-level wrapper taking `@Bindable state: AddressFormState`.
+- **Location 3**: `Packages/Feature.Clients/Sources/Feature_Clients/Views/ClientAddressEditingSheet.swift` (lines 8–36) & `RelationshipAddressEditingSheetView.swift` (lines 7–33)
+  - Appropriately wraps `AddressFormSheet`.
+- **Location 4**: `Packages/Feature.Calendar/Sources/Feature_Calendar/Views/SessionEditor/SessionAddressEditingSheet.swift` (lines 8–52)
+  - Bypasses `AddressFormSheet` and directly calls `WorkspaceUI.AddressEditingSheet` while binding 10 individual keypaths (`viewModel.formBinding(\.unitNumber)`).
+  - Declares local struct name `struct AddressEditingSheet: View`, which shadows `WorkspaceUI.AddressEditingSheet` inside `Feature.Calendar`.
 
-### 1.4 Views & Components
-- **`InvoicesView`** (`Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesView.swift`):
-  - Primary feature view. Coordinates list context header (`listContextBar`), empty state and content switching (`ScrollableInvoicesList`), multi-selection toolbar (`multiSelectBar`), delete confirmation dialog (`confirmationDialog`), and alert presentations.
-  - Integrates bulk export (`bulkExportSelectedInvoices`), bulk email (`bulkEmailSelectedInvoices` using `NSSharingService`), and batch deletion (`performDeleteInvoices`).
-- **`InvoicesContentToolbar`** (`Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesContentToolbar.swift`):
-  - `ToolbarContent` defining "New Invoice" primary button, Organize menu (GroupBy & SortBy), and Filter popover button (`InvoiceFilterPopoverContent`).
-- **`InvoiceFilterPopoverContent` & `InvoiceFilterAmountField`**:
-  - Filter UI allowing users to select multi-status, date ranges, min/max amount thresholds, and client names.
+#### C. Ad-Hoc Date & Currency Formatters vs. Shared Utilities
+- **Location 1**: `Packages/SharedUI/Sources/SharedUI/Helpers/CurrencyFormatting.swift` (lines 5–30 & 33–79)
+  - `SharedUI` defines centralized `CurrencyFormatting` and `DateFormatting` using modern Foundation `FormatStyle`.
+- **Location 2**: `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceFormatting.swift` (lines 411–518 & 1017–1048)
+  - `InvoiceMoneyFormatter` (lines 411–518) creates new `NumberFormatter()` instances on every formatting call in `currencySymbol` (lines 496–498) and `currencyString` (lines 503–508).
+  - `InvoiceDateFormatter` (lines 1017–1048) uses legacy static `DateFormatter` instances (`mediumFormatter`, `shortFormatter`, `longFormatter`) instead of `FormatStyle`.
+- **Location 3**: `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesContentToolbar.swift` (line 28)
+  - Instantiates local static `shortDateFormatter: DateFormatter`.
 
-### 1.5 Existing Unit Tests Audit
-- Found 4 test files in `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/`:
-  1. `InvoicesListQueryTests.swift` (851 lines):
-     - Amount filter summary formatting (`testAmountFilterSummaryPreservesLocalizedFractionsAndHugeValues`).
-     - Empty state policy resolution (`testListEmptyStateOffersOnlyRelevantRecovery`).
-     - Projection publication policy & persistence spec matching (`testProjectionWaitsForMatchingFetchedMembershipButAllowsSortChanges`).
-     - Filter amount input parsing (`testAmountFilterInputRequiresCompleteNonnegativeLocalizedNumber`).
-     - List projection filtering, natural sorting by invoice number and client name, and grouping (`testProject_filtersSearchStatusClientAndSortsByAmountDescending`, `testProject_groupsByClientIntoSectionTreeItems`, `testProjectOrdersStatusGroupsByInvoiceWorkflow`, `testProjectOrdersMonthAndQuarterGroupsNewestFirst`).
-     - Bulk action activity state transitions, exit resolution, delete language, email copy, and export cancellation messaging (`testBulkActionActivityRejectsOverlapAndStaysBusyWhileSharing`, `testMultiSelectEscapeEndsOnlyIdleSelection`, `testBulkResultCopyIdentifiesFailuresAndBoundsDetails`, `testCancelledExportCopyExplainsFilesAlreadyWritten`, `testEmailCopyUsesCountAwareLanguageForBulkSelection`).
-  2. `InvoicesPersistenceCommandsTests.swift` (771 lines):
-     - Persistence fetch order preservation & deletion handling (`testFetchByUUIDPreservesRequestedOrderAndSkipsDeletedRows`).
-     - Filter state clearing & revision tracking (`testClearListFiltersRestoresUnfilteredState`).
-     - List load supersession & concurrency safety (`testOlderReloadCannotOverwriteNewerPublishedRows`, `testDeepLinkRevealSupersedesOlderFilteredReload`).
-     - Stable deletion (`testDeleteByStableIDsClearsActiveSelectionAndPreservesOtherInvoices`).
-     - Creation workflow & preparation failure handling (`testFeatureOwnedCreationMaterializesAndSelectsNewInvoice`, `testFeatureOwnedCreationDoesNotInsertWhenCurrentDraftCannotBePrepared`).
-     - Editor mutation reconciliation (`testEditorMutationsReconcileRowsTotalsAndSelectionSymmetrically`, `testEditorUpdateReappliesActivePersistenceFilters`).
-     - Transient error recovery & deep-link edge cases (`testTransientReloadFailurePreservesLastGoodRowsAndSelection`, `testMissingDeepLinkPreservesListContextAndReportsActionError`).
-     - Export filename collision resolution (`testBulkExportDestinationPreservesExistingPDFs`).
-  3. `InvoiceSnapshotRelatedDataTests.swift`:
-     - Verification of snapshot generation and related entity snapshotting.
-  4. `InvoicesPolishAndAccessibilityTests.swift`:
-     - Accessibility announcements and filter tag formatting.
+---
+
+### 1.2 Macro-Level Architecture & State Data Flow
+
+#### A. `@State` Initialization Anti-Pattern in `InvoiceRootView`
+- **Location**: `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceRootView.swift` (lines 22 & 79)
+  - Line 22: `@State private var viewModel: InvoiceEditorViewModel`
+  - Line 79: `_viewModel = State(initialValue: viewModel)`
+  - Direct Observation: `InvoiceEditorViewModel` is an `@Observable` class passed into `InvoiceRootView.init(viewModel:...)`. Assigning `_viewModel = State(initialValue: viewModel)` inside `init` locks SwiftUI's `@State` storage to the initial reference. If the parent (`TableLayoutInvoiceEditorView`) passes a mutated or re-instantiated `session.viewModel`, `@State` does not update.
+
+#### B. State Complexity in `InvoiceRootView` & `InvoicesView`
+- `InvoiceRootView` manages 11 state properties (`@State private var viewModel`, `@State private var editorToolbarState`, `@State private var commandActions`, `@State private var templateSaveState`, `@State private var templateSaveTracker`, `@State private var invalidTemplateInputIDs`, `@State private var failedOpeningInvoiceID`, `@State private var creationRequestState`, `@State private var isPreparingWorkspaceHandoff`, `@SceneStorage private var editorInspectorPresented`, `@SceneStorage("InvoiceEditor.SelectedInvoiceID")`, `@SceneStorage("InvoiceTemplateEditor.NumericInputDrafts")`).
+- `InvoicesView` (`InvoicesView.swift`:21–38) manages `@State var isMultiSelectMode`, `@State var selectedInvoiceIDs`, `@State var bulkActionActivity`, `@State var bulkActionResult`, `@State var emailShareCoordinator`, `@State var bulkExportTask`, `@State var bulkEmailPreparationTask`, `@State var deleteBatch`, and `isDeleteConfirmationPresented` computed binding.
+
+---
+
+### 1.3 File Organization & Massive Bloat
+
+#### A. Bloated Files Requiring Splitting
+1. `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceDocumentSections.swift` — **1845 lines** (65.5 KB)
+   - Contains: `InvoiceDocumentLayout` (lines 3–39), `PartyPreviewProfile` (lines 42–49), `InvoiceDocumentSections` (lines 53–1110), `PartyPreviewInspectorTargets` (lines 1113–1122), `IntrinsicPartyRowLayout` layout algorithm (lines 1124–1192), `PartyPreviewBlock` (lines 1194–1420), `InvoiceDetailsPreviewBlock` (lines 1422–1580), `InvoiceDetailsTableStyle` (lines 1582–1628), `DetailTableCellBorders` (lines 1630–1662), `ThemedDocumentBandedCard` (lines 1664–1709), `LineItemsSectionTitleView` (lines 1711–1724), `TotalsGrandTotalGridRow` (lines 1726–1779), `DocumentTitleUnderlineIfNeeded` (lines 1781–1793), and `PaymentDetailRowView` (lines 1795–1845).
+2. `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceFormatting.swift` — **1078 lines** (36 KB)
+   - Contains: `InvoiceThemePalette` (lines 7–138), `InvoiceDocumentResolvedStyle` (lines 155–179), `InvoiceDocumentDesign` (lines 276–410), `InvoiceMoneyFormatter` (lines 411–518), `InvoiceDecimalFormatter` (lines 520–531), `InvoiceLineItemsTypography` (lines 536–596), `InvoiceLineItemsTableStyle` (lines 597–629), `DocumentBandedCardStyle` & `DocumentBandedCard` (lines 791–910), `LineItemCellChromeModifier` / borders (lines 911–1016), and `InvoiceDateFormatter` (lines 1017–1048).
+3. `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceDocumentPreview.swift` — **939 lines** (32.3 KB)
+   - Contains: `InvoiceDocumentPreview` (lines 7–226), `InvoicePaginationMeasurementPublicationPolicy` (lines 233–345), `InvoiceDocumentPreviewScaledPage` (lines 347–375), `InvoiceDocumentPreviewPage` (lines 377–553), `InvoicePDFRenderer` PDF Kit generation (lines 683–743), `InvoicePDFSavePanel` NSSavePanel logic (lines 745–875), and `PreviewCommandScrollZoomMonitor` NSViewRepresentable (lines 877–938).
+4. `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceRootView.swift` — **810 lines** (32.7 KB)
+
+#### B. Misplaced Code & Inconsistent Naming
+- **Misplaced PDF Utilities**: `InvoicePDFRenderer` (lines 683–743) and `InvoicePDFSavePanel` (lines 745–875) are embedded in `InvoiceDocumentPreview.swift` instead of co-locating with `InvoicePDFFileWriter.swift` (which is only 11 lines).
+- **Mismatched Header Comments**: `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesViewList.swift` line 2 header comment reads `// InvoicesView.swift`.
+- **Overlapping Toolbar Files**: `InvoicesViewToolbar.swift` (186 lines) vs `InvoicesContentToolbar.swift` (206 lines) in `Feature.Invoices` split top/bottom toolbar elements unnaturally across two files.
 
 ---
 
 ## 2. Logic Chain
 
-### 2.1 Revenue & Status Analytics Summary Implementation
-1. **Observation**: The current `InvoicesListProjection` (`InvoicesListQuery.swift:20–25`) computes `filteredInvoices: [Invoice]`, but does not aggregate financial metrics across statuses or currencies. Each `Invoice` has a `totalAmount: Double`, `effectiveStatus: InvoiceStatus`, `isOverdue: Bool`, and `currencyCode: String`.
-2. **Deduction**: Aggregating metrics on `[Invoice]` (either filtered or total loaded) requires grouping by normalized currency code (`InvoiceCurrencyCode.normalizedOrDefault(invoice.currencyCode)`).
-3. **Design Proposal**:
-   - Create `InvoiceAnalyticsEngine` in `Packages/Feature.Invoices/Sources/Feature_Invoices/Models/InvoiceAnalyticsEngine.swift`:
-     ```swift
-     public struct CurrencyAnalyticsMetrics: Equatable, Sendable {
-         public let currencyCode: String
-         public let totalBilled: Double
-         public let totalReceived: Double
-         public let totalOutstanding: Double
-         public let totalOverdue: Double
-         public let draftCount: Int
-         public let totalCount: Int
-     }
+1. **Input Validation Duplication**:
+   - Observations 1.1.A confirm that `InvoiceFilterAmountInput` in `Feature.Invoices` and `InvoiceDecimalInput` / `InvoiceDoubleInput` in `InvoiceTableLayoutEditor` use verbatim identical `NumberFormatter` configuration and `getObjectValue(&value, for:..., range:...)` parsing logic.
+   - Therefore, any bug fixes or localization adjustments (e.g. comma vs dot handling) applied to decimal validation in the editor will not automatically propagate to filter fields in `Feature.Invoices`.
 
-     public struct RevenueAnalyticsSummary: Equatable, Sendable {
-         public let metricsByCurrency: [String: CurrencyAnalyticsMetrics]
-         public var primaryCurrencyCode: String
-     }
+2. **Address Sheet Abstraction Leak**:
+   - Observations 1.1.B show that `SharedUI` provides `AddressFormState`, while `WorkspaceUI` provides `AddressFormSheet` as the standardized form wrapper.
+   - `Feature.Clients` correctly uses `AddressFormSheet`. However, `Feature.Calendar` circumvents `AddressFormSheet`, directly binds low-level properties to `WorkspaceUI.AddressEditingSheet`, and re-defines `AddressEditingSheet`, causing a local type name collision with `WorkspaceUI.AddressEditingSheet`.
 
-     public enum InvoiceAnalyticsEngine {
-         public static func summarize(invoices: [Invoice]) -> RevenueAnalyticsSummary { ... }
-     }
-     ```
-   - **Calculation Rules**:
-     - `totalBilled`: Sum of `totalAmount` for all active invoices (excluding `.voided` / `.cancelled`).
-     - `totalReceived`: Sum of `totalAmount` for invoices with `effectiveStatus == .received`.
-     - `totalOutstanding`: Sum of `totalAmount` for invoices with `effectiveStatus == .pending`, `.readyToSend`, or `.overdue`.
-     - `totalOverdue`: Sum of `totalAmount` for invoices where `effectiveStatus == .overdue` or `invoice.isOverdue`.
-     - `draftCount`: Count of invoices with `effectiveStatus == .reviewDraft`.
-   - **ViewModel & UI Integration**:
-     - Add `public var analyticsSummary: RevenueAnalyticsSummary` to `InvoicesContainerViewModel`, updated whenever `projection` changes.
-     - Add a card-based SwiftUI view `RevenueAnalyticsSummaryView` displayed above `ScrollableInvoicesList` in `InvoicesView` or integrated into `listContextBar`. Provides currency tabs/segmented controls if multiple currencies are present in data.
+3. **Formatter Anti-Pattern**:
+   - Observations 1.1.C demonstrate that while `SharedUI` exposes modern `FormatStyle` helpers (`CurrencyFormatting` and `DateFormatting`), `InvoiceFormatting.swift`, `InvoicesContentToolbar.swift`, and `BillingHubPaymentNoteFormatter.swift` repeatedly create legacy `DateFormatter` and `NumberFormatter` instances inside render loops or static singletons.
+   - Creating `NumberFormatter` inside view render passes introduces performance overhead during document zoom and live scrolling.
 
-### 2.2 Invoice Duplication Workflow Implementation
-1. **Observation**: `InvoicesContainerViewModel` provides `createInvoice()` which calls `InvoiceEditorStore.createInvoice(in: modelContainer)`. `Invoice` model in `Core` holds line items (`items`), configuration state (`invoiceEditorStateData`), and client/payee/address snapshots.
-2. **Deduction**: Duplicating an existing invoice requires creating a clone with a newly generated, auto-incremented invoice number, current dates, draft status, and deep-copied line items.
-3. **Design Proposal**:
-   - **Auto-Increment Invoice Number Logic**:
-     - Helper method `InvoiceNumberGenerator.nextInvoiceNumber(from sourceNumber: String, existingNumbers: Set<String>) -> String`.
-     - Parse prefix (e.g. `INV-`) and numeric suffix (e.g. `1042` -> `1043`). If source has no number or is non-standard, append `-COPY` or find next sequential integer.
-   - **Duplication Action on `InvoicesContainerViewModel`**:
-     ```swift
-     @discardableResult
-     public func duplicateInvoice(_ sourceInvoice: Invoice) async throws -> UUID {
-         try beginInvoiceCreation()
-         defer { finishInvoiceCreation() }
+4. **Architectural State Coupling**:
+   - Observation 1.2.A shows `InvoiceRootView` initializing `@State private var viewModel: InvoiceEditorViewModel` from an initializer parameter.
+   - In SwiftUI with `@Observable`, `@State` storage is created only once on initial view construction. Passing a new `InvoiceEditorViewModel` from `TableLayoutInvoiceEditorView` into `InvoiceRootView` will fail to update `@State`, causing view-model stale state bugs.
 
-         let allExisting = try persistenceCommands.fetchInvoices(ids: ...) // or fetch existing numbers
-         let newNumber = InvoiceNumberGenerator.nextInvoiceNumber(
-             from: sourceInvoice.invoiceNumber,
-             existingNumbers: Set(allExisting.map(\.invoiceNumber))
-         )
-
-         let clonedInvoice = Invoice(invoiceNumber: newNumber)
-         clonedInvoice.totalAmount = sourceInvoice.totalAmount
-         clonedInvoice.taxRate = sourceInvoice.taxRate
-         clonedInvoice.discount = sourceInvoice.discount
-         clonedInvoice.creditApplied = sourceInvoice.creditApplied
-         clonedInvoice.currencyCode = sourceInvoice.currencyCode
-         clonedInvoice.date = Date()
-         clonedInvoice.issueDate = Date()
-         clonedInvoice.dueDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())
-         clonedInvoice.effectiveStatus = .reviewDraft
-         clonedInvoice.notes = sourceInvoice.notes
-         clonedInvoice.paymentTerms = sourceInvoice.paymentTerms
-         clonedInvoice.invoiceEditorStateData = sourceInvoice.invoiceEditorStateData
-
-         // Deep clone relationships & snapshots
-         clonedInvoice.client = sourceInvoice.client
-         clonedInvoice.payee = sourceInvoice.payee
-         clonedInvoice.business = sourceInvoice.business
-         clonedInvoice.snapshotRelatedData()
-
-         // Deep clone line items
-         let clonedItems = (sourceInvoice.items ?? []).map { item in
-             InvoiceItem(
-                 itemDescription: item.itemDescription,
-                 quantity: item.quantity,
-                 rate: item.rate,
-                 position: item.position,
-                 taxRate: item.taxRate
-             )
-         }
-         clonedInvoice.items = clonedItems
-
-         modelContext.insert(clonedInvoice)
-         try modelContext.save()
-
-         revealInvoiceInList(clonedInvoice, countAsNew: true)
-         requestSelectInvoice(clonedInvoice)
-         return clonedInvoice.id
-     }
-     ```
-   - **UI Action Triggers**:
-     - Add "Duplicate Invoice" action to context menu in `InvoicesView` tree items, row context menus, and list context toolbar when an invoice is selected.
-
-### 2.3 Batch Data Export Implementation (CSV & JSON)
-1. **Observation**: `InvoicesView` already contains `bulkExportSelectedInvoices()` (lines 478–553) which prompts for a destination folder using `NSOpenPanel` and exports individual PDFs.
-2. **Deduction**: Supporting CSV and JSON batch data export requires defining summary projections and formatting services for RFC 4180 CSV and ISO-8601 JSON.
-3. **Design Proposal**:
-   - **Export Formats & Models**:
-     - `enum InvoiceDataExportFormat: String, CaseIterable, Identifiable`: `.csv`, `.json`.
-     - `struct InvoiceExportRecord: Codable, Sendable`:
-       - `invoiceNumber`, `clientName`, `status`, `date`, `dueDate`, `totalAmount`, `subtotal`, `taxAmount`, `discountAmount`, `currencyCode`, `itemCount`, `notes`.
-   - **Exporter Engine** (`Services/InvoiceDataExporter.swift`):
-     - `static func generateCSV(from invoices: [Invoice]) -> String`: Formats CSV headers and quotes string values containing commas or quotes.
-     - `static func generateJSON(from invoices: [Invoice]) throws -> Data`: Uses `JSONEncoder` with `.prettyPrinted` and `.iso8601` date formatting.
-   - **UI & Multi-Select Bar Integration**:
-     - In `multiSelectBar` and action menus, expand export choices:
-       - "Export Data..." -> Submenu: "Export as CSV...", "Export as JSON...".
-     - Uses `NSSavePanel` (or `NSOpenPanel`) to let user select save destination file (e.g. `Invoices_Export_2026-07-24.csv`).
-
-### 2.4 Unit Testing Strategy & New Test Coverage
-1. **Observation**: Existing unit tests cover query filtering, list projection, persistence commands, editor reconciliation, empty state policies, and bulk PDF/email workflows.
-2. **Deduction**: New features must be thoroughly covered by unit tests in `Tests/Feature_InvoicesTests/`.
-3. **Required New Tests**:
-   - `InvoiceAnalyticsTests.swift`:
-     - `testSummarize_calculatesMetricsPerCurrency`: Multi-currency invoices (AUD, USD) correctly segregated into metrics cards.
-     - `testSummarize_handlesEmptyList`: Returns empty metrics dictionary without crashing.
-     - `testSummarize_excludesVoidedAndCancelledInvoicesFromBilledAndOutstanding`: Verifies voided/cancelled statuses don't inflate revenue figures.
-     - `testSummarize_correctlyFlagsOverdueInvoices`: Verifies past `dueDate` with non-received status increments `totalOverdue`.
-   - `InvoiceDuplicationTests.swift`:
-     - `testDuplicateInvoice_autoIncrementsStandardNumber`: `INV-042` -> `INV-043`.
-     - `testDuplicateInvoice_handlesNonNumericSuffixes`: `INV-CUSTOM` -> `INV-CUSTOM-1` or `INV-CUSTOM-COPY`.
-     - `testDuplicateInvoice_resetsStatusAndDates`: `date` updated to today, status reset to `reviewDraft`, `paidDate`/`sentDate` cleared.
-     - `testDuplicateInvoice_deepClonesItemsAndSnapshots`: Line items and snapshots copied with new unique item IDs.
-     - `testDuplicateInvoice_selectsAndRevealsInViewModel`: Selected invoice state in `InvoicesContainerViewModel` points to cloned invoice.
-   - `InvoiceDataExportTests.swift`:
-     - `testCSVExporter_escapesSpecialCharactersAndFormatsHeaders`: Proper RFC 4180 formatting for client names with commas/quotes.
-     - `testJSONExporter_encodesISO8601DatesAndFinancialFields`: Encodes correctly formatted JSON array.
-     - `testBatchExport_handlesEmptyAndSingleInvoiceSelections`: Edge cases for zero or single row export.
+5. **Maintainability Impact of File Bloat**:
+   - Observation 1.3.A shows 4 core files in `InvoiceTableLayoutEditor` exceeding 3,600 lines combined.
+   - Mixing PDF generation (`NSSavePanel`, `PDFDocument`), typography tokens, border drawing, custom layout algorithms, and SwiftUI view structures in single files increases cognitive load and causes merge conflicts.
 
 ---
 
 ## 3. Caveats
 
-- **Read-Only Scope**: This report provides analysis and architectural design proposals only. No source files under `Packages/Feature.Invoices` or `Packages/Core` were modified.
-- **Model Relationship Constraints**: `Invoice` uses SwiftData `@Model` macro with relationships to `InvoiceItem`, `Client`, `Payee`, and `Business`. Duplication must clone child entities within the active `ModelContext` to maintain SwiftData graph integrity.
-- **Strict Concurrency**: `Feature.Invoices` is compiled with strict concurrency enabled (`StrictConcurrency`). Any new actors or async exporters must conform to `Sendable` and respect `@MainActor` / `@ModelActor` isolation boundaries.
+- **No Code Modifications Performed**: As an explorer operating under read-only constraints, no source files were edited in the workspace.
+- **Runtime Performance Benchmarks**: Performance impacts of repeated `NumberFormatter` allocation were identified via static code analysis rather than Instruments profiling.
 
 ---
 
-## 4. Conclusion
+## 4. Conclusion & Concrete Consolidation Plan
 
-`Packages/Feature.Invoices` possesses a clean architecture separating persistent querying (`InvoicesListQueryEngine`, `InvoicePersistenceQuerySpec`), state management (`InvoicesContainerViewModel`), UI components (`InvoicesView`, `InvoicesContentToolbar`), and background data fetching (`InvoiceListFetchActor`). 
+### A. Recommended Concrete Consolidation Targets
 
-1. **Analytics Summary**: Can be seamlessly integrated by creating `InvoiceAnalyticsEngine` and a `RevenueAnalyticsSummaryView` component hooked into `InvoicesContainerViewModel.analyticsSummary`.
-2. **Invoice Duplication**: Can be cleanly implemented via `duplicateInvoice(_ sourceInvoice: Invoice)` on `InvoicesContainerViewModel`, leveraging `InvoiceNumberGenerator` for auto-incrementing numbers and deep-cloning line items/snapshots.
-3. **Batch Export**: Can expand on the existing bulk action UI in `InvoicesView` by adding `InvoiceDataExporter` supporting CSV and JSON generation via `NSSavePanel`.
-4. **Unit Tests**: All three new features can be covered by dedicated test suites (`InvoiceAnalyticsTests`, `InvoiceDuplicationTests`, `InvoiceDataExportTests`) in `Packages/Feature.Invoices/Tests/Feature_InvoicesTests`.
+1. **Extract & Consolidate Validated Decimal Inputs**:
+   - Create `ValidatedDecimalField` and `DecimalInputParser` in `SharedUI` (or `WorkspaceUI`).
+   - Replace `InvoiceFilterAmountInput` (`InvoiceFilterAmountField.swift`:10–53) and `InvoiceDecimalInput` / `InvoiceDoubleInput` (`InvoiceValidatedDecimalField.swift`:5–58, 179–220) with the shared parser.
+
+2. **Standardize Address Editing in `Feature.Calendar`**:
+   - Refactor `SessionAddressEditingSheet.swift` in `Feature.Calendar` to consume `WorkspaceUI.AddressFormSheet` and `@Bindable formState: AddressFormState`.
+   - Rename the local wrapper struct from `AddressEditingSheet` to `SessionAddressEditingSheet` to resolve the local shadowing collision with `WorkspaceUI.AddressEditingSheet`.
+
+3. **Consolidate PDF Output Infrastructure**:
+   - Move `InvoicePDFRenderer` (`InvoiceDocumentPreview.swift`:683–743) and `InvoicePDFSavePanel` (`InvoiceDocumentPreview.swift`:745–875) into `InvoicePDFFileWriter.swift` (or a dedicated `InvoicePDFExportServices.swift` file).
+
+4. **Split Bloated Files in `InvoiceTableLayoutEditor`**:
+   - **Split `InvoiceDocumentSections.swift`** into:
+     - `InvoiceDocumentLayoutTokens.swift` (`InvoiceDocumentLayout`, `PartyPreviewProfile`)
+     - `IntrinsicPartyRowLayout.swift` (`IntrinsicPartyRowLayout`)
+     - `InvoiceDocumentPartySections.swift` (`PartyPreviewBlock`)
+     - `InvoiceDocumentDetailsSections.swift` (`InvoiceDetailsPreviewBlock`, `DetailTableCellBorders`)
+   - **Split `InvoiceFormatting.swift`** into:
+     - `InvoiceThemePalette.swift` (`InvoiceThemePalette`)
+     - `InvoiceDocumentDesignTokens.swift` (`InvoiceDocumentDesign`, `InvoiceLineItemsTypography`, `InvoiceLineItemsTableStyle`)
+     - `InvoiceFormatters.swift` (Refactor formatters to delegate to `SharedUI.CurrencyFormatting` and `SharedUI.DateFormatting`)
+   - **Split `InvoiceDocumentPreview.swift`** into:
+     - `InvoiceDocumentPreview.swift` (View hierarchy & zoom only)
+     - `InvoicePDFExportServices.swift` (`InvoicePDFRenderer`, `InvoicePDFSavePanel`)
+     - `PreviewCommandScrollZoomMonitor.swift` (`PreviewCommandScrollZoomMonitor`)
+
+5. **Fix `@State` Initialization in `InvoiceRootView.swift`**:
+   - Change `@State private var viewModel: InvoiceEditorViewModel` in `InvoiceRootView.swift:22` to `@Bindable var viewModel: InvoiceEditorViewModel` or pass `@Bindable` down from `TableLayoutInvoiceEditorView`.
+
+6. **Clean Up Headers & Toolbar Files**:
+   - Fix line 2 header in `InvoicesViewList.swift` to match file name.
+   - Combine `InvoicesViewToolbar.swift` and `InvoicesContentToolbar.swift` into a cohesive `InvoicesToolbarComponents.swift`.
 
 ---
 
 ## 5. Verification Method
 
-To verify existing functionality and future implementations:
-1. **Run Unit Tests**:
-   ```bash
-   swift test --package-path Packages/Feature.Invoices
-   ```
-2. **Inspect Files**:
-   - `Packages/Feature.Invoices/Package.swift`
-   - `Packages/Feature.Invoices/Sources/Feature_Invoices/Models/InvoicesListQuery.swift`
-   - `Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel.swift`
-   - `Packages/Feature.Invoices/Sources/Feature_Invoices/ViewModels/InvoicesContainerViewModel+List.swift`
-   - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesView.swift`
-   - `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoicesContentToolbar.swift`
-   - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoicesListQueryTests.swift`
-   - `Packages/Feature.Invoices/Tests/Feature_InvoicesTests/InvoicesPersistenceCommandsTests.swift`
-3. **Invalidation Conditions**:
-   - Changes to `Invoice` model schema in `Core` breaking financial calculation or snapshot generation.
-   - Non-MainActor mutation calls on `InvoicesContainerViewModel` causing strict concurrency compiler errors.
+To independently verify these findings:
+
+1. **Verify File Bloat**:
+   - Run: `wc -l Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceDocumentSections.swift Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceFormatting.swift Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceDocumentPreview.swift`
+   - Observe line counts matching 1845, 1078, and 939 lines respectively.
+
+2. **Verify Decimal Input Duplication**:
+   - Inspect `Packages/Feature.Invoices/Sources/Feature_Invoices/Views/InvoiceFilterAmountField.swift` (line 23) and `Packages/Feature.InvoiceTemplateEditor/Sources/InvoiceTableLayoutEditor/Views/InvoiceValidatedDecimalField.swift` (lines 36, 193) to verify identical `getObjectValue` logic.
+
+3. **Verify Address Sheet Shadowing**:
+   - Inspect `Packages/Feature.Calendar/Sources/Feature_Calendar/Views/SessionEditor/SessionAddressEditingSheet.swift` (line 8 vs line 19) to confirm `struct AddressEditingSheet: View` shadowing `WorkspaceUI.AddressEditingSheet`.
+
+4. **Verify Build Integrity**:
+   - Run project build tool / `swift build` across all feature packages to confirm zero regressions after consolidation.

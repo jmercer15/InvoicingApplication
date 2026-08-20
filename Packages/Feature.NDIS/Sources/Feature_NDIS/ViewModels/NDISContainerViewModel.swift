@@ -202,7 +202,7 @@ public class NDISContainerViewModel {
         let task = Task { [weak self] in
             do {
                 if debounceMilliseconds > 0 {
-                    try await Task.sleep(nanoseconds: debounceMilliseconds * 1_000_000)
+                    try await Task.sleep(for: .milliseconds(Int64(debounceMilliseconds)))
                 }
                 try Task.checkCancellation()
                 guard let self else { return }

@@ -1,3 +1,5 @@
+import os
+import Core
 //
 //  NDISItem_ItemDescriptionToDescription_Migration.swift
 //  InvoicingApplication
@@ -45,7 +47,7 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
     /// - Throws: MigrationError if the migration fails
     public static func execute(modelContext: ModelContext) throws {
         // Log migration start
-        print("🔄 Starting NDISItem.itemDescription -> description migration (v\(version))")
+        Logger.migration.info("🔄 Starting NDISItem.itemDescription -> description migration (v\(version))")
         
         // Validate that the migration is needed
         try validateMigrationNeeded(modelContext: modelContext)
@@ -57,7 +59,7 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
         try validateMigrationSuccess(modelContext: modelContext)
         
         // Log migration completion
-        print("✅ NDISItem.itemDescription -> description migration completed successfully")
+        Logger.migration.info("✅ NDISItem.itemDescription -> description migration completed successfully")
     }
     
     /// Validate that the migration is needed
@@ -73,11 +75,11 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
         let ndisItems = try modelContext.fetch(descriptor)
         
         if ndisItems.isEmpty {
-            print("ℹ️ No NDISItem records found - migration not needed")
+            Logger.migration.info("ℹ️ No NDISItem records found - migration not needed")
             return
         }
         
-        print("📊 Found \(ndisItems.count) NDISItem records to migrate")
+        Logger.migration.info("📊 Found \(ndisItems.count) NDISItem records to migrate")
     }
     
     /// Perform the actual migration
@@ -96,7 +98,7 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
         // Save the context to ensure any pending changes are persisted
         try modelContext.save()
         
-        print("💾 Migration data persisted successfully")
+        Logger.migration.info("💾 Migration data persisted successfully")
     }
     
     /// Validate that the migration was successful
@@ -117,7 +119,7 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
             let _ = ndisItem.itemDescription
         }
         
-        print("✅ Migration validation successful - all \(ndisItems.count) records accessible")
+        Logger.migration.info("✅ Migration validation successful - all \(ndisItems.count) records accessible")
     }
     
     /// Rollback the migration
@@ -128,13 +130,13 @@ public struct NDISItem_ItemDescriptionToDescription_Migration {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if rollback fails
     public static func rollback(modelContext _: ModelContext) throws {
-        print("🔄 Rolling back NDISItem.itemDescription -> description migration")
+        Logger.migration.info("🔄 Rolling back NDISItem.itemDescription -> description migration")
         
         // For Swift Data, rollback is handled by reverting the entity definition
         // and using @Attribute(.originalName) with the new property name
         // This is a development-time operation only
         
-        print("⚠️ Rollback completed - entity definition reverted")
+        Logger.migration.warning("⚠️ Rollback completed - entity definition reverted")
     }
 }
 
@@ -147,7 +149,7 @@ public struct NDISItemMigrationTestUtils {
     /// - Parameter modelContext: The Swift Data model context
     /// - Throws: MigrationError if the test fails
     public static func testMigration(modelContext: ModelContext) throws {
-        print("🧪 Testing NDISItem.itemDescription -> description migration")
+        Logger.migration.info("🧪 Testing NDISItem.itemDescription -> description migration")
         
         // Create test data
         let testNDISItem = NDISItem(
@@ -183,7 +185,7 @@ public struct NDISItemMigrationTestUtils {
         modelContext.delete(testNDISItem)
         try modelContext.save()
         
-        print("✅ NDISItem migration test completed successfully")
+        Logger.migration.info("✅ NDISItem migration test completed successfully")
     }
 }
 #endif

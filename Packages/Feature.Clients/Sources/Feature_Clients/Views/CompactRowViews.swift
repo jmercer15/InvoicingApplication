@@ -34,14 +34,14 @@ struct CompactServiceRowView: View {
             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text(service.serviceName)
                     .font(StyleGuide.Typography.compactRowTitle)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                 Text("\(service.unit) • \(CurrencyFormatting.display(service.rate))")
                     .font(StyleGuide.Typography.caption)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
                 if let months = service.consecutiveMonths {
                     Text("Establishment fee: \(months) consecutive month\(months == 1 ? "" : "s")")
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                 }
             }
         }
@@ -58,10 +58,10 @@ struct CompactInvoiceRowView: View {
             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text(invoice.invoiceNumber)
                     .font(StyleGuide.Typography.compactRowTitle)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                 Text("\(CurrencyFormatting.display(invoice.totalAmount)) • \(DateFormatting.mediumDate(invoice.issueDate))")
                     .font(StyleGuide.Typography.caption)
-                    .foregroundColor(StyleGuide.Colors.textSecondary)
+                    .foregroundStyle(StyleGuide.Colors.textSecondary)
             }
         }
     }
@@ -82,11 +82,11 @@ struct CompactClientRowView: View {
             VStack(alignment: .leading, spacing: StyleGuide.Dimensions.paddingXXSmall) {
                 Text(client.fullName)
                     .font(StyleGuide.Typography.compactRowTitle)
-                    .foregroundColor(StyleGuide.Colors.text)
+                    .foregroundStyle(StyleGuide.Colors.text)
                 if !client.ndisNumber.isEmpty {
                     Text("NDIS: \(client.ndisNumber)")
                         .font(StyleGuide.Typography.caption)
-                        .foregroundColor(StyleGuide.Colors.textSecondary)
+                        .foregroundStyle(StyleGuide.Colors.textSecondary)
                 }
             }
         }

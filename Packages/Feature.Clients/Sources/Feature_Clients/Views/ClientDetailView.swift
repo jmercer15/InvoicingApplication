@@ -73,7 +73,7 @@ struct ClientDetailView: View {
                 invoicesCard
             }
         }
-        .foregroundColor(StyleGuide.Colors.text)
+        .foregroundStyle(StyleGuide.Colors.text)
         .sheet(item: activeSheetBinding) { sheet in
             switch sheet {
             case .serviceAssignment:

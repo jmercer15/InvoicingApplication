@@ -1,3 +1,4 @@
+import os
 import Foundation
 import SwiftData
 import Core
@@ -26,15 +27,15 @@ extension NDISItemImport {
                 )
             }
             
-            print("Successfully parsed \(parsedData.count) items from CSV. Analyzing column structure...")
+            Logger.importExport.info("Successfully parsed \(parsedData.count) items from CSV. Analyzing column structure...")
             
             // Analyze the column structure
             let columnMapper = NDISColumnMapper()
             let headers = parsedData.first?.keys.map { String($0) } ?? []
             let mappingQuality = columnMapper.analyzeHeaders(headers)
             
-            print("Column mapping quality: \(mappingQuality)")
-            print(columnMapper.getMappingSummary())
+            Logger.importExport.info("Column mapping quality: \(String(describing: mappingQuality))")
+            Logger.importExport.info("\(columnMapper.getMappingSummary())")
             
             // Check if we have critical fields
             let missingCritical = columnMapper.getMissingCriticalFields()
@@ -43,7 +44,7 @@ extension NDISItemImport {
                 messages.append("Warning: Missing critical fields: \(missingFieldNames)")
             }
             
-            print("Starting SwiftData import...")
+            Logger.importExport.info("Starting SwiftData import...")
             
             let batchSize = 100
             let totalItems = parsedData.count
@@ -51,7 +52,7 @@ extension NDISItemImport {
             for i in stride(from: 0, to: totalItems, by: batchSize) {
                 let batchEnd = min(i + batchSize, totalItems)
                 let batchRows = Array(parsedData[i..<batchEnd])
-                print("Processing batch \(i/batchSize + 1)/\( (totalItems + batchSize - 1) / batchSize )... (\(batchRows.count) items)")
+                Logger.importExport.info("Processing batch \(i/batchSize + 1)/\( (totalItems + batchSize - 1) / batchSize )... (\(batchRows.count) items)")
                 
                 for row in batchRows {
                     do {
@@ -67,14 +68,14 @@ extension NDISItemImport {
                 // Save changes after each batch
                 do {
                     try context.save()
-                    print("Saved batch \(i/batchSize + 1)")
+                    Logger.importExport.info("Saved batch \(i/batchSize + 1)")
                 } catch {
                     // Reset the context to avoid cascading errors
                     context.rollback()
                     failed += batchRows.count
                     successful -= batchRows.count
                     messages.append("Error saving batch \(i/batchSize + 1): \(error.localizedDescription)")
-                    print("Error saving batch \(i/batchSize + 1): \(error)")
+                    Logger.importExport.warning("Error saving batch \(i/batchSize + 1): \(error)")
                 }
             }
             

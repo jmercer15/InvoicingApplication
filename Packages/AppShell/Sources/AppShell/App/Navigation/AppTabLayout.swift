@@ -68,7 +68,13 @@ extension AppTab {
                 content: SplitViewColumnWidthProfile(min: 280, ideal: 640, max: nil),
                 detail: SplitViewColumnWidthProfile(min: 280, ideal: 420, max: nil)
             )
-        case .invoices, .relationships:
+        case .invoices:
+            return SplitViewWidthProfile(
+                sidebar: Self.defaultSidebarWidth,
+                content: Self.invoiceListWidth,
+                detail: Self.invoiceContentWidth
+            )
+        case .relationships:
             return SplitViewWidthProfile(
                 sidebar: Self.defaultSidebarWidth,
                 content: Self.defaultContentWidth,
@@ -97,6 +103,16 @@ extension AppTab {
     private static let defaultContentWidth = SplitViewColumnWidthProfile(
         min: 260,
         ideal: 360,
+        max: nil
+    )
+    private static let invoiceListWidth = SplitViewColumnWidthProfile(
+        min: 300,
+        ideal: 380,
+        max: 460
+    )
+    private static let invoiceContentWidth = SplitViewColumnWidthProfile(
+        min: 520,
+        ideal: 900,
         max: nil
     )
     private static let defaultDetailWidthThreeColumn = SplitViewColumnWidthProfile(

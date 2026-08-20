@@ -24,11 +24,11 @@ struct CalendarRowView: View {
                 HStack(spacing: FormSectionTokens.sectionStackSpacing) {
                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                         .font(StyleGuide.Typography.sectionTitle)
-                        .foregroundColor(isSelected ? .accentColor : .white.opacity(0.6))
+                        .foregroundStyle(isSelected ? .accentColor : .white.opacity(0.6))
 
                     Text(calendar.title)
                         .font(.subheadline)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(Rectangle())

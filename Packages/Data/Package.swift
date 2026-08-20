@@ -30,25 +30,25 @@ let package = Package(
         ),
         .testTarget(
             name: "DataUseCaseTests",
-            dependencies: ["Data", "Core", "PersistenceModels"],
+            dependencies: ["Data", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels"],
             path: "Tests/DataTests/UseCases",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataServiceTests",
-            dependencies: ["Data", "Core", "PersistenceModels"],
+            dependencies: ["Data", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels"],
             path: "Tests/DataTests/Services",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataBusinessLogicTests",
-            dependencies: ["Data", "Core", "PersistenceModels"],
+            dependencies: ["Data", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels"],
             path: "Tests/DataTests/BusinessLogic",
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "DataValidationTests",
-            dependencies: ["Data", "Core", "PersistenceModels"],
+            dependencies: ["Data", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels"],
             path: "Tests/DataTests/Validation",
             swiftSettings: strictConcurrencySettings
         )

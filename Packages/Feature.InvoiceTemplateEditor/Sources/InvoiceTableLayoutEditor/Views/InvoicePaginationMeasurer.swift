@@ -309,8 +309,8 @@ final class InvoicePaginationSectionReporter {
                 if self.heights != self.latestHeights {
                     self.heights = self.latestHeights
                 }
-                self.publicationRevision &+= 1
                 self.reportingTask = nil
+                self.publicationRevision &+= 1
                 return
             }
 

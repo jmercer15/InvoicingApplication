@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import EventKit
 import Core
@@ -63,7 +64,7 @@ public struct CalendarSettingsView: View {
                     .font(.callout)
                     .fontWeight(.semibold)
                     .buttonStyle(.glass)
-                    .foregroundColor(ColorSystem.Status.error)
+                    .foregroundStyle(ColorSystem.Status.error)
                     .frame(maxWidth: .infinity)
                 }
                 .padding(.top, StyleGuide.Dimensions.paddingLarge)
@@ -121,9 +122,9 @@ public struct CalendarSettingsView: View {
             Button("Cancel", role: .cancel) {}
         }
         .onAppear {
-            print("[CalendarSettingsView] Settings view appeared")
-            print("[CalendarSettingsView] Initial access granted: \(viewModel.accessGranted)")
-            print("[CalendarSettingsView] Available calendars count: \(viewModel.writableCalendars.count)")
+            Logger.calendar.info("[CalendarSettingsView] Settings view appeared")
+            Logger.calendar.info("[CalendarSettingsView] Initial access granted: \(viewModel.accessGranted)")
+            Logger.calendar.info("[CalendarSettingsView] Available calendars count: \(viewModel.writableCalendars.count)")
             viewModel.validateCalendarSelection()
         }
     }
@@ -139,23 +140,21 @@ public struct CalendarSettingsView: View {
             if let error = viewModel.errorMessage {
                 VStack(spacing: FormSectionTokens.fieldStackSpacing) {
                     Text(error)
-                        .foregroundColor(ColorSystem.Status.error)
+                        .foregroundStyle(ColorSystem.Status.error)
                         .font(.headline)
                     Text("To enable calendar access, go to System Settings > Privacy & Security > Calendars and enable access for this app.")
                         .font(.footnote)
-                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     #if os(macOS)
                     Button("Open System Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        _ = SystemSettingsOpener().open()
                     }
                     .buttonStyle(.glassProminent)
                     #endif
                 }
                 .padding(paddingLarge)
                 .background(Color.red.opacity(0.08))
-                .cornerRadius(cornerRadiusLarge)
+                .clipShape(.rect(cornerRadius: cornerRadiusLarge))
                 .padding(paddingLarge)
             }
         }
@@ -173,11 +172,11 @@ public struct CalendarSettingsView: View {
                 Text(viewModel.accessGranted ? "Calendar Access: Granted" : "Calendar Access: Not Granted")
                     .font(.callout)
                     .fontWeight(.semibold)
-                    .foregroundColor(viewModel.accessGranted ? .green : .red)
+                    .foregroundStyle(viewModel.accessGranted ? .green : .red)
                 Spacer()
                 if !viewModel.accessGranted {
                     Button("Request Access") {
-                        print("[CalendarSettingsView] User clicked Request Access button")
+                        Logger.calendar.info("[CalendarSettingsView] User clicked Request Access button")
                         Task { await viewModel.requestAccess() }
                     }
                     .accessibilityHint("Request permission to access your calendars.")
@@ -373,10 +372,10 @@ public struct CalendarSettingsView: View {
             
             HStack {
                 Image(systemName: "info.circle")
-                    .foregroundColor(ColorSystem.Status.info)
+                    .foregroundStyle(ColorSystem.Status.info)
                 Text("Tip: Use the calendar visibility toggle (📅) in the main calendar view to control which synced calendars are visible.")
                     .font(.caption)
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             }
             .padding(.top, StyleGuide.Dimensions.paddingXSmall)
         }

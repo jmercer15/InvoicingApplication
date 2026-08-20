@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 // MARK: - Enhanced Billing Context Data Structure
@@ -144,24 +145,26 @@ public struct AutomationResult: Sendable {
     
     public mutating func addError(_ error: String) {
         errors.append(error)
-        print("❌ [NDIS Automation] Error: \(error)")
+        Logger.automation.warning("❌ [NDIS Automation] Error: \(error)")
     }
     
     public mutating func addWarning(_ warning: String) {
         warnings.append(warning)
-        print("⚠️ [NDIS Automation] Warning: \(warning)")
+        Logger.automation.warning("⚠️ [NDIS Automation] Warning: \(warning)")
     }
     
     public mutating func markCompleted() {
         isCompleted = true
         status = .completed
         endTime = Date()
-        print("✅ [NDIS Automation] Completed in \(String(format: "%.2f", duration)) seconds")
+        let totalDuration = duration
+        Logger.automation.info("✅ [NDIS Automation] Completed in \(String(format: "%.2f", totalDuration)) seconds")
     }
     
     public mutating func markFailed() {
         status = .failed
         endTime = Date()
-        print("❌ [NDIS Automation] Failed after \(String(format: "%.2f", duration)) seconds")
+        let totalDuration = duration
+        Logger.automation.error("❌ [NDIS Automation] Failed after \(String(format: "%.2f", totalDuration)) seconds")
     }
 }

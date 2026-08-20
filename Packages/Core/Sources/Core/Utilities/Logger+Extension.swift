@@ -1,5 +1,5 @@
 import Foundation
-import os
+@_exported import os
 
 extension Logger {
     private static let subsystem = Bundle.main.bundleIdentifier ?? "com.invoicing.app"

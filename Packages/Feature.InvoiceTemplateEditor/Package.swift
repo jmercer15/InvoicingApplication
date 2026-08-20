@@ -27,7 +27,7 @@ let package = Package(
         ),
         .testTarget(
             name: "InvoiceTableLayoutEditorTests",
-            dependencies: ["InvoiceTableLayoutEditor", "Core", "PersistenceModels", "Data"],
+            dependencies: ["InvoiceTableLayoutEditor", "Core", .product(name: "CoreTesting", package: "Core"), "PersistenceModels", "Data"],
             swiftSettings: strictConcurrencySettings
         )
     ]

@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import SwiftData
 import MapKit
+import os
 import Core
 import PersistenceModels
 
@@ -9,6 +10,7 @@ import PersistenceModels
 /// For **pure** address → coordinate lookup without persistence, use `Core.GeocodingService` (actor).
 @MainActor
 public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol {
+    private static let logger = Logger(subsystem: "com.invoicingapplication.app", category: "geocoding")
 
     public init() {}
     
@@ -43,7 +45,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                 preferredLocale: preferredLocale
             )
         } catch {
-            print("🌍 [GeocodingService] Failed reverse geocode for (\(coordinate.latitude), \(coordinate.longitude)): \(error.localizedDescription)")
+            Self.logger.error("Reverse geocoding failed.")
             return nil
         }
     }
@@ -74,7 +76,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     do {
                         try context.save()
                     } catch {
-                        print("❌ Failed to save context after geocoding: \(error.localizedDescription)")
+                        Self.logger.error("Failed to save geocoded address.")
                     }
                 }
                 completion?()
@@ -129,7 +131,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     do {
                         try context.save()
                     } catch {
-                        print("❌ Failed to save context after geocoding: \(error.localizedDescription)")
+                        Self.logger.error("Failed to save geocoded session.")
                     }
                 }
                 completion?()
@@ -142,7 +144,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
     /// Bulk geocodes sessions and their related entities to ensure coordinates are available (entity version)
     /// This should be called before running auto-determination services
     public func ensureCoordinatesForSession(_ session: Session, modelContext: ModelContext) async -> Bool {
-        print("🌍 [GeocodingService] Starting async bulk coordinate check for session: \(session.id.uuidString)")
+        Self.logger.debug("Starting bulk coordinate check.")
         
         // Capture the session ID and context info before async operations
         let sessionID = session.persistentModelID
@@ -164,7 +166,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
             if currentSession.sessionLatitude == 0 && currentSession.sessionLongitude == 0 {
                 if let sessionLocation = sessionLocation {
                     entities.append(("session", sessionLocation))
-                    print("🌍 [GeocodingService] Session needs geocoding: \(sessionLocation)")
+                    Self.logger.debug("Session coordinates need geocoding.")
                 }
             }
             
@@ -175,7 +177,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     let addressString = sessionAddress.fullFormattedAddress
                     if !addressString.isEmpty {
                         entities.append(("session_address", addressString))
-                        print("🌍 [GeocodingService] Session address needs geocoding: \(addressString)")
+                        Self.logger.debug("Session address coordinates need geocoding.")
                     }
                 }
             }
@@ -187,7 +189,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     let addressString = clientAddress.fullFormattedAddress
                     if !addressString.isEmpty {
                         entities.append(("client_address", addressString))
-                        print("🌍 [GeocodingService] Client address needs geocoding: \(addressString)")
+                        Self.logger.debug("Client address coordinates need geocoding.")
                     }
                 }
             }
@@ -199,7 +201,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     let addressString = businessAddress.fullFormattedAddress
                     if !addressString.isEmpty {
                         entities.append(("business_address", addressString))
-                        print("🌍 [GeocodingService] Business address needs geocoding: \(addressString)")
+                        Self.logger.debug("Business address coordinates need geocoding.")
                     }
                 }
             }
@@ -208,11 +210,11 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
         }
         
         if entitiesToGeocode.isEmpty {
-            print("🌍 [GeocodingService] All coordinates are already available")
+            Self.logger.debug("All coordinates already available.")
             return true
         }
         
-        print("🌍 [GeocodingService] Found \(entitiesToGeocode.count) entities that need geocoding")
+        Self.logger.debug("Geocoding \(entitiesToGeocode.count, privacy: .public) entities.")
         
         // Process geocoding concurrently with a limit
         let batchSize = 2
@@ -242,16 +244,16 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                     do {
                         try modelContext.save()
                     } catch {
-                        print("❌ [GeocodingService] Failed to save context after geocoding: \(error.localizedDescription)")
+                        Self.logger.error("Failed to save bulk geocoding result.")
                     }
                     successCount += 1
                 } else {
-                    print("🌍 [GeocodingService] No coordinates found for \(entityType)")
+                    Self.logger.debug("No coordinates found for \(entityType, privacy: .public).")
                 }
             }
         }
         
-        print("🌍 [GeocodingService] Async bulk geocoding completed: \(successCount)/\(entitiesToGeocode.count) successful")
+        Self.logger.debug("Bulk geocoding completed: \(successCount, privacy: .public)/\(entitiesToGeocode.count, privacy: .public).")
         
         // If session coordinates are missing but session address has coordinates, copy them over
         let resolver = EntityResolutionService(context: modelContext)
@@ -261,11 +263,11 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                 if let address: Address = resolver.resolve(persistentModelID: sessionAddressID), address.latitude != 0 && address.longitude != 0 {
                     currentSession.sessionLatitude = address.latitude
                     currentSession.sessionLongitude = address.longitude
-                    print("🌍 [GeocodingService] Copied session address coordinates to session coordinates: (\(address.latitude), \(address.longitude))")
+                    Self.logger.debug("Copied session address coordinates.")
                     do {
                         try modelContext.save()
                     } catch {
-                        print("❌ [GeocodingService] Failed to save context after copying coordinates: \(error.localizedDescription)")
+                        Self.logger.error("Failed to save copied session coordinates.")
                     }
                 }
             }
@@ -282,7 +284,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
             if let session: Session = resolver.resolve(persistentModelID: sessionID) {
                 session.sessionLatitude = coordinates.latitude
                 session.sessionLongitude = coordinates.longitude
-                print("🌍 [GeocodingService] Updated session coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
+                Self.logger.debug("Updated session coordinates.")
             }
             
         case "session_address":
@@ -290,7 +292,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                let address = session.address {
                 address.latitude = coordinates.latitude
                 address.longitude = coordinates.longitude
-                print("🌍 [GeocodingService] Updated session address coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
+                Self.logger.debug("Updated session address coordinates.")
             }
             
         case "client_address":
@@ -299,18 +301,18 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
                let address = client.address {
                 address.latitude = coordinates.latitude
                 address.longitude = coordinates.longitude
-                print("🌍 [GeocodingService] Updated client address coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
+                Self.logger.debug("Updated client address coordinates.")
             }
             
         case "business_address":
             if let business = try? resolver.resolveBusiness() {
                 business.address?.latitude = coordinates.latitude
                 business.address?.longitude = coordinates.longitude
-                print("🌍 [GeocodingService] Updated business address coordinates: (\(coordinates.latitude), \(coordinates.longitude))")
+                Self.logger.debug("Updated business address coordinates.")
             }
             
         default:
-            print("🌍 [GeocodingService] Unknown entity type: \(entityType)")
+            Self.logger.error("Unknown geocoding entity type: \(entityType, privacy: .public).")
         }
     }
     
@@ -334,7 +336,7 @@ public final class SwiftDataGeocodingService: SwiftDataGeocodingServiceProtocol 
         do {
             return try await MapKitAddressResolver.forwardSearch(query: address)?.location.coordinate
         } catch {
-            print("🌍 [GeocodingService] Failed to geocode address: \(address) error: \(error.localizedDescription)")
+            Self.logger.error("Address geocoding failed.")
         }
         return nil
     }

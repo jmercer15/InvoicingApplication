@@ -120,7 +120,7 @@ struct ImportExportView: View {
                     Label {
                         Text("Exports include client names, contact details, NDIS service codes, invoice amounts, and other personally identifiable information. Files are saved in plaintext at the path you choose—protect exported files like any sensitive business record.")
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     } icon: {
                         Image(systemName: "exclamationmark.shield")
                             .foregroundStyle(.orange)
@@ -134,7 +134,7 @@ struct ImportExportView: View {
                             SecureField("Confirm passphrase", text: $viewModel.exportPassphraseConfirmation)
                             Text("Encrypted exports use the .invoicing-export container format. Keep your passphrase safe—lost passphrases cannot be recovered.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         }
                         if let validationMessage = viewModel.exportEncryptionValidationMessage {
                             Text(validationMessage)
@@ -154,7 +154,7 @@ struct ImportExportView: View {
 
                         Text(viewModel.exportRedactionPreset.summary)
                             .font(.caption)
-                            .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                            .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                     }
                     .padding(.bottom, StyleGuide.Dimensions.paddingSmall)
 
@@ -192,7 +192,7 @@ struct ImportExportView: View {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             Text("Recalculate which NDIS items are current based on the most recent effective date across all items.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         }
                         
                         HStack {
@@ -220,7 +220,7 @@ struct ImportExportView: View {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             Text("Select an 'effective from' date to mark all associated NDIS items as current.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                             
                             VStack {
                                 HStack {
@@ -252,10 +252,10 @@ struct ImportExportView: View {
                                                 Spacer()
                                                 if viewModel.selectedEffectiveDates.contains(date) {
                                                     Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundColor(.accentColor)
+                                                        .foregroundStyle(Color.accentColor)
                                                 } else {
                                                     Image(systemName: "circle")
-                                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                                 }
                                             }
                                             .contentShape(Rectangle())
@@ -265,7 +265,7 @@ struct ImportExportView: View {
                                 }
                                 .frame(height: 150)
                                 .border(Color.secondary.opacity(0.2), width: 1)
-                                .cornerRadius(cornerRadiusSmall)
+                                .clipShape(.rect(cornerRadius: cornerRadiusSmall))
                             }
                             
                             HStack {
@@ -281,7 +281,7 @@ struct ImportExportView: View {
                                 }
                                 .disabled(viewModel.selectedEffectiveDates.isEmpty || viewModel.isUpdatingForSelectedDate)
                                 .buttonStyle(.glass)
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                             }
                         }
                     }
@@ -290,7 +290,7 @@ struct ImportExportView: View {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             Text("Remove all NDIS support items from the database. You can re-import them later if needed.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         }
                         
                         HStack {
@@ -312,7 +312,7 @@ struct ImportExportView: View {
                             .pointerStyle(.link)
                             .disabled(viewModel.isClearingNDIS || viewModel.isLoading)
                             .buttonStyle(.glass)
-                            .foregroundColor(ColorSystem.Status.error)
+                            .foregroundStyle(ColorSystem.Status.error)
                         }
                     }
                     
@@ -320,7 +320,7 @@ struct ImportExportView: View {
                         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
                             Text("Permanently delete ALL data from the database. This includes clients, payees, services, invoices, sessions, and all other entities. This action cannot be undone.")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                         }
                         
                         HStack {
@@ -342,7 +342,7 @@ struct ImportExportView: View {
                             .pointerStyle(.link)
                             .disabled(viewModel.isWipingAllData || viewModel.isLoading)
                             .buttonStyle(.glass)
-                            .foregroundColor(ColorSystem.Status.error)
+                            .foregroundStyle(ColorSystem.Status.error)
                         }
                     }
                 }
@@ -361,16 +361,16 @@ struct ImportExportView: View {
                     ) {
                         SettingsCard(title: "Summary") {
                             SettingsRow(label: "Source:", labelWidth: maxLabelWidth) { 
-                                Text(results.source.description).foregroundColor(Color("TextSecondary", bundle: .sharedUI)) 
+                                Text(results.source.description).foregroundStyle(Color("TextSecondary", bundle: .sharedUI)) 
                             }
                             SettingsRow(label: "File:", labelWidth: maxLabelWidth) { 
-                                Text(results.fileName).foregroundColor(Color("TextSecondary", bundle: .sharedUI)) 
+                                Text(results.fileName).foregroundStyle(Color("TextSecondary", bundle: .sharedUI)) 
                             }
                             SettingsRow(label: "Successful:", labelWidth: maxLabelWidth) { 
-                                Text("\(results.successful)").foregroundColor(ColorSystem.Status.success) 
+                                Text("\(results.successful)").foregroundStyle(ColorSystem.Status.success) 
                             }
                             SettingsRow(label: "Failed:", labelWidth: maxLabelWidth) { 
-                                Text("\(results.failed)").foregroundColor(results.failed > 0 ? .red : .secondary) 
+                                Text("\(results.failed)").foregroundStyle(results.failed > 0 ? .red : .secondary) 
                             }
                         }
                         
@@ -378,7 +378,7 @@ struct ImportExportView: View {
                             HStack {
                                 Text("\(results.messages.count) log messages generated.")
                                     .font(.caption)
-                                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                 Spacer()
                                 Button(action: { activeSheet = .importDetails }) {
                                     Label("View Log Details", systemImage: "doc.plaintext")
@@ -502,7 +502,7 @@ struct ImportExportView: View {
                                 ForEach(Array(results.messages.enumerated()), id: \.offset) { _, message in
                                     Text(message)
                                         .font(.caption)
-                                        .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                        .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                         .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
                                 }
                             }
@@ -510,7 +510,7 @@ struct ImportExportView: View {
                         } else {
                             Text("No details available")
                                 .font(.caption)
-                                .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                                .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                                 .padding(.vertical, StyleGuide.Dimensions.paddingXXSmall)
                         }
                     }

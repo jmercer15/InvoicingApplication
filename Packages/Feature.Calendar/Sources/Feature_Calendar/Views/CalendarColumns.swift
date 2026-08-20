@@ -51,6 +51,11 @@ public struct CalendarContentColumn: View {
                 showViewOptions: $showViewOptions
             )
         }
+        .onChange(of: viewModel.calendarViewType) { _, viewType in
+            if viewType != .week {
+                showViewOptions = false
+            }
+        }
     }
 
     static func activeFilterCount(for viewModel: CalendarViewModel) -> Int {
@@ -85,7 +90,9 @@ private struct CalendarContentToolbar: ToolbarContent {
         AppToolbarUtilityGroup {
             CalendarJumpToDateButton(viewModel: viewModel)
             CalendarFiltersMenu(viewModel: viewModel, activeFilterCount: activeFilterCount)
-            CalendarViewOptionsButton(viewModel: viewModel, showViewOptions: $showViewOptions)
+            if viewModel.calendarViewType == .week {
+                CalendarViewOptionsButton(viewModel: viewModel, showViewOptions: $showViewOptions)
+            }
         }
 
         if pendingBillingHubCount > 0, let openPendingBillingHubWork {
@@ -230,8 +237,14 @@ private struct CalendarFiltersMenuContent: View {
     @ViewBuilder
     private func statusSection(viewModel: CalendarViewModel) -> some View {
         Section("Status") {
-            Button("All Statuses") {
+            Button {
                 viewModel.selectedStatusFilters.removeAll()
+            } label: {
+                HStack {
+                    Text("All Statuses")
+                    Spacer()
+                    AppToolbarMenuCheckmark(isSelected: viewModel.selectedStatusFilters.isEmpty)
+                }
             }
 
             ForEach(viewModel.availableFilterStatuses, id: \.label) { status in
@@ -259,8 +272,14 @@ private struct CalendarFiltersMenuContent: View {
     @ViewBuilder
     private func clientSection(viewModel: CalendarViewModel) -> some View {
         Section("Client") {
-            Button("All Clients") {
+            Button {
                 viewModel.selectedClientFilters.removeAll()
+            } label: {
+                HStack {
+                    Text("All Clients")
+                    Spacer()
+                    AppToolbarMenuCheckmark(isSelected: viewModel.selectedClientFilters.isEmpty)
+                }
             }
 
             ForEach(viewModel.availableFilterClients, id: \.label) { client in

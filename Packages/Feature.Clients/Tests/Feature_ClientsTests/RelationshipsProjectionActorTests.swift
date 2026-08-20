@@ -4,6 +4,7 @@ import Foundation
 import PersistenceModels
 import SwiftData
 import Testing
+import CoreTesting
 @testable import Feature_Clients
 
 @MainActor

@@ -1,35 +1,33 @@
-# BRIEFING — 2026-07-24T20:07:41Z
+# BRIEFING — 2026-08-10T14:02:00+10:00
 
 ## Mission
-Explore and analyze `Packages/Feature.InvoiceTemplateEditor` for preset management, brand customization, margin/pagination controls, and unit test strategy.
+Explore and analyze Domain, Core, and Data Layer packages in InvoicingApplication.
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: teamwork_preview_explorer_2
+- Roles: read-only architecture and code duplication explorer
 - Working directory: /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_2
-- Original parent: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Milestone: Template Customization & Preview Analysis
+- Original parent: e6053af5-68b0-4784-af56-a50e01e13b95
+- Milestone: domain_core_data_analysis
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement code changes
-- Keep responses terse / caveman lite style per AGENTS.md while maintaining technical completeness
-- Produce structured analysis report and handoff.md
+- Read-only investigation — do NOT implement
+- Analyze Domain, Core, Data packages
 
 ## Current Parent
-- Conversation ID: b43259db-55e5-4500-a5c6-8862d60f4ba3
-- Updated: 2026-07-24T20:07:41Z
+- Conversation ID: e6053af5-68b0-4784-af56-a50e01e13b95
+- Updated: 2026-08-10T14:02:00+10:00
 
 ## Investigation State
-- **Explored paths**: `Packages/Feature.InvoiceTemplateEditor` (Models, Data, Views, Tests)
-- **Key findings**:
-  - Identified data models (`InvoiceDocument`, `InvoiceTemplateConfiguration`), preset structures (`InvoiceTemplatePreset`, `InvoiceTemplateDefaults`), state models (`InvoiceEditorViewModel`), preview views (`InvoiceDocumentPreview`, `InvoiceDocumentSections`), and pagination engine (`InvoicePagination`, `InvoicePaginationMeasurer`).
-  - Formulated design proposals for Preset Management, Brand Accent & Logo Customization, Interactive Page Margins & Pagination Breakpoints, and comprehensive unit test suite.
-- **Unexplored areas**: None for this assignment scope.
+- **Explored paths**: `Packages/Core`, `Packages/Data`, `Packages/DataInterfaces`, `Packages/PersistenceModels`, `Packages/DTOMacros`
+- **Key findings**: Identified schema code duplication (`PersistenceSchema.swift`), misplaced domain logic in `PersistenceModels` (`NDISPriceUtilities.swift`), misplaced pure validation in `Data` (`BulkClaimValidationService.swift`), redundant typealiases, and bloated service files (`NDISBillingIntegrationService.swift` 1,028 lines).
+- **Unexplored areas**: None across target scope.
 
 ## Key Decisions Made
-- Completed full read-only investigation and produced 5-component `handoff.md`.
+- Completed systematic audit of macro architecture, code duplications, file organization, and concrete refactoring targets.
 
 ## Artifact Index
-- `.agents/teamwork_preview_explorer_2/ORIGINAL_REQUEST.md` — Original assignment task prompt
-- `.agents/teamwork_preview_explorer_2/BRIEFING.md` — Agent briefing & state tracker
-- `.agents/teamwork_preview_explorer_2/handoff.md` — 5-component Handoff Report
+- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_2/ORIGINAL_REQUEST.md — Original user request
+- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_2/BRIEFING.md — Working briefing index
+- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_2/progress.md — Progress log
+- /Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/teamwork_preview_explorer_2/handoff.md — Final handoff report

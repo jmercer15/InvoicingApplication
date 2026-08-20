@@ -5,8 +5,17 @@ import Security
 ///
 /// Items use `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and the add-or-update pattern
 /// recommended for idempotent secret rotation.
-public struct KeychainStore: KeychainStoring {
-    public init() {}
+public actor KeychainStore: KeychainStoring {
+    private let usesDataProtectionKeychain: Bool
+
+    public init() {
+        self.usesDataProtectionKeychain = true
+    }
+
+    /// Test-only escape hatch for non-sandboxed hosts, which lack the data-protection Keychain entitlement.
+    internal init(usesDataProtectionKeychain: Bool) {
+        self.usesDataProtectionKeychain = usesDataProtectionKeychain
+    }
 
     public func read(account: String, service: String) throws -> Data? {
         try validate(account: account, service: service)
@@ -77,10 +86,14 @@ public struct KeychainStore: KeychainStoring {
     }
 
     private func baseQuery(account: String, service: String) -> [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if usesDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
+        return query
     }
 }

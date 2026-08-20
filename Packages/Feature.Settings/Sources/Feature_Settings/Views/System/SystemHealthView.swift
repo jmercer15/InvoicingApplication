@@ -14,6 +14,7 @@ struct SystemHealthView: View {
     @Environment(\.databaseHealthChecking) private var databaseHealthChecking
     @State private var healthChecks: [HealthCheck] = []
     @State private var isRunning = false
+    @State private var settingsOpenFailed = false
     
     @ScaledMetric(relativeTo: .body) private var paddingXXLarge = StyleGuide.Dimensions.paddingXXLarge
     @ScaledMetric(relativeTo: .body) private var paddingXLarge = StyleGuide.Dimensions.paddingXLarge
@@ -41,6 +42,11 @@ struct SystemHealthView: View {
         .scrollIndicators(.visible)
         #endif
         .onAppear { runHealthChecks() }
+        .alert("Open Calendar Privacy Settings", isPresented: $settingsOpenFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Open System Settings, then choose Privacy & Security → Calendars.")
+        }
     }
     
     private var headerSection: some View {
@@ -73,7 +79,7 @@ struct SystemHealthView: View {
             
             if healthChecks.isEmpty {
                 Text("No health checks run yet")
-                    .foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    .foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
             } else {
                 LazyVStack(spacing: FormSectionTokens.fieldStackSpacing) {
                     ForEach(healthChecks, id: \.id) { check in
@@ -88,18 +94,18 @@ struct SystemHealthView: View {
         VStack(alignment: .leading, spacing: FormSectionTokens.labelFieldSpacing) {
             HStack {
                 Image(systemName: check.status.icon)
-                    .foregroundColor(check.status.color)
+                    .foregroundStyle(check.status.color)
                     .font(.title2)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(check.title).font(.headline)
-                    Text(check.description).font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI))
+                    Text(check.description).font(.caption).foregroundStyle(Color("TextSecondary", bundle: .sharedUI))
                 }
                 Spacer()
                 if let action = check.action {
                     Button(action) { onAction(action) }.buttonStyle(.glass).controlSize(.small)
                 }
             }
-            Text(check.details).font(.caption).foregroundColor(Color("TextSecondary", bundle: .sharedUI)).padding(.leading, StyleGuide.Dimensions.paddingXXLarge)
+            Text(check.details).font(.caption).foregroundStyle(Color("TextSecondary", bundle: .sharedUI)).padding(.leading, StyleGuide.Dimensions.paddingXXLarge)
         }
         .standardCardStyle()
     }
@@ -258,9 +264,7 @@ struct SystemHealthView: View {
             requestCalendarAccessAndRefresh()
         } else if action == "Open Settings" {
             #if os(macOS)
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-                NSWorkspace.shared.open(url)
-            }
+            settingsOpenFailed = !SystemSettingsOpener().open()
             #endif
         }
     }

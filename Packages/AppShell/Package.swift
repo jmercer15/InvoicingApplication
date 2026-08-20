@@ -52,6 +52,7 @@ let package = Package(
             dependencies: [
                 "AppShell",
                 "Core",
+                .product(name: "CoreTesting", package: "Core"),
                 "Data",
                 "SharedUI",
                 "WorkspaceUI",
