@@ -1,2 +1,0 @@
-## 2026-06-10T12:32:00Z
-Implement the design token standardization and layout unification in `Packages/Feature.Invoices`. Migrate fonts, colors, padding/spacing, frames/columns, and adopt SharedUI reusable components. Verify changes by building/testing with `scripts/refactor-verify.sh`. Read findings in the explorer handoffs under `.agents/explorer_invoices_3_1/handoff.md` and `.agents/explorer_invoices_3_3/handoff.md`. Working directory: `/Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/worker_invoices_3_gen3`

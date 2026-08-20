@@ -106,6 +106,17 @@ iOSInjectionProject/
 /periphery_*
 /build_cache_periphery/
 
+# Ephemeral agent working dirs / prompts (not product source)
+.agents/
+/ORIGINAL_REQUEST.md
+/REFACTOR_PLAN.md
+
+# Vendored local binaries
+.bin/
+
+# Regenerable SwiftLint baseline
+.swiftlint-baseline.json
+
 # Script outputs (e.g. scripts/aggregate-swift-sources.sh)
 /artifacts/
 

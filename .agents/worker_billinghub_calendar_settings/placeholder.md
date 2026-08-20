@@ -1,1 +1,0 @@
-Placeholder for worker_billinghub_calendar_settings

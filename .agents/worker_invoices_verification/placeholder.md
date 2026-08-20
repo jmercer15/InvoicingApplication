@@ -1,1 +1,0 @@
-Verification worker folder placeholder.

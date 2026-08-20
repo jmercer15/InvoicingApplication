@@ -1,2 +1,0 @@
-## 2026-06-11T01:11:13Z
-Perform forensic audit on `Packages/Feature.Invoices` to verify token standardization (spacing, colors, corner radii, typography, and standard panel shells/components). Run tests and builds to verify correctness and check for integrity violations. Deliver handoff.md with a CLEAN or VIOLATION verdict. Working directory: `/Users/user/Developer/InvoicingApplication/InvoicingApplication/.agents/auditor_invoices_4_retry`
